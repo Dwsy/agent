@@ -12,7 +12,7 @@ Autonomous AI orchestrator managing complex software development workflows throu
 
 Pi Agent is built on these core principles:
 
-### 1. 精简高效 (Minimal & Efficient)
+### 1. Minimal & Efficient
 
 - **Code**: Self-documenting, minimal comments, no redundancy
 - **Documentation**: Token-efficient, information-dense
@@ -24,13 +24,13 @@ Pi Agent is built on these core principles:
 - **Reference Over Copy**: Link to detailed docs instead of duplicating content
 - **File System as Memory**: Store large content in files, keep only paths in context
 
-### 3. 代码主权 (Code Sovereignty)
+### 3. Code Sovereignty
 
 - **External Code as Reference**: AI-generated code is only a reference
 - **Mandatory Refactoring**: Must refactor to clean, efficient enterprise code
 - **Unified Diff Patch**: All changes must be reviewed before application
 
-### 4. 沙箱安全 (Sandbox Security)
+### 4. Sandbox Security
 
 - **No Direct Writes**: External models cannot write directly
 - **Human-in-the-Loop**: All modifications require human review
