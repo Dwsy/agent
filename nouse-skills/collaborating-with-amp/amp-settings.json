@@ -1,0 +1,18 @@
+{
+  "amp.tools.disable": [
+    "create_file",
+    "builtin:create_file",
+    "edit_file",
+    "builtin:edit_file",
+    "undo_edit",
+    "builtin:undo_edit",
+    "commit",
+    "builtin:commit",
+    "todo_write",
+    "builtin:todo_write",
+    "bash",
+    "builtin:bash"
+  ],
+  "amp.dangerouslyAllowAll": false,
+  "amp.notifications.enabled": false
+}

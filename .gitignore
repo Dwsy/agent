@@ -1,0 +1,62 @@
+# Session records (large files, not needed in version control)
+sessions/
+pi-session-*.html
+
+# Cache directories
+cache/
+.ace-tool/
+.ralph-state/
+
+# Dependencies - recursively ignore all node_modules
+**/node_modules/
+
+# Build artifacts - recursively ignore all dist/build directories
+**/dist/
+**/build/
+**/target/
+**/.next/
+**/.nuxt/
+**/out/
+
+# Log files
+*.log
+pi-crash.log
+pi-debug.log
+
+# Temporary and build files
+.DS_Store
+*.tmp
+*.tsbuildinfo
+
+# Package manager locks (optional - uncomment if you want to ignore them)
+# package-lock.json
+# yarn.lock
+# pnpm-lock.yaml
+
+# Sensitive information
+auth.json
+*.key
+*.pem
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Test artifacts
+test/temp/
+test/output/
+
+# Plugin runtime data
+plugin/
+
+# OS files
+Thumbs.db
+.DS_Store?

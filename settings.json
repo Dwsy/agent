@@ -1,0 +1,18 @@
+{
+  "lastChangelogVersion": "0.38.0",
+  "defaultProvider": "proxypal",
+  "defaultModel": "glm-4.7",
+  "defaultThinkingLevel": "off",
+  "hideThinkingBlock": false,
+  "theme": "dark",
+  "images": {
+    "blockImages": true
+  },
+  "interview": {
+    "timeout": 600,
+    "theme": {
+      "mode": "auto",
+      "name": "default"
+    }
+  }
+}

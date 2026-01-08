@@ -1,0 +1,14 @@
+{
+  "name": "pi-tmux-skill",
+  "version": "1.0.0",
+  "description": "Tmux session management for Pi Agent - supports background tasks, services, and interactive terminals",
+  "type": "module",
+  "scripts": {
+    "dev": "bun --watch lib.ts",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@types/bun": "latest"
+  }
+}
