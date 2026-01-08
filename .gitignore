@@ -38,6 +38,14 @@ auth.json
 *.key
 *.pem
 
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Models configuration (contains API keys)
+models.json
+
 # IDE and editor files
 .vscode/
 .idea/
