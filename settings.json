@@ -1,7 +1,7 @@
 {
   "lastChangelogVersion": "0.38.0",
-  "defaultProvider": "proxypal",
-  "defaultModel": "glm-4.7",
+  "defaultProvider": "nvidia",
+  "defaultModel": "minimaxai/minimax-m2.1",
   "defaultThinkingLevel": "off",
   "hideThinkingBlock": false,
   "theme": "dark",
