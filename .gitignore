@@ -18,6 +18,11 @@ cache/
 **/.nuxt/
 **/out/
 
+# Extensions compiled output
+extensions/*.js
+extensions/node_modules/
+extensions/dist/
+
 # Log files
 *.log
 pi-crash.log
