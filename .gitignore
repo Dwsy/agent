@@ -18,10 +18,14 @@ cache/
 **/.nuxt/
 **/out/
 
-# Extensions compiled output
+# Extensions compiled output (root level only)
 extensions/*.js
 extensions/node_modules/
 extensions/dist/
+
+# Allow JavaScript in subdirectories (e.g., interview/form/script.js)
+!extensions/*/*.js
+!extensions/*/*/*.js
 
 # Log files
 *.log
