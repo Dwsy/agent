@@ -1,12 +1,12 @@
 {
-  "lastChangelogVersion": "0.38.0",
-  "defaultProvider": "nvidia",
-  "defaultModel": "minimaxai/minimax-m2.1",
+  "lastChangelogVersion": "0.42.5",
+  "defaultProvider": "x-aio",
+  "defaultModel": "XAIO-G-3-Flash-Preview",
   "defaultThinkingLevel": "off",
   "hideThinkingBlock": false,
   "theme": "dark",
   "images": {
-    "blockImages": true
+    "blockImages": false
   },
   "interview": {
     "timeout": 600,

@@ -154,6 +154,10 @@ bun ~/.pi/agent/skills/workhub/lib.ts create issue "任务描述"
 
 | 日期 | 版本 | 说明 |
 |------|------|------|
+| 2026-01-09 | SYSTEM.md | 切换为使用 fd 替代 find（fd 默认排除 node_modules） |
+| 2026-01-09 | SYSTEM.md | 添加 find 命令限制规则（排除 node_modules 等依赖目录） |
+| 2026-01-09 | SYSTEM.md | 优化文件读取优先级（使用 bat+sed 进行分页） |
+| 2026-01-09 | SYSTEM.md | 添加文件读取优先级规则（优先使用 bat+grep） |
 | 2026-01-07 | SYSTEM.md | 最终优化版（当前使用，关联引用）⭐ |
 | 2026-01-07 | SYSTEM_FINAL.md | 最终优化版备份 |
 | 2026-01-07 | SYSTEM_LOSSLESS.md | 无损压缩版备份 |
