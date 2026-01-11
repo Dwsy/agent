@@ -1,12 +1,12 @@
 {
   "lastChangelogVersion": "0.42.5",
   "defaultProvider": "x-aio",
-  "defaultModel": "XAIO-G-3-Flash-Preview",
+  "defaultModel": "MiniMax-M2.1",
   "defaultThinkingLevel": "off",
   "hideThinkingBlock": false,
   "theme": "dark",
   "images": {
-    "blockImages": false
+    "blockImages": true
   },
   "interview": {
     "timeout": 600,
@@ -14,5 +14,8 @@
       "mode": "auto",
       "name": "default"
     }
+  },
+  "skills": {
+    "enableSkillCommands": false
   }
 }

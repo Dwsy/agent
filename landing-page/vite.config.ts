@@ -6,7 +6,8 @@ export default defineConfig({
     tailwindcss()
   ],
   build: {
-    outDir: "dist",
+    outDir: "../docs",
+    emptyOutDir: true,
     rollupOptions: {
       input: {
         main: "./index.html"

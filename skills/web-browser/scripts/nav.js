@@ -1,6 +1,18 @@
 #!/usr/bin/env node
 
 import puppeteer from "puppeteer-core";
+import { readFileSync, existsSync } from "node:fs";
+import { join } from "node:path";
+
+const profileDir = `${process.env.HOME}/.cache/scraping-web-browser`;
+const portFile = join(profileDir, "port.txt");
+
+if (!existsSync(portFile)) {
+  console.error("✗ Browser not started. Run 'node scripts/start.js' first.");
+  process.exit(1);
+}
+
+const port = parseInt(readFileSync(portFile, "utf-8").trim());
 
 const url = process.argv[2];
 const newTab = process.argv[3] === "--new";
@@ -14,7 +26,7 @@ if (!url) {
 }
 
 const b = await puppeteer.connect({
-  browserURL: "http://localhost:9222",
+  browserURL: `http://localhost:${port}`,
   defaultViewport: null,
 });
 
