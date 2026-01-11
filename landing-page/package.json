@@ -16,7 +16,6 @@
     "vite": "^6.0.7",
     "@tailwindcss/vite": "^4.0.0",
     "tailwindcss": "^4.0.0",
-    "typescript": "^5.7.2",
-    "vite-plugin-static-copy": "^2.2.0"
+    "typescript": "^5.7.2"
   }
 }
