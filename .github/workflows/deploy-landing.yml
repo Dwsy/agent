@@ -6,6 +6,14 @@ on:
     tags:
       - "landing-v*"
   workflow_dispatch:
+    inputs:
+      force:
+        description: 'Force rebuild'
+        required: false
+        default: 'false'
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -13,8 +21,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -36,11 +42,33 @@ jobs:
         working-directory: ./landing-page
         run: pnpm run build
 
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: landing-page-build
+          path: docs/
+          retention-days: 7
+
+  update-docs:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: landing-page-build
+          path: docs/
+
       - name: Commit and push
         run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-          git checkout ${{ github.ref_name }}
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git add docs/
-          git diff --staged --quiet || git commit -m "chore: Update landing page build"
-          git push origin ${{ github.ref_name }}
+          git diff --staged --quiet || git commit -m "chore: Update landing page build [skip ci]"
+          git push origin main
