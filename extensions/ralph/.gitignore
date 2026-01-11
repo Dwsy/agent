@@ -1,0 +1,37 @@
+# Ralph Wiggum for Pi - Git Ignore
+
+# code-review tool
+.qodo
+
+# source
+docs
+
+# Node
+node_modules/
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Pi state files (examples only - add to your project's .gitignore)
+.pi/ralph-loop.local.md
+.pi/sessions/
+
+# Build
+dist/
+build/
+*.tsbuildinfo
+
+# Test files
+*.test.ts
+*.spec.ts
+coverage/

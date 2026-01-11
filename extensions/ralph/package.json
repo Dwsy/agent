@@ -1,0 +1,26 @@
+{
+  "name": "pi-ralph",
+  "version": "0.36.0",
+  "description": "Ralph Wiggum technique for iterative AI development loops in Pi Coding Agent",
+  "type": "module",
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "keywords": [
+    "pi-coding-agent",
+    "extension",
+    "ralph-wiggum",
+    "iterative-development"
+  ],
+  "author": "",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Whamp/pi-ralph.git"
+  },
+  "engines": {
+    "pi": ">=0.35.0"
+  }
+}

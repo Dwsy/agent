@@ -1,0 +1,10 @@
+[project]
+name = "mcp-skill-executor"
+version = "1.0.0"
+description = "MCP Skill Executor - Dynamic MCP tool invocation for Claude Skills"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "mcp>=1.0.0",
+    "httpx>=0.25.0",
+]

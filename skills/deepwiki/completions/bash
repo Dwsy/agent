@@ -1,0 +1,33 @@
+# deepwiki shell completion for bash
+
+_deepwiki_completion() {
+    local cur prev words cword
+    _init_completion || return
+
+    local commands="read_wiki_structure read_wiki_contents ask_question rws rwc aq str cont ask"
+    local options="--repoName --topic --question --lang --help"
+
+    case ${prev} in
+        --repoName|-r|--repo)
+            # Suggest repository names from history or common patterns
+            COMPREPLY=($(compgen -W "openai/openai-node anthropic/claude-node facebook/react" -- "${cur}"))
+            return
+            ;;
+        --lang|-l)
+            COMPREPLY=($(compgen -W "en zh" -- "${cur}"))
+            return
+            ;;
+    esac
+
+    # Command completion
+    if [[ ${cword} -eq 1 ]]; then
+        COMPREPLY=($(compgen -W "${commands}" -- "${cur}"))
+        return
+    fi
+
+    # Option completion
+    COMPREPLY=($(compgen -W "${options}" -- "${cur}"))
+}
+
+complete -F _deepwiki_completion deepwiki
+complete -F _deepwiki_completion dw

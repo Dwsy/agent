@@ -10,6 +10,8 @@ Use tmux as a programmable terminal multiplexer for interactive work, background
 
 ## Quickstart (isolated socket)
 
+### CLI Mode
+
 ```bash
 # Create a new session
 bun ~/.pi/agent/skills/tmux/lib.ts create my-task "echo 'Hello World'" task
@@ -23,6 +25,19 @@ bun ~/.pi/agent/skills/tmux/lib.ts capture pi-task-my-task-20250107-123456
 # Kill a session
 bun ~/.pi/agent/skills/tmux/lib.ts kill pi-task-my-task-20250107-123456
 ```
+
+### TUI Mode
+
+```bash
+# Launch interactive TUI
+bun ~/.pi/agent/skills/tmux/tui.ts
+
+# Or create test sessions first
+bun ~/.pi/agent/skills/tmux/test-tui.ts
+bun ~/.pi/agent/skills/tmux/tui.ts
+```
+
+See [TUI.md](TUI.md) for detailed TUI documentation.
 
 ## Socket Convention
 
@@ -154,6 +169,39 @@ bun ~/.pi/agent/skills/tmux/lib.ts sync
 
 Synchronizes session status with tmux actual state.
 
+### TUI Management
+```bash
+bun ~/.pi/agent/skills/tmux/tui.ts
+```
+
+Launches an interactive Terminal User Interface (TUI) for managing tmux sessions.
+
+**Features**:
+- Visual session list with color-coded status
+- Real-time auto-refresh (every 5 seconds)
+- Keyboard navigation and shortcuts
+- Create, kill, capture, and monitor sessions
+
+**Keyboard Shortcuts**:
+- `↑/↓` - Navigate session list
+- `r` - Refresh session list
+- `n` - Create new session
+- `c` - Capture session output
+- `s` - Show session status
+- `a` - Show attach command
+- `k` - Kill session (requires confirmation)
+- `q/Esc` - Exit TUI
+
+**Example**:
+```bash
+# Launch TUI
+bun ~/.pi/agent/skills/tmux/tui.ts
+
+# Or create test sessions first
+bun ~/.pi/agent/skills/tmux/test-tui.ts
+bun ~/.pi/agent/skills/tmux/tui.ts
+```
+
 ## Session Persistence
 
 Session information is stored in `${TMPDIR:-/tmp}/pi-tmux-sessions.json`. This allows:
@@ -182,6 +230,19 @@ Session information is stored in `${TMPDIR:-/tmp}/pi-tmux-sessions.json`. This a
 ```
 
 ## Use Cases
+
+### TUI Session Management
+Use the interactive TUI for visual session management:
+
+```bash
+# Launch TUI
+bun ~/.pi/agent/skills/tmux/tui.ts
+
+# Navigate with arrow keys, use shortcuts to manage sessions
+# Press 'n' to create a new session interactively
+# Press 'c' to capture output from selected session
+# Press 'k' to kill a session (with confirmation)
+```
 
 ### Sub-task Execution
 Execute temporary tasks that require monitoring:

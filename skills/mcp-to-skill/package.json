@@ -1,0 +1,36 @@
+{
+  "name": "mcp-to-skill",
+  "version": "2.0.0",
+  "description": "Convert MCP servers to Claude Skills with multi-transport support (stdio/SSE/HTTP) and Python SDK + CLI",
+  "main": "lib.ts",
+  "types": "lib.ts",
+  "bin": {
+    "mcp-to-skill": "cli.py"
+  },
+  "scripts": {
+    "build": "hatch build",
+    "publish": "hatch publish",
+    "test": "pytest",
+    "format": "black converter/",
+    "lint": "ruff check converter/"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "claude",
+    "anthropic",
+    "converter",
+    "skill",
+    "python"
+  ],
+  "author": "Pi Agent",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Dwsy/mcp-to-skill.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Dwsy/mcp-to-skill/issues"
+  },
+  "homepage": "https://github.com/Dwsy/mcp-to-skill#readme"
+}

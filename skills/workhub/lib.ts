@@ -25,6 +25,24 @@ async function exists(path: string) {
   }
 }
 
+// 生成当前日期字符串 (yyyymmdd)
+function getCurrentDateString(): string {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}${month}${day}`;
+}
+
+// 生成 ISO 日期字符串 (yyyy-mm-dd)
+function getISODateString(): string {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 // 0. Init: 初始化文档结构
 async function init() {
   console.log(`📦 Initializing docs at: ${DOCS_ROOT}\n`);
@@ -50,7 +68,7 @@ async function init() {
 
   console.log("\n✨ Documentation structure initialized!");
   console.log("\nNext steps:");
-  console.log("  1. Create an issue: cp ~/.pi/agent/skills/workhub/templates/issue-template.md ./docs/issues/yyyymmdd-[描述].md");
+  console.log("  1. Create an issue: cp ~/.pi/agent/skills/workhub/lib.ts ./docs/issues/yyyymmdd-[描述].md");
   console.log("  2. View structure: bun ~/.pi/agent/skills/workhub/lib.ts tree");
 }
 
@@ -154,6 +172,14 @@ async function listFiles(dir: string, relativePath: string) {
   }
 }
 
+// 替换模板中的占位符
+function replaceTemplatePlaceholders(content: string, date: string, description: string, category?: string): string {
+  return content
+    .replace(/{{date}}/g, date)
+    .replace(/{{description}}/g, description || "description")
+    .replace(/{{category}}/g, category || "general");
+}
+
 // 4. Create Issue: 创建 Issue 文件
 async function createIssue(description: string, category?: string) {
   if (!description) {
@@ -163,7 +189,7 @@ async function createIssue(description: string, category?: string) {
   }
 
   // 生成文件名
-  const date = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+  const date = getCurrentDateString();
   const filename = `${date}-${description}.md`;
 
   // 确定目标目录
@@ -184,15 +210,34 @@ async function createIssue(description: string, category?: string) {
     process.exit(1);
   }
 
-  // 复制模板
-  const templatePath = join(TEMPLATES_DIR, "issue-template.md");
-  await copyFile(templatePath, targetPath);
+  // 尝试读取更新后的模板，如果不存在则使用原始模板
+  let templatePath = join(TEMPLATES_DIR, "issue-template-updated.md");
+  let templateContent: string;
+  
+  if (await exists(templatePath)) {
+    templateContent = await readFile(templatePath, "utf-8");
+  } else {
+    templatePath = join(TEMPLATES_DIR, "issue-template.md");
+    if (await exists(templatePath)) {
+      templateContent = await readFile(templatePath, "utf-8");
+    } else {
+      console.error(`❌ Error: No issue template found at ${templatePath}`);
+      process.exit(1);
+    }
+  }
+
+  // 替换模板中的占位符
+  const processedContent = replaceTemplatePlaceholders(templateContent, getISODateString(), description, category);
+
+  // 写入文件
+  await writeFile(targetPath, processedContent);
 
   console.log(`✅ Created issue: ${targetPath}`);
   console.log(`\nNext steps:`);
   console.log(`  1. Edit the issue file: ${targetPath}`);
   console.log(`  2. Fill in Goal, Phases, Acceptance Criteria`);
   console.log(`  3. Start working on the tasks`);
+  console.log(`\n📝 The file includes a YAML front matter with metadata for better indexing and management.`);
 }
 
 // 5. Create PR: 创建 PR 文件
@@ -204,7 +249,7 @@ async function createPR(description: string, category?: string) {
   }
 
   // 生成文件名
-  const date = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+  const date = getCurrentDateString();
   const filename = `${date}-${description}.md`;
 
   // 确定目标目录
@@ -225,15 +270,34 @@ async function createPR(description: string, category?: string) {
     process.exit(1);
   }
 
-  // 复制模板
-  const templatePath = join(TEMPLATES_DIR, "pr-template.md");
-  await copyFile(templatePath, targetPath);
+  // 尝试读取更新后的模板，如果不存在则使用原始模板
+  let templatePath = join(TEMPLATES_DIR, "pr-template-updated.md");
+  let templateContent: string;
+  
+  if (await exists(templatePath)) {
+    templateContent = await readFile(templatePath, "utf-8");
+  } else {
+    templatePath = join(TEMPLATES_DIR, "pr-template.md");
+    if (await exists(templatePath)) {
+      templateContent = await readFile(templatePath, "utf-8");
+    } else {
+      console.error(`❌ Error: No PR template found at ${templatePath}`);
+      process.exit(1);
+    }
+  }
+
+  // 替换模板中的占位符
+  const processedContent = replaceTemplatePlaceholders(templateContent, getISODateString(), description, category);
+
+  // 写入文件
+  await writeFile(targetPath, processedContent);
 
   console.log(`✅ Created PR: ${targetPath}`);
   console.log(`\nNext steps:`);
   console.log(`  1. Edit the PR file: ${targetPath}`);
   console.log(`  2. Fill in background, changes, tests, rollback plan`);
   console.log(`  3. Link to related issue`);
+  console.log(`\n📝 The file includes a YAML front matter with metadata for better indexing and management.`);
 }
 
 // 6. List Issues: 列出所有 Issues

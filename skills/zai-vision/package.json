@@ -1,0 +1,9 @@
+{
+  "name": "skill-zai-vision",
+  "version": "1.0.0",
+  "description": "Claude Skill wrapper for zai-vision MCP server (stdio)",
+  "scripts": {
+    "setup": "pip install -r requirements.txt",
+    "run": "python3 executor.py"
+  }
+}

@@ -1,0 +1,313 @@
+{
+  "schema_version": "0.1",
+  "codemap_id": "cm_1767780141816",
+  "title": "数据同步机制: 前端 Store 与 Tauri 后端的数据流转分析",
+  "prompt": "数据同步机制: 理解系统间数据同步的实现方式",
+  "created_at": "2026-01-07T10:01:43.284Z",
+  "repo": {
+    "name": "codemap",
+    "revision": "live",
+    "snapshot_mode": "live"
+  },
+  "generation": {
+    "model_tier": "fast",
+    "zdr": true,
+    "budgets": {
+      "max_files": 50,
+      "max_chunks": 200
+    }
+  },
+  "nodes": [
+    {
+      "node_id": "loc_trace_1_1a",
+      "title": "触发加载",
+      "summary": "在 App 组件的 useEffect 中触发初始数据同步。",
+      "children": [],
+      "code_refs": [
+        {
+          "path": "client/src/App.tsx",
+          "start_line": 23,
+          "end_line": 23,
+          "symbol": "触发加载"
+        }
+      ],
+      "trace_guide": {
+        "short": "在 App 组件的 useEffect 中触发初始数据同步。",
+        "long": "loadHistory()"
+      }
+    },
+    {
+      "node_id": "loc_trace_1_1b",
+      "title": "后端交互",
+      "summary": "调用 Tauri invoke 接口 'list_codemaps' 从 Rust 后端获取历史 JSON 数据。",
+      "children": [],
+      "code_refs": [
+        {
+          "path": "client/src/stores/codemapStore.ts",
+          "start_line": 527,
+          "end_line": 527,
+          "symbol": "后端交互"
+        }
+      ],
+      "trace_guide": {
+        "short": "调用 Tauri invoke 接口 'list_codemaps' 从 Rust 后端获取历史 JSON 数据。",
+        "long": "const historyJson = await window.__TAURI__.core.invoke('list_codemaps', {"
+      }
+    },
+    {
+      "node_id": "loc_trace_1_1c",
+      "title": "状态同步",
+      "summary": "将后端返回的数据解析并更新到 Zustand 的持久化状态中。",
+      "children": [],
+      "code_refs": [
+        {
+          "path": "client/src/stores/codemapStore.ts",
+          "start_line": 542,
+          "end_line": 542,
+          "symbol": "状态同步"
+        }
+      ],
+      "trace_guide": {
+        "short": "将后端返回的数据解析并更新到 Zustand 的持久化状态中。",
+        "long": "state.history = history"
+      }
+    },
+    {
+      "node_id": "trace_1",
+      "title": "初始化同步流程",
+      "summary": "应用启动时，从后端持久化层拉取历史记录和建议主题，同步到 Zustand Store。",
+      "children": [
+        "loc_trace_1_1a",
+        "loc_trace_1_1b",
+        "loc_trace_1_1c"
+      ],
+      "code_refs": [
+        {
+          "path": "client/src/App.tsx",
+          "start_line": 23,
+          "end_line": 23,
+          "symbol": "触发加载"
+        },
+        {
+          "path": "client/src/stores/codemapStore.ts",
+          "start_line": 527,
+          "end_line": 527,
+          "symbol": "后端交互"
+        },
+        {
+          "path": "client/src/stores/codemapStore.ts",
+          "start_line": 542,
+          "end_line": 542,
+          "symbol": "状态同步"
+        }
+      ],
+      "trace_guide": {
+        "short": "## Motivation",
+        "long": "## Motivation\n为了确保用户在打开应用时能够立即看到之前的研究成果，系统需要在初始化阶段建立起前端状态与后端存储的一致性快照。\n\n## Details\n1. **挂载触发 [1a]**: React 组件挂载后，调用 store 的异步 action。\n2. **跨进程调用 [1b]**: 通过 Tauri 的核心进程调用 Rust 定义的 `list_codemaps` 函数，该函数负责扫描本地工作目录下的 `.codemap` 文件夹。\n3. **内存更新 [1c]**: 数据返回后，使用 Immer 安全地更新 store 中的 history 数组，从而驱动 UI 列表重绘。"
+      }
+    },
+    {
+      "node_id": "loc_trace_2_2a",
+      "title": "AI 生成请求",
+      "summary": "将用户 Prompt 和选定文件发送给后端 AI 处理引擎。",
+      "children": [],
+      "code_refs": [
+        {
+          "path": "client/src/stores/codemapStore.ts",
+          "start_line": 465,
+          "end_line": 465,
+          "symbol": "AI 生成请求"
+        }
+      ],
+      "trace_guide": {
+        "short": "将用户 Prompt 和选定文件发送给后端 AI 处理引擎。",
+        "long": "const codemapJson = await window.__TAURI__.core.invoke('generate_codemap_with_pi', {"
+      }
+    },
+    {
+      "node_id": "loc_trace_2_2b",
+      "title": "持久化存储",
+      "summary": "分析完成后，立即调用 'save_codemap' 将结果写入磁盘。",
+      "children": [],
+      "code_refs": [
+        {
+          "path": "client/src/stores/codemapStore.ts",
+          "start_line": 489,
+          "end_line": 489,
+          "symbol": "持久化存储"
+        }
+      ],
+      "trace_guide": {
+        "short": "分析完成后，立即调用 'save_codemap' 将结果写入磁盘。",
+        "long": "await window.__TAURI__.core.invoke('save_codemap', {"
+      }
+    },
+    {
+      "node_id": "loc_trace_2_2c",
+      "title": "内存态更新",
+      "summary": "将新生成的 CodeMap 对象设为当前活跃对象，自动触发 UI 树状图渲染。",
+      "children": [],
+      "code_refs": [
+        {
+          "path": "client/src/stores/codemapStore.ts",
+          "start_line": 484,
+          "end_line": 484,
+          "symbol": "内存态更新"
+        }
+      ],
+      "trace_guide": {
+        "short": "将新生成的 CodeMap 对象设为当前活跃对象，自动触发 UI 树状图渲染。",
+        "long": "state.currentCodeMap = codemap"
+      }
+    },
+    {
+      "node_id": "trace_2",
+      "title": "生成与持久化链路",
+      "summary": "用户发起新的 CodeMap 生成请求，系统完成 AI 分析并实时保存到磁盘。",
+      "children": [
+        "loc_trace_2_2a",
+        "loc_trace_2_2b",
+        "loc_trace_2_2c"
+      ],
+      "code_refs": [
+        {
+          "path": "client/src/stores/codemapStore.ts",
+          "start_line": 465,
+          "end_line": 465,
+          "symbol": "AI 生成请求"
+        },
+        {
+          "path": "client/src/stores/codemapStore.ts",
+          "start_line": 489,
+          "end_line": 489,
+          "symbol": "持久化存储"
+        },
+        {
+          "path": "client/src/stores/codemapStore.ts",
+          "start_line": 484,
+          "end_line": 484,
+          "symbol": "内存态更新"
+        }
+      ],
+      "trace_guide": {
+        "short": "## Motivation",
+        "long": "## Motivation\nCodeMap 的生成是高耗时操作（20s-60s），系统必须确保一旦生成成功，数据即刻落地，防止崩溃导致分析丢失。\n\n## Details\n1. **请求后端 [2a]**: 后端接收到文件路径和查询词，调用 LLM 进行静态代码分析并构建关系拓扑。\n2. **即时渲染 [2c]**: 为了提升用户体验，数据一返回即更新内存状态，用户可以看到加载完成的图表。\n3. **同步写入 [2b]**: 在后台静默调用保存接口，将序列化后的 JSON 写入项目根目录下的持久化文件中。"
+      }
+    },
+    {
+      "node_id": "loc_trace_3_3a",
+      "title": "触发导出",
+      "summary": "用户选择导出格式（JSON/MD/HTML），前端将请求转发至后端处理系统。",
+      "children": [],
+      "code_refs": [
+        {
+          "path": "client/src/components/Header.tsx",
+          "start_line": 23,
+          "end_line": 23,
+          "symbol": "触发导出"
+        }
+      ],
+      "trace_guide": {
+        "short": "用户选择导出格式（JSON/MD/HTML），前端将请求转发至后端处理系统。",
+        "long": "const exportPath = await window.__TAURI__.core.invoke('export_codemap', {"
+      }
+    },
+    {
+      "node_id": "loc_trace_3_3b",
+      "title": "外部导入",
+      "summary": "通过系统对话框选择外部 JSON 文件，通过 store 逻辑注入到当前项目。",
+      "children": [],
+      "code_refs": [
+        {
+          "path": "client/src/components/Sidebar.tsx",
+          "start_line": 69,
+          "end_line": 69,
+          "symbol": "外部导入"
+        }
+      ],
+      "trace_guide": {
+        "short": "通过系统对话框选择外部 JSON 文件，通过 store 逻辑注入到当前项目。",
+        "long": "await importHistory(selected)"
+      }
+    },
+    {
+      "node_id": "trace_3",
+      "title": "导入/导出扩展同步",
+      "summary": "支持将数据同步至外部文件（Markdown/JSON），实现跨项目或跨团队的共享。",
+      "children": [
+        "loc_trace_3_3a",
+        "loc_trace_3_3b"
+      ],
+      "code_refs": [
+        {
+          "path": "client/src/components/Header.tsx",
+          "start_line": 23,
+          "end_line": 23,
+          "symbol": "触发导出"
+        },
+        {
+          "path": "client/src/components/Sidebar.tsx",
+          "start_line": 69,
+          "end_line": 69,
+          "symbol": "外部导入"
+        }
+      ],
+      "trace_guide": {
+        "short": "## Motivation",
+        "long": "## Motivation\n数据不应只局限于本地数据库。导出功能实现了从内存状态到人类可读文档（Markdown）的转换，导入功能实现了协作同步。\n\n## Details\n1. **格式转换 [3a]**: 后端根据传入的 format 参数，利用模板引擎将 CodeMap 数据结构转换为 Markdown 或 HTML 格式，并调用系统保存对话框。\n2. **数据注入 [3b]**: 导入时，后端验证 JSON schema 的有效性。一旦有效，便会更新本地索引，使新导入的内容出现在历史侧边栏中。"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "trace_1",
+      "to": "loc_trace_1_1a",
+      "edge_type": "calls"
+    },
+    {
+      "from": "trace_1",
+      "to": "loc_trace_1_1b",
+      "edge_type": "calls"
+    },
+    {
+      "from": "trace_1",
+      "to": "loc_trace_1_1c",
+      "edge_type": "calls"
+    },
+    {
+      "from": "trace_2",
+      "to": "loc_trace_2_2a",
+      "edge_type": "calls"
+    },
+    {
+      "from": "trace_2",
+      "to": "loc_trace_2_2b",
+      "edge_type": "calls"
+    },
+    {
+      "from": "trace_2",
+      "to": "loc_trace_2_2c",
+      "edge_type": "calls"
+    },
+    {
+      "from": "trace_1",
+      "to": "trace_2",
+      "edge_type": "calls"
+    },
+    {
+      "from": "trace_3",
+      "to": "loc_trace_3_3a",
+      "edge_type": "calls"
+    },
+    {
+      "from": "trace_3",
+      "to": "loc_trace_3_3b",
+      "edge_type": "calls"
+    },
+    {
+      "from": "trace_2",
+      "to": "trace_3",
+      "edge_type": "calls"
+    }
+  ]
+}

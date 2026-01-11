@@ -1,0 +1,61 @@
+#compdef deepwiki dw
+
+# deepwiki zsh completion
+
+_deepwiki() {
+    local -a commands
+    commands=(
+        'read_wiki_structure:Get repository documentation structure'
+        'rws:[alias] Get repository documentation structure'
+        'str:[alias] Get repository documentation structure'
+        'read_wiki_contents:Read specific documentation content'
+        'rwc:[alias] Read specific documentation content'
+        'cont:[alias] Read specific documentation content'
+        'ask_question:Ask questions about the repository'
+        'aq:[alias] Ask questions about the repository'
+        'ask:[alias] Ask questions about the repository'
+    )
+
+    local -a options
+    options=(
+        '--repoName[Repository name (e.g., "owner/repo")]:repo:'
+        '--topic[Documentation topic name]:topic:'
+        '--question[Your question about the repository]:question:'
+        '--lang[Language (en|zh)]:lang:(en zh)'
+        '--help[Show help]'
+        {-r,--repoName,--repo}'[Repository name]:repo:'
+        {-t,--topic}'[Documentation topic]:topic:'
+        {-q,--question}'[Question]:question:'
+        {-l,--lang}'[Language]:lang:(en zh)'
+        {-h,--help}'[Show help]'
+    )
+
+    case $words[1] in
+        read_wiki_structure|rws|str)
+            _arguments -C \
+                '--repoName[Repository name]:repo:' \
+                '--lang[Language]:lang:(en zh)' \
+                '--help[Show help]'
+            ;;
+        read_wiki_contents|rwc|cont)
+            _arguments -C \
+                '--repoName[Repository name]:repo:' \
+                '--topic[Documentation topic]:topic:' \
+                '--lang[Language]:lang:(en zh)' \
+                '--help[Show help]'
+            ;;
+        ask_question|aq|ask)
+            _arguments -C \
+                '--repoName[Repository name]:repo:' \
+                '--question[Your question]:question:' \
+                '--lang[Language]:lang:(en zh)' \
+                '--help[Show help]'
+            ;;
+        *)
+            _describe -t commands 'deepwiki commands' commands
+            _describe -t options 'global options' options
+            ;;
+    esac
+}
+
+_deepwiki "$@"

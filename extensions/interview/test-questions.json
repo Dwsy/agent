@@ -1,0 +1,22 @@
+{
+  "title": "Project Setup",
+  "questions": [
+    {
+      "id": "framework",
+      "type": "single",
+      "question": "Which framework should we use?",
+      "options": ["React", "Vue", "Svelte", "Solid"],
+      "recommended": "Svelte"
+    },
+    {
+      "id": "screenshot",
+      "type": "image",
+      "question": "Attach a screenshot or mockup"
+    },
+    {
+      "id": "notes",
+      "type": "text",
+      "question": "Any additional requirements?"
+    }
+  ]
+}

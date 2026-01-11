@@ -1,0 +1,16 @@
+{
+  "name": "@codemap/generator",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "build": "bun build src/index.ts --outdir dist --target node",
+    "dev": "bun run src/index.ts",
+    "generate": "bun run src/index.ts generate",
+    "analyze": "bun run src/index.ts analyze"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  }
+}
