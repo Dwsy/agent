@@ -3,6 +3,8 @@ name: Deploy Landing Page to GitHub Pages
 on:
   push:
     branches: [main]
+    tags:
+      - "landing-v*"
   workflow_dispatch:
 
 permissions:
