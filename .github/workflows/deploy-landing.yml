@@ -13,6 +13,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -38,7 +40,7 @@ jobs:
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git checkout main
+          git checkout ${{ github.ref_name }}
           git add docs/
           git diff --staged --quiet || git commit -m "chore: Update landing page build"
-          git push origin main
+          git push origin ${{ github.ref_name }}
