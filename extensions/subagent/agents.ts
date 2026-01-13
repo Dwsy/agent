@@ -1,7 +1,5 @@
 /**
- * Subagent 配置加载和代理发现
- * 从 .md 文件的 YAML frontmatter 读取配置
- * 支持环境变量覆盖模型配置
+ * Agent discovery and configuration
  */
 
 import * as fs from "node:fs";
@@ -13,8 +11,9 @@ export type AgentScope = "user" | "project" | "both";
 export interface AgentConfig {
 	name: string;
 	description: string;
-	tools: string[];
-	model: string;
+	tools?: string[];
+	model?: string;
+	provider?: string;
 	systemPrompt: string;
 	source: "user" | "project";
 	filePath: string;
@@ -55,7 +54,27 @@ function parseFrontmatter(content: string): { frontmatter: Record<string, string
 	return { frontmatter, body };
 }
 
-function loadAgentsFromDir(dir: string, source: "user" | "project", envOverrides: Record<string, string>): AgentConfig[] {
+function isDirectory(p: string): boolean {
+	try {
+		return fs.statSync(p).isDirectory();
+	} catch {
+		return false;
+	}
+}
+
+function findNearestProjectAgentsDir(cwd: string): string | null {
+	let currentDir = cwd;
+	while (true) {
+		const candidate = path.join(currentDir, ".pi", "agents");
+		if (isDirectory(candidate)) return candidate;
+
+		const parentDir = path.dirname(currentDir);
+		if (parentDir === currentDir) return null;
+		currentDir = parentDir;
+	}
+}
+
+export function loadAgentsFromDir(dir: string, source: "user" | "project"): AgentConfig[] {
 	const agents: AgentConfig[] = [];
 
 	if (!fs.existsSync(dir)) {
@@ -87,44 +106,18 @@ function loadAgentsFromDir(dir: string, source: "user" | "project", envOverrides
 			continue;
 		}
 
-		// 解析 tools
-		let tools: string[] = [];
-		if (frontmatter.tools) {
-			tools = frontmatter.tools.split(",").map((t: string) => t.trim()).filter(Boolean);
-		}
-
-		// 解析 model（支持环境变量覆盖）
-		// 默认根据代理类型选择合适模型
-		let model = frontmatter.model;
-		if (!model) {
-			// 根据代理名称选择默认模型
-			switch (frontmatter.name) {
-				case 'scout':
-					model = 'glm-4.7'; // 快速侦察
-					break;
-				case 'planner':
-					model = 'claude-opus-4-5-thinking'; // 推理能力强
-					break;
-				case 'reviewer':
-					model = 'gemini-3-pro-high'; // 审查能力强
-					break;
-				case 'worker':
-					model = 'glm-4.7'; // 通用任务
-					break;
-				default:
-					model = 'glm-4.7';
-			}
-		}
-		const envKey = `MODEL_${frontmatter.name.toUpperCase()}`;
-		if (envOverrides[envKey]) {
-			model = envOverrides[envKey];
-		}
+		const tools = frontmatter.tools
+			?.split(",")
+			.map((t) => t.trim())
+			.filter(Boolean);
+		const provider = frontmatter.provider;
 
 		agents.push({
 			name: frontmatter.name,
 			description: frontmatter.description,
-			tools: tools.length > 0 ? tools : ["read", "grep", "find", "ls", "bash"],
-			model,
+			tools: tools && tools.length > 0 ? tools : undefined,
+			model: frontmatter.model,
+			provider,
 			systemPrompt: body,
 			source,
 			filePath,
@@ -134,48 +127,12 @@ function loadAgentsFromDir(dir: string, source: "user" | "project", envOverrides
 	return agents;
 }
 
-function isDirectory(p: string): boolean {
-	try {
-		return fs.statSync(p).isDirectory();
-	} catch {
-		return false;
-	}
-}
-
-function findNearestProjectAgentsDir(cwd: string): string | null {
-	let currentDir = cwd;
-	while (true) {
-		const candidate = path.join(currentDir, ".pi", "agents");
-		if (isDirectory(candidate)) return candidate;
-
-		const parentDir = path.dirname(currentDir);
-		if (parentDir === currentDir) return null;
-		currentDir = parentDir;
-	}
-}
-
-/**
- * 收集环境变量覆盖（仅模型配置）
- */
-function getEnvOverrides(): Record<string, string> {
-	const overrides: Record<string, string> = {};
-	const envKeys = ["MODEL_SCOUT", "MODEL_PLANNER", "MODEL_REVIEWER", "MODEL_WORKER"];
-	for (const key of envKeys) {
-		const value = process.env[key];
-		if (value) {
-			overrides[key] = value;
-		}
-	}
-	return overrides;
-}
-
 export function discoverAgents(cwd: string, scope: AgentScope): AgentDiscoveryResult {
 	const userDir = path.join(os.homedir(), ".pi", "agent", "agents");
 	const projectAgentsDir = findNearestProjectAgentsDir(cwd);
-	const envOverrides = getEnvOverrides();
 
-	const userAgents = scope === "project" ? [] : loadAgentsFromDir(userDir, "user", envOverrides);
-	const projectAgents = scope === "user" || !projectAgentsDir ? [] : loadAgentsFromDir(projectAgentsDir, "project", envOverrides);
+	const userAgents = scope === "project" ? [] : loadAgentsFromDir(userDir, "user");
+	const projectAgents = scope === "user" || !projectAgentsDir ? [] : loadAgentsFromDir(projectAgentsDir, "project");
 
 	const agentMap = new Map<string, AgentConfig>();
 
