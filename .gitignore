@@ -37,6 +37,10 @@ pi-debug.log
 *.tmp
 *.tsbuildinfo
 
+# Backup files
+*.backup
+*.bak
+
 # Package manager locks (optional - uncomment if you want to ignore them)
 # package-lock.json
 # yarn.lock
@@ -51,6 +55,7 @@ auth.json
 .env
 .env.local
 .env.*.local
+skills/**/.env
 
 # Models configuration (contains API keys)
 models.json
@@ -65,6 +70,25 @@ models.json
 # OS files
 Thumbs.db
 .DS_Store?
+
+# Large media files
+*.mp4
+*.mov
+*.avi
+*.mkv
+
+# Compressed archives
+*.zip
+*.tar
+*.tar.gz
+*.rar
+*.7z
+
+# Python virtual environments
+.venv/
+venv/
+env/
+ENV/
 
 # Test artifacts
 test/temp/
