@@ -102,3 +102,9 @@ plugin/
 
 # Local skills (not committed)
 skills/surge-manager/
+
+# User settings (personal configuration)
+settings.json
+
+# Docs build artifacts
+docs/assets/
