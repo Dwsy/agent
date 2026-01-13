@@ -7,6 +7,8 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { execSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import type { Question, QuestionsFile } from "./schema.js";
+import { createVoiceAgent, fetchVoices, type VoiceInfo } from "./elevenlabs.js";
+import { loadSettings, updateVoiceSettings } from "./settings.js";
 
 function getGitBranch(cwd: string): string | null {
 	try {
@@ -189,13 +191,22 @@ export interface InterviewServerOptions {
 	sessionId: string;
 	cwd: string;
 	timeout: number;
+	port?: number;
 	verbose?: boolean;
 	theme?: InterviewThemeConfig;
+	voiceApiKey?: string;
+	voiceAutoStart?: boolean;
 }
 
 export interface InterviewServerCallbacks {
-	onSubmit: (responses: ResponseItem[]) => void;
+	onSubmit: (responses: ResponseItem[], transcript?: TranscriptEntry[]) => void;
 	onCancel: (reason?: "timeout" | "user" | "stale") => void;
+}
+
+export interface TranscriptEntry {
+	role: "ai" | "user";
+	text: string;
+	timestamp: number;
 }
 
 export interface InterviewServerHandle {
@@ -223,6 +234,15 @@ const FORM_DIR = join(dirname(fileURLToPath(import.meta.url)), "form");
 const TEMPLATE = readFileSync(join(FORM_DIR, "index.html"), "utf-8");
 const STYLES = readFileSync(join(FORM_DIR, "styles.css"), "utf-8");
 const SCRIPT = readFileSync(join(FORM_DIR, "script.js"), "utf-8");
+const VOICE_SCRIPT = existsSync(join(FORM_DIR, "voice.js"))
+	? readFileSync(join(FORM_DIR, "voice.js"), "utf-8")
+	: null;
+const SETTINGS_SCRIPT = existsSync(join(FORM_DIR, "settings.js"))
+	? readFileSync(join(FORM_DIR, "settings.js"), "utf-8")
+	: "";
+
+let voicesCache: { voices: VoiceInfo[]; timestamp: number } | null = null;
+const VOICE_CACHE_TTL_MS = 5 * 60 * 1000;
 const THEMES_DIR = join(FORM_DIR, "themes");
 const BUILTIN_THEMES = new Map<string, { light: string; dark: string }>([
 	[
@@ -376,7 +396,7 @@ export async function startInterviewServer(
 	options: InterviewServerOptions,
 	callbacks: InterviewServerCallbacks
 ): Promise<InterviewServerHandle> {
-	const { questions, sessionToken, sessionId, cwd, timeout, verbose } = options;
+	const { questions, sessionToken, sessionId, cwd, timeout, port, verbose, voiceApiKey, voiceAutoStart } = options;
 	const questionById = new Map<string, Question>();
 	for (const question of questions.questions) {
 		questionById.set(question.id, question);
@@ -452,6 +472,7 @@ export async function startInterviewServer(
 			if (method === "GET" && url.pathname === "/") {
 				if (!validateTokenQuery(url, sessionToken, res)) return;
 				touchHeartbeat();
+				const settings = loadSettings();
 				const inlineData = safeInlineJSON({
 					questions: questions.questions,
 					title: questions.title,
@@ -465,6 +486,13 @@ export async function startInterviewServer(
 					theme: {
 						mode: themeMode,
 						toggleHotkey: themeConfig.toggleHotkey,
+					},
+					voice: {
+						autoStart: voiceAutoStart ?? false,
+						apiKeyConfigured: !!voiceApiKey,
+						volume: settings.voice?.volume ?? 0.7,
+						greeting: questions.voice?.greeting,
+						closing: questions.voice?.closing,
 					},
 				});
 				const html = TEMPLATE
@@ -481,6 +509,16 @@ export async function startInterviewServer(
 			if (method === "GET" && url.pathname === "/health") {
 				if (!validateTokenQuery(url, sessionToken, res)) return;
 				sendJson(res, 200, { ok: true });
+				return;
+			}
+
+			if (method === "GET" && url.pathname === "/voice/status") {
+				if (!validateTokenQuery(url, sessionToken, res)) return;
+				sendJson(res, 200, {
+					ok: true,
+					available: !!voiceApiKey,
+					reason: voiceApiKey ? undefined : "Voice API key not configured.",
+				});
 				return;
 			}
 
@@ -534,6 +572,92 @@ export async function startInterviewServer(
 				return;
 			}
 
+			if (method === "GET" && url.pathname === "/voice.js") {
+				if (!validateTokenQuery(url, sessionToken, res)) return;
+				if (!VOICE_SCRIPT) {
+					sendText(res, 404, "Voice module not available");
+					return;
+				}
+				res.writeHead(200, {
+					"Content-Type": "application/javascript; charset=utf-8",
+					"Cache-Control": "no-store",
+				});
+				res.end(VOICE_SCRIPT);
+				return;
+			}
+
+			if (method === "GET" && url.pathname === "/settings.js") {
+				if (!validateTokenQuery(url, sessionToken, res)) return;
+				res.writeHead(200, {
+					"Content-Type": "application/javascript; charset=utf-8",
+					"Cache-Control": "no-store",
+				});
+				res.end(SETTINGS_SCRIPT);
+				return;
+			}
+
+			if (method === "GET" && url.pathname === "/settings/voices") {
+				if (!validateTokenQuery(url, sessionToken, res)) return;
+
+				if (!voiceApiKey) {
+					sendJson(res, 400, { ok: false, error: "Voice API key not configured" });
+					return;
+				}
+
+				try {
+					const now = Date.now();
+					if (voicesCache && now - voicesCache.timestamp < VOICE_CACHE_TTL_MS) {
+						sendJson(res, 200, { ok: true, voices: voicesCache.voices });
+						return;
+					}
+
+					const voices = await fetchVoices(voiceApiKey);
+					voicesCache = { voices, timestamp: now };
+					sendJson(res, 200, { ok: true, voices });
+				} catch (err) {
+					const message = err instanceof Error ? err.message : "Failed to fetch voices";
+					sendJson(res, 500, { ok: false, error: message });
+				}
+				return;
+			}
+
+			if (method === "GET" && url.pathname === "/settings") {
+				if (!validateTokenQuery(url, sessionToken, res)) return;
+
+				const currentSettings = loadSettings();
+				sendJson(res, 200, {
+					ok: true,
+					settings: {
+						voiceId: currentSettings.voice?.voiceId || "",
+						volume: currentSettings.voice?.volume ?? 0.7,
+					},
+				});
+				return;
+			}
+
+			if (method === "POST" && url.pathname === "/settings") {
+				const body = await parseJSONBody(req).catch(() => null);
+				if (!body) {
+					sendJson(res, 400, { ok: false, error: "Invalid body" });
+					return;
+				}
+				if (!validateTokenBody(body, sessionToken, res)) return;
+
+				const payload = body as { voiceId?: string; volume?: number };
+
+				try {
+					updateVoiceSettings({
+						voiceId: payload.voiceId,
+						volume: payload.volume,
+					});
+					sendJson(res, 200, { ok: true });
+				} catch (err) {
+					const message = err instanceof Error ? err.message : "Failed to save settings";
+					sendJson(res, 500, { ok: false, error: message });
+				}
+				return;
+			}
+
 			if (method === "POST" && url.pathname === "/heartbeat") {
 				const body = await parseJSONBody(req).catch(() => null);
 				if (!body) {
@@ -543,6 +667,41 @@ export async function startInterviewServer(
 				if (!validateTokenBody(body, sessionToken, res)) return;
 				touchHeartbeat();
 				sendJson(res, 200, { ok: true });
+				return;
+			}
+
+			if (method === "POST" && url.pathname === "/voice/init") {
+				const body = await parseJSONBody(req).catch((err) => {
+					if (err instanceof BodyTooLargeError) {
+						sendJson(res, err.statusCode, { ok: false, error: err.message });
+						return null;
+					}
+					sendJson(res, 400, { ok: false, error: err.message });
+					return null;
+				});
+				if (!body) return;
+				if (!validateTokenBody(body, sessionToken, res)) return;
+
+				const payload = body as { apiKey?: string };
+				const apiKey = (payload.apiKey && typeof payload.apiKey === "string" ? payload.apiKey : null) || voiceApiKey;
+				if (!apiKey) {
+					sendJson(res, 400, { ok: false, error: "Voice API key not configured." });
+					return;
+				}
+
+				try {
+					const currentSettings = loadSettings();
+					const { agentId, signedUrl } = await createVoiceAgent({
+						apiKey,
+						questions,
+						sessionId,
+						voiceId: currentSettings.voice?.voiceId,
+					});
+					sendJson(res, 200, { ok: true, agentId, signedUrl });
+				} catch (err) {
+					const message = err instanceof Error ? err.message : "Voice initialization failed";
+					sendJson(res, 500, { ok: false, error: message });
+				}
 				return;
 			}
 
@@ -593,14 +752,34 @@ export async function startInterviewServer(
 				const payload = body as {
 					responses?: Array<{ id: string; value: string | string[]; attachments?: string[] }>;
 					images?: Array<{ id: string; filename: string; mimeType: string; data: string; isAttachment?: boolean }>;
+					transcript?: TranscriptEntry[];
 				};
 
 				const responsesInput = Array.isArray(payload.responses) ? payload.responses : [];
 				const imagesInput = Array.isArray(payload.images) ? payload.images : [];
+				const transcript = Array.isArray(payload.transcript) ? payload.transcript : undefined;
 
 				if (imagesInput.length > MAX_IMAGES) {
 					sendJson(res, 400, { ok: false, error: `Too many images (max ${MAX_IMAGES})` });
 					return;
+				}
+
+				if (payload.transcript !== undefined && !Array.isArray(payload.transcript)) {
+					sendJson(res, 400, { ok: false, error: "Invalid transcript format" });
+					return;
+				}
+				if (transcript) {
+					for (const entry of transcript) {
+						if (
+							!entry ||
+							(entry.role !== "ai" && entry.role !== "user") ||
+							typeof entry.text !== "string" ||
+							typeof entry.timestamp !== "number"
+						) {
+							sendJson(res, 400, { ok: false, error: "Invalid transcript entry" });
+							return;
+						}
+					}
 				}
 
 				const responses: ResponseItem[] = [];
@@ -699,7 +878,7 @@ export async function startInterviewServer(
 				markCompleted();
 				unregisterSession(sessionId);
 				sendJson(res, 200, { ok: true });
-				setImmediate(() => callbacks.onSubmit(responses));
+				setImmediate(() => callbacks.onSubmit(responses, transcript));
 				return;
 			}
 
@@ -716,7 +895,7 @@ export async function startInterviewServer(
 		};
 
 		server.once("error", onError);
-		server.listen(0, "127.0.0.1", () => {
+		server.listen(port ?? 0, "127.0.0.1", () => {
 			server.off("error", onError);
 			const addr = server.address();
 			if (!addr || typeof addr === "string") {

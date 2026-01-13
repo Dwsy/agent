@@ -18,7 +18,13 @@
   --success: #b5bd68;
   --warning: #d2a456;
   --error: #cc6666;
+  --error-bg: rgba(204, 102, 102, 0.12);
   --focus-ring: rgba(201, 183, 154, 0.2);
+  --overlay-bg: rgba(28, 25, 23, 0.95);
+  --voice-active-color: #7dd3a3;
+  --voice-active-color-dim: rgba(125, 211, 163, 0.35);
+  --voice-indicator-bg: rgba(20, 18, 16, 0.92);
+  --voice-indicator-text: #f3f0ea;
 
   --font-body: "Cormorant Garamond", Cormorant, "Crimson Pro", "Libre Baskerville", Georgia, serif;
   --font-ui: "Cormorant Garamond", Cormorant, "Crimson Pro", "Libre Baskerville", Georgia, serif;

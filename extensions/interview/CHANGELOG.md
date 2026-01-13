@@ -2,9 +2,41 @@
 
 ## Unreleased
 
+### Added
+- **Interview Settings Modal**: Gear icon button in header opens settings dialog
+  - Voice selection dropdown populated from ElevenLabs API (with 5-minute cache)
+  - Voice preview button to hear samples before selecting
+  - Volume slider with percentage display (persists to settings.json)
+  - Inline volume control in voice indicator for quick mid-conversation adjustment
+  - Focus trap for accessibility (Tab/Shift+Tab cycling)
+  - Auto-restart voice session when voice changes
+- **Light markdown in questions**: Question titles and context now render `**bold**`, `` `code` ``, and auto-break numbered lists
+- **Voice auto-submit**: Form automatically submits after all questions answered (3s delay)
+- **Voice stop via Escape**: Press Escape key to stop voice mode
+- **Fixed port setting**: Configure `port` in settings to persist browser permissions (microphone) across sessions
+- Shared settings module (`settings.ts`) for consistent settings access across tool and server
+- Volume passed in inline page data to eliminate async initialization race condition
+- ElevenLabs API key permissions documented in README
+
 ### Changed
+- Voice mode marked as experimental in README and settings modal
 - Migrated from `~/.pi/agent/tools/` to `~/.pi/agent/extensions/` folder structure (pi-mono v0.35.0)
 - Updated to new extension API: `CustomToolFactory` -> `ExtensionAPI` with `pi.registerTool()`
+- Voice agent creation now uses configured voiceId from settings (default: Rachel)
+- Voice mode no longer auto-advances form after capturing answer (lets AI control flow)
+- Voice agent prompt updated with patience instructions (no pushy follow-ups during silence)
+- Voice toggle icon increased from 18px to 24px
+
+### Fixed
+- Radio/checkbox alignment on multi-line option text (now aligns to top)
+- `fileInput is not defined` error in keyboard handler
+- `pi.cwd` changed to `ctx.cwd` in tool execute function
+- Removed redundant microphone permission pre-check (ElevenLabs SDK handles it)
+- **Paste handling**: Regular text no longer intercepted as image attachment; only paths ending with image extensions (`.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`) are treated as attachments
+- **Image limit enforcement**: `MAX_IMAGES` limit now consistently enforced for both question images and attachments (was only checking question images)
+- **Voice mode sync**: Pasted/dropped images and removed images now properly notify voice controller
+  - Added `notifyAnswerUpdate` to `addPastedImage`, paste handler for paths, `clearImage`, and remove button handlers
+  - Voice mode now correctly tracks answered/unanswered state after image operations
 
 ---
 
@@ -51,6 +83,33 @@
 ---
 
 ## 2026-01-01
+
+### Added
+- **Voice interview mode**: Natural voice-based interviewing powered by ElevenLabs Conversational AI
+  - Questions read aloud, answers captured via speech
+  - Bidirectional sync: click/keyboard navigate to any question, AI adapts
+  - Intelligent cycling through unanswered questions
+  - Hybrid mode: type/click anytime during voice session
+  - Visual indicators: voice-focus styling, status indicator with progress
+  - Full transcript returned with responses
+  - Activation via URL param (`?voice=true`), toggle button, or schema config
+- Voice controller state machine with WebRTC connection management
+- `window.__INTERVIEW_API__` bridge for cross-module communication
+- `getAnsweredQuestionIds()` and `getAllUnanswered()` helper functions
+- `focusQuestion()` now accepts `source` parameter ('user' | 'voice')
+- Voice-specific CSS variables in all theme files
+- ElevenLabs agent auto-creation from interview questions
+- API key input UI with localStorage persistence
+
+### Changed
+- `InterviewServerOptions` extended with `voiceApiKey`
+- `InterviewServerCallbacks.onSubmit` now accepts optional transcript
+- `InterviewDetails` extended with `transcript` field
+- `buildPayload()` includes transcript when voice mode used
+
+---
+
+## 2026-01-02
 
 ### Added
 - Theme system with light/dark mode support

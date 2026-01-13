@@ -1,13 +1,14 @@
 import { Type } from "@sinclair/typebox";
 import { Text } from "@mariozechner/pi-tui";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
+import * as fs from "node:fs";
 import { randomUUID } from "node:crypto";
 import { execSync } from "node:child_process";
-import { startInterviewServer, getActiveSessions, type ResponseItem } from "./server.js";
+import { startInterviewServer, getActiveSessions, type ResponseItem, type TranscriptEntry } from "./server.js";
 import { validateQuestions, type QuestionsFile } from "./schema.js";
+import { loadSettings, updateVoiceSettings, type InterviewSettings, type InterviewThemeSettings } from "./settings.js";
 
 function formatTimeAgo(timestamp: number): string {
 	const seconds = Math.floor((Date.now() - timestamp) / 1000);
@@ -51,22 +52,7 @@ interface InterviewDetails {
 	responses: ResponseItem[];
 	url: string;
 	queuedMessage?: string;
-}
-
-interface InterviewSettings {
-	browser?: string;
-	timeout?: number;
-	theme?: InterviewThemeSettings;
-}
-
-type ThemeMode = "auto" | "light" | "dark";
-
-interface InterviewThemeSettings {
-	mode?: ThemeMode;
-	name?: string;
-	lightPath?: string;
-	darkPath?: string;
-	toggleHotkey?: string;
+	transcript?: TranscriptEntry[];
 }
 
 const InterviewParams = Type.Object({
@@ -75,6 +61,9 @@ const InterviewParams = Type.Object({
 		Type.Number({ description: "Seconds before auto-timeout", default: 600 })
 	),
 	verbose: Type.Optional(Type.Boolean({ description: "Enable debug logging", default: false })),
+	voice: Type.Optional(
+		Type.Boolean({ description: "Enable voice auto-start (persists to settings)" })
+	),
 	theme: Type.Optional(
 		Type.Object(
 			{
@@ -89,15 +78,7 @@ const InterviewParams = Type.Object({
 	),
 });
 
-function getSettings(): InterviewSettings {
-	const settingsPath = path.join(os.homedir(), ".pi/agent/settings.json");
-	try {
-		const settings = JSON.parse(fs.readFileSync(settingsPath, "utf-8"));
-		return (settings.interview as InterviewSettings) ?? {};
-	} catch {
-		return {};
-	}
-}
+
 
 function expandHome(value: string): string {
 	if (value.startsWith("~" + path.sep)) {
@@ -166,18 +147,25 @@ export default function (pi: ExtensionAPI) {
 		name: "interview",
 		label: "Interview",
 		description:
-			"Present an interactive form to gather user responses to questions. Image responses and attachments are returned as file paths - use the read tool directly to display them (no need to verify with file command first).",
+			"Present an interactive form to gather user responses. " +
+			"Use proactively when: choosing between multiple approaches, gathering requirements before implementation, " +
+			"exploring design tradeoffs, or when decisions have multiple dimensions worth discussing. " +
+			"Provides better UX than back-and-forth chat for structured input. " +
+			"Image responses and attachments are returned as file paths - use read tool directly to display them. " +
+			'Questions JSON format: { "title": "...", "questions": [{ "id": "q1", "type": "single|multi|text|image", "question": "...", "options": ["A", "B"] }] }. ' +
+			"Options must be plain strings (not objects). Types: single (radio), multi (checkbox), text (textarea), image (file upload).",
 		parameters: InterviewParams,
 
 		async execute(_toolCallId, params, onUpdate, ctx, signal) {
-			const { questions, timeout, verbose, theme } = params as {
+			const { questions, timeout, verbose, voice, theme } = params as {
 				questions: string;
 				timeout?: number;
 				verbose?: boolean;
+				voice?: boolean;
 				theme?: InterviewThemeSettings;
 			};
 
-			if (!pi.hasUI) {
+			if (!ctx.hasUI) {
 				throw new Error(
 					"Interview tool requires interactive mode with browser support. " +
 						"Cannot run in headless/RPC/print mode."
@@ -191,10 +179,16 @@ export default function (pi: ExtensionAPI) {
 				};
 			}
 
-			const settings = getSettings();
+			const settings = loadSettings();
 			const timeoutSeconds = timeout ?? settings.timeout ?? 600;
-			const themeConfig = mergeThemeConfig(settings.theme, theme, pi.cwd);
-			const questionsData = loadQuestions(questions, pi.cwd);
+			const themeConfig = mergeThemeConfig(settings.theme, theme, ctx.cwd);
+			const questionsData = loadQuestions(questions, ctx.cwd);
+			const voiceApiKey = settings.voice?.apiKey;
+
+			if (voice !== undefined) {
+				updateVoiceSettings({ autoStart: voice });
+			}
+			const voiceAutoStart = voice ?? settings.voice?.autoStart ?? false;
 
 			if (signal?.aborted) {
 				return {
@@ -220,7 +214,8 @@ export default function (pi: ExtensionAPI) {
 				const finish = (
 					status: InterviewDetails["status"],
 					responses: ResponseItem[] = [],
-					cancelReason?: "timeout" | "user" | "stale"
+					cancelReason?: "timeout" | "user" | "stale",
+					transcript?: TranscriptEntry[]
 				) => {
 					if (resolved) return;
 					resolved = true;
@@ -244,7 +239,7 @@ export default function (pi: ExtensionAPI) {
 
 					resolve({
 						content: [{ type: "text", text }],
-						details: { status, url, responses },
+						details: { status, url, responses, transcript },
 					});
 				};
 
@@ -256,13 +251,16 @@ export default function (pi: ExtensionAPI) {
 						questions: questionsData,
 						sessionToken,
 						sessionId,
-						cwd: pi.cwd,
+						cwd: ctx.cwd,
 						timeout: timeoutSeconds,
+						port: settings.port,
 						verbose,
 						theme: themeConfig,
+						voiceApiKey,
+						voiceAutoStart,
 					},
 					{
-						onSubmit: (responses) => finish("completed", responses),
+						onSubmit: (responses, transcript) => finish("completed", responses, undefined, transcript),
 						onCancel: (reason) =>
 							reason === "timeout" ? finish("timeout") : finish("cancelled", [], reason),
 					}
@@ -286,13 +284,13 @@ export default function (pi: ExtensionAPI) {
 								"New interview ready:",
 								`  Title: ${questionsData.title || "Interview"}`,
 							];
-							const normalizedCwd = pi.cwd.startsWith(os.homedir())
-								? "~" + pi.cwd.slice(os.homedir().length)
-								: pi.cwd;
+							const normalizedCwd = ctx.cwd.startsWith(os.homedir())
+								? "~" + ctx.cwd.slice(os.homedir().length)
+								: ctx.cwd;
 							const gitBranch = (() => {
 								try {
 									return execSync("git rev-parse --abbrev-ref HEAD", {
-										cwd: pi.cwd,
+										cwd: ctx.cwd,
 										encoding: "utf8",
 										timeout: 2000,
 										stdio: ["pipe", "pipe", "pipe"],

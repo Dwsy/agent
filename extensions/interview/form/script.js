@@ -44,6 +44,7 @@
     inSubmitArea: false,
     cards: [],
   };
+  let navDebounce = null;
   const session = {
     storageKey: null,
     expired: false,
@@ -370,6 +371,19 @@
     el.textContent = text || "";
   }
 
+  function renderLightMarkdown(text) {
+    if (!text) return "";
+    let html = text
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+    html = html.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+    html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
+    html = html.replace(/\n/g, "<br>");
+    html = html.replace(/\s(\d+\.)\s/g, "<br>$1 ");
+    return html;
+  }
+
   function isPrintableKey(event) {
     if (event.metaKey || event.ctrlKey || event.altKey) return false;
     return event.key.length === 1;
@@ -598,6 +612,7 @@
             fileState.delete(questionId);
             manager.render(questionId);
             onUpdate();
+            notifyAnswerUpdate(questionId);
           });
 
           item.appendChild(img);
@@ -625,6 +640,7 @@
             if (idx > -1) arr.splice(idx, 1);
             manager.render(questionId);
             onUpdate();
+            notifyAnswerUpdate(questionId);
           });
 
           item.appendChild(pathText);
@@ -845,20 +861,23 @@
     }
   }
 
-  function focusQuestion(index, fromDirection = 'next') {
+  function focusQuestion(index, fromDirection = 'next', source = 'user') {
     if (index < 0 || index >= nav.cards.length) return;
     
     deactivateSubmitArea();
     
     const prevCard = nav.cards[nav.questionIndex];
     if (prevCard) {
-      prevCard.classList.remove('active', 'keyboard-nav');
+      prevCard.classList.remove('active', 'keyboard-nav', 'voice-focus');
       clearOptionHighlight(prevCard);
     }
     
     nav.questionIndex = index;
     const card = nav.cards[index];
     card.classList.add('active');
+    if (source === 'voice') {
+      card.classList.add('voice-focus');
+    }
     ensureElementVisible(card);
     
     const options = getOptionsForCard(card);
@@ -877,6 +896,29 @@
         textarea.selectionStart = textarea.selectionEnd = textarea.value.length;
       }
     }
+
+    if (source === 'user') {
+      onUserNavigatedTo(index);
+    }
+  }
+
+  function onUserNavigatedTo(questionIndex) {
+    const voice = window.VoiceController;
+    if (!voice || !voice.isActive || !voice.isActive()) return;
+    const question = questions[questionIndex];
+    if (!question) return;
+
+    voice.syncCurrentQuestion?.(questionIndex);
+    clearTimeout(navDebounce);
+    navDebounce = setTimeout(() => {
+      voice.injectContext?.({
+        type: "user_navigation",
+        questionId: question.id,
+        questionIndex: questionIndex + 1,
+        questionText: question.question,
+        currentAnswer: getQuestionValue(question) || null,
+      });
+    }, 300);
   }
 
   function nextQuestion() {
@@ -1047,7 +1089,7 @@
       return;
     }
     
-    if (fileInput && document.activeElement === fileInput) {
+    if (document.activeElement?.type === 'file') {
       if (event.key === 'Enter' || event.key === ' ') {
         return;
       }
@@ -1102,13 +1144,13 @@
     const title = document.createElement("h2");
     title.className = "question-title";
     title.id = `q-${question.id}-title`;
-    title.textContent = `${index + 1}. ${question.question}`;
+    title.innerHTML = `${index + 1}. ${renderLightMarkdown(question.question)}`;
     card.appendChild(title);
 
     if (question.context) {
       const context = document.createElement("p");
       context.className = "question-context";
-      context.textContent = question.context;
+      context.innerHTML = renderLightMarkdown(question.context);
       card.appendChild(context);
     }
 
@@ -1140,6 +1182,7 @@
           if (question.type === "multi") {
             updateDoneState(question.id);
           }
+          notifyAnswerUpdate(question.id);
         });
 
         const text = document.createElement("span");
@@ -1175,18 +1218,21 @@
           if (question.type === "multi") updateDoneState(question.id);
         }
         debounceSave();
+        notifyAnswerUpdate(question.id);
       });
       otherInput.addEventListener("focus", () => {
         if (!otherCheck.checked) {
           otherCheck.checked = true;
           if (question.type === "multi") updateDoneState(question.id);
           debounceSave();
+          notifyAnswerUpdate(question.id);
         }
       });
       otherCheck.addEventListener("change", () => {
         debounceSave();
         if (question.type === "multi") updateDoneState(question.id);
         if (otherCheck.checked) otherInput.focus();
+        notifyAnswerUpdate(question.id);
       });
       setupEdgeNavigation(otherInput);
       otherLabel.appendChild(otherCheck);
@@ -1220,7 +1266,10 @@
     if (question.type === "text") {
       const textarea = document.createElement("textarea");
       textarea.dataset.questionId = question.id;
-      textarea.addEventListener("input", debounceSave);
+      textarea.addEventListener("input", () => {
+        debounceSave();
+        notifyAnswerUpdate(question.id);
+      });
       setupEdgeNavigation(textarea);
       card.appendChild(textarea);
     }
@@ -1240,7 +1289,6 @@
         setTimeout(() => { filePickerOpen = false; }, 200);
         clearGlobalError();
         handleFileChange(question.id, input, questionImages, {
-          checkLimit: true,
           onEmpty: () => clearImage(question.id),
         });
       });
@@ -1271,6 +1319,7 @@
           e.stopPropagation();
           questionImages.addPath(question.id, normalizePath(pathInput.value.trim()));
           pathInput.value = "";
+          notifyAnswerUpdate(question.id);
         }
       });
       setupEdgeNavigation(pathInput);
@@ -1496,10 +1545,11 @@
     if (input) input.value = "";
     questionImages.removeFile(id);
     setFieldError(id, "");
+    notifyAnswerUpdate(id);
   }
 
   async function handleFileChange(questionId, input, manager, options = {}) {
-    const { checkLimit, onEmpty } = options;
+    const { onEmpty } = options;
     setFieldError(questionId, "");
 
     const file = input.files && input.files[0];
@@ -1509,7 +1559,7 @@
       return;
     }
 
-    if (checkLimit && countImages(questionId) + 1 > MAX_IMAGES) {
+    if (countUploadedFiles(questionId) + 1 > MAX_IMAGES) {
       setFieldError(questionId, `Only ${MAX_IMAGES} images allowed.`);
       input.value = "";
       return;
@@ -1529,6 +1579,7 @@
     }
 
     manager.addFile(questionId, file);
+    notifyAnswerUpdate(questionId);
   }
 
   function resolveQuestionContext(target) {
@@ -1562,11 +1613,9 @@
   }
 
   async function addPastedImage(question, file) {
-    if (question.type === "image") {
-      if (countImages(question.id) + 1 > MAX_IMAGES) {
-        setFieldError(question.id, `Only ${MAX_IMAGES} images allowed.`);
-        return;
-      }
+    if (countUploadedFiles(question.id) + 1 > MAX_IMAGES) {
+      setFieldError(question.id, `Only ${MAX_IMAGES} images allowed.`);
+      return;
     }
 
     try {
@@ -1587,6 +1636,7 @@
       revealAttachmentArea(question.id);
       attachments.addFile(question.id, file);
     }
+    notifyAnswerUpdate(question.id);
   }
 
   function handlePaste(event) {
@@ -1609,11 +1659,15 @@
     }
 
     const text = clipboard.getData("text/plain")?.trim();
-    if (text && (text.startsWith("/") || text.startsWith("~") || text.match(/^[a-zA-Z]:\\/))) {
+    const isPathLike = text && (text.startsWith("/") || text.startsWith("~") || text.match(/^[a-zA-Z]:\\/));
+    const hasImageExtension = text && /\.(png|jpe?g|gif|webp)$/i.test(text);
+    
+    if (isPathLike && hasImageExtension) {
       event.preventDefault();
       const normalizedPath = normalizePath(text);
       if (context.question.type === "image") {
         questionImages.addPath(context.question.id, normalizedPath);
+        notifyAnswerUpdate(context.question.id);
       } else {
         revealAttachmentArea(context.question.id);
         attachments.addPath(context.question.id, normalizedPath);
@@ -1621,9 +1675,12 @@
     }
   }
 
-  function countImages(excludingId) {
+  function countUploadedFiles(excludingId) {
     let count = 0;
     imageState.forEach((_value, key) => {
+      if (key !== excludingId) count += 1;
+    });
+    attachState.forEach((_value, key) => {
       if (key !== excludingId) count += 1;
     });
     return count;
@@ -1655,6 +1712,39 @@
       return questionImages.getPaths(id);
     }
     return "";
+  }
+
+  function getAnsweredQuestionIds() {
+    return questions
+      .filter((q) => {
+        if (q.type === "image") {
+          return questionImages.hasContent(q.id);
+        }
+        const value = getQuestionValue(q);
+        if (Array.isArray(value)) return value.length > 0;
+        return value !== "";
+      })
+      .map((q) => q.id);
+  }
+
+  function getAllUnanswered() {
+    const answered = new Set(getAnsweredQuestionIds());
+    return questions
+      .map((question, index) => ({ question, index }))
+      .filter(({ question }) => !answered.has(question.id));
+  }
+
+  function notifyAnswerUpdate(questionId) {
+    const voice = window.VoiceController;
+    if (!voice || !voice.isActive || !voice.isActive()) return;
+    const question = questions.find((q) => q.id === questionId);
+    if (!question) return;
+    voice.injectContext?.({
+      type: "answer_updated",
+      questionId,
+      value: getQuestionValue(question),
+    });
+    voice.injectContext?.({ type: "sync_state" });
   }
 
   function collectResponses() {
@@ -1855,7 +1945,8 @@
       }
     }
 
-    return { responses, images };
+    const transcript = window.VoiceController?.getTranscript?.();
+    return { responses, images, transcript: transcript && transcript.length ? transcript : undefined };
   }
 
   async function submitForm(event) {
@@ -2037,6 +2128,25 @@
 
     initQuestionNavigation();
   }
+
+  window.__INTERVIEW_API__ = {
+    questions,
+    nav,
+    formEl,
+    sessionToken,
+    data,
+    focusQuestion,
+    getQuestionValue,
+    getAnsweredQuestionIds,
+    getAllUnanswered,
+    debounceSave,
+    escapeSelector,
+    populateForm,
+    updateDoneState,
+    setFieldError,
+    clearFieldErrors,
+    notifyAnswerUpdate,
+  };
 
   init();
 })();

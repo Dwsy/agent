@@ -15,7 +15,23 @@
       <span class="session-id" id="session-id"></span>
     </div>
     <header class="interview-header">
-      <h1 id="form-title"></h1>
+      <div class="header-row">
+        <h1 id="form-title"></h1>
+        <div class="header-controls">
+          <button type="button" id="voice-toggle" class="voice-toggle hidden" aria-label="Toggle voice mode">
+            <svg class="voice-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v5a3 3 0 0 0 3 3z"/>
+              <path d="M19 11a1 1 0 1 0-2 0 5 5 0 0 1-10 0 1 1 0 1 0-2 0 7 7 0 0 0 6 6.92V20H9a1 1 0 0 0 0 2h6a1 1 0 1 0 0-2h-2v-2.08A7 7 0 0 0 19 11z"/>
+            </svg>
+          </button>
+          <button type="button" id="settings-button" class="settings-button" aria-label="Interview settings">
+            <svg class="settings-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+            </svg>
+          </button>
+        </div>
+      </div>
       <p id="form-description"></p>
     </header>
 
@@ -91,6 +107,79 @@
       </div>
     </div>
 
+    <div id="voice-indicator" class="voice-indicator hidden" aria-live="polite">
+      <div class="voice-indicator-status">
+        <span class="voice-indicator-speaker"></span>
+        <span class="voice-indicator-question"></span>
+      </div>
+      <div class="voice-indicator-bottom">
+        <div class="voice-indicator-volume">
+          <button type="button" id="indicator-volume-btn" class="indicator-volume-btn" aria-label="Volume">
+            <svg viewBox="0 0 24 24" width="14" height="14">
+              <path d="M11 5L6 9H2v6h4l5 4V5z"/>
+              <path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>
+              <path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>
+            </svg>
+          </button>
+          <input type="range" id="indicator-volume" class="indicator-volume-slider" min="0" max="100" value="70">
+        </div>
+        <div class="voice-indicator-remaining"></div>
+      </div>
+      <div class="voice-indicator-bars">
+        <span></span><span></span><span></span><span></span>
+      </div>
+    </div>
+
+    <div id="settings-modal" class="settings-modal hidden" aria-hidden="true">
+      <div class="settings-modal-backdrop"></div>
+      <div class="settings-modal-content" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+        <div class="settings-modal-header">
+          <h3 id="settings-title">Interview Settings</h3>
+          <button type="button" id="settings-close" class="settings-modal-close" aria-label="Close">&times;</button>
+        </div>
+        <div class="settings-modal-body">
+          <section class="settings-section">
+            <h4 class="settings-section-title">Voice <span class="settings-experimental">(experimental)</span></h4>
+            <div class="settings-row">
+              <label for="voice-select">Voice</label>
+              <div class="settings-row-control">
+                <select id="voice-select" class="settings-select">
+                  <option value="">Loading...</option>
+                </select>
+                <button type="button" id="voice-preview" class="btn-secondary settings-preview-btn" disabled>Preview</button>
+              </div>
+            </div>
+            <div class="settings-row">
+              <label for="settings-volume">Volume</label>
+              <div class="settings-row-control settings-volume-control">
+                <input type="range" id="settings-volume" class="settings-volume-slider" min="0" max="100" value="70">
+                <span id="settings-volume-value" class="settings-volume-value">70%</span>
+              </div>
+            </div>
+          </section>
+        </div>
+        <div class="settings-modal-footer">
+          <button type="button" id="settings-cancel" class="btn-secondary">Cancel</button>
+          <button type="button" id="settings-save" class="btn-primary">Save</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="voice-apikey-modal" class="voice-apikey-modal hidden" aria-hidden="true">
+      <div class="voice-apikey-content" role="dialog" aria-modal="true" aria-labelledby="voice-apikey-title">
+        <h3 id="voice-apikey-title">ElevenLabs API Key Required</h3>
+        <input type="password" id="voice-apikey-input" placeholder="Enter API key" autocomplete="off">
+        <label class="voice-apikey-remember">
+          <input type="checkbox" id="voice-apikey-remember" checked>
+          Remember on this device
+        </label>
+        <div class="voice-apikey-actions">
+          <button type="button" id="voice-apikey-cancel" class="btn-secondary">Cancel</button>
+          <button type="button" id="voice-apikey-save" class="btn-primary">Save & Start</button>
+        </div>
+      </div>
+    </div>
+
     <div id="expired-overlay" class="expired-overlay hidden" aria-live="polite">
       <div class="expired-content">
         <div class="expired-icon">!</div>
@@ -114,5 +203,7 @@
     window.__INTERVIEW_DATA__ = /* __INTERVIEW_DATA_PLACEHOLDER__ */;
   </script>
   <script src="/script.js?session=__SESSION_TOKEN__"></script>
+  <script src="/settings.js?session=__SESSION_TOKEN__"></script>
+  <script type="module" src="/voice.js?session=__SESSION_TOKEN__"></script>
 </body>
 </html>

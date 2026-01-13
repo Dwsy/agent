@@ -6,23 +6,25 @@ https://github.com/user-attachments/assets/52285bd9-956e-4020-aca5-9fbd82916934
 
 ## Installation
 
-Clone or copy this directory to your pi-agent tools folder:
+Clone or copy this directory to your pi-agent extensions folder:
 
 ```bash
-# Clone to user tools directory (available in all projects)
-git clone https://github.com/nicobailon/pi-interview-tool ~/.pi/agent/tools/interview
+# Clone to user extensions directory (available in all projects)
+git clone https://github.com/nicobailon/pi-interview-tool ~/.pi/agent/extensions/interview
 
 # Or copy manually
-cp -r /path/to/interview ~/.pi/agent/tools/
+cp -r /path/to/interview ~/.pi/agent/extensions/
 ```
 
 The tool is automatically discovered on next pi session. No build step required.
 
 **Requirements:**
-- pi-agent v0.31.0 or later
+- pi-agent v0.35.0 or later (extensions API)
 
 ## Features
 
+- **Voice Mode** *(experimental)*: Natural voice interviewing via ElevenLabs (questions read aloud, answers via speech)
+- **Voice Settings**: Select voice, adjust volume, preview voices via settings modal
 - **Question Types**: Single-select, multi-select, text input, and image upload
 - **"Other" Option**: Single/multi select questions support custom text input
 - **Per-Question Attachments**: Attach images to any question via button, paste, or drag & drop
@@ -132,7 +134,8 @@ await interview({
 | `Enter` / `Space` | Select option |
 | `⌘+V` | Paste image or file path |
 | `⌘+Enter` | Submit form |
-| `Esc` | Show exit overlay (press twice to quit) |
+| `v` | Toggle voice mode |
+| `Esc` | Stop voice mode / Show exit overlay (press twice to quit) |
 | `⌘+Shift+L` | Toggle theme (if enabled; appears in shortcuts bar) |
 
 ## Configuration
@@ -143,18 +146,39 @@ Settings in `~/.pi/agent/settings.json`:
 {
   "interview": {
     "timeout": 600,
+    "port": 19847,
     "theme": {
       "mode": "auto",
       "name": "default",
       "lightPath": "/path/to/light.css",
       "darkPath": "/path/to/dark.css",
       "toggleHotkey": "mod+shift+l"
+    },
+    "voice": {
+      "apiKey": "sk-your-elevenlabs-key",
+      "autoStart": true,
+      "voiceId": "21m00Tcm4TlvDq8ikWAM",
+      "volume": 0.7
     }
   }
 }
 ```
 
-Precedence: params > settings > default (600s)
+**Timeout precedence**: params > settings > default (600s)
+
+**Port setting**: Set a fixed `port` (e.g., `19847`) to persist browser permissions (microphone) across sessions. Without this, each interview runs on a random port and permissions must be re-granted.
+
+**Voice settings** *(experimental — not fully tested)*:
+| Field | Description |
+|-------|-------------|
+| `apiKey` | ElevenLabs API key (server-side, never sent to client) |
+| `autoStart` | Auto-start voice on form load |
+| `voiceId` | ElevenLabs voice ID (default: Rachel) |
+| `volume` | Output volume 0.0-1.0 (default: 0.7) |
+
+**ElevenLabs API key permissions**: When creating or editing your API key at [elevenlabs.io/app/settings/api-keys](https://elevenlabs.io/app/settings/api-keys), enable these permissions:
+- **ElevenLabs Agents**: Write (required for creating conversational AI agents)
+- **Voices**: Read (required for voice selection in settings)
 
 Theme notes:
 - `mode`: `dark` (default), `light`, or `auto` (follows OS unless overridden)
@@ -249,13 +273,17 @@ Example:
 ```
 interview/
 ├── index.ts       # Tool entry point, parameter schema
+├── settings.ts    # Shared settings module
 ├── server.ts      # HTTP server, request handling
 ├── schema.ts      # TypeScript interfaces for questions/responses
+├── elevenlabs.ts  # ElevenLabs API integration
 └── form/
     ├── index.html # Form template
     ├── styles.css # Base styles (dark tokens)
     ├── themes/    # Theme overrides (light/dark)
-    └── script.js  # Form logic, keyboard nav, image handling
+    ├── script.js  # Form logic, keyboard nav, image handling
+    ├── settings.js # Settings modal controller
+    └── voice.js   # Voice controller module
 ```
 
 ## Session Recovery

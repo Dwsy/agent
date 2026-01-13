@@ -18,5 +18,11 @@
   --success: #87af87;
   --warning: #d7af5f;
   --error: #af5f5f;
+  --error-bg: rgba(175, 95, 95, 0.12);
   --focus-ring: rgba(95, 135, 175, 0.2);
+  --overlay-bg: rgba(255, 255, 255, 0.95);
+  --voice-active-color: #22c55e;
+  --voice-active-color-dim: rgba(34, 197, 94, 0.3);
+  --voice-indicator-bg: rgba(20, 20, 20, 0.92);
+  --voice-indicator-text: #ffffff;
 }
