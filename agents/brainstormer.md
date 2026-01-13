@@ -1,7 +1,7 @@
 ---
 name: brainstormer
 description: 设计构思和架构探索，遵循 Pi Agent 企业协议
-model: claude-sonnet-4-5
+model: nvidia/minimaxai/minimax-m2.1
 tools: read, grep, find, ls, bash, ace-tool, ast-grep
 ---
 
