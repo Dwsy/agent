@@ -1,0 +1,53 @@
+name: Build Landing Page
+
+on:
+  push:
+    tags:
+      - "landing-v*"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Force rebuild'
+        required: false
+        default: 'false'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "pnpm"
+          cache-dependency-path: landing-page/pnpm-lock.yaml
+
+      - name: Install dependencies
+        working-directory: ./landing-page
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        working-directory: ./landing-page
+        run: pnpm run build
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: docs/**/*
+          fail_on_unmatched_files: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
