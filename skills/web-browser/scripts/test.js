@@ -1,13 +1,26 @@
 #!/usr/bin/env node
 
 import puppeteer from "puppeteer-core";
+import { readFileSync, existsSync } from "node:fs";
+import { join } from "node:path";
+
+const profileDir = `${process.env.HOME}/.cache/scraping-web-browser`;
+const portFile = join(profileDir, "port.txt");
 
 async function testBrowser() {
   console.log("🧪 Testing web-browser skill...\n");
 
+  if (!existsSync(portFile)) {
+    console.error("❌ Browser not started. Run 'node scripts/start.js' first.");
+    process.exit(1);
+  }
+
+  const port = parseInt(readFileSync(portFile, "utf-8").trim());
+  console.log(`📌 Using port: ${port}\n`);
+
   try {
     const browser = await puppeteer.connect({
-      browserURL: "http://localhost:9222",
+      browserURL: `http://localhost:${port}`,
       defaultViewport: null,
     });
 
@@ -37,7 +50,6 @@ async function testBrowser() {
     console.log(`✓ Cookies work: ${cookies.length} cookies set`);
 
     // Check profile directory
-    const profileDir = process.env.HOME + "/.cache/scraping-web-browser";
     console.log(`✓ Profile directory: ${profileDir}`);
 
     await browser.disconnect();
@@ -46,7 +58,7 @@ async function testBrowser() {
     console.log("\n📝 Summary:");
     console.log("  - Independent browser instance running");
     console.log("  - Session storage (localStorage, cookies) working");
-    console.log("  - Profile directory: ~/.cache/scraping-web-browser");
+    console.log(`  - Profile directory: ${profileDir}`);
     console.log("  - Your main Chrome browser is NOT affected");
 
   } catch (error) {

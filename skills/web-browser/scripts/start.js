@@ -5,17 +5,19 @@ import { writeFileSync, readFileSync, existsSync } from "node:fs";
 import { randomInt } from "node:crypto";
 import puppeteer from "puppeteer-core";
 
-const useProfile = process.argv[2] === "--profile";
+const useProfile = process.argv.includes("--profile");
+const useChromium = process.argv.includes("--chromium");
 
-if (process.argv[2] && process.argv[2] !== "--profile") {
-  console.log("Usage: start.ts [--profile]");
+if (process.argv[2] && process.argv[2] !== "--profile" && process.argv[2] !== "--chromium") {
+  console.log("Usage: start.js [--profile] [--chromium]");
   console.log("\nOptions:");
-  console.log(
-    "  --profile  Copy your default Chrome profile (cookies, logins)",
-  );
+  console.log("  --profile   Copy your default Chrome profile (cookies, logins)");
+  console.log("  --chromium  Use Chromium instead of Google Chrome");
   console.log("\nExamples:");
-  console.log("  start.ts            # Start with fresh profile");
-  console.log("  start.ts --profile  # Start with your Chrome profile");
+  console.log("  start.js              # Start with fresh Chrome profile");
+  console.log("  start.js --profile    # Start with your Chrome profile");
+  console.log("  start.js --chromium   # Start with Chromium");
+  console.log("  start.js --chromium --profile  # Start with Chromium and your profile");
   process.exit(1);
 }
 
@@ -37,7 +39,7 @@ if (existsSync(portFile)) {
   console.log(`🎲 Generated random port: ${port}`);
 }
 
-// Check if Chrome is already running on this port
+// Check if browser is already running on this port
 let existingBrowser = false;
 try {
   const browser = await puppeteer.connect({
@@ -47,24 +49,40 @@ try {
   });
   await browser.disconnect();
   existingBrowser = true;
-  console.log(`✓ Chrome already running on :${port}`);
+  const browserName = useChromium ? "Chromium" : "Chrome";
+  console.log(`✓ ${browserName} already running on :${port}`);
   process.exit(0);
 } catch {
-  // Chrome not running, continue
+  // Browser not running, continue
+}
+
+// Determine which browser executable to use
+const chromePath = useChromium
+  ? "/Applications/Chromium.app/Contents/MacOS/Chromium"
+  : "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+
+const chromiumInstalled = existsSync("/Applications/Chromium.app/Contents/MacOS/Chromium");
+
+if (useChromium && !chromiumInstalled) {
+  console.error("❌ Chromium not found at /Applications/Chromium.app/");
+  console.log("   Please install Chromium first, or remove --chromium flag");
+  process.exit(1);
 }
 
 if (useProfile) {
   // Sync profile with rsync (much faster on subsequent runs)
+  // Use Chrome profile (Chromium uses the same format)
   execSync(
     `rsync -a --delete "${process.env["HOME"]}/Library/Application Support/Google/Chrome/" "${profileDir}/"`,
     { stdio: "pipe" },
   );
 }
 
-// Start Chrome in background with unique profile directory
-// Using a separate profile ensures it doesn't interfere with your main Chrome
-const chromeProcess = spawn(
-  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+// Start browser in background with unique profile directory
+// Using a separate profile ensures it doesn't interfere with your main browser
+const browserName = useChromium ? "Chromium" : "Chrome";
+const browserProcess = spawn(
+  chromePath,
   [
     `--remote-debugging-port=${port}`,
     `--user-data-dir=${profileDir}`,
@@ -83,9 +101,9 @@ const chromeProcess = spawn(
   ],
   { detached: true, stdio: "ignore" },
 );
-chromeProcess.unref();
+browserProcess.unref();
 
-// Wait for Chrome to be ready by attempting to connect
+// Wait for browser to be ready by attempting to connect
 let connected = false;
 for (let i = 0; i < 30; i++) {
   try {
@@ -102,10 +120,12 @@ for (let i = 0; i < 30; i++) {
 }
 
 if (!connected) {
-  console.error("✗ Failed to connect to Chrome");
+  console.error(`✗ Failed to connect to ${browserName}`);
   process.exit(1);
 }
 
-console.log(
-  `✓ Chrome started on :${port}${useProfile ? " with your profile" : ""}`,
-);
+let message = `✓ ${browserName} started on :${port}`;
+if (useProfile) {
+  message += " with your profile";
+}
+console.log(message);
