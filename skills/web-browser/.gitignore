@@ -1,4 +1,18 @@
-node_modules/
-.pi/
+# 临时文件
+*.tmp
 *.log
-.DS_Store
+
+# 截图输出
+screenshots/
+output/
+*.png
+*.jpg
+*.pdf
+
+# 状态文件
+*.json
+!package.json
+
+# 测试结果
+test-results/
+coverage/

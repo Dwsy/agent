@@ -1,416 +1,112 @@
 # Web Browser Skill
 
-Full-featured browser automation with Chrome DevTools Protocol (CDP).
+基于 agent-browser 的浏览器自动化技能，支持完整的网页交互、表单填写、屏幕截图、数据提取等功能。
 
-## Overview
+## 功能特性
 
-This skill provides comprehensive browser automation capabilities through a collection of Node.js scripts. It uses Puppeteer to control a standalone Chrome instance, allowing you to navigate pages, interact with forms, extract data, monitor network requests, and perform advanced browser operations.
+- **完整浏览器自动化**：导航、点击、输入、滚动等所有基本操作
+- **CDP 模式**：连接到现有浏览器（Electron、Chrome、WebView2 等）
+- **AI 友好**：通过 refs (@e1, @e2) 和 JSON 输出与 AI 无缝集成
+- **会话管理**：支持并行浏览器会话
+- **调试支持**：可视化浏览器窗口、控制台日志、错误追踪
 
-## Features
+## 依赖
 
-### 🎯 Core Features
-- ✅ **36 powerful scripts** covering all browser automation needs
-- ✅ **Independent browser instance** - doesn't affect your main Chrome
-- ✅ **Random port management** - avoids conflicts automatically
-- ✅ **Persistent sessions** - cookies and localStorage persist across restarts
-- ✅ **Profile support** - use your main Chrome profile when needed
+```bash
+npm install -g agent-browser
+```
 
-### 📦 Functionality Modules
+或使用 npx（无需安装）：
 
-#### Browser Management
-- Start/stop browser with random ports
-- Port persistence and management
-- Profile management (fresh or copied)
+```bash
+npx agent-browser --help
+```
 
-#### Navigation
-- Navigate to URLs
-- Page reload with cache control
-- Tab management (list, open, switch, close)
+## 使用方式
 
-#### Form Interaction
-- Click elements
-- Type text (with clear option)
-- Select dropdown options
-- Check/uncheck/toggle checkboxes
-- Submit forms
+### 通过 pi 自动调用
 
-#### Waiting & Detection
-- Wait for elements, visibility, text, URL
-- Check element visibility
-- Get detailed element information
+pi 会自动调用此技能进行浏览器自动化操作。
 
-#### Storage & Cookies
-- Cookie management (CRUD operations)
-- localStorage/sessionStorage management
-- Clear browser data
+### 手动执行
 
-#### Network & Performance
-- Monitor network requests
-- Capture and export requests
-- Get performance metrics
-- Request interception (block, mock, log)
+```bash
+# 直接使用 agent-browser
+agent-browser open <url>
+agent-browser snapshot -i
+agent-browser click @e1
+```
 
-#### Advanced Features
-- Page scrolling
-- Mouse hover
-- File upload
-- File download management
-- PDF export
-- Tab management
+## 核心概念
 
-#### Debugging & Tools
-- Debug information
-- Element inspection
-- Text search
-- Page metadata extraction
+### Refs 引用系统
 
-## Quick Start
+`snapshot -i` 命令会为每个可交互元素分配唯一的 ref（如 @e1, @e2）：
 
-### 1. Start the Browser
+```
+button "Submit" [ref=e3]
+textbox "Email" [ref=e1]
+```
 
-\`\`\`bash
-cd ~/.pi/agent/skills/web-browser
-
-# Start with fresh profile
-node scripts/start.js
+后续操作使用 ref 定位元素，无需复杂的 CSS 选择器。
 
-# Or copy your main Chrome profile (cookies, logins)
-node scripts/start.js --profile
-\`\`\`
-
-### 2. Navigate to a Page
-
-\`\`\`bash
-# Navigate current tab
-node scripts/nav.js https://example.com
+### 语义定位器
 
-# Open in new tab
-node scripts/nav.js https://example.com --new
-\`\`\`
-
-### 3. Interact with the Page
-
-\`\`\`bash
-# Type into input
-node scripts/type.js "#username" "john@example.com"
+除了 refs，也可以使用语义定位器：
 
-# Click button
-node scripts/click.js "#submit-button"
+```bash
+agent-browser find role button click --name "Submit"
+agent-browser find text "Sign In" click
+```
 
-# Take screenshot
-node scripts/screenshot.js
-\`\`\`
+### CDP 模式
 
-### 4. Stop the Browser
+连接到已运行的浏览器实例：
 
-\`\`\`bash
-node scripts/stop.js
-\`\`\`
+```bash
+# 启动 Chrome 时启用远程调试
+google-chrome --remote-debugging-port=9222
 
-## Complete Script Reference
+# 连接到该浏览器
+agent-browser --cdp 9222 snapshot
+```
 
-### Browser Management
+## 典型工作流
 
-| Script | Description | Example |
-|--------|-------------|---------|
-| `start.js` | Start Chrome with random port | `node scripts/start.js --profile` |
-| `stop.js` | Stop Chrome | `node scripts/stop.js` |
-| `get-port.js` | Get current port | `node scripts/get-port.js` |
+1. **导航**：`agent-browser open <url>`
+2. **分析**：`agent-browser snapshot -i` 获取元素 refs
+3. **交互**：使用 refs 执行操作（click, fill 等）
+4. **验证**：`agent-browser snapshot -i` 检查页面状态
+5. **关闭**：`agent-browser close`
 
-### Navigation
+## 高级功能
 
-| Script | Description | Example |
-|--------|-------------|---------|
-| `nav.js` | Navigate to URL | `node scripts/nav.js https://example.com --new` |
-| `reload.js` | Reload page | `node scripts/reload.js --force-no-cache` |
-| `tabs.js` | Manage tabs | `node scripts/tabs.js list` |
+### 状态保存/加载
 
-### Form Interaction
+```bash
+# 保存登录状态
+agent-browser state save auth.json
 
-| Script | Description | Example |
-|--------|-------------|---------|
-| `click.js` | Click element | `node scripts/click.js "#submit-button"` |
-| `type.js` | Type text | `node scripts/type.js "#username" "john@example.com" --clear` |
-| `select.js` | Select option | `node scripts/select.js "#country" "United States"` |
-| `checkbox.js` | Check/uncheck/toggle | `node scripts/checkbox.js "#terms" check` |
-| `submit.js` | Submit form | `node scripts/submit.js "#login-form"` |
+# 后续会话加载状态
+agent-browser state load auth.json
+```
 
-### Waiting & Detection
+### 网络拦截
 
-| Script | Description | Example |
-|--------|-------------|---------|
-| `wait-for.js` | Wait for element/visible/hidden/text/url | `node scripts/wait-for.js visible ".loading"` |
-| `wait-for-url.js` | Wait for URL change | `node scripts/wait-for-url.js "/success"` |
-| `check-visible.js` | Check visibility | `node scripts/check-visible.js "#button"` |
-| `get-element.js` | Get element info | `node scripts/get-element.js "#button"` |
+```bash
+# 拦截 API 响应
+agent-browser network route "*/api/**" --body '{"data": "mocked"}'
 
-### Storage & Cookies
+# 查看请求历史
+agent-browser network requests
+```
 
-| Script | Description | Example |
-|--------|-------------|---------|
-| `cookies.js` | Cookie management | `node scripts/cookies.js list` |
-| `storage.js` | Storage management | `node scripts/storage.js get local "token"` |
-| `clear-data.js` | Clear data | `node scripts/clear-data.js all` |
+### JavaScript 执行
 
-### Network & Performance
+```bash
+agent-browser eval "document.title"
+```
 
-| Script | Description | Example |
-|--------|-------------|---------|
-| `network.js` | Network monitoring | `node scripts/network.js capture "https://example.com"` |
-| `performance.js` | Performance metrics | `node scripts/performance.js` |
-| `intercept.js` | Request interception | `node scripts/intercept.js block "*.png"` |
+## 许可证
 
-### Advanced Features
-
-| Script | Description | Example |
-|--------|-------------|---------|
-| `scroll.js` | Page scrolling | `node scripts/scroll.js down 500` |
-| `hover.js` | Mouse hover | `node scripts/hover.js "#menu"` |
-| `upload.js` | File upload | `node scripts/upload.js "#file-input" "/path/to/file.txt"` |
-| `download.js` | File download | `node scripts/download.js click "#download-btn"` |
-| `pdf.js` | PDF export | `node scripts/pdf.js ./page.pdf` |
-| `tabs.js` | Tab management | `node scripts/tabs.js switch 1` |
-
-### Debugging & Tools
-
-| Script | Description | Example |
-|--------|-------------|---------|
-| `debug.js` | Debug information | `node scripts/debug.js` |
-| `inspect.js` | Element inspection | `node scripts/inspect.js "#button"` |
-| `find-text.js` | Text search | `node scripts/find-text.js "Hello World"` |
-| `get-meta.js` | Page metadata | `node scripts/get-meta.js` |
-
-### Core
-
-| Script | Description | Example |
-|--------|-------------|---------|
-| `eval.js` | JavaScript evaluation | `node scripts/eval.js 'document.title'` |
-| `screenshot.js` | Screenshot | `node scripts/screenshot.js` |
-| `pick.js` | Element picker | `node scripts/pick.js "Click the submit button"` |
-| `check-console.js` | Console check | `node scripts/check-console.js` |
-
-## Usage Examples
-
-### Example 1: Login Flow
-
-\`\`\`bash
-# Start browser
-node scripts/start.js
-
-# Navigate to login page
-node scripts/nav.js https://example.com/login
-
-# Type credentials
-node scripts/type.js "#username" "john@example.com"
-node scripts/type.js "#password" "secret123"
-
-# Submit form
-node scripts/click.js "#login-button"
-
-# Wait for success
-node scripts/wait-for.js text "Welcome"
-
-# Take screenshot
-node scripts/screenshot.js
-
-# Stop browser
-node scripts/stop.js
-\`\`\`
-
-### Example 2: Data Scraping
-
-\`\`\`bash
-# Start browser
-node scripts/start.js
-
-# Navigate to page
-node scripts/nav.js https://example.com/products
-
-# Wait for content to load
-node scripts/wait-for.js visible ".product-card"
-
-# Extract data
-node scripts/eval.js 'Array.from(document.querySelectorAll(".product-card")).map(p => ({ name: p.querySelector(".name").textContent, price: p.querySelector(".price").textContent }))'
-
-# Stop browser
-node scripts/stop.js
-\`\`\`
-
-### Example 3: Network Monitoring
-
-\`\`\`bash
-# Start browser
-node scripts/start.js
-
-# Start network monitoring
-node scripts/network.js start
-
-# Navigate to page
-node scripts/nav.js https://example.com
-
-# Stop monitoring and view results
-node scripts/network.js stop
-
-# Export requests
-node scripts/network.js export requests.json
-
-# Stop browser
-node scripts/stop.js
-\`\`\`
-
-### Example 4: Form Testing
-
-\`\`\`bash
-# Start browser
-node scripts/start.js
-
-# Navigate to form
-node scripts/nav.js https://example.com/contact
-
-# Fill form
-node scripts/type.js "#name" "John Doe"
-node scripts/type.js "#email" "john@example.com"
-node scripts/type.js "#message" "Hello"
-
-# Select dropdown
-node scripts/select.js "#topic" "Support"
-
-# Checkbox
-node scripts/checkbox.js "#subscribe" check
-
-# Submit
-node scripts/click.js "#submit"
-
-# Wait for confirmation
-node scripts/wait-for.js visible ".success-message"
-
-# Stop browser
-node scripts/stop.js
-\`\`\`
-
-### Example 5: PDF Export
-
-\`\`\`bash
-# Start browser
-node scripts/start.js
-
-# Navigate to page
-node scripts/nav.js https://example.com/report
-
-# Wait for content
-node scripts/wait-for.js visible ".report-content"
-
-# Export as PDF
-node scripts/pdf.js ~/Downloads/report.pdf
-
-# Stop browser
-node scripts/stop.js
-\`\`\`
-
-## Configuration
-
-### Port Management
-
-The browser automatically uses a random port between 9222-9999:
-
-\`\`\`bash
-# View current port
-node scripts/get-port.js
-
-# Reset port (get new random port)
-rm ~/.cache/scraping-web-browser/port.txt
-node scripts/start.js
-\`\`\`
-
-### Profile Management
-
-\`\`\`bash
-# Fresh profile (no cookies, no logins)
-node scripts/start.js
-
-# Copy main Chrome profile (cookies, logins, bookmarks)
-node scripts/start.js --profile
-\`\`\`
-
-### Data Persistence
-
-Browser data is stored in \`~/.cache/scraping-web-browser/\`:
-
-- **Port**: \`port.txt\`
-- **Cookies**: \`Default/Cookies\`
-- **LocalStorage**: \`Default/Local Storage/\`
-- **Session**: \`Default/Session Storage/\`
-
-## Best Practices
-
-1. **Always stop the browser** when done to release resources
-2. **Use wait-for.js** for dynamic content instead of fixed delays
-3. **Check element visibility** before interacting
-4. **Use network monitoring** to debug API calls
-5. **Export cookies** for session reuse
-6. **Use inspect.js** to understand page structure
-7. **Clear data** between tests for isolation
-
-## Troubleshooting
-
-### Browser won't start
-
-\`\`\`bash
-# Check if port is in use
-lsof -i :$(cat ~/.cache/scraping-web-browser/port.txt)
-
-# Kill existing process
-node scripts/stop.js
-
-# Reset port
-rm ~/.cache/scraping-web-browser/port.txt
-node scripts/start.js
-\`\`\`
-
-### Element not found
-
-\`\`\`bash
-# Wait for element
-node scripts/wait-for.js visible "#button"
-
-# Inspect page to find correct selector
-node scripts/inspect.js "button"
-
-# Find text to locate element
-node scripts/find-text.js "Submit"
-\`\`\`
-
-### Timeout errors
-
-\`\`\`bash
-# Increase timeout in wait-for.js
-node scripts/wait-for.js visible "#loading" 60000
-
-# Check network requests
-node scripts/network.js start
-node scripts/nav.js https://example.com
-node scripts/network.js stop
-\`\`\`
-
-## Testing
-
-\`\`\`bash
-# Test all scripts
-node test-all-scripts.js
-
-# Run integration tests
-node test-integration.js
-
-# Run demo
-node demo.js
-\`\`\`
-
-## License
-
-Stolen from Mario
-
-## Related Documentation
-
-- [SKILL.md](./SKILL.md) - Skill documentation
-- [FIX_NOTE.md](./FIX_NOTE.md) - Fix notes
-- [COMPLETE_GUIDE.md](./COMPLETE_GUIDE.md) - Complete usage guide
+MIT License
