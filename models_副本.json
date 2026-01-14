@@ -141,7 +141,7 @@
     },
     "nvidia": {
       "baseUrl": "https://integrate.api.nvidia.com/v1",
-      "apiKey": "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",
+      "apiKey": "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",
       "api": "openai-completions",
       "authHeader": true,
       "models": [
