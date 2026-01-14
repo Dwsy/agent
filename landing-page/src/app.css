@@ -1,30 +1,112 @@
-/* Custom theme colors for Pi Agent */
-@theme {
-  --color-pi-primary: #00f0ff;
-  --color-pi-secondary: #7000ff;
-  --color-pi-accent: #ff00ff;
-  --color-pi-dark: #0a0a0f;
-  --color-pi-darker: #050508;
-}
-
 /* Import Tailwind */
 @import "tailwindcss";
 
+/* Custom theme colors for Pi Agent */
+@theme {
+  --color-pi-primary: #2563EB;
+  --color-pi-primary-light: #60A5FA;
+  --color-pi-secondary: #8B5CF6;
+  --color-pi-accent: #F97316;
+
+  --color-pi-bg-dark: #0F172A;
+  --color-pi-bg-darker: #0A0F1E;
+
+  --color-pi-text-primary: #F1F5F9;
+  --color-pi-text-secondary: #94A3B8;
+  --color-pi-text-muted: #64748B;
+
+  --color-pi-border: #334155;
+  --color-pi-border-light: #475569;
+}
+
 /* Custom base styles */
 @layer base {
+  * {
+    box-sizing: border-box;
+  }
+
   body {
-    background: #0a0a0f;
-    color: #fff;
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #0F172A;
+    color: #F1F5F9;
+    font-family: "DM Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    line-height: 1.6;
+  }
+
+  /* Smooth scroll behavior */
+  html {
+    scroll-behavior: smooth;
+  }
+
+  /* Focus visible for accessibility */
+  :focus-visible {
+    outline: 2px solid #60A5FA;
+    outline-offset: 2px;
+  }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: #0A0F1E;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: #334155;
+    border-radius: 5px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: #475569;
+  }
+
+  /* Selection styling */
+  ::selection {
+    background: rgba(59, 130, 246, 0.3);
+    color: #F1F5F9;
   }
 }
 
-/* Custom utilities */
+/* Font families */
 @layer utilities {
-  .text-gradient {
-    background: linear-gradient(135deg, #00f0ff 0%, #7000ff 100%);
+  .font-heading {
+    font-family: "Space Grotesk", sans-serif;
+  }
+
+  .font-body {
+    font-family: "DM Sans", sans-serif;
+  }
+
+  /* Text gradients */
+  .text-gradient-blue {
+    background: linear-gradient(135deg, #60A5FA 0%, #A78BFA 50%, #F472B6 100%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
+  }
+
+  /* Glass utility */
+  .glass {
+    background: rgba(30, 41, 59, 0.5);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(51, 65, 85, 0.5);
+  }
+
+  /* Glow effect on hover */
+  .glow-on-hover:hover {
+    box-shadow: 0 0 30px rgba(59, 130, 246, 0.3);
+  }
+}
+
+/* Prefers reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }

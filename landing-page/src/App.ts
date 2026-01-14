@@ -1,54 +1,57 @@
 import { html, LitElement, css } from "lit";
-import { customElement, state } from "lit/decorators.js";
+import { customElement } from "lit/decorators.js";
+import "./components/Navbar";
+import "./components/HeroSection";
+import "./components/WorkflowSection";
+import "./components/BentoGrid";
+import "./components/TechSpecs";
+import "./components/CTASection";
+import "./components/Footer";
 
 @customElement("pi-app")
 export class App extends LitElement {
   static styles = css`
     :host {
       display: block;
-    }
-
-    .app-container {
       min-height: 100vh;
-      background: #0a0a0f;
-      color: #fff;
-      padding: 2rem;
     }
 
-    h1 {
-      color: #00f0ff;
-      font-size: 3rem;
-      margin-bottom: 1rem;
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
     }
 
-    p {
-      color: #a0a0a5;
-      font-size: 1.25rem;
+    body {
+      background: #0F172A;
+      color: #F1F5F9;
+      font-family: "DM Sans", sans-serif;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
     }
 
-    .test-box {
-      background: #1a1a1f;
-      border: 1px solid #2a2a30;
-      border-radius: 12px;
-      padding: 2rem;
-      margin-top: 2rem;
+    main {
+      padding-top: 5rem;
+    }
+
+    @media (max-width: 768px) {
+      main {
+        padding-top: 5.5rem;
+      }
     }
   `;
 
-  @state()
-  message = "Hello, Pi Agent!";
-
   render() {
     return html`
-      <div class="app-container">
-        <h1>${this.message}</h1>
-        <p>Landing page is working correctly!</p>
-
-        <div class="test-box">
-          <h2>Test Section</h2>
-          <p>This is a test box to verify rendering works.</p>
-        </div>
-      </div>
+      <pi-navbar></pi-navbar>
+      <main>
+        <hero-section></hero-section>
+        <workflow-section></workflow-section>
+        <bento-grid></bento-grid>
+        <tech-specs></tech-specs>
+        <cta-section></cta-section>
+      </main>
+      <pi-footer></pi-footer>
     `;
   }
 }
