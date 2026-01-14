@@ -1,15 +1,12 @@
 name: Build Landing Page
 
 on:
-  push:
-    tags:
-      - "landing-v*"
   workflow_dispatch:
     inputs:
-      force:
-        description: 'Force rebuild'
+      message:
+        description: 'Build message'
         required: false
-        default: 'false'
+        default: 'Manual build'
 
 permissions:
   contents: write
@@ -20,8 +17,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -43,11 +38,10 @@ jobs:
         working-directory: ./landing-page
         run: pnpm run build
 
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: docs/**/*
-          fail_on_unmatched_files: false
-          generate_release_notes: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Commit and push
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add docs/
+          git diff --staged --quiet || git commit -m "chore: build landing page - ${{ inputs.message }}"
+          git push
