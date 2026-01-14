@@ -7,6 +7,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 
 export type AgentScope = "user" | "project" | "both";
+export type AgentSource = "user" | "project" | "dynamic";
 
 export interface AgentConfig {
 	name: string;
@@ -15,7 +16,7 @@ export interface AgentConfig {
 	model?: string;
 	provider?: string;
 	systemPrompt: string;
-	source: "user" | "project";
+	source: AgentSource;
 	filePath: string;
 }
 

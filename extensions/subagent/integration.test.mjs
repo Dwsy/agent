@@ -176,6 +176,14 @@ async function runTests() {
     });
   }));
 
+  // Dynamic agent prompt tests
+  tests.push(runTest("Dynamic agent prompt includes tools and skills context", async () => {
+    const filePath = path.join(EXTENSION_DIR, "dynamic-agent.ts");
+    const content = fs.readFileSync(filePath, "utf-8");
+    if (!content.includes("Available Tools")) throw new Error("Missing Available Tools section");
+    if (!content.includes("Available Skills/Plugins")) throw new Error("Missing Available Skills/Plugins section");
+  }));
+
   // Module count test
   tests.push(runTest("Structure: 14 TypeScript modules exist", async () => {
     const tsFiles = requiredFiles.filter(f => f.endsWith('.ts'));

@@ -12,6 +12,7 @@
 
 import * as path from "node:path";
 import * as os from "node:os";
+import * as fs from "node:fs";
 import type { AgentToolResult } from "@mariozechner/pi-agent-core";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
@@ -23,6 +24,15 @@ import { SingleMode } from "./modes/single.js";
 import { ParallelMode } from "./modes/parallel.js";
 import { ChainMode } from "./modes/chain.js";
 import { renderCall, renderResult } from "./ui/renderer.js";
+import {
+	createAgent,
+	listAgents,
+	deleteAgent,
+	generateInterviewQuestions,
+	promoteDynamicAgent,
+	listPromotableAgents,
+} from "./utils/agent-creator.js";
+import type { AgentScope as CreatorScope, AgentTemplate } from "./utils/agent-creator.js";
 
 const TaskItem = Type.Object({
 	agent: Type.String({ description: "Name of the agent to invoke" }),
@@ -144,7 +154,13 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			if (params.agent && params.task) {
-				return singleMode.execute(executionContext, { agent: params.agent, task: params.task, cwd: params.cwd });
+				return singleMode.execute(executionContext, {
+					agent: params.agent,
+					task: params.task,
+					cwd: params.cwd,
+					agentScope,
+					projectAgentsDir: discovery.projectAgentsDir,
+				});
 			}
 
 			const available = agents.map((a) => `${a.name} (${a.source})`).join(", ") || "none";
@@ -260,6 +276,387 @@ function registerCommands(pi: ExtensionAPI): void {
 			// Register any newly discovered project agents
 			projectAgents.forEach(createAgentCommand);
 			showAgentList(ctx);
+		},
+	});
+
+	pi.registerCommand("create-agent", {
+		description: "Create a new agent. Usage: /create-agent <name> <description> [--scope user|project|dynamic] [--template worker|scout|reviewer]",
+		handler: async (args: string, ctx: any) => {
+			if (!ctx.hasUI) {
+				ctx.ui.notify("create-agent requires interactive mode", "error");
+				return;
+			}
+
+			// Parse arguments with better handling for multi-word descriptions
+			const argStr = args.trim();
+			if (!argStr) {
+				ctx.ui.notify(
+					"Usage: /create-agent <name> <description> [--scope user|project|dynamic] [--template worker|scout|reviewer] [--tools tool1,tool2]\n\nExample: /create-agent myagent \"My agent description\" --scope user --template worker",
+					"info",
+				);
+				return;
+			}
+
+			// Split by quotes first to handle multi-word descriptions
+			const quotedMatch = argStr.match(/^(\S+)\s+"([^"]+)"(.*)$/);
+			let name: string;
+			let description: string;
+			let remainingArgs: string;
+
+			if (quotedMatch) {
+				// Has quoted description
+				name = quotedMatch[1];
+				description = quotedMatch[2];
+				remainingArgs = quotedMatch[3].trim();
+			} else {
+				// No quotes - split by whitespace
+				const parts = argStr.split(/\s+/);
+				if (parts.length < 2) {
+					ctx.ui.notify('Error: Both name and description are required. Use quotes for multi-word descriptions: /create-agent myagent "My description"', "error");
+					return;
+				}
+				name = parts[0];
+				// Find where flags start
+				let descEnd = 1;
+				while (descEnd < parts.length && !parts[descEnd].startsWith("--")) {
+					descEnd++;
+				}
+				description = parts.slice(1, descEnd).join(" ");
+				remainingArgs = parts.slice(descEnd).join(" ");
+			}
+
+			// Parse flags
+			let scope: CreatorScope = "user";
+			let template: AgentTemplate = "worker";
+			let tools: string[] = [];
+
+			const flagMatches = remainingArgs.matchAll(/--(\w+)\s+([^\s-][^\s]*)/g);
+			for (const match of flagMatches) {
+				const flag = match[1];
+				const value = match[2];
+				if (flag === "scope" && ["user", "project", "dynamic"].includes(value)) {
+					scope = value as CreatorScope;
+				} else if (flag === "template" && ["worker", "scout", "reviewer", "custom"].includes(value)) {
+					template = value as AgentTemplate;
+				} else if (flag === "tools") {
+					tools = value.split(",").map((t) => t.trim()).filter(Boolean);
+				}
+			}
+
+			const result = createAgent({ name, description, scope, template, tools });
+
+			if (result.success) {
+				ctx.ui.notify(`✓ Created agent '${name}' at ${result.filePath}`, "success");
+				ctx.ui.notify(`Usage: /sub:${name} <task>`, "info");
+			} else {
+				ctx.ui.notify(`✗ Failed to create agent: ${result.error}`, "error");
+			}
+		},
+	});
+
+	pi.registerCommand("list-agents", {
+		description: "List agents by scope (user/project/dynamic). Usage: /list-agents [user|project|dynamic]",
+		handler: async (args: string, ctx: any) => {
+			const scope = (args.trim() || "user") as CreatorScope;
+			const agents = listAgents(scope);
+
+			if (agents.length === 0) {
+				const message = `No agents found in **${scope}** scope.\n\nTip: Create one with \`/create-agent\``;
+				pi.sendMessage(
+					{
+						customType: "list-agents-result",
+						content: message,
+						display: true,
+					},
+					{ triggerTurn: false },
+				);
+				return;
+			}
+
+			const message = `## ${scope.toUpperCase()} Agents (${agents.length})\n\n${agents.map((a) => `- **${a}**`).join("\n")}\n\n**Usage:** \`/sub:${agents[0]} <task>\``;
+			pi.sendMessage(
+				{
+					customType: "list-agents-result",
+					content: message,
+					display: true,
+				},
+				{ triggerTurn: false },
+			);
+		},
+	});
+
+	pi.registerCommand("delete-agent", {
+		description: "Delete an agent. Usage: /delete-agent <name> [--scope user|project|dynamic]",
+		handler: async (args: string, ctx: any) => {
+			if (!ctx.hasUI) {
+				ctx.ui.notify("delete-agent requires interactive mode", "error");
+				return;
+			}
+
+			const argStr = args.trim();
+			if (!argStr) {
+				ctx.ui.notify("Usage: /delete-agent <name> [--scope user|project|dynamic]\n\nExample: /delete-agent myagent --scope user", "info");
+				return;
+			}
+
+			// Parse arguments
+			const parts = argStr.split(/\s+/);
+			const name = parts[0];
+			let scope: CreatorScope = "user";
+
+			// Parse scope flag
+			const scopeIndex = parts.indexOf("--scope");
+			if (scopeIndex !== -1 && scopeIndex + 1 < parts.length) {
+				const scopeValue = parts[scopeIndex + 1];
+				if (["user", "project", "dynamic"].includes(scopeValue)) {
+					scope = scopeValue as CreatorScope;
+				}
+			}
+
+			const result = deleteAgent(name, scope);
+
+			if (result.success) {
+				ctx.ui.notify(`✓ Deleted agent '${name}' from ${scope} scope`, "success");
+			} else {
+				ctx.ui.notify(`✗ Failed to delete agent: ${result.error}`, "error");
+			}
+		},
+	});
+
+	pi.registerCommand("create-agent-interview", {
+		description: "Create a new agent using AI generation with interactive interview form",
+		handler: async (_args: string, ctx: any) => {
+			// Generate questions JSON in temp directory
+			const tempDir = os.tmpdir();
+			const questionsPath = generateInterviewQuestions(tempDir);
+
+			// Send message to trigger interview tool and dynamic generation
+			const message = `I'll help you create a new agent using AI generation. Let me start the interactive form.
+
+**Step 1:** Call the interview tool to collect information:
+\`\`\`json
+{
+  "questions": "${questionsPath}"
+}
+\`\`\`
+
+**Step 2:** After getting the responses, use dynamic agent generation with target scope:
+\`\`\`javascript
+subagent({
+  agent: "<name from interview>",
+  task: "<task from interview>",
+  agentScope: "both",
+  cwd: "<project directory if scope is project>"
+})
+\`\`\`
+
+The agent will be generated and saved directly to the selected scope:
+- "user (all projects)" → ~/.pi/agent/agents/
+- "project (current project)" → .pi/agents/
+- "dynamic (auto-generated)" → ~/.pi/agent/agents/dynamic/
+
+The generated agent will include AI-generated system prompt, tools, and skills context.`;
+
+			pi.sendMessage(
+				{
+					customType: "create-agent-interview-trigger",
+					content: message,
+					display: true,
+				},
+				{ triggerTurn: true },
+			);
+		},
+	});
+
+	pi.registerCommand("list-promotable-agents", {
+		description: "List all dynamic agents that can be promoted to user scope",
+		handler: async (_args: string, ctx: any) => {
+			const promotable = listPromotableAgents();
+
+			if (promotable.length === 0) {
+				const message = `## No Promotable Agents Found\n\nNo dynamic agents available in \`~/.pi/agent/agents/dynamic/\`.\n\n**Tip:** Dynamic agents are auto-generated when you call a non-existent subagent. Try calling a subagent with a descriptive name and task to generate one.`;
+				pi.sendMessage(
+					{
+						customType: "list-promotable-result",
+						content: message,
+						display: true,
+					},
+					{ triggerTurn: false },
+				);
+				return;
+			}
+
+			const message = `## Promotable Dynamic Agents (${promotable.length})\n\n${promotable
+				.map((a) => `- **${a.name}**: ${a.description}`)
+				.join("\n")}\n\n**Promote with:** \`/promote-agent ${promotable[0].name}\``;
+			pi.sendMessage(
+				{
+					customType: "list-promotable-result",
+					content: message,
+					display: true,
+				},
+				{ triggerTurn: false },
+			);
+		},
+	});
+
+	pi.registerCommand("promote-agent", {
+		description: "Promote a dynamic agent to user scope. Usage: /promote-agent [agent-name] [--overwrite]",
+		handler: async (args: string, ctx: any) => {
+			if (!ctx.hasUI) {
+				ctx.ui.notify("promote-agent requires interactive mode", "error");
+				return;
+			}
+
+			// Get promotable agents
+			const promotable = listPromotableAgents();
+
+			if (promotable.length === 0) {
+				ctx.ui.notify("No promotable agents found. Use /list-promotable-agents to check.", "info");
+				return;
+			}
+
+			let agentName: string | undefined;
+			let overwrite = false;
+
+			// Parse arguments
+			const argStr = args.trim();
+			if (argStr) {
+				const parts = argStr.split(/\s+/);
+				agentName = parts[0];
+
+				// Parse overwrite flag
+				const overwriteIndex = parts.indexOf("--overwrite");
+				if (overwriteIndex !== -1) {
+					overwrite = true;
+				}
+			}
+
+			// If no agent name provided, use TUI selection
+			if (!agentName) {
+				const tempDir = os.tmpdir();
+				const questionsPath = path.join(tempDir, "promote-agent-questions.json");
+
+				const questions = {
+					title: "Promote Dynamic Agent",
+					questions: [
+						{
+							id: "agent",
+							type: "single",
+							question: "Select a dynamic agent to promote:",
+							options: promotable.map((a) => `${a.name}: ${a.description}`),
+						},
+						{
+							id: "overwrite",
+							type: "single",
+							question: "Overwrite if agent already exists in user scope?",
+							options: ["No (cancel if exists)", "Yes (overwrite)"],
+						},
+					],
+				};
+
+				fs.writeFileSync(questionsPath, JSON.stringify(questions, null, 2), "utf-8");
+
+				// Trigger interview tool
+				pi.sendMessage(
+					{
+						customType: "promote-agent-tui",
+						content: `Please select an agent to promote using the interview tool:
+
+\`\`\`json
+{
+  "questions": "${questionsPath}"
+}
+\`\`\`
+
+After selection, I will promote the selected agent to user scope.`,
+						display: false,
+					},
+					{ triggerTurn: true },
+				);
+				return;
+			}
+
+			// Check if agent exists in dynamic scope
+			const exists = promotable.find((a) => a.name === agentName);
+
+			if (!exists) {
+				const available = promotable.map((a) => a.name).join(", ") || "none";
+				ctx.ui.notify(`✗ Dynamic agent '${agentName}' not found. Available: ${available}`, "error");
+				ctx.ui.notify("Use /list-promotable-agents to see all promotable agents", "info");
+				return;
+			}
+
+			// If overwrite is not set and agent already exists in user scope, confirm
+			if (!overwrite) {
+				const userAgents = listAgents("user");
+				if (userAgents.includes(agentName)) {
+					const ok = await ctx.ui.confirm(
+						"Overwrite existing agent?",
+						`Agent '${agentName}' already exists in user scope. Do you want to overwrite it?`,
+					);
+					if (!ok) {
+						ctx.ui.notify("Promotion canceled", "info");
+						return;
+					}
+					overwrite = true;
+				}
+			}
+
+			// Promote the agent
+			const result = promoteDynamicAgent(agentName, { overwrite });
+
+			if (result.success) {
+				const action = result.overwritten ? "replaced" : "promoted";
+				ctx.ui.notify(`✓ Successfully ${action} agent '${agentName}' to user scope`, "success");
+				ctx.ui.notify(`Location: ${result.filePath}`, "info");
+				ctx.ui.notify(`Usage: /sub:${agentName} <task>`, "info");
+			} else {
+				ctx.ui.notify(`✗ Failed to promote agent: ${result.error}`, "error");
+			}
+		},
+	});
+
+	pi.registerCommand("promote-agent-confirm", {
+		description: "Confirm promotion after TUI selection (internal use)",
+		handler: async (args: string, ctx: any) => {
+			if (!ctx.hasUI) {
+				ctx.ui.notify("promote-agent-confirm requires interactive mode", "error");
+				return;
+			}
+
+			try {
+				const { agent, overwrite } = JSON.parse(args);
+
+				if (!agent) {
+					ctx.ui.notify("No agent selected", "error");
+					return;
+				}
+
+				const promotable = listPromotableAgents();
+				const exists = promotable.find((a) => a.name === agent);
+
+				if (!exists) {
+					ctx.ui.notify(`✗ Dynamic agent '${agent}' not found`, "error");
+					return;
+				}
+
+				const overwriteFlag = overwrite === "Yes (overwrite)";
+
+				// Promote the agent
+				const result = promoteDynamicAgent(agent, { overwrite: overwriteFlag });
+
+				if (result.success) {
+					const action = result.overwritten ? "replaced" : "promoted";
+					ctx.ui.notify(`✓ Successfully ${action} agent '${agent}' to user scope`, "success");
+					ctx.ui.notify(`Location: ${result.filePath}`, "info");
+					ctx.ui.notify(`Usage: /sub:${agent} <task>`, "info");
+				} else {
+					ctx.ui.notify(`✗ Failed to promote agent: ${result.error}`, "error");
+				}
+			} catch (error) {
+				ctx.ui.notify(`✗ Failed to parse selection: ${error instanceof Error ? error.message : String(error)}`, "error");
+			}
 		},
 	});
 }

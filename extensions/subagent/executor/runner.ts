@@ -7,11 +7,25 @@ import type { AgentConfig } from "../agents.js";
 import type { SingleResult, OnUpdateCallback, AgentRunnerOptions } from "../types.js";
 import { writePromptToTempFile, cleanupTempFiles } from "../utils/tempfiles.js";
 import { createInitialUsage, accumulateUsage, parseEventLine } from "./parser.js";
+import { generateDynamicAgent, dynamicAgentToConfig, getDynamicAgentsDir } from "../dynamic-agent.js";
+import type { GeneratedAgentConfig } from "../dynamic-agent.js";
 
 export async function runSingleAgent(options: AgentRunnerOptions): Promise<SingleResult> {
 	const { defaultCwd, agents, agentName, task, cwd, step, signal, onUpdate, makeDetails } = options;
 
 	let agent = agents.find((a) => a.name === agentName);
+	let isDynamicAgent = false;
+	let dynamicAgentInfo: GeneratedAgentConfig | null = null;
+
+	if (!agent) {
+		const generated = await generateDynamicAgent({ agentName, task });
+		if (generated) {
+			dynamicAgentInfo = generated;
+			agent = dynamicAgentToConfig(generated, agentName);
+			isDynamicAgent = true;
+		}
+	}
+
 	if (!agent) {
 		const worker = agents.find((a) => a.name === "worker");
 		if (worker) {
@@ -23,12 +37,32 @@ export async function runSingleAgent(options: AgentRunnerOptions): Promise<Singl
 				task,
 				exitCode: 1,
 				messages: [],
-				stderr: `Unknown agent: ${agentName} (no worker.md available)`,
+				stderr: `Unknown agent: ${agentName} (no worker.md available and dynamic generation failed)`,
 				usage: createInitialUsage(),
 				step,
 			};
 		}
 	}
+
+	const effectiveAgentName = agent.name;
+	const effectiveTask = isDynamicAgent
+		? [
+				`[Dynamic agent "${agentName}" ${
+					dynamicAgentInfo?.origin === "matched" ? "matched from" : "created and saved to"
+				} ${dynamicAgentInfo?.filePath ?? getDynamicAgentsDir()}]`,
+				`Generation: ${dynamicAgentInfo?.origin === "matched" ? "matched existing dynamic agent" : "generated from model"}`,
+				`Available tools: ${dynamicAgentInfo?.availableTools?.join(", ") || "(unknown)"}`,
+				`Available skills/plugins: ${
+					dynamicAgentInfo?.availableSkills && dynamicAgentInfo.availableSkills.length > 0
+						? dynamicAgentInfo.availableSkills.join(", ")
+						: "(none)"
+				}`,
+				dynamicAgentInfo?.systemPrompt?.trim() ? `System prompt:\n${dynamicAgentInfo.systemPrompt.trim()}` : "",
+				`Original task: ${task}`,
+			]
+				.filter(Boolean)
+				.join("\n\n")
+		: task;
 
 	const args: string[] = ["--mode", "json", "-p", "--no-session"];
 	if (agent.model) args.push("--model", agent.model);
@@ -39,9 +73,9 @@ export async function runSingleAgent(options: AgentRunnerOptions): Promise<Singl
 	let tmpPromptPath: string | null = null;
 
 	const currentResult: SingleResult = {
-		agent: agentName,
-		agentSource: agent.source,
-		task,
+		agent: effectiveAgentName,
+		agentSource: isDynamicAgent ? "dynamic" : agent.source,
+		task: effectiveTask,
 		exitCode: 0,
 		messages: [],
 		stderr: "",
@@ -67,7 +101,7 @@ export async function runSingleAgent(options: AgentRunnerOptions): Promise<Singl
 			args.push("--append-system-prompt", tmpPromptPath);
 		}
 
-		args.push(`Task: ${task}`);
+		args.push(`Task: ${effectiveTask}`);
 		let wasAborted = false;
 
 		const exitCode = await new Promise<number>((resolve) => {

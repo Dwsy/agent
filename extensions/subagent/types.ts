@@ -3,9 +3,9 @@
  */
 
 import type { Message } from "@mariozechner/pi-ai";
-import type { AgentConfig, AgentScope } from "./agents.js";
+import type { AgentConfig, AgentScope, AgentSource as BaseAgentSource } from "./agents.js";
 
-export type AgentSource = "user" | "project" | "unknown";
+export type AgentSource = BaseAgentSource | "unknown";
 
 export interface UsageStats {
 	input: number;

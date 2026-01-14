@@ -9,13 +9,16 @@ import { runSingleAgent } from "../executor/runner.js";
 import { getFinalOutput } from "../utils/formatter.js";
 
 export class SingleMode implements ExecutionMode {
-	async execute(ctx: ExecutionContext, params: { agent: string; task: string; cwd?: string }): Promise<any> {
+	async execute(
+		ctx: ExecutionContext,
+		params: { agent: string; task: string; cwd?: string; agentScope: string; projectAgentsDir: string | null },
+	): Promise<any> {
 		const { defaultCwd, agents, signal, onUpdate } = ctx;
 
 		const makeDetails = (results: SingleResult[]): SubagentDetails => ({
 			mode: "single",
-			agentScope: "user",
-			projectAgentsDir: null,
+			agentScope: params.agentScope,
+			projectAgentsDir: params.projectAgentsDir,
 			results,
 		});
 
