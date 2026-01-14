@@ -1,9 +1,6 @@
 [submodule "skills/deepwiki"]
 	path = skills/deepwiki
 	url = https://github.com/Dwsy/deepwiki-skills
-[submodule "skills/ace-tool"]
-	path = skills/ace-tool
-	url = https://github.com/Dwsy/ace-tool-skill
 [submodule "skills/knowledge-base"]
 	path = skills/knowledge-base
 	url = https://github.com/Dwsy/knowledge-base-skill
@@ -16,3 +13,6 @@
 [submodule "skills/codemap"]
 	path = skills/codemap
 	url = https://github.com/Dwsy/codemap
+[submodule "skills/ace-tool"]
+	path = skills/ace-tool
+	url = https://github.com/Dwsy/ace-tool-skill
