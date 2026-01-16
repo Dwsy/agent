@@ -144,3 +144,14 @@ interview/
 
 # Archived skills
 skills/.archive/
+
+# Temporary system files
+APPEND_SYSTEM.md
+SYSTEM.md.back
+selected
+
+# Research artifacts
+agents/research.json
+agents/research.md
+agents/researcher.md
+agents/dynamic/*.md
