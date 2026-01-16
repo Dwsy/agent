@@ -1,18 +1,4 @@
-# 临时文件
-*.tmp
+node_modules/
+.pi/
 *.log
-
-# 截图输出
-screenshots/
-output/
-*.png
-*.jpg
-*.pdf
-
-# 状态文件
-*.json
-!package.json
-
-# 测试结果
-test-results/
-coverage/
+.DS_Store
