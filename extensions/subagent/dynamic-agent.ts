@@ -288,6 +288,7 @@ Determine if any skills would enhance the agent's capabilities:
 
 ### Step 4: System Prompt Construction
 Build a comprehensive system prompt:
+- **MUST BE WRITTEN IN CHINESE** (简体中文)
 - Define the agent's role and responsibilities
 - Include domain-specific knowledge and best practices
 - Add constraints and safety considerations
@@ -311,8 +312,8 @@ Generate a JSON object with the following structure:
 \`\`\`json
 {
   "name": "the agent name (use the requested name)",
-  "description": "A brief one-line description of this agent's purpose",
-  "systemPrompt": "A detailed system prompt that defines the agent's role, responsibilities, constraints, and best practices. Include tool usage guidance and skill invocation examples when relevant.",
+  "description": "A brief one-line description of this agent's purpose in English",
+  "systemPrompt": "A detailed system prompt that defines the agent's role, responsibilities, constraints, and best practices. Include tool usage guidance and skill invocation examples when relevant. **MUST BE WRITTEN IN CHINESE (简体中文)**",
   "tools": "(optional) Array of tool names this agent might need - only include if absolutely necessary"
 }
 \`\`\`
@@ -326,6 +327,8 @@ Generate a JSON object with the following structure:
 - If you specify tools, **only use names from the Available Tools list** above
 - **Do NOT include skills in the tools field** - skills are invoked via CLI, suggest them in systemPrompt instead
 - Use the requested agent name as the name
+- The **systemPrompt MUST BE WRITTEN IN CHINESE (简体中文)** - this is required
+- The description should be in English, but the systemPrompt content must be fully Chinese
 - The systemPrompt should be specific to the task domain
 - Include relevant constraints, best practices, and tool usage guidance
 - Keep the description concise but informative
@@ -339,7 +342,9 @@ Generate a JSON object with the following structure:
 - No markdown code blocks
 - No explanations
 - Valid JSON that can be parsed directly
-- Ensure all JSON fields are properly quoted and escaped`;
+- Ensure all JSON fields are properly quoted and escaped
+- **The "systemPrompt" field MUST be entirely in Chinese (简体中文)**
+- The "description" and "name" fields should be in English`;
 }
 
 function saveDynamicAgentToFile(generated: GeneratedAgentConfig, targetDir?: string): string {

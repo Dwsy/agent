@@ -30,12 +30,12 @@ export function parseEventLine(line: string): ParsedEvent | null {
 export function accumulateUsage(current: UsageStats, event: ParsedEvent): void {
 	const usage = event.usage;
 	if (usage) {
-		current.input += usage.input || 0;
-		current.output += usage.output || 0;
-		current.cacheRead += usage.cacheRead || 0;
-		current.cacheWrite += usage.cacheWrite || 0;
-		current.cost += usage.cost?.total || 0;
-		current.contextTokens = usage.totalTokens || 0;
+		current.input += usage.input ?? 0;
+		current.output += usage.output ?? 0;
+		current.cacheRead += usage.cacheRead ?? 0;
+		current.cacheWrite += usage.cacheWrite ?? 0;
+		current.cost += usage.cost?.total ?? 0;
+		current.contextTokens = usage.totalTokens ?? 0;
 	}
 }
 

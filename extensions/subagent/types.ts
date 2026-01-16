@@ -29,6 +29,8 @@ export interface SingleResult {
 	stopReason?: string;
 	errorMessage?: string;
 	step?: number;
+	startTime?: number;
+	endTime?: number;
 }
 
 export interface SubagentDetails {

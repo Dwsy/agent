@@ -47,6 +47,7 @@ export class ParallelMode {
 				messages: [],
 				stderr: "",
 				usage: createInitialUsage(),
+				startTime: Date.now(),
 			};
 		}
 
@@ -78,6 +79,9 @@ export class ParallelMode {
 				},
 				makeDetails,
 			});
+			if (!result.endTime) {
+				result.endTime = Date.now();
+			}
 			allResults[index] = result;
 			emitParallelUpdate();
 			return result;

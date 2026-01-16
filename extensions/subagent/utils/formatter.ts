@@ -6,9 +6,18 @@ import * as os from "node:os";
 
 export function formatTokens(count: number): string {
 	if (count < 1000) return count.toString();
-	if (count < 10000) return `${(count / 1000).toFixed(1)}k`;
+	if (count < 10000) return `${(count / 1000).toFixed(1).replace(/\.0$/, '')}k`;
 	if (count < 1000000) return `${Math.round(count / 1000)}k`;
-	return `${(count / 1000000).toFixed(1)}M`;
+	return `${(count / 1000000).toFixed(1).replace(/\.0$/, '')}M`;
+}
+
+export function formatDuration(startTime?: number, endTime?: number): string {
+	if (startTime === undefined || startTime === null || endTime === undefined || endTime === null) return "";
+	const ms = endTime - startTime;
+	if (ms < 1000) return `${ms}ms`;
+	if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
+	if (ms < 3600000) return `${Math.floor(ms / 60000)}m${Math.floor((ms % 60000) / 1000)}s`;
+	return `${Math.floor(ms / 3600000)}h${Math.floor((ms % 3600000) / 60000)}m`;
 }
 
 export function formatUsageStats(
@@ -29,7 +38,10 @@ export function formatUsageStats(
 	if (usage.output) parts.push(`↓${formatTokens(usage.output)}`);
 	if (usage.cacheRead) parts.push(`R${formatTokens(usage.cacheRead)}`);
 	if (usage.cacheWrite) parts.push(`W${formatTokens(usage.cacheWrite)}`);
-	if (usage.cost) parts.push(`$${usage.cost.toFixed(4)}`);
+	if (usage.cost) {
+		const costStr = usage.cost >= 0.01 ? `$${usage.cost.toFixed(4)}` : `$${usage.cost.toFixed(4).replace(/0+$/, '')}`;
+		parts.push(costStr);
+	}
 	if (usage.contextTokens && usage.contextTokens > 0) {
 		parts.push(`ctx:${formatTokens(usage.contextTokens)}`);
 	}

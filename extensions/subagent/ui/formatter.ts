@@ -96,17 +96,21 @@ export function aggregateUsage(results: import("../types.js").SingleResult[]) {
 
 const COLLAPSED_ITEM_COUNT = 10;
 
-export function renderDisplayItems(items: DisplayItem[], expanded: boolean, theme: any): string {
+export function renderDisplayItems(items: DisplayItem[], expanded: boolean, theme?: any): string {
 	const toShow = expanded ? items : items.slice(-COLLAPSED_ITEM_COUNT);
 	const skipped = !expanded && items.length > COLLAPSED_ITEM_COUNT ? items.length - COLLAPSED_ITEM_COUNT : 0;
 	let text = "";
-	if (skipped > 0) text += theme.fg("muted", `... ${skipped} earlier items\n`);
+	if (skipped > 0) text += theme ? theme.fg("muted", `... ${skipped} earlier items\n`) : `... ${skipped} earlier items\n`;
 	for (const item of toShow) {
 		if (item.type === "text") {
 			const preview = expanded ? item.text : item.text.split("\n").slice(0, 3).join("\n");
-			text += `${theme.fg("toolOutput", preview)}\n`;
+			text += `${theme ? theme.fg("toolOutput", preview) : preview}\n`;
 		} else {
-			text += `${theme.fg("muted", "→ ") + formatToolCall(item.name, item.args, theme.fg.bind(theme))}\n`;
+			if (theme) {
+				text += `${theme.fg("muted", "→ ") + formatToolCall(item.name, item.args, theme.fg.bind(theme))}\n`;
+			} else {
+				text += `→ ${item.name}\n`;
+			}
 		}
 	}
 	return text.trimEnd();

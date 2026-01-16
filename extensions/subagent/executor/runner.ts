@@ -82,6 +82,7 @@ export async function runSingleAgent(options: AgentRunnerOptions): Promise<Singl
 		usage: createInitialUsage(),
 		model: agent.model,
 		step,
+		startTime: Date.now(),
 	};
 
 	const emitUpdate = () => {
@@ -119,6 +120,18 @@ export async function runSingleAgent(options: AgentRunnerOptions): Promise<Singl
 					if (msg.role === "assistant") {
 						currentResult.usage.turns++;
 						accumulateUsage(currentResult.usage, event);
+
+						// Also try to get usage from message itself if event.usage is missing
+						if (!event.usage && (msg as any).usage) {
+							const msgUsage = (msg as any).usage;
+							currentResult.usage.input += msgUsage.input ?? 0;
+							currentResult.usage.output += msgUsage.output ?? 0;
+							currentResult.usage.cacheRead += msgUsage.cacheRead ?? 0;
+							currentResult.usage.cacheWrite += msgUsage.cacheWrite ?? 0;
+							currentResult.usage.cost += msgUsage.cost?.total ?? 0;
+							currentResult.usage.contextTokens = msgUsage.totalTokens ?? 0;
+						}
+
 						if (!currentResult.model && msg.model) currentResult.model = msg.model;
 						if (msg.stopReason) currentResult.stopReason = msg.stopReason;
 						if (msg.errorMessage) currentResult.errorMessage = msg.errorMessage;
@@ -164,6 +177,7 @@ export async function runSingleAgent(options: AgentRunnerOptions): Promise<Singl
 		});
 
 		currentResult.exitCode = exitCode;
+		currentResult.endTime = Date.now();
 		if (wasAborted) throw new Error("Subagent was aborted");
 		return currentResult;
 	} finally {
