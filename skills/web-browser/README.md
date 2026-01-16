@@ -13,7 +13,6 @@ This skill provides comprehensive browser automation capabilities through a coll
 - ✅ **Independent browser instance** - doesn't affect your main Chrome
 - ✅ **Random port management** - avoids conflicts automatically
 - ✅ **Persistent sessions** - cookies and localStorage persist across restarts
-- ✅ **Profile support** - use your main Chrome profile when needed
 
 ### 📦 Functionality Modules
 
@@ -71,11 +70,11 @@ This skill provides comprehensive browser automation capabilities through a coll
 \`\`\`bash
 cd ~/.pi/agent/skills/web-browser
 
-# Start with fresh profile
+# Start Chromium with persistent storage (default)
 node scripts/start.js
 
-# Or copy your main Chrome profile (cookies, logins)
-node scripts/start.js --profile
+# Use Google Chrome instead of Chromium
+node scripts/start.js --chrome
 \`\`\`
 
 ### 2. Navigate to a Page
@@ -113,8 +112,8 @@ node scripts/stop.js
 
 | Script | Description | Example |
 |--------|-------------|---------|
-| `start.js` | Start Chrome with random port | `node scripts/start.js --profile` |
-| `stop.js` | Stop Chrome | `node scripts/stop.js` |
+| `start.js` | Start Chromium with random port | `node scripts/start.js` |
+| `stop.js` | Stop Chromium | `node scripts/stop.js` |
 | `get-port.js` | Get current port | `node scripts/get-port.js` |
 
 ### Navigation
@@ -325,11 +324,11 @@ node scripts/start.js
 ### Profile Management
 
 \`\`\`bash
-# Fresh profile (no cookies, no logins)
+# Start Chromium with persistent storage
 node scripts/start.js
 
-# Copy main Chrome profile (cookies, logins, bookmarks)
-node scripts/start.js --profile
+# Use Google Chrome instead of Chromium
+node scripts/start.js --chrome
 \`\`\`
 
 ### Data Persistence

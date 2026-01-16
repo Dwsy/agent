@@ -9,10 +9,11 @@ tools: read, bash, write, edit, subagent
 ## 核心能力
 
 ### 1. 浏览器管理
-- 启动/停止独立的 Chrome 实例（随机端口 9222-9999）
+- 启动/停止独立的 Chromium 实例（随机端口 9222-9999）
 - 管理会话状态（cookies, localStorage, session 持久化）
-- 支持使用主 Chrome 配置文件（--profile）
 - 完全独立，不影响主浏览器
+- 数据持久化保存在 `~/.cache/scraping-web-browser/`
+- 可选择使用 Google Chrome（--chrome 参数）
 
 ### 2. 网页导航
 - 导航到指定 URL
@@ -52,14 +53,11 @@ cd ~/.pi/agent/skills/web-browser
 # 获取当前端口
 node scripts/get-port.js
 
-# 启动浏览器（独立实例）
+# 启动 Chromium 浏览器（默认，独立实例，数据持久化）
 node scripts/start.js
 
-# 使用主 Chrome 配置文件（包含 cookies 和登录状态）
-node scripts/start.js --profile
-
-# 使用 Chromium
-node scripts/start.js --chromium
+# 使用 Google Chrome 代替 Chromium
+node scripts/start.js --chrome
 
 # 停止浏览器
 node scripts/stop.js
@@ -197,7 +195,7 @@ node scripts/tabs.js close-others
 ### 场景 1: 网页调研
 
 ```bash
-# 1. 启动浏览器
+# 1. 启动 Chromium 浏览器（数据持久化）
 node scripts/start.js
 
 # 2. 导航到目标页面
@@ -218,7 +216,7 @@ node scripts/find-text.js "important keyword"
 # 7. 保存网络请求
 node scripts/network.js export requests.json
 
-# 8. 完成
+# 8. 完成（数据已持久化）
 node scripts/stop.js
 ```
 
@@ -252,8 +250,8 @@ node scripts/stop.js
 ### 场景 3: 表单自动化
 
 ```bash
-# 1. 启动浏览器（使用主配置文件）
-node scripts/start.js --profile
+# 1. 启动 Chromium 浏览器（数据会持久化）
+node scripts/start.js
 
 # 2. 导航到登录页面
 node scripts/nav.js https://example.com/login
@@ -280,8 +278,12 @@ node scripts/find-text.js "Welcome"
 # 9. 截图
 node scripts/screenshot.js login-success.png
 
-# 10. 完成
+# 10. 停止浏览器（登录状态已持久化）
 node scripts/stop.js
+
+# 11. 下次启动时，登录状态会自动恢复
+node scripts/start.js
+node scripts/nav.js https://example.com/dashboard
 ```
 
 ### 场景 4: 电商价格监控

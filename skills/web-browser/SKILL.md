@@ -12,6 +12,8 @@ Full-featured browser automation with CDP tools for collaborative site explorati
 
 **🎲 随机端口**：每次启动时自动生成随机端口（9222-9999），避免端口冲突。端口信息保存在 `~/.cache/scraping-web-browser/port.txt`，下次启动会复用相同端口。
 
+**💾 持久化存储**：默认使用 Chromium 浏览器，数据持久化保存在 `~/.cache/scraping-web-browser/`，包括 cookies、localStorage、session data 等，重启后自动恢复。
+
 ## Quick Start
 
 ```bash
@@ -21,20 +23,20 @@ node demo.js
 # Get current port
 node scripts/get-port.js
 
-# Start browser
+# Start Chromium browser (default, with persistent storage)
 node scripts/start.js
 ```
 
 ## Browser Management
 
-### Start Chrome
+### Start Chromium (Default)
 
 \`\`\`bash
-./scripts/start.js              # Start with fresh profile
-./scripts/start.js --profile    # Copy your main Chrome profile (cookies, logins)
+./scripts/start.js              # Start Chromium with persistent storage
+./scripts/start.js --chrome     # Use Google Chrome instead of Chromium
 \`\`\`
 
-Start Chrome on a random port (9222-9999) with remote debugging. The port is saved and reused for subsequent starts.
+Start Chromium on a random port (9222-9999) with remote debugging. The port is saved and reused for subsequent starts.
 
 **Important**: This skill starts a completely independent browser instance with its own profile directory (`~/.cache/scraping-web-browser`). It will NOT affect your existing Chrome browser or close any open tabs. The browser runs in the background and persists cookies, localStorage, and session data between restarts.
 
@@ -450,15 +452,10 @@ Get console logs.
 1. **Always stop browser**: Use `node scripts/stop.js` when done to release resources
 2. **Check port**: Use `node scripts/get-port.js` to see current port
 3. **Error handling**: If errors occur, restart browser and retry
-4. **Persistence**: Use `--profile` option for scenarios requiring login
+4. **Persistence**: All data (cookies, localStorage, sessions) persists in `~/.cache/scraping-web-browser/`
 5. **Wait strategies**: Use `wait-for.js` for dynamic content
 6. **Network monitoring**: Use `network.js start/stop` to analyze requests
 7. **Debugging**: Use `debug.js` and `inspect.js` for troubleshooting
-
-## Profile Options
-
-- **Fresh profile** (`./scripts/start.js`): Starts with a new, isolated profile. Good for testing and scraping without affecting your main browser.
-- **Copy profile** (`./scripts/start.js --profile`): Copies your main Chrome profile (cookies, logins, bookmarks) to the isolated browser. Useful when you need to be logged into sites.
 
 ## Port Management
 

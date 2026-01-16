@@ -5,19 +5,15 @@ import { writeFileSync, readFileSync, existsSync } from "node:fs";
 import { randomInt } from "node:crypto";
 import puppeteer from "puppeteer-core";
 
-const useProfile = process.argv.includes("--profile");
-const useChromium = process.argv.includes("--chromium");
+const useChromium = !process.argv.includes("--chrome"); // Default to Chromium
 
-if (process.argv[2] && process.argv[2] !== "--profile" && process.argv[2] !== "--chromium") {
-  console.log("Usage: start.js [--profile] [--chromium]");
+if (process.argv[2] && process.argv[2] !== "--chrome") {
+  console.log("Usage: start.js [--chrome]");
   console.log("\nOptions:");
-  console.log("  --profile   Copy your default Chrome profile (cookies, logins)");
-  console.log("  --chromium  Use Chromium instead of Google Chrome");
+  console.log("  --chrome    Use Google Chrome instead of Chromium");
   console.log("\nExamples:");
-  console.log("  start.js              # Start with fresh Chrome profile");
-  console.log("  start.js --profile    # Start with your Chrome profile");
-  console.log("  start.js --chromium   # Start with Chromium");
-  console.log("  start.js --chromium --profile  # Start with Chromium and your profile");
+  console.log("  start.js              # Start Chromium with persistent storage");
+  console.log("  start.js --chrome     # Start Google Chrome");
   process.exit(1);
 }
 
@@ -49,7 +45,6 @@ try {
   });
   await browser.disconnect();
   existingBrowser = true;
-  const browserName = useChromium ? "Chromium" : "Chrome";
   console.log(`✓ ${browserName} already running on :${port}`);
   process.exit(0);
 } catch {
@@ -57,51 +52,65 @@ try {
 }
 
 // Determine which browser executable to use
-const chromePath = useChromium
-  ? "/Applications/Chromium.app/Contents/MacOS/Chromium"
-  : "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+const chromiumPath = "/Applications/Chromium.app/Contents/MacOS/Chromium";
+const chromePath = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 
-const chromiumInstalled = existsSync("/Applications/Chromium.app/Contents/MacOS/Chromium");
+const chromiumInstalled = existsSync(chromiumPath);
+const chromeInstalled = existsSync(chromePath);
 
-if (useChromium && !chromiumInstalled) {
-  console.error("❌ Chromium not found at /Applications/Chromium.app/");
-  console.log("   Please install Chromium first, or remove --chromium flag");
+// Use Chromium by default, fallback to Chrome if Chromium not found
+let browserPath;
+if (useChromium && chromiumInstalled) {
+  browserPath = chromiumPath;
+} else if (!useChromium && chromeInstalled) {
+  browserPath = chromePath;
+} else if (chromiumInstalled) {
+  console.log("⚠️  Google Chrome not found, using Chromium instead");
+  browserPath = chromiumPath;
+} else if (chromeInstalled) {
+  console.log("⚠️  Chromium not found, using Google Chrome instead");
+  browserPath = chromePath;
+} else {
+  console.error("❌ No browser found!");
+  console.log("   Please install either Chromium or Google Chrome");
+  console.log("   Install Chromium: brew install --cask chromium");
   process.exit(1);
 }
 
-if (useProfile) {
-  // Sync profile with rsync (much faster on subsequent runs)
-  // Use Chrome profile (Chromium uses the same format)
-  execSync(
-    `rsync -a --delete "${process.env["HOME"]}/Library/Application Support/Google/Chrome/" "${profileDir}/"`,
-    { stdio: "pipe" },
-  );
-}
+const browserName = browserPath.includes("Chromium") ? "Chromium" : "Chrome";
+console.log(`🚀 Starting: ${browserName} (${browserPath})`);
 
 // Start browser in background with unique profile directory
 // Using a separate profile ensures it doesn't interfere with your main browser
-const browserName = useChromium ? "Chromium" : "Chrome";
+const browserArgs = [
+  `--remote-debugging-port=${port}`,
+  `--user-data-dir=${profileDir}`,
+  "--profile-directory=Default",
+  "--no-first-run",
+  "--no-default-browser-check",
+  "--disable-background-networking",
+  "--disable-background-timer-throttling",
+  "--disable-backgrounding-occluded-windows",
+  "--disable-renderer-backgrounding",
+  "--disable-features=TranslateUI,BlinkGenPropertyTrees",
+  "--disable-web-security",
+  "--disable-features=VizDisplayCompositor",
+  "--proxy-server='direct://'",
+  "--no-proxy-server",
+];
+
+console.log(`📂 Profile: ${profileDir}`);
+console.log(`🔌 Port: ${port}`);
+console.log(`📝 Args: ${browserArgs.slice(0, 3).join(" ")} ...`);
+
 const browserProcess = spawn(
-  chromePath,
-  [
-    `--remote-debugging-port=${port}`,
-    `--user-data-dir=${profileDir}`,
-    "--profile-directory=Default",
-    "--no-first-run",
-    "--no-default-browser-check",
-    "--disable-background-networking",
-    "--disable-background-timer-throttling",
-    "--disable-backgrounding-occluded-windows",
-    "--disable-renderer-backgrounding",
-    "--disable-features=TranslateUI,BlinkGenPropertyTrees",
-    "--disable-web-security",
-    "--disable-features=VizDisplayCompositor",
-    "--proxy-server='direct://'",
-    "--no-proxy-server",
-  ],
+  browserPath,
+  browserArgs,
   { detached: true, stdio: "ignore" },
 );
 browserProcess.unref();
+
+console.log(`🎯 Process ID: ${browserProcess.pid}`);
 
 // Wait for browser to be ready by attempting to connect
 let connected = false;
@@ -124,8 +133,4 @@ if (!connected) {
   process.exit(1);
 }
 
-let message = `✓ ${browserName} started on :${port}`;
-if (useProfile) {
-  message += " with your profile";
-}
-console.log(message);
+console.log(`✓ ${browserName} started on :${port}`);
