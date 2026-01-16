@@ -55,8 +55,33 @@ interface InterviewDetails {
 	transcript?: TranscriptEntry[];
 }
 
+type QuestionsInput = string | QuestionsFile;
+
 const InterviewParams = Type.Object({
-	questions: Type.String({ description: "Path to questions JSON file" }),
+	questions: Type.Union([
+		Type.String({
+			description: "Path to questions JSON file OR inline JSON string starting with '{'",
+		}),
+		Type.Object({
+			title: Type.Optional(Type.String()),
+			description: Type.Optional(Type.String()),
+			questions: Type.Array(
+				Type.Object({
+					id: Type.String(),
+					type: Type.Union([
+						Type.Literal("single"),
+						Type.Literal("multi"),
+						Type.Literal("text"),
+						Type.Literal("image"),
+					]),
+					question: Type.String(),
+					options: Type.Optional(Type.Array(Type.String())),
+					recommended: Type.Optional(Type.Union([Type.String(), Type.Array(Type.String())])),
+					context: Type.Optional(Type.String()),
+				}),
+			),
+		}),
+	]),
 	timeout: Type.Optional(
 		Type.Number({ description: "Seconds before auto-timeout", default: 600 })
 	),
@@ -107,22 +132,38 @@ function mergeThemeConfig(
 	};
 }
 
-function loadQuestions(questionsPath: string, cwd: string): QuestionsFile {
-	const absolutePath = path.isAbsolute(questionsPath)
-		? questionsPath
-		: path.join(cwd, questionsPath);
-
-	if (!fs.existsSync(absolutePath)) {
-		throw new Error(`Questions file not found: ${absolutePath}`);
-	}
-
+function loadQuestions(questionsInput: QuestionsInput, cwd: string): QuestionsFile {
 	let data: unknown;
-	try {
-		const content = fs.readFileSync(absolutePath, "utf-8");
-		data = JSON.parse(content);
-	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
-		throw new Error(`Invalid JSON in questions file: ${message}`);
+
+	if (typeof questionsInput === "object") {
+		data = questionsInput;
+	} else {
+		const trimmed = questionsInput.trim();
+
+		if (trimmed.startsWith("{")) {
+			try {
+				data = JSON.parse(trimmed);
+			} catch (err) {
+				const message = err instanceof Error ? err.message : String(err);
+				throw new Error(`Invalid inline JSON questions: ${message}`);
+			}
+		} else {
+			const absolutePath = path.isAbsolute(trimmed)
+				? trimmed
+				: path.join(cwd, trimmed);
+
+			if (!fs.existsSync(absolutePath)) {
+				throw new Error(`Questions file not found: ${absolutePath}`);
+			}
+
+			try {
+				const content = fs.readFileSync(absolutePath, "utf-8");
+				data = JSON.parse(content);
+			} catch (err) {
+				const message = err instanceof Error ? err.message : String(err);
+				throw new Error(`Invalid JSON in questions file: ${message}`);
+			}
+		}
 	}
 
 	return validateQuestions(data);
@@ -152,13 +193,14 @@ export default function (pi: ExtensionAPI) {
 			"exploring design tradeoffs, or when decisions have multiple dimensions worth discussing. " +
 			"Provides better UX than back-and-forth chat for structured input. " +
 			"Image responses and attachments are returned as file paths - use read tool directly to display them. " +
+			'Supports inline JSON object or JSON string (starting with "{") OR file path. ' +
 			'Questions JSON format: { "title": "...", "questions": [{ "id": "q1", "type": "single|multi|text|image", "question": "...", "options": ["A", "B"] }] }. ' +
 			"Options must be plain strings (not objects). Types: single (radio), multi (checkbox), text (textarea), image (file upload).",
 		parameters: InterviewParams,
 
 		async execute(_toolCallId, params, onUpdate, ctx, signal) {
 			const { questions, timeout, verbose, voice, theme } = params as {
-				questions: string;
+				questions: QuestionsInput;
 				timeout?: number;
 				verbose?: boolean;
 				voice?: boolean;
@@ -335,8 +377,15 @@ export default function (pi: ExtensionAPI) {
 		},
 
 		renderCall(args, theme) {
-			const { questions } = args as { questions?: string };
-			const label = questions ? `Interview: ${questions}` : "Interview";
+			const { questions } = args as { questions?: QuestionsInput };
+			let label = "Interview";
+			if (questions) {
+				if (typeof questions === "object" && questions.title) {
+					label = `Interview: ${questions.title}`;
+				} else if (typeof questions === "string") {
+					label = `Interview: ${questions}`;
+				}
+			}
 			return new Text(theme.fg("toolTitle", theme.bold(label)), 0, 0);
 		},
 
