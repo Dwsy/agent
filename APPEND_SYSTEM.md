@@ -41,9 +41,21 @@
 
 ### 1.1 文件读取
 
-- 必须用 `bat` 读取文件  
-- ✅ 正确：`bat <file>` | `bat <file> | sed -n '1,100p'`  
-- ❌ 禁止：`cat`（除非用于管道/重定向的原始输出）  
+- 必须用 `bat` 读取文件
+- ✅ 正确：`bat <file>` | `bat <file> | sed -n '1,100p'`
+- ❌ 禁止：`cat`（除非用于管道/重定向的原始输出）
+
+**🚨 read 工具调用规范：**
+
+`read` 工具**一次只能读取一个文件**，不支持批量读取。
+
+- ✅ 正确：每次调用只传一个 `path` 参数
+- ❌ 错误：单次调用传入多个路径（会导致 JSON 解析失败）
+
+**批量读取请用：**
+```bash
+for file in path1 path2 path3; do cat "$file"; done
+```  
 
 ### 1.2 文件搜索
 
@@ -56,9 +68,39 @@
 
 ### 1.3 后台任务
 
-- 长时间/交互/持续监控任务必须用 `tmux`  
-- ✅ 正确：`tmux new-session -d -s name 'command'`  
-- ❌ 禁止：阻塞主 shell 的长任务  
+**强制：所有后台任务必须使用 tmux skill**
+
+**适用场景：**
+- 长时间任务（>10s）：编译、训练、数据迁移
+- 交互式工具：Python REPL、gdb、数据库 CLI
+- 持续服务：dev server、数据库、守护进程
+- 需要监控输出或手动干预
+
+**命令：**
+```bash
+# 创建（category: task/service/agent）
+bun ~/.pi/agent/skills/tmux/lib.ts create <name> <command> [category]
+
+# 观测
+bun ~/.pi/agent/skills/tmux/lib.ts list        # 列出所有
+bun ~/.pi/agent/skills/tmux/lib.ts capture <id> [lines]  # 捕获输出
+bun ~/.pi/agent/skills/tmux/lib.ts status <id> # 状态
+bun ~/.pi/agent/skills/tmux/tui.ts             # TUI 界面
+
+# 交互
+bun ~/.pi/agent/skills/tmux/lib.ts send <id> "<keys>"
+
+# 清理
+bun ~/.pi/agent/skills/tmux/lib.ts kill <id>   # 终止
+bun ~/.pi/agent/skills/tmux/lib.ts cleanup [hours]
+```
+
+**创建后必须输出：**
+```
+tmux -S /tmp/pi-tmux-sockets/pi.sock attach -t {session-id}
+```
+
+**❌ 严禁：** `&` / `nohup` / `screen` / `disown` / 阻塞主 shell  
 
 ### 1.4 安全删除
 
