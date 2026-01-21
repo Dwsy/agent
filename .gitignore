@@ -37,6 +37,9 @@ pi-debug.log
 *.tmp
 *.tsbuildinfo
 
+# Output directories
+output-styles/
+
 # Backup files
 *.backup
 *.bak

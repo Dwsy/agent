@@ -31,6 +31,8 @@ export interface SingleResult {
 	step?: number;
 	startTime?: number;
 	endTime?: number;
+	status?: "searching" | "generating" | "running" | "completed" | "error";
+	generationStage?: string;
 }
 
 export interface SubagentDetails {

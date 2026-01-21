@@ -6,22 +6,22 @@
 
 ```bash
 # 贪吃蛇
-/snake
+/game:snake
 
 # 俄罗斯方块
-/tetris
+/game:tetris
 
 # 2048数字游戏
-/2048
+/game:2048
 
 # 扫雷
-/minesweeper
+/game:minesweeper
 
 # 打砖块
-/breakout
+/game:breakout
 
 # 乒乓球
-/pong
+/game:pong
 ```
 
 ---

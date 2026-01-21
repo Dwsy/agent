@@ -35,14 +35,14 @@ import {
 import type { AgentScope as CreatorScope, AgentTemplate } from "./utils/agent-creator.js";
 
 const TaskItem = Type.Object({
-	agent: Type.String({ description: "Name of the agent to invoke" }),
-	task: Type.String({ description: "Task to delegate to the agent" }),
+	agent: Type.String({ description: "Name of the agent to invoke. If it doesn't exist, will be auto-generated based on task" }),
+	task: Type.String({ description: "Task to delegate to the agent. Used to generate and execute the agent" }),
 	cwd: Type.Optional(Type.String({ description: "Working directory for the agent process" })),
 });
 
 const ChainItem = Type.Object({
-	agent: Type.String({ description: "Name of the agent to invoke" }),
-	task: Type.String({ description: "Task with optional {previous} placeholder for prior output" }),
+	agent: Type.String({ description: "Name of the agent to invoke. If it doesn't exist, will be auto-generated based on task" }),
+	task: Type.String({ description: "Task with optional {previous} placeholder for prior output. Used to generate and execute the agent" }),
 	cwd: Type.Optional(Type.String({ description: "Working directory for the agent process" })),
 });
 
@@ -52,8 +52,8 @@ const AgentScopeSchema = StringEnum(["user", "project", "both"] as const, {
 });
 
 const SubagentParamsSchema = Type.Object({
-	agent: Type.Optional(Type.String({ description: "Name of the agent to invoke (for single mode)" })),
-	task: Type.Optional(Type.String({ description: "Task to delegate (for single mode)" })),
+	agent: Type.Optional(Type.String({ description: "Name of the agent to invoke (for single mode). If it doesn't exist, will be auto-generated based on task" })),
+	task: Type.Optional(Type.String({ description: "Task to delegate (for single mode). Used to generate and execute the agent" })),
 	tasks: Type.Optional(Type.Array(TaskItem, { description: "Array of {agent, task} for parallel execution" })),
 	chain: Type.Optional(Type.Array(ChainItem, { description: "Array of {agent, task} for sequential execution" })),
 	agentScope: Type.Optional(AgentScopeSchema),
@@ -73,10 +73,18 @@ export default function (pi: ExtensionAPI) {
 		label: "Subagent",
 		description: [
 			"Delegate tasks to specialized subagents with isolated context.",
-			"Modes: single (agent + task), parallel (tasks array), chain (sequential with {previous} placeholder).",
-			'Default agent scope is "user" (from ~/.pi/agent/agents).',
-			'To enable project-local agents in .pi/agents, set agentScope: "both" (or "project").',
-		].join(" "),
+			"Modes:",
+			"  - Single: {agent, task} - one subagent",
+			"  - Parallel: {tasks: [{agent, task}, ...]} - up to 8 concurrent subagents",
+			"  - Chain: {chain: [{agent, task}, ...]} - sequential with {previous} placeholder",
+			"Dynamic Mode:",
+			"  - If the specified agent doesn't exist, it will be auto-generated based on the task description",
+			"  - Just provide an agent name and task - the system will create a suitable subagent",
+			"Agent Scope:",
+			'  - Default: "user" (from ~/.pi/agent/agents)',
+			'  - Use agentScope: "both" to include project-local agents in .pi/agents',
+			'  - Use agentScope: "project" for project-only agents',
+		].join("\n\n"),
 		parameters: SubagentParamsSchema,
 
 		async execute(_toolCallId, params, onUpdate, ctx, signal) {

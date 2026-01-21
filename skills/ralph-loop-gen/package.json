@@ -1,0 +1,1 @@
+{"name": "ralph-loop-gen", "version": "1.0.0", "description": "任务管理系统模板生成器 - 支持多 Agent 并行开发", "type": "module", "bin": {"ralph-loop-gen": "./cli.ts"}, "scripts": {"start": "bun run lib.ts", "test": "bun run examples/test.ts"}, "keywords": ["task", "management", "template", "multi-agent", "parallel"], "author": "", "license": "MIT"}

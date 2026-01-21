@@ -131,6 +131,7 @@ export interface DynamicAgentGeneratorOptions {
 	agentName: string;
 	task: string;
 	targetScope?: "user" | "project" | "dynamic";
+	onProgress?: (progress: { stage: "search" | "create" | "save" | "error" | "done"; text: string; details?: { agentName?: string; task?: string; error?: string } }) => void;
 }
 
 export interface GeneratedAgentConfig {
@@ -381,10 +382,14 @@ export function getDynamicAgentsDir(): string {
 }
 
 
-async function findExistingDynamicAgent(agentName: string, task: string): Promise<GeneratedAgentConfig | null> {
+async function findExistingDynamicAgent(agentName: string, task: string, onProgress?: DynamicAgentGeneratorOptions["onProgress"]): Promise<GeneratedAgentConfig | null> {
 	ensureDynamicAgentsDir();
 
 	try {
+		if (onProgress) {
+			onProgress({ stage: "search", text: `🔍 Searching for existing "${agentName}" agent...`, details: { agentName, task } });
+		}
+
 		const files = fs.readdirSync(DYNAMIC_AGENTS_DIR);
 		const agentFiles = files.filter((f) => f.endsWith(".md"));
 
@@ -505,13 +510,25 @@ function parseFrontmatter(content: string): { frontmatter: Record<string, string
 }
 
 export async function generateDynamicAgent(options: DynamicAgentGeneratorOptions): Promise<GeneratedAgentConfig | null> {
-	const { agentName, task, targetScope = "dynamic" } = options;
+	const { agentName, task, targetScope = "dynamic", onProgress } = options;
 
 	const availableTools = getAvailableTools();
 	const availableSkills = getAvailableSkills();
 
 	// 优先查找已存在的动态 agent
-	const existing = await findExistingDynamicAgent(agentName, task);
+	const existing = await findExistingDynamicAgent(agentName, task, onProgress);
+	if (existing) {
+		if (onProgress) {
+			onProgress({
+				stage: "done",
+				text: `✓ Found existing "${agentName}" agent`,
+				details: { agentName, task },
+			});
+		}
+		existing.availableTools = availableTools.map((t) => t.name);
+		existing.availableSkills = availableSkills.map((s) => s.name);
+		return existing;
+	}
 	if (existing) {
 		existing.availableTools = availableTools.map((t) => t.name);
 		existing.availableSkills = availableSkills.map((s) => s.name);
@@ -521,18 +538,27 @@ export async function generateDynamicAgent(options: DynamicAgentGeneratorOptions
 	// 生成新的动态 agent - prompt 作为参数传递
 	const prompt = buildDynamicAgentPrompt(agentName, task, availableTools, availableSkills);
 
+	if (onProgress) {
+		onProgress({
+			stage: "create",
+			text: `⚙️ Generating new "${agentName}" agent...`,
+			details: { agentName, task },
+		});
+	}
+
 	return new Promise((resolve) => {
 		const tmp = writePromptToTempFile("dynamic-agent-generator", prompt);
 		const args = ["--mode", "json", "-p", "--no-session", "--append-system-prompt", tmp.filePath, "Generate the JSON now."];
 		let buffer = "";
 		let resolved = false;
+		let partialContent = "";
 		const finish = (value: GeneratedAgentConfig | null) => {
 			if (resolved) return;
 			resolved = true;
 			cleanupTempFiles(tmp.filePath, tmp.dir);
 			resolve(value);
 		};
-		const timeout = setTimeout(() => finish(null), 60000);
+		const timeout = setTimeout(() => finish(null), 180000); // 3 minutes
 
 		const proc = spawn("pi", args, { stdio: ["ignore", "pipe", "pipe"], shell: false });
 
@@ -544,6 +570,25 @@ export async function generateDynamicAgent(options: DynamicAgentGeneratorOptions
 				if (resolved) return;
 				try {
 					const event = JSON.parse(line);
+
+					// Capture partial output events to show generation progress
+					if (event.type === "message_delta" && event.message?.content) {
+						const newDelta = event.message.content
+							.filter((item: any) => item?.type === "text")
+							.map((item: any) => item.text)
+							.join("");
+						partialContent += newDelta;
+
+						// Send partial updates to show generation progress
+						if (onProgress && newDelta) {
+							onProgress({
+								stage: "create",
+								text: `⚙️ Generating agent...`,
+								details: { agentName, task, partial: partialContent.slice(-200) },
+							});
+						}
+					}
+
 					if (event.type === "message_end" && event.message?.content) {
 						const textContent = extractTextContent(event.message.content);
 						const parsed = parseJsonObject<Partial<GeneratedAgentConfig>>(textContent);
@@ -558,6 +603,15 @@ export async function generateDynamicAgent(options: DynamicAgentGeneratorOptions
 								availableSkills: availableSkills.map((s) => s.name),
 							};
 							result.filePath = saveDynamicAgentToFile(result, getTargetDir(targetScope));
+
+							if (onProgress) {
+								onProgress({
+									stage: "save",
+									text: `💾 Saved agent "${result.name}" to ${result.filePath}`,
+									details: { agentName, task },
+								});
+							}
+
 							clearTimeout(timeout);
 							finish(result);
 							return;
@@ -569,11 +623,25 @@ export async function generateDynamicAgent(options: DynamicAgentGeneratorOptions
 
 		proc.on("close", () => {
 			clearTimeout(timeout);
+			if (onProgress) {
+				onProgress({
+					stage: "error",
+					text: `✗ Failed to generate agent "${agentName}"`,
+					details: { agentName, task, error: "Generation process closed unexpectedly" },
+				});
+			}
 			finish(null);
 		});
 
 		proc.on("error", () => {
 			clearTimeout(timeout);
+			if (onProgress) {
+				onProgress({
+					stage: "error",
+					text: `✗ Failed to generate agent "${agentName}"`,
+					details: { agentName, task, error: "Failed to spawn generation process" },
+				});
+			}
 			finish(null);
 		});
 	});

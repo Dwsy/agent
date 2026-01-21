@@ -10,6 +10,21 @@ import { createInitialUsage, accumulateUsage, parseEventLine } from "./parser.js
 import { generateDynamicAgent, dynamicAgentToConfig, getDynamicAgentsDir } from "../dynamic-agent.js";
 import type { GeneratedAgentConfig } from "../dynamic-agent.js";
 
+function createGeneratingResult(agentName: string, task: string, status: SingleResult["status"], generationStage?: string): SingleResult {
+	return {
+		agent: agentName,
+		agentSource: "dynamic",
+		task: `Generating dynamic agent "${agentName}" for task: ${task}`,
+		exitCode: -1,
+		messages: [],
+		stderr: "",
+		usage: createInitialUsage(),
+		startTime: Date.now(),
+		status,
+		generationStage,
+	};
+}
+
 export async function runSingleAgent(options: AgentRunnerOptions): Promise<SingleResult> {
 	const { defaultCwd, agents, agentName, task, cwd, step, signal, onUpdate, makeDetails } = options;
 
@@ -18,7 +33,46 @@ export async function runSingleAgent(options: AgentRunnerOptions): Promise<Singl
 	let dynamicAgentInfo: GeneratedAgentConfig | null = null;
 
 	if (!agent) {
-		const generated = await generateDynamicAgent({ agentName, task });
+		let generatingResult = createGeneratingResult(agentName, task, "searching", "Searching for existing agent...");
+
+		const emitGenerationUpdate = (status: SingleResult["status"], stage: string, text: string, error?: string, partial?: string) => {
+			generatingResult = {
+				...generatingResult,
+				status,
+				generationStage: stage,
+				messages: partial ? [{ role: "assistant", content: [{ type: "text", text: partial }] }] : [],
+			};
+			if (onUpdate) {
+				onUpdate({
+					content: [{ type: "text", text }],
+					details: makeDetails([generatingResult]),
+				});
+			}
+		};
+
+		const generated = await generateDynamicAgent({
+			agentName,
+			task,
+			onProgress: (progress) => {
+				switch (progress.stage) {
+					case "search":
+						emitGenerationUpdate("searching", "Searching for existing agent...", `🔍 ${progress.text}`);
+						break;
+					case "create":
+						emitGenerationUpdate("generating", "Generating new agent...", `⚙️ ${progress.text}`, undefined, progress.details?.partial);
+						break;
+					case "save":
+						emitGenerationUpdate("generating", "Saving agent...", `💾 ${progress.text}`);
+						break;
+					case "done":
+						emitGenerationUpdate("completed", "Agent ready", `✓ ${progress.text}`);
+						break;
+					case "error":
+						emitGenerationUpdate("error", "Generation failed", `✗ ${progress.text}`);
+						break;
+				}
+			},
+		});
 		if (generated) {
 			dynamicAgentInfo = generated;
 			agent = dynamicAgentToConfig(generated, agentName);
@@ -31,6 +85,12 @@ export async function runSingleAgent(options: AgentRunnerOptions): Promise<Singl
 		if (worker) {
 			agent = worker;
 		} else {
+			if (onUpdate) {
+				onUpdate({
+					content: [{ type: "text", text: `✗ Unknown agent: ${agentName} (no worker.md available and dynamic generation failed)` }],
+					details: makeDetails([]),
+				});
+			}
 			return {
 				agent: agentName,
 				agentSource: "unknown",
@@ -40,6 +100,7 @@ export async function runSingleAgent(options: AgentRunnerOptions): Promise<Singl
 				stderr: `Unknown agent: ${agentName} (no worker.md available and dynamic generation failed)`,
 				usage: createInitialUsage(),
 				step,
+				status: "error",
 			};
 		}
 	}
@@ -78,6 +139,7 @@ export async function runSingleAgent(options: AgentRunnerOptions): Promise<Singl
 		task: effectiveTask,
 		exitCode: 0,
 		messages: [],
+		status: "running",
 		stderr: "",
 		usage: createInitialUsage(),
 		model: agent.model,

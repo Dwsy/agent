@@ -1,4 +1,4 @@
-import { visibleWidth } from "@mariozechner/pi-tui";
+import { visibleWidth, truncateToWidth } from "@mariozechner/pi-tui";
 import type { GameColors } from "./types.js";
 
 export const DEFAULT_COLORS: GameColors = {
@@ -11,7 +11,7 @@ export const DEFAULT_COLORS: GameColors = {
 };
 
 export function padLine(line: string, width: number): string {
-	const visibleLen = line.replace(/\x1b\[[0-9;]*m/g, "").length;
+	const visibleLen = visibleWidth(line);
 	const padding = Math.max(0, width - visibleLen);
 	return line + " ".repeat(padding);
 }
@@ -23,7 +23,7 @@ export function createBoxLine(content: string, boxWidth: number, colors: GameCol
 }
 
 export function createBoxBorder(char: string, width: number, colors: GameColors = DEFAULT_COLORS): string {
-	return colors.dim(` ${char}${char.repeat(width)}${char}`);
+	return colors.dim(` ${char}${"─".repeat(width)}${char}`);
 }
 
 export function renderTitle(title: string, width: number, colors: GameColors = DEFAULT_COLORS): string[] {

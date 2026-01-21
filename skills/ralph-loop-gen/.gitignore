@@ -1,0 +1,19 @@
+# 依赖
+node_modules/
+
+# 测试输出
+task/
+tasks/
+
+# 编辑器
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# 日志
+*.log
