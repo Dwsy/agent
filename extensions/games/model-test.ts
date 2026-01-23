@@ -1,7 +1,7 @@
 /**
  * Model Test Command for Games Extension
  * Usage in pi: /game:test-models
- * TUI-based model speed testing interface
+ * Pure model speed testing without tools/skills/extensions
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
@@ -49,6 +49,9 @@ class ModelTestComponent {
 	private tui: { requestRender: () => void };
 	private version = 0;
 	private finished = false;
+	private selectedIndex = -1;
+	private showDetails = false;
+	private scrollOffset = 0;
 
 	constructor(
 		tui: { requestRender: () => void },
@@ -73,7 +76,7 @@ class ModelTestComponent {
 
 		setTimeout(() => {
 			this.onComplete();
-		}, 3000);
+		}, 5000);
 	}
 
 	private async testModel(
@@ -95,7 +98,17 @@ class ModelTestComponent {
 		const startTime = Date.now();
 
 		try {
-			const proc = spawn("pi", ["--provider", provider, "--model", model]);
+			const args = [
+				"--provider", provider,
+				"--model", model,
+				"--no-tools",
+				"--no-skills",
+				"--no-extensions",
+				"--no-session",
+				"--print",
+			];
+
+			const proc = spawn("pi", args);
 
 			let stdout = "";
 			let stderr = "";
@@ -113,7 +126,7 @@ class ModelTestComponent {
 
 			const timeoutPromise = new Promise<null>((_, reject) =>
 				setTimeout(() => {
-					proc.kill();
+					proc.kill("SIGKILL");
 					reject(new Error("Timeout"));
 				}, TIMEOUT_MS),
 			);
@@ -151,10 +164,7 @@ class ModelTestComponent {
 						errorMsg: err || out,
 					};
 				} else {
-					const cleanOutput = out
-						.replace(/\x1b\[[0-9;]*m/g, "")
-						.replace(/\x1b\]777;[^]+/g, "")
-						.trim();
+					const cleanOutput = this.cleanOutput(out);
 
 					if (!cleanOutput) {
 						this.results[resultIndex] = {
@@ -191,6 +201,15 @@ class ModelTestComponent {
 		this.tui.requestRender();
 	}
 
+	private cleanOutput(text: string): string {
+		return text
+			.replace(/\x1b\[[0-9;]*m/g, "")
+			.replace(/\x1b\]777;[^]+/g, "")
+			.replace(/\x1b\]0;[^\x07]+\x07/g, "")
+			.trim()
+			.substring(0, 200);
+	}
+
 	private async runWithConcurrency<T>(
 		tasks: (() => Promise<T>)[],
 		limit: number,
@@ -218,6 +237,26 @@ class ModelTestComponent {
 	handleInput(data: string): void {
 		if (data === "q" || data === "Q" || data === "escape") {
 			this.onComplete();
+			return;
+		}
+
+		if (this.finished) {
+			if (data === "up" || data === "k") {
+				this.selectedIndex = Math.max(-1, this.selectedIndex - 1);
+				this.showDetails = this.selectedIndex >= 0;
+				this.version++;
+				this.tui.requestRender();
+			} else if (data === "down" || data === "j") {
+				this.selectedIndex = Math.min(this.results.length - 1, this.selectedIndex + 1);
+				this.showDetails = this.selectedIndex >= 0;
+				this.version++;
+				this.tui.requestRender();
+			} else if (data === "escape") {
+				this.selectedIndex = -1;
+				this.showDetails = false;
+				this.version++;
+				this.tui.requestRender();
+			}
 		}
 	}
 
@@ -228,9 +267,9 @@ class ModelTestComponent {
 	render(width: number): string[] {
 		const lines: string[] = [];
 		const boxWidth = Math.min(100, width - 4);
-		const height = 30;
+		const height = 35;
 
-		const header = `${DEFAULT_COLORS.bold(DEFAULT_COLORS.green("MODEL SPEED TEST"))}`;
+		const header = DEFAULT_COLORS.bold(DEFAULT_COLORS.green("MODEL SPEED TEST"));
 		lines.push(padLine(DEFAULT_COLORS.dim(` ╭${"─".repeat(boxWidth)}╮`), width));
 		lines.push(padLine(createBoxLine(header, boxWidth, DEFAULT_COLORS), width));
 		lines.push(padLine(DEFAULT_COLORS.dim(` ├${"─".repeat(boxWidth)}┤`), width));
@@ -253,43 +292,79 @@ class ModelTestComponent {
 		const progressLine = `Progress: [${"█".repeat(progressFilled)}${"░".repeat(progressEmpty)}] ${progress}% (${completed}/${total})`;
 		lines.push(padLine(createBoxLine(progressLine, boxWidth, DEFAULT_COLORS), width));
 
-		const statsLine = `Running: ${running} | ✅ Success: ${success} | ❌ Error: ${error} | ⏱️ Timeout: ${timeout}`;
+		const statsLine = `Running: ${running} | [OK] Success: ${success} | [X] Error: ${error} | [T] Timeout: ${timeout}`;
 		lines.push(padLine(createBoxLine(statsLine, boxWidth, DEFAULT_COLORS), width));
 		lines.push(padLine(DEFAULT_COLORS.dim(` ├${"─".repeat(boxWidth)}┤`), width));
 
 		const elapsed = ((Date.now() - this.startTime) / 1000).toFixed(1);
 
 		if (this.results.length < total) {
-			const title = this.finished ? "✅ ALL TESTS COMPLETED" : `⏳ TESTING... (${elapsed}s)`;
+			const title = this.finished ? "[OK] ALL TESTS COMPLETED" : `[*] TESTING... (${elapsed}s)`;
 			lines.push(padLine(createBoxLine(title, boxWidth, DEFAULT_COLORS), width));
 		} else {
-			lines.push(padLine(createBoxLine(`✅ COMPLETED in ${elapsed}s`, boxWidth, DEFAULT_COLORS), width));
+			lines.push(padLine(createBoxLine(`[OK] COMPLETED in ${elapsed}s`, boxWidth, DEFAULT_COLORS), width));
 		}
 		lines.push(padLine(DEFAULT_COLORS.dim(` ├${"─".repeat(boxWidth)}┤`), width));
 
-		const listHeight = Math.max(5, Math.min(15, height - 12));
-		const displayResults = this.results.slice(-listHeight);
+		if (this.showDetails && this.selectedIndex >= 0 && this.results[this.selectedIndex]) {
+			const result = this.results[this.selectedIndex];
+			const statusColor = result.status === "success"
+				? DEFAULT_COLORS.green
+				: result.status === "timeout"
+					? DEFAULT_COLORS.yellow
+					: DEFAULT_COLORS.red;
 
-		if (displayResults.length === 0) {
-			lines.push(padLine(createBoxLine("Waiting for tests to start...", boxWidth, DEFAULT_COLORS), width));
-		} else {
-			displayResults.forEach((result, idx) => {
-				const statusIcon = result.status === "success"
-					? "✅"
-					: result.status === "timeout"
-						? "⏱️"
-						: result.status === "running"
-							? "⏳"
-							: "❌";
+			lines.push(padLine(createBoxLine(`[DETAILS] ${result.provider}/${result.model}`, boxWidth, DEFAULT_COLORS), width));
+			lines.push(padLine(DEFAULT_COLORS.dim(` ├${"─".repeat(boxWidth)}┤`), width));
 
-				const name = `${result.provider}/${result.model}`;
-				const nameTruncated = name.length > 40 ? name.substring(0, 37) + "..." : name;
+			const statusLine = `Status: ${statusColor(result.status.toUpperCase())} | Time: ${result.time.toFixed(3)}s`;
+			lines.push(padLine(createBoxLine(statusLine, boxWidth, DEFAULT_COLORS), width));
+			lines.push(padLine(DEFAULT_COLORS.dim(` ├${"─".repeat(boxWidth)}┤`), width));
 
-				const timeText = result.status === "running" ? "..." : `${result.time.toFixed(2)}s`;
-				const statusText = `${statusIcon} ${nameTruncated.padEnd(40)} ${timeText.padEnd(8)}`;
-
-				lines.push(padLine(createBoxLine(statusText, boxWidth - 2, DEFAULT_COLORS), width));
+			const outputLines = this.wrapText(result.output, boxWidth - 4);
+			outputLines.forEach(line => {
+				lines.push(padLine(createBoxLine(line, boxWidth, DEFAULT_COLORS), width));
 			});
+
+			if (result.errorMsg) {
+				lines.push(padLine(DEFAULT_COLORS.dim(` ├${"─".repeat(boxWidth)}┤`), width));
+				const errorLines = this.wrapText(`Error: ${result.errorMsg}`, boxWidth - 4);
+				errorLines.forEach(line => {
+					lines.push(padLine(createBoxLine(DEFAULT_COLORS.red(line), boxWidth, DEFAULT_COLORS), width));
+				});
+			}
+
+			lines.push(padLine(DEFAULT_COLORS.dim(` ├${"─".repeat(boxWidth)}┤`), width));
+			lines.push(padLine(createBoxLine("Press ESC to return to list, Q to quit", boxWidth, DEFAULT_COLORS), width));
+		} else {
+			const listHeight = Math.max(5, Math.min(15, height - 14));
+			const displayResults = this.results.slice(-listHeight);
+
+			if (displayResults.length === 0) {
+				lines.push(padLine(createBoxLine("Waiting for tests to start...", boxWidth, DEFAULT_COLORS), width));
+			} else {
+				displayResults.forEach((result, idx) => {
+					const actualIdx = this.results.length - displayResults.length + idx;
+					const statusIcon = result.status === "success"
+						? "[OK]"
+						: result.status === "timeout"
+							? "[T]"
+							: result.status === "running"
+								? "[*]"
+								: "[X]";
+
+					const name = `${result.provider}/${result.model}`;
+					const nameTruncated = name.length > 40 ? name.substring(0, 37) + "..." : name;
+
+					const timeText = result.status === "running" ? "..." : `${result.time.toFixed(2)}s`;
+					const statusText = `${statusIcon} ${nameTruncated.padEnd(40)} ${timeText.padEnd(8)}`;
+
+					const isSelected = actualIdx === this.selectedIndex;
+					const line = isSelected ? DEFAULT_COLORS.dim("> ") + DEFAULT_COLORS.bold(statusText) : `  ${statusText}`;
+
+					lines.push(padLine(createBoxLine(line, boxWidth - 2, DEFAULT_COLORS), width));
+				});
+			}
 		}
 
 		lines.push(padLine(DEFAULT_COLORS.dim(` ├${"─".repeat(boxWidth)}┤`), width));
@@ -299,16 +374,52 @@ class ModelTestComponent {
 			.sort((a, b) => a.time - b.time);
 
 		if (sorted.length > 0) {
-			lines.push(padLine(createBoxLine("🏆 Top 3 Fastest:", boxWidth, DEFAULT_COLORS), width));
+			lines.push(padLine(createBoxLine("[TOP] Top 3 Fastest:", boxWidth, DEFAULT_COLORS), width));
 			sorted.slice(0, 3).forEach((result, idx) => {
-				const medal = idx === 0 ? "🥇" : idx === 1 ? "🥈" : "🥉";
-				const line = `${medal} ${result.provider}/${result.model} - ${result.time.toFixed(3)}s`;
+				const rank = idx === 0 ? "1st" : idx === 1 ? "2nd" : "3rd";
+				const line = `#${rank} ${result.provider}/${result.model} - ${result.time.toFixed(3)}s`;
 				lines.push(padLine(createBoxLine(line, boxWidth, DEFAULT_COLORS), width));
 			});
 		}
 
+		if (this.finished) {
+			const avgTime = this.results.length > 0
+				? (this.results.reduce((sum, r) => sum + r.time, 0) / this.results.length).toFixed(3)
+				: "0.000";
+
+			const avgSuccess = success > 0
+				? (this.results
+					.filter(r => r.status === "success")
+					.reduce((sum, r) => sum + r.time, 0) / success).toFixed(3)
+				: "0.000";
+
+			lines.push(padLine(createBoxLine(`[AVG] All: ${avgTime}s | Success only: ${avgSuccess}s`, boxWidth, DEFAULT_COLORS), width));
+		}
+
 		lines.push(padLine(DEFAULT_COLORS.dim(` ╰${"─".repeat(boxWidth)}╯`), width));
 
+		if (this.finished) {
+			const footerLine = "[UP/DOWN] Select | [ESC] Deselect | [Q] Quit";
+			lines.push(padLine(DEFAULT_COLORS.dim("  " + footerLine), width));
+		}
+
+		return lines;
+	}
+
+	private wrapText(text: string, maxWidth: number): string[] {
+		if (!text) return [""];
+		const lines: string[] = [];
+		let currentLine = "";
+		for (const char of text) {
+			if (currentLine.length >= maxWidth) {
+				lines.push(currentLine);
+				currentLine = "";
+			}
+			currentLine += char;
+		}
+		if (currentLine) {
+			lines.push(currentLine);
+		}
 		return lines;
 	}
 
