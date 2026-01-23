@@ -1,0 +1,1 @@
+{"name": "har-to-vue-skill", "version": "1.0.0", "description": "Convert HAR files to Vue source code", "type": "module", "scripts": {"har-to-vue": "bun scripts/har_to_vue.ts"}, "dependencies": {"commander": "^12.0.0"}, "devDependencies": {"@types/node": "^20.0.0", "typescript": "^5.0.0"}, "bin": {"har-to-vue": "./scripts/har_to_vue.ts"}}
