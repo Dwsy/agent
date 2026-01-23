@@ -510,7 +510,7 @@ function parseFrontmatter(content: string): { frontmatter: Record<string, string
 }
 
 export async function generateDynamicAgent(options: DynamicAgentGeneratorOptions): Promise<GeneratedAgentConfig | null> {
-	const { agentName, task, targetScope = "dynamic", onProgress } = options;
+	const { agentName, task, targetScope = "project", onProgress } = options;
 
 	const availableTools = getAvailableTools();
 	const availableSkills = getAvailableSkills();
