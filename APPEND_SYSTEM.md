@@ -60,12 +60,17 @@ for file in path1 path2 path3; do cat "$file"; done
 
 ### 1.2 文件搜索
 
-- 必须用 `fd`，**禁止 `find`**  
-- ✅ 正确：  
-  - `fd -e ts`  
-  - `fd "pattern" -t f`  
-  - `fd -H ...`  
-- 说明：`fd` 自动排除 `node_modules`、更快、更干净  
+- **文件/路径搜索优先使用 `fd`**，**禁止 `find`**
+- ✅ 正确：
+  - `fd "filename"` - 按文件名搜索
+  - `fd -e ts` - 按扩展名搜索
+  - `fd "pattern" -t f` - 搜索匹配模式的文件
+  - `fd -H ...` - 包含隐藏文件
+- 说明：`fd` 自动排除 `node_modules`、更快、更干净
+- **优先级规则**：
+  - 用户给出明确文件名/路径 → 用 `fd`
+  - 搜索特定代码内容/字符串 → 用 `rg`（ripgrep）
+  - 语义理解/自然语言查询 → 用 `ace`  
 
 ### 1.3 后台任务
 
@@ -119,29 +124,33 @@ tmux -S /tmp/pi-tmux-sockets/pi.sock attach -t {session-id}
 
 #### 1.5.1 Ace Tool 使用示例
 
-**Ace Tool（AugmentCode）** 是语义代码搜索工具，支持自然语言查询。
+**Ace Tool（AugmentCode）** 是主要的语义代码搜索工具，支持自然语言查询。
 
 **基本用法：**
 ```bash
-# 语义搜索
+# 语义搜索（自然语言查询）
 ace search "Where is auth?"
+ace search "How is database connected?"
 ace s "auth"                    # 简写
 
-# 提示增强（基于代码库上下文优化需求）
+# 提示增强（用户消息包含 -enhance/-enhancer 时）
 ace enhance "Add login page"
 ace e "Add login"               # 简写
 ```
 
-**使用场景：**
-- 理解代码结构和架构
-- 查找函数/类的定义和使用
-- 定位功能实现位置
-- 修改前收集上下文
-- 基于自然语言描述定位代码
+**工具选择优先级：**
+| 场景 | 首选工具 |
+|------|---------|
+| 用户给出明确文件名/路径 | `fd` |
+| 用户给出函数名/类名/变量名 | `rg` / `ast-grep` |
+| 用户问"哪个文件" | `rg` |
+| 用户用自然语言描述功能 | `ace` |
+| 用户问"如何实现/哪里有" | `ace` |
+| 需要理解代码结构/架构 | `ace` |
 
-**重要提示：**
-- 当知道精确标识符、符号名或字面字符串时，**优先使用 `rg`（ripgrep）**
-- Ace 仅用于语义理解和探索，不适用于精确匹配  
+**判断标准：**
+- ✅ 使用 `fd`/`rg`/`ast-grep`：用户提到具体文件名、路径、函数名、类名、代码片段
+- ✅ 使用 `ace`：用户描述功能、问"如何实现"、需要高层信息、不确定具体位置  
 
 ### 1.6 复杂操作执行
 
