@@ -8,7 +8,7 @@ description: Model configuration editor for ~/.pi/agent/models.json with multi-p
 
 ## 功能
 
-编辑和管理 `~/.pi/agent/models.json` 配置文件，支持多种 API 协议的测试和验证。
+编辑和管理 `~/.pi/agent/models.json` 配置文件，支持多种 API 协议的测试和验证，以及从 https://models.dev/api.json 自动获取模型价格信息。
 
 ## 配置结构
 
@@ -191,6 +191,72 @@ bash test-model.sh openai-chat \
 }
 ```
 
+## 价格更新功能
+
+从 https://models.dev/api.json 获取模型价格并更新到配置文件。
+
+### 使用方法
+
+```bash
+# 更新所有模型价格
+bun ~/.pi/agent/skills/models-config/update-prices.ts
+```
+
+### 工作原理
+
+1. 从 https://models.dev/api.json 获取最新价格数据
+2. 读取 `~/.pi/agent/models.json` 配置文件
+3. 按 model ID 智能匹配价格信息
+4. 更新 cost 字段（input/output/cacheRead/cacheWrite）
+5. 显示更新摘要
+
+### 匹配规则
+
+**优先级（从高到低）：**
+
+1. **精确匹配**：model ID 完全相同
+2. **标准化匹配**：去除前缀、版本号后相同
+   - `anthropic/claude-sonnet-4-5` → `claude-sonnet-4-5`
+   - `claude-sonnet-4-5-20250929` → `claude-sonnet-4-5`
+3. **模糊匹配**：基于 Levenshtein 距离的相似度匹配（≥70%）
+   - 自动匹配最佳相似度的模型
+   - 显示匹配相似度百分比
+
+**支持的别名映射：**
+
+| 你的模型 ID | 匹配到 |
+|------------|--------|
+| `opus4.5` | `claude-opus-4-5` |
+| `claude-sonnet-4-5-20250929` | `claude-sonnet-4-5` |
+| `claude-haiku-4-5-20251001` | `claude-haiku-4-5` |
+| `z-ai/glm4.7` | `glm-4.7` |
+| `minimaxai/minimax-m2.1` | `minimax-m2.1` |
+
+### 模糊匹配示例
+
+即使你的供应商不在 models.dev 中，只要模型名称相似，也会自动匹配：
+
+```bash
+bun ~/.pi/agent/skills/models-config/update-prices.ts
+
+# 输出示例：
+✓ Updated: claude-sonnet-4-5
+  Old: {"input":0,"output":0,"cacheRead":0,"cacheWrite":0}
+  New: {"input":2.6,"output":13,"cacheRead":0.26,"cacheWrite":3.2}
+✓ Updated: glm-4.7
+  Fuzzy matched "glm-4.7" -> "zai-glm-4.7" (85.7% similarity)
+  Old: {"input":0,"output":0,"cacheRead":0,"cacheWrite":0}
+  New: {"input":0,"output":0,"cacheRead":0,"cacheWrite":0}
+
+=== Summary ===
+Updated: 15 models
+Not found: 3 models
+
+Models without price data:
+  - custom-model-x
+  - experimental-beta
+```
+
 ## 注意事项
 
 1. **baseUrl 格式**：
@@ -205,3 +271,9 @@ bash test-model.sh openai-chat \
    - 确认服务端口已启动（如 `curl http://127.0.0.1:8317`）
    - 检查 API Key 有效性
    - 验证网络连通性
+
+4. **价格更新**：
+   - 模糊匹配阈值：70% 相似度
+   - 匹配成功会显示相似度百分比
+   - 未匹配的模型会在摘要中列出
+   - 价格单位：美元/百万 tokens ($/1M tokens)
