@@ -5,6 +5,8 @@ description: "Microsoft Office 全功能支持。当 Claude 需要：（1）处�
 
 # Microsoft Office 全功能支持
 
+本技能提供 Microsoft Office 文件处理能力，采用渐进式引入机制。
+
 ## 支持的格式
 
 - **Excel (.xlsx, .xlsm, .csv, .tsv)** - 表格创建、编辑、数据分析
@@ -12,37 +14,54 @@ description: "Microsoft Office 全功能支持。当 Claude 需要：（1）处�
 - **PDF (.pdf)** - 文档提取、合并、表单填写
 - **Word (.docx)** - 文档创建、编辑、修订跟踪
 
-## 使用方式
+## 渐进式引入
 
-当需要处理 Office 文件时，Claude 会自动触发相应的功能。
+本技能采用按需加载机制，详细文档仅在需要时读取，避免占用初始 token。
 
-### Excel 示例
-```
-创建一个财务模型 Excel 表格
-分析这个 CSV 文件中的数据
-编辑这个 .xlsx 文件，添加公式
+### 上下文效率
+
+传统方式：
+- 所有详细内容加载到 SKILL.md
+- 估计上下文：~5000 tokens
+
+本技能方式：
+- 元数据仅：~150 tokens
+- 详细文档（按需）：~5k tokens
+
+### 按需加载指南
+
+当需要处理特定格式的 Office 文件时，读取对应的详细文档：
+
+```bash
+# Excel 处理
+cat $SKILL_DIR/references/xlsx.md
+
+# PowerPoint 处理
+cat $SKILL_DIR/references/pptx.md
+
+# PDF 处理
+cat $SKILL_DIR/references/pdf.md
+
+# Word 处理
+cat $SKILL_DIR/references/docx.md
 ```
 
-### PowerPoint 示例
-```
-创建一个季度销售演示文稿
-编辑这个 PPT，添加新幻灯片
-设计一个产品介绍演示
+**注意**: Replace $SKILL_DIR with the actual discovered path of this skill directory.
+
+## 使用模式
+
+当用户请求匹配此技能的能力时：
+
+**Step 1: 识别文件类型**（Excel / PowerPoint / PDF / Word）
+
+**Step 2: 加载对应的详细文档**
+
+```bash
+cd $SKILL_DIR
+cat references/<type>.md
 ```
 
-### PDF 示例
-```
-提取这个 PDF 中的文本
-合并多个 PDF 文件
-填写这个 PDF 表单
-```
-
-### Word 示例
-```
-创建一个商业计划文档
-编辑这个 Word 文档，添加修订跟踪
-添加注释到文档中
-```
+**Step 3: 根据详细文档中的指导执行操作**
 
 ## 技能来源
 
@@ -51,3 +70,9 @@ description: "Microsoft Office 全功能支持。当 Claude 需要：（1）处�
 - pptx - PowerPoint 处理
 - pdf - PDF 处理
 - docx - Word 处理
+
+原始来源：https://github.com/anthropics/skills
+
+---
+
+*This skill uses progressive disclosure to minimize initial context usage*
