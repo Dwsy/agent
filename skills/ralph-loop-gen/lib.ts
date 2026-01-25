@@ -307,6 +307,7 @@ async function main() {
   let taskSetName = "defaultTask";
   let projectName = "未命名项目";
   let inputFormat = "simple";
+  let outputDir = "task";
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === "--name" || args[i] === "-n") {
@@ -315,13 +316,15 @@ async function main() {
       projectName = args[++i];
     } else if (args[i] === "--format" || args[i] === "-f") {
       inputFormat = args[++i];
+    } else if (args[i] === "--output" || args[i] === "-o") {
+      outputDir = args[++i];
     }
   }
 
   const config: Config = {
     taskSetName,
     projectName,
-    outputDir: "task",
+    outputDir,
   };
 
   // 创建目录
