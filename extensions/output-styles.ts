@@ -1,6 +1,8 @@
 /**
  * Output Styles Extension
  *
+ * @auth dwsy
+ *
  * Provides a flexible system for managing and applying different output style templates
  * to AI coding assistant responses. Styles can be:
  *
