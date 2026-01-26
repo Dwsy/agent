@@ -349,6 +349,19 @@ EOF
 - 简单操作用 bash（文件搜索、列出目录）
 - 复杂逻辑用 Python3（数据处理、条件判断、文件操作）
 
+### 1.7 截断输出处理 — **强制执行**
+
+**触发：** 输出包含 `[Showing lines X-Y of Z (50.0KB limit). Full output: /path/to/log]`
+
+**处理策略（按优先级）：**
+1. 读取日志文件：`cat <log-path>` 或 `read <log-path>`
+2. 大文件搜索：`rg "pattern" <log-path>` 或 `grep "pattern" <log-path> | head -50`
+3. 分块读取：`read <log-path> --offset 1 --limit 100`
+
+**❌ 禁止：** 重新执行原始命令（可能再次被截断）
+
+**机制：** 2000 行或 50KB 限制，bash 尾部截断，read 头部截断
+
 ---
 
 ## 2. 工作流（Workflow）
