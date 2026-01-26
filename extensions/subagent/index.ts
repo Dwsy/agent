@@ -68,23 +68,41 @@ export default function (pi: ExtensionAPI) {
 	const parallelMode = new ParallelMode();
 	const chainMode = new ChainMode();
 
+	// Load agents at initialization for tool description
+	const userAgentsDir = path.join(os.homedir(), ".pi", "agent", "agents");
+	const userAgents = loadAgentsFromDir(userAgentsDir, "user");
+	const visibleAgents = userAgents.filter((a) => a.showInTool !== false);
+
+	// Build agent list for tool description
+	const agentListText = visibleAgents.length > 0
+		? visibleAgents.map((a) => `  - ${a.name}: ${a.description}`).join("\n")
+		: "  (none)";
+
+	const toolDescription = [
+		"Delegate tasks to specialized subagents with isolated context.",
+		"",
+		"Available Agents:",
+		agentListText,
+		"",
+		"Modes:",
+		"  - Single: {agent, task} - one subagent",
+		"  - Parallel: {tasks: [{agent, task}, ...]} - up to 8 concurrent subagents",
+		"  - Chain: {chain: [{agent, task}, ...]} - sequential with {previous} placeholder",
+		"",
+		"Dynamic Mode:",
+		"  - If the specified agent doesn't exist, it will be auto-generated based on the task description",
+		"  - Just provide an agent name and task - the system will create a suitable subagent",
+		"",
+		"Agent Scope:",
+		'  - Default: "user" (from ~/.pi/agent/agents)',
+		'  - Use agentScope: "both" to include project-local agents in .pi/agents',
+		'  - Use agentScope: "project" for project-only agents',
+	].join("\n");
+
 	pi.registerTool({
 		name: "subagent",
 		label: "Subagent",
-		description: [
-			"Delegate tasks to specialized subagents with isolated context.",
-			"Modes:",
-			"  - Single: {agent, task} - one subagent",
-			"  - Parallel: {tasks: [{agent, task}, ...]} - up to 8 concurrent subagents",
-			"  - Chain: {chain: [{agent, task}, ...]} - sequential with {previous} placeholder",
-			"Dynamic Mode:",
-			"  - If the specified agent doesn't exist, it will be auto-generated based on the task description",
-			"  - Just provide an agent name and task - the system will create a suitable subagent",
-			"Agent Scope:",
-			'  - Default: "user" (from ~/.pi/agent/agents)',
-			'  - Use agentScope: "both" to include project-local agents in .pi/agents',
-			'  - Use agentScope: "project" for project-only agents',
-		].join("\n\n"),
+		description: toolDescription,
 		parameters: SubagentParamsSchema,
 
 		async execute(_toolCallId, params, onUpdate, ctx, signal) {
@@ -223,11 +241,11 @@ function registerCommands(pi: ExtensionAPI): void {
 		});
 	}
 
-	// Register user agents immediately
-	userAgents.forEach(createAgentCommand);
+	// Register user agents (only if registerCommand is not false)
+	userAgents.filter((a) => a.registerCommand !== false).forEach(createAgentCommand);
 
-	// Register project agents immediately (for tab completion)
-	projectAgents.forEach(createAgentCommand);
+	// Register project agents (only if registerCommand is not false)
+	projectAgents.filter((a) => a.registerCommand !== false).forEach(createAgentCommand);
 
 	function showAgentList(ctx: any): void {
 		const discovery = discoverAgents(ctx.cwd, "both");

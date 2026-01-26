@@ -15,6 +15,8 @@ export interface AgentConfig {
 	tools?: string[];
 	model?: string;
 	provider?: string;
+	registerCommand?: boolean;
+	showInTool?: boolean;
 	systemPrompt: string;
 	source: AgentSource;
 	filePath: string;
@@ -112,6 +114,8 @@ export function loadAgentsFromDir(dir: string, source: "user" | "project"): Agen
 			.map((t) => t.trim())
 			.filter(Boolean);
 		const provider = frontmatter.provider;
+		const showInTool = frontmatter.showInTool === "true" || frontmatter.showInTool === "yes";
+		const registerCommand = frontmatter.registerCommand !== "false" && frontmatter.registerCommand !== "no";
 
 		agents.push({
 			name: frontmatter.name,
@@ -119,6 +123,8 @@ export function loadAgentsFromDir(dir: string, source: "user" | "project"): Agen
 			tools: tools && tools.length > 0 ? tools : undefined,
 			model: frontmatter.model,
 			provider,
+			showInTool,
+			registerCommand,
 			systemPrompt: body,
 			source,
 			filePath,
