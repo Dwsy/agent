@@ -263,8 +263,8 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	// ==================== Keyboard Shortcut ====================
-	
-	pi.registerShortcut(Key.ctrl("r"), {
+
+	pi.registerShortcut(Key.ctrlShift("r"), {
 		description: "Cancel Ralph loop",
 		handler: async (ctx) => {
 			const stateFilePath = path.join(ctx.cwd, STATE_FILE);
