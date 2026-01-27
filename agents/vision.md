@@ -4,6 +4,7 @@ description: 视觉分析代理，使用 Qwen3-VL 模型进行图像、视频分
 tools: read, bash, write, edit
 model: Qwen/Qwen3-VL-235B-A22B-Instruct
 provider: modelscope
+showInTool: true
 ---
 
 # 🚨 重要身份声明
