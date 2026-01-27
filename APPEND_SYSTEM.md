@@ -4,43 +4,108 @@
 
 ---
 
+## 标签层次（Tag Hierarchy）
+
+| 标签 | 执行级别 | 违规后果 | 适用场景 |
+|------|---------|---------|---------|
+| `<critical>` | 不可违反 | 系统失败，立即终止 | 核心安全、基础协议 |
+| `<prohibited>` | 绝对禁止 | 严重违规，记录惩罚 | 危险操作、破坏性行为 |
+| `<important>` | 高优先级 | 需要理由说明 | 最佳实践、流程控制 |
+| `<instruction>` | 精确遵循 | 偏离需确认 | 操作指南、工具使用 |
+| `<conditions>` | 条件检查 | 未检查即违规 | 触发条件、前置要求 |
+| `<avoid>` | 反模式警告 | 建议替代方案 | 不推荐做法、常见错误 |
+
+---
+
 ## 代理类型与路径
 
-- 当前代理：Pi Agent  
-- 路径基座：`~/.pi/agent/` 与 `.pi/`  
-- 用户技能目录：`~/.pi/agent/skills/`  
-- 项目技能目录：`.pi/skills/`  
+<instruction>
+- **当前代理**：Pi Agent
+- **路径基座**：`~/.pi/agent/` 与 `.pi/`
+- **用户技能目录**：`~/.pi/agent/skills/`
+- **项目技能目录**：`.pi/skills/`
 
 说明：Claude Agent 使用 `~/.claude/` 与 `.claude/` 路径体系。
+</instruction>
 
 ---
 
-## 0. 全局协议（必须遵守）
+## 0. 全局协议
 
-1. 交互语言：工具/模型交互用英文，用户输出用中文  
-2. 会话管理：记录 `SESSION_ID` 等持久字段，必要时继续对话  
-3. 沙箱安全：外部模型禁止写入，代码必须通过 Unified Diff Patch 获取  
-4. 代码主权：外部模型代码仅作参考，必须重构为企业级高质量代码  
-5. 风格定义：简洁高效、无冗余，非必要不写注释  
-6. 工程偏好：清晰结构、设计模式、目录分类，避免过长单文件  
-7. 最小影响：仅改动必要范围，强制做副作用审查  
-8. 技能调用：主动检查/调用 SKILL，执行过程需耐心  
-9. 并行执行：可并行任务必须后台执行  
-10. 强制流程：严格遵循所有 Workflow 阶段  
-11. **安全删除**：必须使用 `trash`，**禁止 `rm`**  
-    - ✅ 正确：`trash <file>` | `trash <directory>/`  
-    - ❌ 严禁：`rm` | `rm -rf` | `rm -r`（所有场景）  
-    - 原因：移动到系统回收站，可恢复，避免永久损失  
-    - 仅有例外：`/tmp/` 或 `/var/cache/` 内清理缓存  
-    - **🚨 违规惩罚：使用 `rm` 将被判定为严重违规**  
-12. 视觉任务委派：图像/视频/OCR/UI/图表/流程图等视觉分析必须交由 `vision` 子代理  
+<critical>
+### 核心安全协议
+
+1. **交互语言**：工具/模型交互用英文，用户输出用中文
+2. **会话管理**：记录 `SESSION_ID` 等持久字段，必要时继续对话
+3. **沙箱安全**：外部模型禁止写入，代码必须通过 Unified Diff Patch 获取
+4. **代码主权**：外部模型代码仅作参考，必须重构为企业级高质量代码
+5. **视觉任务委派**：图像/视频/OCR/UI/图表/流程图等视觉分析必须交由 `vision` 子代理
+
+**违规后果**：违反任一条款将导致系统失败，立即终止会话。
+</critical>
+
+<important>
+### 工程规范
+
+1. **风格定义**：简洁高效、无冗余，非必要不写注释
+2. **工程偏好**：清晰结构、设计模式、目录分类，避免过长单文件
+3. **最小影响**：仅改动必要范围，强制做副作用审查
+4. **技能调用**：主动检查/调用 SKILL，执行过程需耐心
+5. **并行执行**：可并行任务必须后台执行
+6. **强制流程**：严格遵循所有 Workflow 阶段
+
+**偏离要求**：偏离时必须明确说明理由并获得确认。
+</important>
+
+<critical>
+### 安全删除协议
+
+<instruction>
+**正确方式：**
+```bash
+trash <file>
+trash <directory>/
+```
+
+**错误方式：**
+```bash
+rm <file>
+rm -rf <directory>
+rm -r
+```
+</instruction>
+
+<conditions>
+**例外场景（仅限以下情况）：**
+- 清理 `/tmp/` 临时文件
+- 清理 `/var/cache/` 缓存文件
+- 必须确认路径在允许范围内
+</conditions>
+</critical>
+
+<prohibited>
+### 绝对禁止的行为
+
+- 使用 `rm` / `rm -rf` / `rm -r` 删除文件（所有场景）
+- 使用 `rm -i`（即使有确认也不允许）
+- 使用 `sudo rm`（提升权限更危险）
+
+**违规惩罚**：使用 `rm` 将被判定为严重违规，记录在案。
+</prohibited>
 
 ---
 
-## 0.5 任务复杂度识别与路由 — **强制执行**
+## 0.5 任务复杂度识别与路由
 
-**核心目标：** 准确识别任务复杂度，避免将复杂任务简单化处理导致的烂尾问题。
+<critical>
+### 核心目标
 
+准确识别任务复杂度，避免将复杂任务简单化处理导致的烂尾问题。
+
+**违规后果**：未执行复杂度评估直接执行 L3+ 任务，视为严重违规。
+</critical>
+
+<instruction>
 ### 0.5.1 任务复杂度评估维度
 
 在接收到用户需求后，必须从以下维度评估任务复杂度：
@@ -55,25 +120,29 @@
 | **协调** | 需要并行/串行任务数 | 1 | 2-3 | 4-6 | 6+ |
 | **测试** | 测试场景复杂度 | 单元测试 | 集成测试 | 端到端测试 | 多环境/多场景 |
 
+**操作要求**：使用此表格评估每个任务的复杂度级别。
+</instruction>
+
+<instruction>
 ### 0.5.2 复杂度分级判定规则
 
 **L1 - 简单任务（单点修改）**
 - 单文件修改，改动量 <50 行
 - 无外部依赖，无跨模块影响
 - 需求明确，技术方案确定
-- **路由策略：** 直接执行 → Phase 1（检索）→ Phase 4（实现）→ Phase 5（审计）
+- **路由策略**：直接执行 → Phase 1（检索）→ Phase 4（实现）→ Phase 5（审计）
 
 **L2 - 中等任务（模块级修改）**
 - 2-5 文件，改动量 50-200 行
 - 1-2 个外部依赖，模块内影响
 - 需求基本明确，技术方案清晰
-- **路由策略：** Phase 1（检索）→ Phase 2（分析）→ Phase 4（实现）→ Phase 5（审计）
+- **路由策略**：Phase 1（检索）→ Phase 2（分析）→ Phase 4（实现）→ Phase 5（审计）
 
 **L3 - 复杂任务（跨模块修改）**
 - 6-10 文件，改动量 200-500 行
 - 3-5 个外部依赖，跨模块影响
 - 需求部分模糊，需要技术调研
-- **路由策略：**
+- **路由策略**：
   1. 必须创建 Workhub Issue
   2. Phase 1（深度检索）→ Phase 2（详细分析）→ Phase 3（原型）→ Phase 4（实现）→ Phase 5（审计）
   3. 使用 tmux 管理长时间任务
@@ -83,18 +152,19 @@
 - 10+ 文件，改动量 500+ 行
 - 5+ 外部依赖，系统级影响
 - 需求模糊，技术方案不确定
-- **路由策略：**
-  1. **强制使用 Workhub**（创建 Issue + PR）
-  2. **必须执行完整 Workflow**（Phases 1-5）
-  3. **必须拆分子任务**（使用 subagent）
-  4. **必须使用 tmux** 管理所有后台任务
-  5. **必须记录架构决策**（ADR）
+- **路由策略**：
+  1. 强制使用 Workhub（创建 Issue + PR）
+  2. 必须执行完整 Workflow（Phases 1-5）
+  3. 必须拆分子任务（使用 subagent）
+  4. 必须使用 tmux 管理所有后台任务
+  5. 必须记录架构决策（ADR）
   6. 考虑使用 system-design skill 进行设计
+</instruction>
 
+<conditions>
 ### 0.5.3 复杂度识别触发条件
 
 **以下情况自动判定为 L3 或 L4：**
-
 - 用户使用模糊描述："重构一下"、"优化性能"、"增加新功能"
 - 用户需求包含多个步骤
 - 涉及架构变更（如引入新框架、改变数据流）
@@ -104,44 +174,74 @@
 - 涉及用户鉴权/权限/安全
 - 需要设计 API/接口规范
 
-### 0.5.4 避免烂尾的关键措施
+**操作要求**：遇到任一触发条件，必须执行复杂度评估。
+</conditions>
 
-**1. 禁止简单化处理**
-- 将 L3/L4 任务当作 L1/L2 处理
-- 跳过 Phase 2（分析）直接实现
-- 不创建 Workhub Issue
-- 不拆分子任务一次性完成
+<prohibited>
+### 0.5.4 避免烂尾的禁止行为
 
-**2. 强制检查点**
-- L3 及以上任务必须在开始前：
-  - [ ] 评估复杂度（使用 0.5.1 表格）
-  - [ ] 创建 Workhub Issue
-  - [ ] 制定分步计划（记录在 Issue）
-  - [ ] 确认验收标准
-- L4 任务额外需要：
-  - [ ] 创建 ADR（架构决策记录）
-  - [ ] 设计数据流图/架构图
-  - [ ] 评估回滚方案
+**禁止以下行为：**
+1. 将 L3/L4 任务当作 L1/L2 处理
+2. 跳过 Phase 2（分析）直接实现
+3. L3+ 任务不创建 Workhub Issue
+4. 不拆分子任务一次性完成
+5. 未制定分步计划直接执行
 
-**3. 状态追踪**
+**违规惩罚**：违反任一行为将导致严重违规记录。
+</prohibited>
+
+<important>
+### 0.5.5 强制检查点
+
+**L3 及以上任务必须在开始前完成：**
+- [ ] 评估复杂度（使用 0.5.1 表格）
+- [ ] 创建 Workhub Issue
+- [ ] 制定分步计划（记录在 Issue）
+- [ ] 确认验收标准
+
+**L4 任务额外需要：**
+- [ ] 创建 ADR（架构决策记录）
+- [ ] 设计数据流图/架构图
+- [ ] 评估回滚方案
+
+**偏离要求**：跳过任一检查点必须明确说明理由。
+</important>
+
+<instruction>
+### 0.5.6 状态追踪
+
 - 每完成一个里程碑，更新 Issue Notes
 - 遇到阻塞性问题，记录在 Issue Errors
 - 进度不明确时主动向用户汇报
 
-**4. 风险识别**
-- 在 Phase 2 阶段必须识别以下风险：
-  - 技术可行性（是否存在未知技术难点）
-  - 时间估算（是否超出预期）
-  - 依赖风险（第三方库/服务是否稳定）
-  - 回滚成本（失败后恢复难度）
+**操作要求**：持续追踪任务状态，确保透明度。
+</instruction>
 
-**5. 拆分原则**
+<instruction>
+### 0.5.7 风险识别
+
+在 Phase 2 阶段必须识别以下风险：
+- 技术可行性（是否存在未知技术难点）
+- 时间估算（是否超出预期）
+- 依赖风险（第三方库/服务是否稳定）
+- 回滚成本（失败后恢复难度）
+
+**操作要求**：识别的风险必须记录在 Issue 中。
+</instruction>
+
+<instruction>
+### 0.5.8 拆分原则
+
 - L3 任务拆分为 2-4 个子任务（Issue）
 - L4 任务拆分为 5+ 个子任务（Issue）
 - 每个子任务必须是可独立验收的
 - 子任务间依赖关系必须明确
 
-### 0.5.5 决策流程图
+**操作要求**：遵循此原则拆分复杂任务。
+</instruction>
+
+<instruction>
+### 0.5.9 决策流程图
 
 ```
 用户需求
@@ -158,8 +258,10 @@
               ↓         ↓
               +tmux     +Design
 ```
+</instruction>
 
-### 0.5.6 示例场景
+<instruction>
+### 0.5.10 示例场景
 
 **L1 示例：**
 - "修改 utils.ts 中的 formatDate 函数格式"
@@ -176,77 +278,127 @@
 **L4 示例：**
 - "设计并实现一个微服务架构的电商系统"
 - → Workhub Issue + ADR + 系统设计 → 拆分为 10+ 子任务 → 多 subagent 并行 → 持续追踪
+</instruction>
 
-### 0.5.7 违规惩罚
+<prohibited>
+### 0.5.11 违规惩罚
 
 - 将 L3/L4 任务当作 L1/L2 处理 → 严重违规
 - 跳过复杂度评估直接执行 → 严重违规
 - L3+ 任务不创建 Issue → 严重违规
 - 未拆分复杂任务导致烂尾 → 严重违规
+</prohibited>
 
 ---
 
-## 1. 工具与命令规范（强制）
+## 1. 工具与命令规范
 
 ### 1.1 文件读取
 
-- 必须用 `bat` 读取文件
-- ✅ 正确：`bat <file>` | `bat <file> | sed -n '1,100p'`
-- ❌ 禁止：`cat`（除非用于管道/重定向的原始输出）
+<instruction>
+**必须用 `bat` 读取文件**
 
-**🚨 read 工具调用规范：**
+正确方式：
+```bash
+bat <file>
+bat <file> | sed -n '1,100p'
+```
+
+禁止方式：
+```bash
+cat <file>
+head <file>
+tail <file>
+```
+
+**例外**：仅用于管道/重定向的原始输出。
+</instruction>
+
+<critical>
+### read 工具调用规范
 
 `read` 工具**一次只能读取一个文件**，且**不支持批量工具调用**。
 
-- ✅ 正确：每次调用只传一个 `path` 参数，逐个读取
-- ❌ 错误：单次调用传入多个路径（会导致 JSON 解析失败）
-- ❌ 错误：同时发起多个 read 调用（不支持批量工具调用）
+**正确方式：**
+- 每次调用只传一个 `path` 参数，逐个读取
+
+**错误方式：**
+- 单次调用传入多个路径（会导致 JSON 解析失败）
+- 同时发起多个 read 调用（不支持批量工具调用）
 
 **批量读取请用：**
 ```bash
 for file in path1 path2 path3; do cat "$file"; done
-```  
+```
+
+**违规后果**：违反此规范将导致工具调用失败。
+</critical>
 
 ### 1.2 文件搜索
 
-- **文件/路径搜索优先使用 `fd`**，**禁止 `find`**
-- ✅ 正确：
-  - `fd "filename"` - 按文件名搜索
-  - `fd -e ts` - 按扩展名搜索
-  - `fd "pattern" -t f` - 搜索匹配模式的文件
-  - `fd -H ...` - 包含隐藏文件
-- 说明：`fd` 自动排除 `node_modules`、更快、更干净
-- **优先级规则**：
-  - 用户给出明确文件名/路径 → 用 `fd`
-  - 搜索特定代码内容/字符串 → 用 `rg`（ripgrep）
-  - 语义理解/自然语言查询 → 用 `ace`  
+<instruction>
+**文件/路径搜索优先使用 `fd`**
+
+正确方式：
+```bash
+fd "filename"              # 按文件名搜索
+fd -e ts                   # 按扩展名搜索
+fd "pattern" -t f          # 搜索匹配模式的文件
+fd -H ...                  # 包含隐藏文件
+```
+
+**说明**：`fd` 自动排除 `node_modules`、更快、更干净。
+</instruction>
+
+<instruction>
+**工具选择优先级：**
+- 用户给出明确文件名/路径 → 用 `fd`
+- 搜索特定代码内容/字符串 → 用 `rg`（ripgrep）
+- 语义理解/自然语言查询 → 用 `ace`
+</instruction>
+
+<prohibited>
+### 绝对禁止的搜索工具
+
+- `find` - 使用 `fd` 替代
+- `grep` - 使用 `rg` 替代
+- `ag` - 使用 `rg` 替代
+
+**违规惩罚**：使用 `find` / `rm` / `grep` / `rg` / `ag` 将被判定为严重违规。
+</prohibited>
 
 ### 1.3 后台任务
 
+<critical>
+### 后台任务管理协议
+
 **强制：所有后台任务必须使用 tmux skill**
 
+<conditions>
 **适用场景：**
 - 长时间任务（>10s）：编译、训练、数据迁移
 - 交互式工具：Python REPL、gdb、数据库 CLI
 - 持续服务：dev server、数据库、守护进程
 - 需要监控输出或手动干预
+</conditions>
 
-**命令：**
+<instruction>
+**tmux skill 命令：**
 ```bash
 # 创建（category: task/service/agent）
 bun ~/.pi/agent/skills/tmux/lib.ts create <name> <command> [category]
 
 # 观测
-bun ~/.pi/agent/skills/tmux/lib.ts list        # 列出所有
-bun ~/.pi/agent/skills/tmux/lib.ts capture <id> [lines]  # 捕获输出
-bun ~/.pi/agent/skills/tmux/lib.ts status <id> # 状态
-bun ~/.pi/agent/skills/tmux/tui.ts             # TUI 界面
+bun ~/.pi/agent/skills/tmux/lib.ts list
+bun ~/.pi/agent/skills/tmux/lib.ts capture <id> [lines]
+bun ~/.pi/agent/skills/tmux/lib.ts status <id>
+bun ~/.pi/agent/skills/tmux/tui.ts
 
 # 交互
 bun ~/.pi/agent/skills/tmux/lib.ts send <id> "<keys>"
 
 # 清理
-bun ~/.pi/agent/skills/tmux/lib.ts kill <id>   # 终止
+bun ~/.pi/agent/skills/tmux/lib.ts kill <id>
 bun ~/.pi/agent/skills/tmux/lib.ts cleanup [hours]
 ```
 
@@ -254,25 +406,72 @@ bun ~/.pi/agent/skills/tmux/lib.ts cleanup [hours]
 ```
 tmux -S /tmp/pi-tmux-sockets/pi.sock attach -t {session-id}
 ```
+</instruction>
 
-**❌ 严禁：** `&` / `nohup` / `screen` / `disown` / 阻塞主 shell  
+<prohibited>
+**绝对禁止的后台管理方式：**
+- `&` - 后台运行
+- `nohup` - 忽略挂起信号
+- `screen` - 终端复用
+- `disown` - 从作业表中移除
+- 阻塞主 shell 的任何方式
+
+**违规惩罚**：使用任一方式将被判定为严重违规。
+</prohibited>
+</critical>
 
 ### 1.4 安全删除
 
-- 必须用 `trash`，**禁止 `rm`**  
-- ✅ 正确：`trash <file>` | `trash <path/to/dir>/`  
-- ❌ 严禁：`rm` | `rm -rf`（即使加 `-i`）  
-- 例外：仅限 `/tmp/` 或 `/var/cache/` 内清理缓存  
+<critical>
+### 安全删除协议
+
+<instruction>
+**正确方式：**
+```bash
+trash <file>
+trash <path/to/dir>/
+```
+
+**错误方式：**
+```bash
+rm <file>
+rm -rf <directory>
+rm -r
+```
+</instruction>
+
+<conditions>
+**例外场景（仅限以下情况）：**
+- 清理 `/tmp/` 临时文件
+- 清理 `/var/cache/` 缓存文件
+- 必须确认路径在允许范围内
+</conditions>
+
+<prohibited>
+**绝对禁止：**
+- `rm` / `rm -rf` / `rm -r`（所有场景）
+- `rm -i`（即使有确认也不允许）
+- `sudo rm`（提升权限更危险）
+
+**违规惩罚**：使用 `rm` 将被判定为严重违规。
+</prohibited>
+</critical>
 
 ### 1.5 代码库搜索
 
-**工具选择原则：根据场景选择最合适的工具，不要盲目使用 ace。**
+<important>
+### 工具选择原则
 
-- ✅ 正确：根据场景选择 `fd` / `rg` / `ast-grep` / `ace`
-- ❌ 严禁：`grep` / `ag` / `find` 用于代码库分析
-- **🚨 违规惩罚：使用 `find` / `rm` / `grep` / `rg` / `ag` 将被判定为严重违规**
+根据场景选择最合适的工具，不要盲目使用 ace。
 
-#### 1.5.1 工具选择优先级
+**正确方式：** 根据场景选择 `fd` / `rg` / `ast-grep` / `ace`
+**禁止方式：** `grep` / `ag` / `find` 用于代码库分析
+
+**违规惩罚**：使用 `find` / `rm` / `grep` / `rg` / `ag` 将被判定为严重违规。
+</important>
+
+<instruction>
+### 1.5.1 工具选择优先级
 
 **判断标准（按优先级）：**
 
@@ -291,8 +490,10 @@ tmux -S /tmp/pi-tmux-sockets/pi.sock attach -t {session-id}
 - ✅ **使用 `fd`/`rg`/`ast-grep`**：用户提到具体文件名、路径、函数名、类名、代码片段、字符串
 - ✅ **使用 `ace`**：用户描述功能、问"如何实现"、需要高层信息、不确定具体位置、需要理解架构
 - ❌ **不使用 `ace`**：用户给出明确标识符、只需要简单文本搜索、已知具体位置
+</instruction>
 
-#### 1.5.2 Ace Tool 使用指南
+<instruction>
+### 1.5.2 Ace Tool 使用指南
 
 **Ace Tool（AugmentCode）** 是语义代码搜索工具，用于自然语言查询。
 
@@ -325,11 +526,27 @@ ace e "Add login"               # 简写
 - 不适合精确符号搜索（用 `rg` 或 `ast-grep`）
 - 不适合已知路径的文件定位（用 `fd`）
 - 语义查询可能返回不精确结果，需要人工判断
-- 对于小型项目或简单任务可能过度设计  
+- 对于小型项目或简单任务可能过度设计
+</instruction>
+
+<avoid>
+### 反模式警告
+
+**不要盲目使用 ace：**
+- 当用户给出明确标识符时，优先使用精确工具
+- 当只需要简单文本搜索时，优先使用 `rg`
+- 当已知具体位置时，优先使用 `fd`
+
+**替代方案：**
+- 明确标识符 → `fd` / `rg` / `ast-grep`
+- 自然语言描述 → `ace`
+- 架构理解 → `ace`
+</avoid>
 
 ### 1.6 复杂操作执行
 
-**复杂操作优先使用 Python3 代码执行方式**
+<instruction>
+### 复杂操作优先使用 Python3 代码执行方式
 
 **推荐方式：**
 ```bash
@@ -348,36 +565,58 @@ EOF
 **原则：**
 - 简单操作用 bash（文件搜索、列出目录）
 - 复杂逻辑用 Python3（数据处理、条件判断、文件操作）
+</instruction>
 
-### 1.7 截断输出处理 — **强制执行**
+### 1.7 截断输出处理
 
-**触发：** 输出包含 `[Showing lines X-Y of Z (50.0KB limit). Full output: /path/to/log]`
+<critical>
+### 截断输出处理协议
 
+<conditions>
+**触发条件：**
+输出包含 `[Showing lines X-Y of Z (50.0KB limit). Full output: /path/to/log]`
+</conditions>
+
+<instruction>
 **处理策略（按优先级）：**
 1. 读取日志文件：`cat <log-path>` 或 `read <log-path>`
 2. 大文件搜索：`rg "pattern" <log-path>` 或 `grep "pattern" <log-path> | head -50`
 3. 分块读取：`read <log-path> --offset 1 --limit 100`
+</instruction>
 
-**❌ 禁止：** 重新执行原始命令（可能再次被截断）
+<prohibited>
+**绝对禁止：**
+- 重新执行原始命令（可能再次被截断）
 
-**机制：** 2000 行或 50KB 限制，bash 尾部截断，read 头部截断
+**机制说明：**
+- 2000 行或 50KB 限制
+- bash 尾部截断
+- read 头部截断
+</prohibited>
+</critical>
 
 ---
 
 ## 2. 工作流（Workflow）
 
-### Phase 1：上下文检索 — **强制执行**
+### Phase 1：上下文检索
 
+<critical>
+### Phase 1 强制执行协议
+
+<conditions>
 **触发条件（以下任何场景都必须执行代码检索）：**
-- 理解代码结构/架构  
-- 定位函数/类定义  
-- 查找调用关系与使用位置  
-- 修改前的分析  
-- 任何代码编写或修改  
-- 调试与问题调查  
-- 重构或重组  
-- 生成建议或解决方案  
+- 理解代码结构/架构
+- 定位函数/类定义
+- 查找调用关系与使用位置
+- 修改前的分析
+- 任何代码编写或修改
+- 调试与问题调查
+- 重构或重组
+- 生成建议或解决方案
+</conditions>
 
+<instruction>
 **工具选择优先级（按场景）：**
 
 | 场景 | 首选工具 | 原因 |
@@ -388,59 +627,97 @@ EOF
 | 需要语法模式匹配 | `ast-grep` | 结构化代码搜索 |
 | 自然语言描述且无标识符 | `ace` | 语义理解 |
 | 理解架构/跨文件关系 | `ace` | 高层关系分析 |
+</instruction>
 
-**⚠️ 关键判断原则：**
+<important>
+### 关键判断原则
 
 1. **精确优先**：用户给出明确标识符（文件名、函数名、类名、路径）→ 用 `fd`/`rg`/`ast-grep`
 2. **语义兜底**：用户用自然语言描述但**没有任何具体标识** → 用 `ace`
 3. **架构分析**：需要理解跨文件关系但**缺乏入口点** → 用 `ace`
 4. **禁止滥用**：不要在可以用精确工具解决时强制用 ace
 
-**检索策略：**
+**偏离要求**：偏离此原则必须明确说明理由。
+</important>
+
+<instruction>
+### 检索策略
+
 - 使用 `fd`/`rg`/`ast-grep` 进行精确搜索
 - 需要时使用 `ace` 进行语义检索
-- 递归检索完整定义  
-- 追踪调用链与依赖  
-- 上下文不清晰前不得改代码  
+- 递归检索完整定义
+- 追踪调用链与依赖
+- 上下文不清晰前不得改代码
 
-**需求对齐：** 需求不明确时必须提问澄清。  
+**需求对齐：** 需求不明确时必须提问澄清。
+</instruction>
 
-**🚨 违规惩罚：未进行代码检索而改动代码，视为严重违规。**
+<prohibited>
+**违规惩罚：** 未进行代码检索而改动代码，视为严重违规。
+</prohibited>
+</critical>
 
-### Phase 2：分析与策略（仅复杂任务或用户明确要求）
+### Phase 2：分析与策略
 
-1. 输入分发：将原始需求（不预设）分发给 Codex/Gemini  
-2. 方案迭代：交叉验证、逻辑推理、互补优劣  
-3. 用户确认：给出分步计划（含伪代码）  
+<instruction>
+### Phase 2 执行（仅复杂任务或用户明确要求）
+
+1. **输入分发**：将原始需求（不预设）分发给 Codex/Gemini
+2. **方案迭代**：交叉验证、逻辑推理、互补优劣
+3. **用户确认**：给出分步计划（含伪代码）
+</instruction>
 
 ### Phase 3：原型获取
 
-- 路线 A（前端/UI/样式）：Gemini → Unified Diff（视觉基线）  
-- 路线 B（后端/逻辑/算法）：Gemini → Unified Diff（逻辑原型）  
-- 共同约束：**必须仅输出 Unified Diff，严禁直接写入文件**  
+<instruction>
+### Phase 3 原型获取
 
-### Phase 4：实现（重构为生产代码）
+**路线 A（前端/UI/样式）：**
+- Gemini → Unified Diff（视觉基线）
 
-1. 基于原型重构，去冗余，提升清晰度与效率  
-2. 代码自解释，非必要不注释  
-3. 最小范围修改，强制副作用审查  
+**路线 B（后端/逻辑/算法）：**
+- Gemini → Unified Diff（逻辑原型）
+
+**共同约束：**
+- 必须仅输出 Unified Diff
+- 严禁直接写入文件
+</instruction>
+
+### Phase 4：实现
+
+<instruction>
+### Phase 4 实现（重构为生产代码）
+
+1. 基于原型重构，去冗余，提升清晰度与效率
+2. 代码自解释，非必要不注释
+3. 最小范围修改，强制副作用审查
+</instruction>
 
 ### Phase 5：审计与交付
 
-1. 变更后立即调用 Codex Code Review（chief reviewer）  
-2. 审计通过后再交付用户  
+<important>
+### Phase 5 审计与交付
+
+1. **变更后立即调用 Codex Code Review**（chief reviewer）
+2. **审计通过后再交付用户**
+
+**偏离要求：** 跳过审计必须明确说明理由并获得确认。
+</important>
 
 ---
 
 ## 3. 技能与资源
 
+<instruction>
 ### 3.1 技能路径
 
 | 代理 | 用户技能 | 项目技能 |
 |---|---|---|
 | Pi Agent | `~/.pi/agent/skills/` | `.pi/skills/` |
 | Claude Agent | `~/.claude/skills/` | `.claude/skills/` |
+</instruction>
 
+<instruction>
 ### 3.2 路径概念
 
 | 类型 | 示例 | 基准 |
@@ -449,33 +726,39 @@ EOF
 | HOME 简写 | `~/.pi/agent/skills/...` | 用户主目录 |
 | 项目根 | `.` / `process.cwd()` | 当前工作目录 |
 | 相对路径 | `./docs/config.md` | 当前工作目录 |
+</instruction>
 
+<instruction>
 ### 3.3 路径使用规则
 
-1. 命令完整：使用绝对路径或先 `cd` 到技能目录  
-2. 位置清晰：用户级 `~/.pi/agent/skills/`，项目级 `.pi/skills/`  
-3. 相对路径基准：始终相对当前工作目录  
-4. 安全做法：`cd <dir> && <command>` 或绝对路径  
-5. 环境变量：`~` 仅在 shell 中展开，代码需显式绝对路径  
-6. Workhub 特别规则：  
-   - 必须在项目根执行：`bun ~/.pi/agent/skills/workhub/lib.ts <command>`  
-   - 禁止在技能目录内执行（会导致文档落错位置）  
+1. **命令完整**：使用绝对路径或先 `cd` 到技能目录
+2. **位置清晰**：用户级 `~/.pi/agent/skills/`，项目级 `.pi/skills/`
+3. **相对路径基准**：始终相对当前工作目录
+4. **安全做法**：`cd <dir> && <command>` 或绝对路径
+5. **环境变量**：`~` 仅在 shell 中展开，代码需显式绝对路径
+6. **Workhub 特别规则**：
+   - 必须在项目根执行：`bun ~/.pi/agent/skills/workhub/lib.ts <command>`
+   - 禁止在技能目录内执行（会导致文档落错位置）
+</instruction>
 
+<avoid>
 ### 3.4 常见错误与正确方式
 
-错误：
+**错误方式：**
 ```bash
 cd /path/to/project && bun run lib.ts tree
 cd ~/.pi/agent/skills/workhub && bun run lib.ts create issue "task"
 ~/.pi/agent/skills/workhub/lib.ts tree
 ```
 
-正确：
+**正确方式：**
 ```bash
 cd /path/to/project && bun ~/.pi/agent/skills/workhub/lib.ts tree
 cd /path/to/project && ./.pi/skills/custom/script.sh args
 ```
+</avoid>
 
+<instruction>
 ### 3.5 路径验证
 
 ```bash
@@ -488,7 +771,9 @@ ls -la ./.pi/skills/<skill-name>/<script>
 # 验证工作目录
 pwd && ls -la
 ```
+</instruction>
 
+<instruction>
 ### 3.6 扩展注册表
 
 | 扩展 | 功能 | 文档 |
@@ -496,7 +781,9 @@ pwd && ls -la
 | `answer` | 交互式问答 TUI（Ctrl+.) | `~/.pi/agent/extensions/answer.ts` |
 | `qna` | 编辑器问答提取（Ctrl+,) | `~/.pi/agent/extensions/qna.ts` |
 | `subagent` | 委派给专门子代理（隔离上下文） | `~/.pi/agent/extensions/subagent/index.ts` |
+</instruction>
 
+<instruction>
 ### 3.7 资源矩阵
 
 | 阶段 | 功能 | 模型/工具 | 输入 | 输出 | 约束 |
@@ -507,40 +794,58 @@ pwd && ls -la
 | 3B | 后端/逻辑 | Gemini | 英文 | Unified Diff | 禁止写文件 |
 | 4 | 重构实现 | Pi（自身） | N/A | 生产代码 | 简洁高效 |
 | 5 | 审计/QA | Gemini | Diff + 文件 | 评审意见 | 强制 |
+</instruction>
 
 ---
 
 ## 4. Workhub 协议
 
-**要求：复杂任务必须使用 workhub 技能。**
+<important>
+### Workhub 强制使用原则
 
+**要求：** 复杂任务必须使用 workhub 技能。
+
+**偏离要求：** L3+ 任务不使用 workhub 必须明确说明理由。
+</important>
+
+<instruction>
 ### 4.1 核心原则
 
-1. SSOT：每个知识领域只有一个权威文档  
-2. 文件系统即记忆：大内容存文件，上下文只保路径  
-3. 状态管理：决策前读 Issue，执行后更新 Issue  
-4. 变更可追溯：每个 PR 必须关联 Issue  
+1. **SSOT**：每个知识领域只有一个权威文档
+2. **文件系统即记忆**：大内容存文件，上下文只保路径
+3. **状态管理**：决策前读 Issue，执行后更新 Issue
+4. **变更可追溯**：每个 PR 必须关联 Issue
+</instruction>
 
+<critical>
 ### 4.2 执行规则
 
 **唯一正确方式：在项目根目录执行。**
 
-错误：
+<avoid>
+### 错误方式
+
 ```bash
 ~/.pi/agent/skills/workhub/lib.ts create issue "task"
 cd ~/.pi/agent/skills/workhub && bun run lib.ts create issue "task"
 cd /path/to/project && bun run lib.ts create issue "task"
 ```
+</avoid>
 
-正确：
+<instruction>
+### 正确方式
+
 ```bash
 cd /path/to/project
 bun ~/.pi/agent/skills/workhub/lib.ts create issue "task"
 ```
 
-原因：`lib.ts` 使用 `process.cwd()` 判断文档位置，必须在项目根执行。  
-验证：执行后检查 `ls -la docs/issues/`，应看到新文件。  
+**原因：** `lib.ts` 使用 `process.cwd()` 判断文档位置，必须在项目根执行。
+**验证：** 执行后检查 `ls -la docs/issues/`，应看到新文件。
+</instruction>
+</critical>
 
+<instruction>
 ### 4.3 文档结构
 
 ```
@@ -561,7 +866,9 @@ docs/
 └── guides/               # Usage guides
     └── [topic].md
 ```
+</instruction>
 
+<instruction>
 ### 4.4 常用命令（必须在项目根执行）
 
 ```bash
@@ -576,10 +883,12 @@ bun ~/.pi/agent/skills/workhub/lib.ts list prs
 bun ~/.pi/agent/skills/workhub/lib.ts status
 bun ~/.pi/agent/skills/workhub/lib.ts search "keyword"
 ```
+</instruction>
 
+<instruction>
 ### 4.5 模板结构
 
-Issue 模板：
+**Issue 模板：**
 - 标题（日期 + 描述）
 - 状态（To Do / In Progress / Done）
 - 优先级（High / Medium / Low）
@@ -589,7 +898,7 @@ Issue 模板：
 - 备注（进度更新）
 - 错误（错误日志/解决方案）
 
-PR 模板：
+**PR 模板：**
 - 标题（日期 + 描述）
 - 状态（Draft / Review / Merged）
 - 关联 Issue
@@ -598,16 +907,89 @@ PR 模板：
 - 测试（验证情况）
 - 评审意见（反馈）
 
-快速查看模板：
+**快速查看模板：**
 ```bash
 bun ~/.pi/agent/skills/workhub/lib.ts create issue "temp"
 bun ~/.pi/agent/skills/workhub/lib.ts create pr "temp"
 ```
+</instruction>
 
+<instruction>
 ### 4.6 最佳实践
 
-- Issue：使用日期前缀 `yyyymmdd-description`，写清需求与验收标准  
-- 执行中：先读 Issue，再记录 Notes 与 Errors  
-- PR：关联 Issue，列出变更与测试  
-- 失败恢复：检查 `docs/issues/`、确保在项目根执行、确认 workhub 安装，必要时阅读 `~/.pi/agent/skills/workhub/SKILL.md`  
+- **Issue**：使用日期前缀 `yyyymmdd-description`，写清需求与验收标准
+- **执行中**：先读 Issue，再记录 Notes 与 Errors
+- **PR**：关联 Issue，列出变更与测试
+- **失败恢复**：检查 `docs/issues/`、确保在项目根执行、确认 workhub 安装，必要时阅读 `~/.pi/agent/skills/workhub/SKILL.md`
+</instruction>
 
+---
+
+## 标签使用总结
+
+<critical>
+### Critical 标签使用位置
+
+- 0. 全局协议 - 核心安全协议、安全删除协议
+- 0.5. 任务复杂度识别 - 核心目标、后台任务管理协议、安全删除协议、截断输出处理协议
+- 2. 工作流 - Phase 1 强制执行协议
+- 4. Workhub 协议 - 执行规则
+
+**违规后果：** 系统失败，立即终止会话。
+</critical>
+
+<prohibited>
+### Prohibited 标签使用位置
+
+- 0. 全局协议 - 绝对禁止的行为
+- 0.5. 任务复杂度识别 - 避免烂尾的禁止行为、违规惩罚
+- 1. 工具与命令规范 - 绝对禁止的搜索工具、后台任务管理协议、安全删除协议
+- 2. 工作流 - Phase 1 强制执行协议
+
+**违规惩罚：** 严重违规，记录惩罚。
+</prohibited>
+
+<important>
+### Important 标签使用位置
+
+- 0. 全局协议 - 工程规范
+- 0.5. 任务复杂度识别 - 强制检查点、关键判断原则
+- 1. 工具与命令规范 - 工具选择原则
+- 2. 工作流 - Phase 5 审计与交付
+- 4. Workhub 协议 - Workhub 强制使用原则
+
+**偏离要求：** 需要理由说明。
+</important>
+
+<instruction>
+### Instruction 标签使用位置
+
+- 0.5. 任务复杂度识别 - 多个操作指令
+- 1. 工具与命令规范 - 文件读取、文件搜索、后台任务管理、安全删除、代码库搜索、复杂操作执行、截断输出处理
+- 2. 工作流 - 所有 Phase 指令
+- 3. 技能与资源 - 所有路径和资源指令
+- 4. Workhub 协议 - 所有操作指令
+
+**偏离要求：** 偏离需确认。
+</instruction>
+
+<conditions>
+### Conditions 标签使用位置
+
+- 0. 全局协议 - 安全删除例外场景
+- 0.5. 任务复杂度识别 - 复杂度识别触发条件、后台任务适用场景
+- 1. 工具与命令规范 - 安全删除例外场景、后台任务适用场景、截断输出触发条件
+- 2. 工作流 - Phase 1 触发条件
+
+**操作要求：** 未检查即违规。
+</conditions>
+
+<avoid>
+### Avoid 标签使用位置
+
+- 1. 工具与命令规范 - 反模式警告
+- 3. 技能与资源 - 常见错误与正确方式
+- 4. Workhub 协议 - 错误方式
+
+**替代方案：** 建议替代方案。
+</avoid>
