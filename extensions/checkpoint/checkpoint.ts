@@ -40,6 +40,8 @@ interface CheckpointState {
   checkpointCache: CheckpointData[] | null;
   cacheSessionIds: Set<string>;
   pendingCheckpoint: Promise<void> | null;
+  /** Detected Git repo root (may be different from ctx.cwd) */
+  detectedRepoRoot: string | null;
 }
 
 function createInitialState(): CheckpointState {
@@ -51,6 +53,7 @@ function createInitialState(): CheckpointState {
     checkpointCache: null,
     cacheSessionIds: new Set(),
     pendingCheckpoint: null,
+    detectedRepoRoot: null,
   };
 }
 
@@ -71,6 +74,21 @@ function setCache(state: CheckpointState, cps: CheckpointData[]): void {
 // Repo root cache (module-level for efficiency across sessions)
 let cachedRepoRoot: string | null = null;
 let cachedRepoCwd: string | null = null;
+
+/** Detect Git repo root from a file path */
+async function detectRepoFromPath(filePath: string, baseCwd: string): Promise<string | null> {
+  try {
+    // Resolve full path relative to baseCwd
+    const { resolve, dirname } = await import("path");
+    const fullPath = resolve(baseCwd, filePath);
+    const fileDir = dirname(fullPath);
+
+    // Check if this directory is in a Git repo
+    return await getRepoRoot(fileDir);
+  } catch {
+    return null;
+  }
+}
 
 async function getCachedRepoRoot(cwd: string): Promise<string> {
   if (cachedRepoCwd !== cwd) {
@@ -226,8 +244,8 @@ async function createTurnCheckpoint(
 }
 
 /** Preload checkpoints in background */
-async function preloadCheckpoints(state: CheckpointState, cwd: string): Promise<void> {
-  const root = await getCachedRepoRoot(cwd);
+async function preloadCheckpoints(state: CheckpointState, repoRoot: string): Promise<void> {
+  const root = await getCachedRepoRoot(repoRoot);
   const cps = await loadAllCheckpoints(root, undefined, true);
   setCache(state, cps);
 }
@@ -252,9 +270,13 @@ async function handleRestorePrompt(
   getTargetEntryId: () => string,
   options: { codeOnly: "cancel" | "skipConversationRestore" }
 ): Promise<{ cancel: true } | { skipConversationRestore: true } | undefined> {
+  // Use detected repo root, or ctx.cwd as fallback
+  const repoRoot = state.detectedRepoRoot || ctx.cwd;
+  if (!repoRoot) return { cancel: true };
+
   const checkpointLoadPromise = loadSessionChainCheckpoints(
     state,
-    ctx.cwd,
+    repoRoot,
     ctx.sessionManager.getHeader()
   );
 
@@ -286,7 +308,7 @@ async function handleRestorePrompt(
 
   const checkpoint = findClosestCheckpoint(checkpoints, targetTs);
 
-  await saveAndRestore(state, ctx.cwd, checkpoint, ctx.ui.notify.bind(ctx.ui));
+  await saveAndRestore(state, repoRoot, checkpoint, ctx.ui.notify.bind(ctx.ui));
 
   if (selected !== "code") return undefined;
 
@@ -306,25 +328,66 @@ export default function (pi: ExtensionAPI) {
     resetRepoCache();
 
     state.gitAvailable = await isGitRepo(ctx.cwd);
-    if (!state.gitAvailable) return;
+    state.detectedRepoRoot = null;
+
+    // Try to detect Git repo from ctx.cwd first
+    if (state.gitAvailable) {
+      state.detectedRepoRoot = await getRepoRoot(ctx.cwd);
+    }
 
     updateSessionInfo(state, ctx.sessionManager);
 
-    setImmediate(async () => {
-      try {
-        await preloadCheckpoints(state, ctx.cwd);
-      } catch { }
-    });
+    // Preload checkpoints if we found a repo
+    if (state.detectedRepoRoot) {
+      setImmediate(async () => {
+        try {
+          await preloadCheckpoints(state, ctx.detectedRepoRoot);
+        } catch { }
+      });
+    }
+  });
+
+  // Detect Git repo from edited files (for nested projects)
+  pi.on("tool_result", async (event, ctx) => {
+    // Only check edit and write operations
+    if (event.toolName !== "edit" && event.toolName !== "write") return;
+
+    const filePath = event.input.path as string;
+    if (!filePath) return;
+
+    // Detect Git repo from file path
+    const repoRoot = await detectRepoFromPath(filePath, ctx.cwd);
+
+    // Update state if we found a repo
+    if (repoRoot && !state.detectedRepoRoot) {
+      state.detectedRepoRoot = repoRoot;
+      state.gitAvailable = true;
+
+      // Preload checkpoints
+      setImmediate(async () => {
+        try {
+          await preloadCheckpoints(state, state.detectedRepoRoot!);
+        } catch { }
+      });
+    }
   });
 
   pi.on("session_switch", async (_event, ctx) => {
     if (!state.gitAvailable) return;
     updateSessionInfo(state, ctx.sessionManager);
+    // Re-detect repo root (might be different in new session)
+    if (isGitRepo(ctx.cwd)) {
+      state.detectedRepoRoot = await getRepoRoot(ctx.cwd);
+    }
   });
 
   pi.on("session_fork", async (_event, ctx) => {
     if (!state.gitAvailable) return;
     updateSessionInfo(state, ctx.sessionManager);
+    // Re-detect repo root (might be different in new session)
+    if (isGitRepo(ctx.cwd)) {
+      state.detectedRepoRoot = await getRepoRoot(ctx.cwd);
+    }
   });
 
   pi.on("session_before_fork", async (event, ctx) => {
@@ -344,6 +407,10 @@ export default function (pi: ExtensionAPI) {
   pi.on("turn_start", async (event, ctx) => {
     if (!state.gitAvailable || state.checkpointingFailed) return;
 
+    // Use detected repo root, or ctx.cwd as fallback
+    const repoRoot = state.detectedRepoRoot || ctx.cwd;
+    if (!repoRoot) return;
+
     if (!state.currentSessionId && state.currentSessionFile) {
       state.currentSessionId = await getSessionIdFromFile(state.currentSessionFile);
     }
@@ -351,7 +418,7 @@ export default function (pi: ExtensionAPI) {
 
     state.pendingCheckpoint = (async () => {
       try {
-        await createTurnCheckpoint(state, ctx.cwd, event.turnIndex, event.timestamp);
+        await createTurnCheckpoint(state, repoRoot, event.turnIndex, event.timestamp);
       } catch {
         state.checkpointingFailed = true;
       }
