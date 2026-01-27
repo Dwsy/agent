@@ -40,7 +40,7 @@ tags: ["checkpoint", "extension", "tui", "git"]
 
 - [ ] WHEN 用户按 `Ctrl+Z`，系统 SHALL 回退最后一个 turn 的文件修改
 - [ ] WHEN 用户按 `Ctrl+Y`，系统 SHALL 重做上一次 undo 的修改
-- [ ] WHEN 用户输入 `/view` 命令，系统 SHALL 在 TUI 中显示当前会话修改的文件列表
+- [ ] WHEN 用户输入 `/changes` 命令，系统 SHALL 在 TUI 中显示当前会话修改的文件列表
 - [ ] WHERE 当前会话有多个 turn，系统 SHALL 支持多次 undo/redo
 - [ ] IF Git 仓库不可用，系统 SHALL 优雅降级（只跟踪消息历史，不跟踪文件）
 - [ ] WHEN 执行 undo 时，系统 SHALL 在 TUI 中显示回退的文件数量和摘要
@@ -57,7 +57,7 @@ tags: ["checkpoint", "extension", "tui", "git"]
 - [ ] 实现 FileTracker 模块（跟踪文件修改）
 - [ ] 实现 CheckpointManager（管理 checkpoint 状态）
 - [ ] 实现 undo/redo 命令和快捷键
-- [ ] 实现 `/view` 命令（TUI 显示文件修改）
+- [ ] 实现 `/changes` 命令（TUI 显示文件修改）
 
 ### Phase 3: TUI 视图
 - [ ] 实现 FileChangesViewer 组件（显示修改的文件）
@@ -82,7 +82,7 @@ tags: ["checkpoint", "extension", "tui", "git"]
 | **新增轻量级 FileTracker 层** | OpenCode 使用独立 Git 目录，但我们复用现有 Git ref，添加文件级别跟踪 |
 | **回滚粒度：turn 级别** | 对齐 OpenCode 和 Claude Code 的消息级别回滚 |
 | **使用 `pi.appendEntry()` 存储文件修改记录** | 不需要额外存储，利用现有 session 持久化机制 |
-| **`/view` 命令使用 `ctx.ui.custom()`** | 需要自定义 TUI 组件，pi-tui 支持自定义渲染 |
+| **`/changes` 命令使用 `ctx.ui.custom()`** | 需要自定义 TUI 组件，pi-tui 支持自定义渲染 |
 
 ## 技术方案
 
@@ -320,7 +320,7 @@ const result = await pi.exec("git", ["status"], { cwd });
 
 - [x] 是否需要独立 Git 目录？→ 不需要，复用当前 Git refs 机制
 - [x] 如何处理 bash 命令的文件修改？→ Claude Code 不跟踪，我们也不跟踪
-- [ ] `/view` 命令是否需要显示详细的 diff？→ 待定（MVP 可选）
+- [ ] `/changes` 命令是否需要显示详细的 diff？→ 待定（MVP 可选）
 
 ### 实施优先级
 
@@ -331,7 +331,7 @@ const result = await pi.exec("git", ["status"], { cwd });
    - 使用 `pi.appendEntry()` 存储文件变化记录
 
 2. **V2**（后续）：
-   - `/view` 命令和 TUI 组件（使用 SelectList 显示文件列表）
+   - `/changes` 命令和 TUI 组件（使用 SelectList 显示文件列表）
    - RevertInfo 组件（显示回退状态和文件变化摘要）
    - DiffViewer 显示详细 diff（可选）
 
@@ -655,7 +655,7 @@ interface FileChange {
 | 存储 | `.opencode/git` | `refs/pi-checkpoints/` |
 | 回滚粒度 | 消息级别 | Turn 级别（消息级别） |
 | 快捷键 | Ctrl+Z/Ctrl+Y | 不可用（保留） |
-| 命令 | `/undo` `/redo` | `/undo` `/redo` `/view` |
+| 命令 | `/undo` `/redo` | `/undo` `/redo` `/changes` |
 | TUI 显示 | Revert info + file list | Revert info + FileChangesViewer |
 | 文件跟踪 | Snapshot 模块 | FileTracker + checkpoint-core.ts |
 | 持久化 | Session.revert API | pi.appendEntry() |
@@ -672,7 +672,7 @@ interface FileChange {
 - [x] 复用现有 checkpoint-core.ts 的 Git 操作
 
 #### TUI 功能（V2）
-- [ ] `/view` 命令显示文件变化列表
+- [ ] `/changes` 命令显示文件变化列表
 - [ ] FileChangesViewer 组件（使用 SelectList）
 - [ ] RevertInfo 组件（显示回退状态）
 - [ ] DiffViewer 组件（可选）
@@ -1031,7 +1031,7 @@ export function RevertInfo(
 }
 ```
 
-#### 4. 集成到 `/view` 命令
+#### 4. 集成到 `/changes` 命令
 
 ```typescript
 pi.registerCommand("view", {
