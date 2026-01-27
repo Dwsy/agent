@@ -129,22 +129,21 @@ export function formatJson(jsonString: string, indent: number = 2): string {
 }
 
 /**
- * Format tool result with JSON beautification
+ * Format tool result - only show line count for read tool, hide others
  */
-export function formatToolResult(result: any, themeFg: (color: any, text: string) => string, indent: number = 2): string {
-	if (typeof result === "string") {
-		// Try to parse as JSON
-		try {
-			const parsed = JSON.parse(result);
-			const formatted = JSON.stringify(parsed, null, indent);
-			return themeFg("dim", formatted.split("\n").map((line) => " ".repeat(indent * 2) + line).join("\n"));
-		} catch {
-			// Not JSON, return as-is
-			return themeFg("dim", result.split("\n").map((line) => " ".repeat(indent * 2) + line).join("\n"));
-		}
-	} else if (typeof result === "object" && result !== null) {
-		const formatted = JSON.stringify(result, null, indent);
-		return themeFg("dim", formatted.split("\n").map((line) => " ".repeat(indent * 2) + line).join("\n"));
+export function formatToolResult(result: any, themeFg: (color: any, text: string) => string, _indent: number = 2, toolName?: string): string {
+	// Only show line count for read tool, hide result for all other tools
+	if (toolName !== "read") {
+		return "";
 	}
-	return themeFg("dim", String(result));
+
+	if (typeof result === "string") {
+		const lineCount = result.split("\n").length;
+		return themeFg("dim", `${lineCount} lines`);
+	} else if (typeof result === "object" && result !== null) {
+		const formatted = JSON.stringify(result, null, 2);
+		const lineCount = formatted.split("\n").length;
+		return themeFg("dim", `${lineCount} lines`);
+	}
+	return themeFg("dim", "1 line");
 }

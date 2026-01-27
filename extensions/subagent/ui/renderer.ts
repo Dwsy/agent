@@ -212,22 +212,25 @@ function renderSingleResult(r: any, expanded: boolean, theme: any, mdTheme: any)
 
 				// Show tool result if available
 				if (toolCall.result) {
-					container.addChild(new Text(theme.fg("muted", "     Result:"), 0, 0));
+					// Only show Result header for read tool
+					if (toolCall.toolName === "read") {
+						container.addChild(new Text(theme.fg("muted", "     Result:"), 0, 0));
+					}
 
 					// Check if result has content array
 					if (toolCall.result.content && Array.isArray(toolCall.result.content)) {
 						for (const item of toolCall.result.content) {
 							if (item.type === "text" && item.text) {
-								const formatted = formatToolResult(item.text, theme.fg.bind(theme));
-								container.addChild(new Text(formatted, 0, 0));
+								const formatted = formatToolResult(item.text, theme.fg.bind(theme), 2, toolCall.toolName);
+								if (formatted) container.addChild(new Text(formatted, 0, 0));
 							} else {
-								const formatted = formatToolResult(item, theme.fg.bind(theme));
-								container.addChild(new Text(formatted, 0, 0));
+								const formatted = formatToolResult(item, theme.fg.bind(theme), 2, toolCall.toolName);
+								if (formatted) container.addChild(new Text(formatted, 0, 0));
 							}
 						}
 					} else {
-						const formatted = formatToolResult(toolCall.result, theme.fg.bind(theme));
-						container.addChild(new Text(formatted, 0, 0));
+						const formatted = formatToolResult(toolCall.result, theme.fg.bind(theme), 2, toolCall.toolName);
+						if (formatted) container.addChild(new Text(formatted, 0, 0));
 					}
 				}
 
@@ -368,22 +371,25 @@ function renderChainResult(details: SubagentDetails, expanded: boolean, theme: a
 
 					// Show tool result if available
 					if (toolCall.result) {
-						container.addChild(new Text(theme.fg("muted", "     Result:"), 0, 0));
+						// Only show Result header for read tool
+						if (toolCall.toolName === "read") {
+							container.addChild(new Text(theme.fg("muted", "     Result:"), 0, 0));
+						}
 
 						// Check if result has content array
 						if (toolCall.result.content && Array.isArray(toolCall.result.content)) {
 							for (const item of toolCall.result.content) {
 								if (item.type === "text" && item.text) {
-									const formatted = formatToolResult(item.text, theme.fg.bind(theme));
-									container.addChild(new Text(formatted, 0, 0));
+									const formatted = formatToolResult(item.text, theme.fg.bind(theme), 2, toolCall.toolName);
+									if (formatted) container.addChild(new Text(formatted, 0, 0));
 								} else {
-									const formatted = formatToolResult(item, theme.fg.bind(theme));
-									container.addChild(new Text(formatted, 0, 0));
+									const formatted = formatToolResult(item, theme.fg.bind(theme), 2, toolCall.toolName);
+									if (formatted) container.addChild(new Text(formatted, 0, 0));
 								}
 							}
 						} else {
-							const formatted = formatToolResult(toolCall.result, theme.fg.bind(theme));
-							container.addChild(new Text(formatted, 0, 0));
+							const formatted = formatToolResult(toolCall.result, theme.fg.bind(theme), 2, toolCall.toolName);
+							if (formatted) container.addChild(new Text(formatted, 0, 0));
 						}
 					}
 
@@ -503,22 +509,25 @@ function renderParallelResult(details: SubagentDetails, expanded: boolean, theme
 
 					// Show tool result if available
 					if (toolCall.result) {
-						container.addChild(new Text(theme.fg("muted", "     Result:"), 0, 0));
+						// Only show Result header for read tool
+						if (toolCall.toolName === "read") {
+							container.addChild(new Text(theme.fg("muted", "     Result:"), 0, 0));
+						}
 
 						// Check if result has content array
 						if (toolCall.result.content && Array.isArray(toolCall.result.content)) {
 							for (const item of toolCall.result.content) {
 								if (item.type === "text" && item.text) {
-									const formatted = formatToolResult(item.text, theme.fg.bind(theme));
-									container.addChild(new Text(formatted, 0, 0));
+									const formatted = formatToolResult(item.text, theme.fg.bind(theme), 2, toolCall.toolName);
+									if (formatted) container.addChild(new Text(formatted, 0, 0));
 								} else {
-									const formatted = formatToolResult(item, theme.fg.bind(theme));
-									container.addChild(new Text(formatted, 0, 0));
+									const formatted = formatToolResult(item, theme.fg.bind(theme), 2, toolCall.toolName);
+									if (formatted) container.addChild(new Text(formatted, 0, 0));
 								}
 							}
 						} else {
-							const formatted = formatToolResult(toolCall.result, theme.fg.bind(theme));
-							container.addChild(new Text(formatted, 0, 0));
+							const formatted = formatToolResult(toolCall.result, theme.fg.bind(theme), 2, toolCall.toolName);
+							if (formatted) container.addChild(new Text(formatted, 0, 0));
 						}
 					}
 

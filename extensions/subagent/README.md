@@ -2,7 +2,139 @@
 
 Pi Agent 的子代理扩展，支持将任务委托给专门的子代理，每个子代理拥有隔离的上下文窗口。
 
+## 🚀 快速开始
+
+### 基础使用
+
+```javascript
+// 调用内置代理
+subagent({
+  agent: "scout",
+  task: "查找认证相关的代码"
+})
+```
+
+### 命令行调用
+
+```bash
+# 列出所有可用代理
+/sub
+
+# 调用特定代理
+/sub:scout 查找认证相关的代码
+```
+
+### 查看输出
+
+子代理输出包含：
+- 思考过程（如果模型支持）
+- 工具调用详情（时间、状态、结果）
+- 最终输出
+- 统计信息（token 数、执行时间）
+
+按 `Ctrl+O` 展开/折叠查看详细信息。
+
+## 📝 最近改进
+
+### v1.5.0 - 输出格式优化 (2026-01-27)
+
+#### 思考过程显示
+- 完整展示子代理的推理过程
+- 支持展开/折叠查看
+- 折叠模式显示摘要
+
+#### 工具调用详情
+- 显示每个工具的执行时间
+- 状态标识：`[OK]` `[FAIL]`
+- JSON 结果自动美化格式化
+- 清晰的视觉分隔
+
+#### 输出格式改进
+- 移除 emoji，使用纯文本和颜色区分
+- 更清晰的视觉层次
+- 更好的可读性
+
+#### 示例对比
+
+**之前：**
+```
+Tool Calls:
+  -> bash "ls -la" (0.02s)
+  Result: {"content":[{"type":"text","text":"..."}]}
+```
+
+**现在：**
+```
+Tool Calls (3):
+  [OK] bash "ls -la"
+     Time: 0.02s
+     Result:
+     {
+       "content": [
+         {
+           "type": "text",
+           "text": "..."
+         }
+       ]
+     }
+```
+
 ## 🎯 功能特性
+
+### 输出格式改进
+
+子代理输出经过全面优化，提供清晰易读的执行信息：
+
+#### 思考过程显示
+- 完整展示子代理的推理过程
+- 支持展开/折叠查看
+- 折叠模式显示摘要
+
+#### 工具调用详情
+- 显示每个工具的执行时间
+- 状态标识：`[OK]` `[FAIL]`
+- JSON 结果自动美化格式化
+- 清晰的视觉分隔
+
+#### 示例输出
+
+```
+[OK] scout (user)
+
+Task: 查找认证相关的代码
+
+Thinking Process:
+  > Analyzing current directory structure...
+  > Found README files and configuration
+  > Reading documentation to understand project
+  > Summary: Pi Agent is an enterprise-grade AI Agent system
+
+Tool Calls (3):
+  [OK] bash "ls -la"
+     Time: 0.02s
+     Result:
+     {
+       "content": [
+         {
+           "type": "text",
+           "text": "total 3352..."
+         }
+       ]
+     }
+
+  [OK] read "/Users/.../README.md"
+     Time: 0.00s
+     Result:
+     # Pi Agent
+
+Output:
+[最终输出内容]
+
+Stats:
+15.2K tokens • Duration: 0.08s
+```
+
+### 三种执行模式
 
 ### 三种执行模式
 
@@ -195,7 +327,7 @@ extensions/subagent/
 ├── types.ts               # TypeScript 类型定义
 ├── dynamic-agent.ts       # 动态代理生成逻辑
 ├── executor/
-│   ├── runner.ts          # 子代理进程执行器
+│   ├── runner.ts          # 子代理进程执行器（含 thinking 处理）
 │   └── parser.ts          # JSON 输出解析器
 ├── modes/
 │   ├── base.ts            # 基础模式类
@@ -203,8 +335,9 @@ extensions/subagent/
 │   ├── parallel.ts        # 并行模式实现
 │   └── chain.ts           # 链式模式实现
 ├── ui/
-│   ├── renderer.ts        # UI 渲染器
-│   └── formatter.ts       # 输出格式化
+│   ├── renderer.ts        # UI 渲染器（输出格式化）
+│   ├── formatter.ts       # 输出格式化工具（JSON 美化）
+│   └── status-formatter.ts # 状态格式化
 ├── utils/
 │   ├── agent-creator.ts   # 代理创建工具
 │   ├── concurrency.ts     # 并发控制
@@ -213,8 +346,25 @@ extensions/subagent/
 ├── demo-dynamic-agent.ts  # 动态代理生成演示
 ├── dynamic-agent.test.ts  # 单元测试
 ├── FEATURES.md            # 功能特性文档
+├── OBSERVABILITY.md       # 可观测性文档
 └── README.md              # 本文档
 ```
+
+### 核心组件说明
+
+#### UI 渲染层
+- **renderer.ts** - 主要渲染逻辑，处理展开/折叠视图
+- **formatter.ts** - 输出格式化，包含 JSON 美化和工具结果格式化
+- **status-formatter.ts** - 状态格式化
+
+#### 执行层
+- **runner.ts** - 进程执行器，处理 thinking 事件和工具调用
+- **parser.ts** - JSON 事件解析器
+
+#### 模式层
+- **single.ts** - 单一模式
+- **parallel.ts** - 并行模式
+- **chain.ts** - 链式模式
 
 ## 🔒 安全特性
 
@@ -244,14 +394,36 @@ subagent({
 
 ## 🎨 内置代理
 
-Pi Agent 提供了几个常用的内置代理：
+### 显示在工具描述中的代理
 
-| 代理 | 描述 | 工具 |
+以下代理默认显示在 `subagent` 工具的描述中：
+
+| 代理 | 描述 | 特性 |
 |------|------|------|
-| `scout` | 快速代码侦察 | read, grep, find, ls, bash, ace-tool |
-| `worker` | 通用工作代理 | read, bash, write, edit |
-| `reviewer` | 代码审查 | read, bash |
-| `vision` | 视觉分析 | read, bash, write, edit |
+| **planner** | Five-phase planning agent with parallel exploration and multi-agent design | 复杂任务规划 |
+| **scout** | Fast code reconnaissance agent (READ-ONLY) | 快速代码搜索 |
+| **worker** | General-purpose worker agent with full capabilities | 通用任务处理 |
+
+### 其他可用代理
+
+以下代理通过命令 `/sub:<agent-name>` 调用：
+
+| 代理 | 描述 |
+|------|------|
+| `web-browser` | Web browser interaction agent |
+| `analyze` | Code analysis agent |
+| `brainstormer` | Brainstorming agent |
+| `codemap` | Code map visualization agent |
+| `joke-teller` | Joke telling agent |
+| `llm-learning` | LLM learning agent |
+| `myagent` | Custom agent example |
+| `research` | Research agent |
+| `researcher` | Researcher agent |
+| `reviewer` | Code reviewer agent |
+| `security-reviewer` | Security reviewer agent |
+| `simplifier` | Text simplifier agent |
+| `system-design` | System design agent |
+| `vision` | Vision/image processing agent |
 
 ## 📖 使用场景
 
@@ -375,10 +547,34 @@ subagent({
 2. 任务描述是否清晰
 3. 查看错误日志
 
+### 思考过程未显示
+
+检查：
+1. 模型是否支持 thinking 功能（如 Claude 3.7 Sonnet）
+2. thinking level 是否设置正确（使用 `/thinking` 命令）
+3. 查看是否在 JSON 模式下运行
+
+### JSON 输出未美化
+
+检查：
+1. 确保使用的是最新版本的 subagent 扩展
+2. 检查输出是否在展开模式下（按 Ctrl+O 展开）
+3. 验证工具结果是否为有效的 JSON 格式
+
 ## 📚 相关文档
 
 - [FEATURES.md](./FEATURES.md) - 详细功能特性
+- [OBSERVABILITY.md](./OBSERVABILITY.md) - 可观测性和监控
+- [QUICK-REF.md](./QUICK-REF.md) - 快速参考
+- [README-EXAMPLES.md](./README-EXAMPLES.md) - 使用示例
 - [Pi Agent 文档](https://github.com/mariozechner/pi-coding-agent) - 主项目文档
+
+### 改进日志
+
+- [OBSERVABILITY_SUMMARY.md](./OBSERVABILITY_SUMMARY.md) - 可观测性改进总结
+- [OBSERVABILITY_IMPLEMENTATION.md](./OBSERVABILITY_IMPLEMENTATION.md) - 可观测性实现细节
+- [OBSERVABILITY_FIXES.md](./OBSERVABILITY_FIXES.md) - 修复内容
+- [OBSERVABILITY_FINAL-SUMMARY.md](./OBSERVABILITY_FINAL-SUMMARY.md) - 最终总结
 
 ## 🤝 贡献
 
@@ -387,3 +583,39 @@ subagent({
 ## 📄 许可证
 
 MIT License
+
+## 📋 版本历史
+
+### v1.5.0 (2026-01-27)
+- 输出格式优化
+  - 添加思考过程显示
+  - JSON 结果自动美化
+  - 工具调用详情展示
+  - 移除 emoji，改进可读性
+- 新增思考事件处理
+- 改进 UI 渲染逻辑
+
+### v1.4.0 (2026-01-20)
+- 动态代理生成改进
+- 可观测性增强
+- 工具调用历史记录
+
+### v1.3.0 (2026-01-15)
+- 并行模式优化
+- 链式模式支持
+- 项目代理确认机制
+
+### v1.2.0 (2026-01-10)
+- 代理作用域支持
+- 项目本地代理
+- 命令注册控制
+
+### v1.1.0 (2026-01-05)
+- 动态代理生成
+- 代理模板系统
+- 交互式代理创建
+
+### v1.0.0 (2026-01-01)
+- 初始版本
+- 三种执行模式
+- 基础代理管理
