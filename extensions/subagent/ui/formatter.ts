@@ -115,3 +115,36 @@ export function renderDisplayItems(items: DisplayItem[], expanded: boolean, them
 	}
 	return text.trimEnd();
 }
+
+/**
+ * Format JSON with proper indentation
+ */
+export function formatJson(jsonString: string, indent: number = 2): string {
+	try {
+		const parsed = JSON.parse(jsonString);
+		return JSON.stringify(parsed, null, indent);
+	} catch {
+		return jsonString;
+	}
+}
+
+/**
+ * Format tool result with JSON beautification
+ */
+export function formatToolResult(result: any, themeFg: (color: any, text: string) => string, indent: number = 2): string {
+	if (typeof result === "string") {
+		// Try to parse as JSON
+		try {
+			const parsed = JSON.parse(result);
+			const formatted = JSON.stringify(parsed, null, indent);
+			return themeFg("dim", formatted.split("\n").map((line) => " ".repeat(indent * 2) + line).join("\n"));
+		} catch {
+			// Not JSON, return as-is
+			return themeFg("dim", result.split("\n").map((line) => " ".repeat(indent * 2) + line).join("\n"));
+		}
+	} else if (typeof result === "object" && result !== null) {
+		const formatted = JSON.stringify(result, null, indent);
+		return themeFg("dim", formatted.split("\n").map((line) => " ".repeat(indent * 2) + line).join("\n"));
+	}
+	return themeFg("dim", String(result));
+}

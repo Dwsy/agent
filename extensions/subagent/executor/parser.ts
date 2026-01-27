@@ -3,38 +3,39 @@
  */
 
 import type { Message } from "@mariozechner/pi-ai";
-import type { UsageStats, ProcessResult } from "../types.js";
+import type { UsageStats, PiProcessEvent } from "../types.js";
 
-export interface ParsedEvent {
-	type: string;
-	message?: Message;
-	usage?: {
-		input?: number;
-		output?: number;
-		cacheRead?: number;
-		cacheWrite?: number;
-		cost?: { total: number };
-		totalTokens?: number;
-	};
-}
-
-export function parseEventLine(line: string): ParsedEvent | null {
+export function parseEventLine(line: string): PiProcessEvent | null {
 	if (!line.trim()) return null;
 	try {
-		return JSON.parse(line) as ParsedEvent;
+		return JSON.parse(line) as PiProcessEvent;
 	} catch {
 		return null;
 	}
 }
 
-export function accumulateUsage(current: UsageStats, event: ParsedEvent): void {
-	const usage = event.usage;
+export function extractUsageFromEvent(event: PiProcessEvent): {
+	input?: number;
+	output?: number;
+	cacheRead?: number;
+	cacheWrite?: number;
+	cost?: number;
+	totalTokens?: number;
+} | null {
+	if (event.type === "message_end" || event.type === "tool_execution_end") {
+		return event.usage || null;
+	}
+	return null;
+}
+
+export function accumulateUsage(current: UsageStats, event: PiProcessEvent): void {
+	const usage = extractUsageFromEvent(event);
 	if (usage) {
 		current.input += usage.input ?? 0;
 		current.output += usage.output ?? 0;
 		current.cacheRead += usage.cacheRead ?? 0;
 		current.cacheWrite += usage.cacheWrite ?? 0;
-		current.cost += usage.cost?.total ?? 0;
+		current.cost += usage.cost ?? 0;
 		current.contextTokens = usage.totalTokens ?? 0;
 	}
 }

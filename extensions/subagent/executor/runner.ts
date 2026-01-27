@@ -4,7 +4,7 @@
 
 import { spawn } from "node:child_process";
 import type { AgentConfig } from "../agents.js";
-import type { SingleResult, OnUpdateCallback, AgentRunnerOptions } from "../types.js";
+import type { SingleResult, OnUpdateCallback, AgentRunnerOptions, ToolCallRecord } from "../types.js";
 import { writePromptToTempFile, cleanupTempFiles } from "../utils/tempfiles.js";
 import { createInitialUsage, accumulateUsage, parseEventLine } from "./parser.js";
 import { generateDynamicAgent, dynamicAgentToConfig, getDynamicAgentsDir } from "../dynamic-agent.js";
@@ -56,19 +56,19 @@ export async function runSingleAgent(options: AgentRunnerOptions): Promise<Singl
 			onProgress: (progress) => {
 				switch (progress.stage) {
 					case "search":
-						emitGenerationUpdate("searching", "Searching for existing agent...", `🔍 ${progress.text}`);
+						emitGenerationUpdate("searching", "Searching for existing agent...", `[Searching] ${progress.text}`);
 						break;
 					case "create":
-						emitGenerationUpdate("generating", "Generating new agent...", `⚙️ ${progress.text}`, undefined, progress.details?.partial);
+						emitGenerationUpdate("generating", "Generating new agent...", `[Generating] ${progress.text}`, undefined, progress.details?.partial);
 						break;
 					case "save":
-						emitGenerationUpdate("generating", "Saving agent...", `💾 ${progress.text}`);
+						emitGenerationUpdate("generating", "Saving agent...", `[Saving] ${progress.text}`);
 						break;
 					case "done":
-						emitGenerationUpdate("completed", "Agent ready", `✓ ${progress.text}`);
+						emitGenerationUpdate("completed", "Agent ready", `[OK] ${progress.text}`);
 						break;
 					case "error":
-						emitGenerationUpdate("error", "Generation failed", `✗ ${progress.text}`);
+						emitGenerationUpdate("error", "Generation failed", `[FAIL] ${progress.text}`);
 						break;
 				}
 			},
@@ -145,6 +145,8 @@ export async function runSingleAgent(options: AgentRunnerOptions): Promise<Singl
 		model: agent.model,
 		step,
 		startTime: Date.now(),
+		toolCalls: [],
+		currentTool: undefined,
 	};
 
 	const emitUpdate = () => {
@@ -170,12 +172,101 @@ export async function runSingleAgent(options: AgentRunnerOptions): Promise<Singl
 		const exitCode = await new Promise<number>((resolve) => {
 			const proc = spawn("pi", args, { cwd: cwd ?? defaultCwd, shell: false, stdio: ["ignore", "pipe", "pipe"] });
 			let buffer = "";
+			const currentToolMap = new Map<string, ToolCallRecord>();
 
 			const processLine = (line: string) => {
 				const event = parseEventLine(line);
 				if (!event) return;
 
-				if (event.type === "message_end" && event.message) {
+				// Handle thinking content
+				if (event.type === "thinking_start") {
+					// Initialize thinking array
+					if (!currentResult.thinking) {
+						currentResult.thinking = [];
+					}
+					emitUpdate();
+				}
+				else if (event.type === "thinking_delta") {
+					// Accumulate thinking content
+					if (!currentResult.thinking) {
+						currentResult.thinking = [];
+					}
+					// Append delta to the last thinking entry
+					if (currentResult.thinking.length === 0) {
+						currentResult.thinking.push(event.delta);
+					} else {
+						currentResult.thinking[currentResult.thinking.length - 1] += event.delta;
+					}
+					emitUpdate();
+				}
+				else if (event.type === "thinking_end") {
+					// Finalize thinking content
+					if (event.content && event.content.trim()) {
+						if (!currentResult.thinking) {
+							currentResult.thinking = [];
+						}
+						// Replace the last entry with the full content
+						if (currentResult.thinking.length > 0) {
+							currentResult.thinking[currentResult.thinking.length - 1] = event.content.trim();
+						} else {
+							currentResult.thinking.push(event.content.trim());
+						}
+					}
+					emitUpdate();
+				}
+				// Handle tool execution start
+				else if (event.type === "tool_execution_start") {
+					const toolCall: ToolCallRecord = {
+						toolName: event.toolName,
+						toolCallId: event.toolCallId,
+						startTime: Date.now(),
+						args: event.args,
+						partialResults: [],
+					};
+					currentResult.toolCalls?.push(toolCall);
+					currentToolMap.set(event.toolCallId, toolCall);
+
+					// Update current tool
+					currentResult.currentTool = {
+						toolName: event.toolName,
+						toolCallId: event.toolCallId,
+						startTime: toolCall.startTime,
+					};
+					emitUpdate();
+				}
+				// Handle tool execution update (streaming output)
+				else if (event.type === "tool_execution_update") {
+					const toolCall = currentToolMap.get(event.toolCallId);
+					if (toolCall) {
+						toolCall.partialResults?.push(JSON.stringify(event.partialResult));
+						currentResult.currentTool = {
+							toolName: event.toolName,
+							toolCallId: event.toolCallId,
+							startTime: toolCall.startTime,
+							partialResult: JSON.stringify(event.partialResult),
+						};
+						emitUpdate();
+					}
+				}
+				// Handle tool execution end
+				else if (event.type === "tool_execution_end") {
+					const toolCall = currentToolMap.get(event.toolCallId);
+					if (toolCall) {
+						toolCall.endTime = Date.now();
+						toolCall.duration = toolCall.endTime - toolCall.startTime;
+						toolCall.result = event.result;
+						toolCall.isError = event.isError;
+						currentToolMap.delete(event.toolCallId);
+
+						// Clear current tool if it's the one that just finished
+						if (currentResult.currentTool?.toolCallId === event.toolCallId) {
+							currentResult.currentTool = undefined;
+						}
+						emitUpdate();
+					}
+				}
+				// Handle message end
+				else if (event.type === "message_end" && event.message) {
 					const msg = event.message;
 					currentResult.messages.push(msg);
 
@@ -200,8 +291,8 @@ export async function runSingleAgent(options: AgentRunnerOptions): Promise<Singl
 					}
 					emitUpdate();
 				}
-
-				if (event.type === "tool_result_end" && event.message) {
+				// Handle tool result end (legacy event)
+				else if (event.type === "tool_result_end" && event.message) {
 					currentResult.messages.push(event.message);
 					emitUpdate();
 				}

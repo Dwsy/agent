@@ -8,6 +8,7 @@ import * as path from "node:path";
 
 export type AgentScope = "user" | "project" | "both";
 export type AgentSource = "user" | "project" | "dynamic";
+export type AgentMode = "standard" | "readonly" | "planning" | "restricted";
 
 export interface AgentConfig {
 	name: string;
@@ -17,6 +18,11 @@ export interface AgentConfig {
 	provider?: string;
 	registerCommand?: boolean;
 	showInTool?: boolean;
+	mode?: AgentMode;
+	version?: string;
+	category?: string;
+	requiresContext?: boolean;
+	maxParallel?: number;
 	systemPrompt: string;
 	source: AgentSource;
 	filePath: string;
@@ -116,6 +122,13 @@ export function loadAgentsFromDir(dir: string, source: "user" | "project"): Agen
 		const provider = frontmatter.provider;
 		const showInTool = frontmatter.showInTool === "true" || frontmatter.showInTool === "yes";
 		const registerCommand = frontmatter.registerCommand !== "false" && frontmatter.registerCommand !== "no";
+		const mode: AgentMode | undefined = ["standard", "readonly", "planning", "restricted"].includes(frontmatter.mode)
+			? frontmatter.mode as AgentMode
+			: undefined;
+		const version = frontmatter.version;
+		const category = frontmatter.category;
+		const requiresContext = frontmatter.requiresContext === "true" || frontmatter.requiresContext === "yes";
+		const maxParallel = frontmatter.maxParallel ? parseInt(frontmatter.maxParallel, 10) : undefined;
 
 		agents.push({
 			name: frontmatter.name,
@@ -125,6 +138,11 @@ export function loadAgentsFromDir(dir: string, source: "user" | "project"): Agen
 			provider,
 			showInTool,
 			registerCommand,
+			mode,
+			version,
+			category,
+			requiresContext,
+			maxParallel,
 			systemPrompt: body,
 			source,
 			filePath,

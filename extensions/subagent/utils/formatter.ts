@@ -59,7 +59,18 @@ export function getFinalOutput(messages: import("@mariozechner/pi-ai").Message[]
 		const msg = messages[i];
 		if (msg.role === "assistant") {
 			for (const part of msg.content) {
-				if (part.type === "text") return part.text;
+				if (part.type === "text") {
+					const text = part.text;
+					// Filter out task-like messages that start with common patterns
+					if (!text.startsWith("Task:") &&
+					    !text.startsWith("Write a") &&
+					    !text.startsWith("Create a") &&
+					    !text.startsWith("Generate a") &&
+					    !text.startsWith("Build a") &&
+					    text.length > 0) {
+						return text;
+					}
+				}
 			}
 		}
 	}
