@@ -9,6 +9,7 @@ import { runSingleAgent } from "../executor/runner.js";
 import { mapWithConcurrencyLimit } from "../utils/concurrency.js";
 import { getFinalOutput } from "../utils/formatter.js";
 import { createInitialUsage } from "../executor/parser.js";
+import { extractWisdom, appendWisdom } from "../utils/wisdom.js";
 
 const MAX_PARALLEL_TASKS = 8;
 const MAX_CONCURRENCY = 4;

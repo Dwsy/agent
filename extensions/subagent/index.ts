@@ -4,10 +4,17 @@
  * Spawns a separate `pi` process for each subagent invocation,
  * giving it an isolated context window.
  *
+ * Four Core Features:
+ *   1. Category Delegation - Semantic task routing (architecture, security, etc.)
+ *   2. Wisdom Accumulation - Auto-extract learnings, inject into future tasks (3-tier: session/project/global)
+ *   3. Parallel Optimization - Auto-detect parallelizable tasks, 3x speedup
+ *   4. TODO Enforcement - Monitor TODO completion, prevent incomplete work
+ *
  * Supports three modes:
- *   - Single: { agent: "name", task: "..." }
+ *   - Single: { agent: "name", task: "..." } or { category: "type", task: "..." }
  *   - Parallel: { tasks: [{ agent: "name", task: "..." }, ...] }
  *   - Chain: { chain: [{ agent: "name", task: "... {previous} ..." }, ...] }
+ *   - Chain Parallel: Use @parallel: in task for parallel execution within chain
  */
 
 import * as path from "node:path";
@@ -33,6 +40,7 @@ import {
 	listPromotableAgents,
 } from "./utils/agent-creator.js";
 import type { AgentScope as CreatorScope, AgentTemplate } from "./utils/agent-creator.js";
+import { resolveCategoryToAgent, getCategoriesDescriptionText } from "./utils/categories.js";
 
 const TaskItem = Type.Object({
 	agent: Type.String({ description: "Name of the agent to invoke. If it doesn't exist, will be auto-generated based on task" }),
@@ -54,6 +62,7 @@ const AgentScopeSchema = StringEnum(["user", "project", "both"] as const, {
 const SubagentParamsSchema = Type.Object({
 	agent: Type.Optional(Type.String({ description: "Name of the agent to invoke (for single mode). If it doesn't exist, will be auto-generated based on task" })),
 	task: Type.Optional(Type.String({ description: "Task to delegate (for single mode). Used to generate and execute the agent" })),
+	category: Type.Optional(Type.String({ description: "Task category for automatic agent routing (e.g., 'architecture', 'exploration', 'security'). Overrides agent parameter." })),
 	tasks: Type.Optional(Type.Array(TaskItem, { description: "Array of {agent, task} for parallel execution" })),
 	chain: Type.Optional(Type.Array(ChainItem, { description: "Array of {agent, task} for sequential execution" })),
 	agentScope: Type.Optional(AgentScopeSchema),
@@ -78,16 +87,53 @@ export default function (pi: ExtensionAPI) {
 		? visibleAgents.map((a) => `  - ${a.name}: ${a.description}`).join("\n")
 		: "  (none)";
 
+	// Build categories list for tool description
+	const categoriesText = getCategoriesDescriptionText();
+
 	const toolDescription = [
 		"Delegate tasks to specialized subagents with isolated context.",
+		"",
+		"🎯 Four Core Features:",
+		"  1. Category Delegation - Semantic task routing (architecture, security, etc.)",
+		"  2. Wisdom Accumulation - Auto-extract learnings, inject into future tasks (3-tier: session/project/global)",
+		"  3. Parallel Optimization - Auto-detect parallelizable tasks, 3x speedup",
+		"  4. TODO Enforcement - Monitor TODO completion, prevent incomplete work",
 		"",
 		"Available Agents:",
 		agentListText,
 		"",
+		"Available Categories:",
+		categoriesText,
+		"",
 		"Modes:",
-		"  - Single: {agent, task} - one subagent",
+		"  - Single: {agent, task} or {category, task} - one subagent",
 		"  - Parallel: {tasks: [{agent, task}, ...]} - up to 8 concurrent subagents",
 		"  - Chain: {chain: [{agent, task}, ...]} - sequential with {previous} placeholder",
+		"  - Chain Parallel: Use @parallel: in task for parallel execution within chain",
+		"",
+		"Category Routing:",
+		"  - Use category parameter for semantic routing: {category: 'architecture', task: '...'",
+		"  - Category automatically resolves to the best agent for that task type",
+		"  - Example: {category: 'security', task: 'Review code for vulnerabilities'}",
+		"  - Priority: category > agent (if both provided, category wins)",
+		"",
+		"Wisdom Accumulation:",
+		"  - Auto-extracts learnings from agent output (Convention, Success, Failure, Gotcha, Command, Decision)",
+		"  - Three-tier: Session (memory) > Project (.pi/notepads/) > Global (~/.pi/agent/notepads/)",
+		"  - Auto-injects accumulated wisdom into future tasks",
+		"  - Use /wisdom to view statistics",
+		"",
+		"Parallel Optimization:",
+		"  - Chain mode: Use @parallel: agent1:task1, agent2:task2 for parallel execution",
+		"  - Auto-detects file conflicts and dependencies",
+		"  - Max concurrency: 4 agents",
+		"  - Example: {chain: [{agent: 'scout', task: '@parallel: scout:Find auth, scout:Find db'}]}",
+		"",
+		"TODO Enforcement:",
+		"  - Monitors TODO items in agent output (- [ ] format)",
+		"  - Auto-reminds agents to complete unfinished TODOs",
+		"  - Tracks completion rate and progress",
+		"  - Prevents agents from finishing with incomplete work",
 		"",
 		"Dynamic Mode:",
 		"  - If the specified agent doesn't exist, it will be auto-generated based on the task description",
@@ -111,9 +157,28 @@ export default function (pi: ExtensionAPI) {
 			const agents = discovery.agents;
 			const confirmProjectAgents = params.confirmProjectAgents ?? true;
 
+			// Resolve category to agent if category is provided
+			let resolvedAgent = params.agent;
+			if (params.category && !params.agent) {
+				const categoryAgent = resolveCategoryToAgent(params.category);
+				if (categoryAgent) {
+					resolvedAgent = categoryAgent;
+				} else {
+					return {
+						content: [{ type: "text", text: `Unknown category: ${params.category}. Use /categories to list available categories.` }],
+						details: {
+							mode: "single",
+							agentScope,
+							projectAgentsDir: discovery.projectAgentsDir,
+							results: [],
+						},
+					};
+				}
+			}
+
 			const hasChain = (params.chain?.length ?? 0) > 0;
 			const hasTasks = (params.tasks?.length ?? 0) > 0;
-			const hasSingle = Boolean(params.agent && params.task);
+			const hasSingle = Boolean((resolvedAgent || params.agent) && params.task);
 			const modeCount = Number(hasChain) + Number(hasTasks) + Number(hasSingle);
 
 			const makeDetails = (mode: "single" | "parallel" | "chain") => (results: any[]) => ({
@@ -135,7 +200,7 @@ export default function (pi: ExtensionAPI) {
 				const requestedAgentNames = new Set<string>();
 				if (params.chain) for (const step of params.chain) requestedAgentNames.add(step.agent);
 				if (params.tasks) for (const t of params.tasks) requestedAgentNames.add(t.agent);
-				if (params.agent) requestedAgentNames.add(params.agent);
+				if (resolvedAgent) requestedAgentNames.add(resolvedAgent);
 
 				const projectAgentsRequested = Array.from(requestedAgentNames)
 					.map((name) => agents.find((a) => a.name === name))
@@ -179,9 +244,9 @@ export default function (pi: ExtensionAPI) {
 				});
 			}
 
-			if (params.agent && params.task) {
+			if (resolvedAgent && params.task) {
 				return singleMode.execute(executionContext, {
-					agent: params.agent,
+					agent: resolvedAgent,
 					task: params.task,
 					cwd: params.cwd,
 					agentScope,
@@ -302,6 +367,103 @@ function registerCommands(pi: ExtensionAPI): void {
 			// Register any newly discovered project agents
 			projectAgents.forEach(createAgentCommand);
 			showAgentList(ctx);
+		},
+	});
+
+	pi.registerCommand("categories", {
+		description: "List all available task categories for semantic routing",
+		handler: async (_args: string, ctx: any) => {
+			if (!ctx.hasUI) {
+				ctx.ui.notify("categories requires interactive mode", "error");
+				return;
+			}
+
+			const { listCategories } = await import("./utils/categories.js");
+			const categories = listCategories();
+
+			if (categories.length === 0) {
+				ctx.ui.notify("No categories configured. Create ~/.pi/agent/categories.json to define categories.", "info");
+				return;
+			}
+
+			let helpText = "## Available Task Categories\n\n";
+			helpText += "Categories provide semantic routing to the best agent for each task type.\n\n";
+			
+			categories.forEach((cat) => {
+				helpText += `### ${cat.name}\n`;
+				helpText += `- **Agent**: ${cat.agent}\n`;
+				helpText += `- **Description**: ${cat.description}\n\n`;
+			});
+
+			helpText += "## Usage\n";
+			helpText += "```javascript\n";
+			helpText += "// Use category parameter for semantic routing\n";
+			helpText += "subagent({ category: 'architecture', task: 'Review system design' })\n";
+			helpText += "subagent({ category: 'security', task: 'Audit code for vulnerabilities' })\n";
+			helpText += "subagent({ category: 'exploration', task: 'Find authentication code' })\n";
+			helpText += "```\n\n";
+			helpText += "## Configuration\n";
+			helpText += "Edit `~/.pi/agent/categories.json` to customize categories and their agent mappings.";
+
+			pi.sendMessage({ customType: "categories-help", content: helpText, display: true }, { triggerTurn: false });
+		},
+	});
+
+	pi.registerCommand("wisdom", {
+		description: "View accumulated wisdom from subagent executions",
+		handler: async (_args: string, ctx: any) => {
+			if (!ctx.hasUI) {
+				ctx.ui.notify("wisdom requires interactive mode", "error");
+				return;
+			}
+
+			const { loadWisdom, getWisdomStats } = await import("./utils/wisdom.js");
+			const wisdom = loadWisdom();
+			const stats = getWisdomStats();
+
+			if (stats.totalNotes === 0) {
+				ctx.ui.notify("No wisdom accumulated yet. Wisdom is automatically extracted from subagent executions.", "info");
+				return;
+			}
+
+			let helpText = "## Accumulated Wisdom\n\n";
+			helpText += `**Total Notes**: ${stats.totalNotes}\n`;
+			helpText += `**Last Update**: ${stats.lastUpdate ? new Date(stats.lastUpdate).toLocaleString() : "N/A"}\n\n`;
+			
+			helpText += "### By Type\n\n";
+			Object.entries(stats.byType).forEach(([type, count]) => {
+				if (count > 0) {
+					const emoji = {
+						convention: "📋",
+						success: "✅",
+						failure: "❌",
+						gotcha: "⚠️",
+						command: "💻",
+						decision: "🎯"
+					}[type] || "📝";
+					helpText += `- ${emoji} **${type}**: ${count}\n`;
+				}
+			});
+
+			helpText += "\n### Recent Wisdom\n\n";
+			const wisdomLines = wisdom.split("\n").slice(-50); // Last 50 lines
+			helpText += wisdomLines.join("\n");
+
+			helpText += "\n\n### Full Wisdom\n";
+			helpText += "View full wisdom at: `~/.pi/agent/notepads/learnings.md`\n\n";
+			
+			helpText += "### How It Works\n";
+			helpText += "Wisdom is automatically extracted from subagent outputs when they include:\n";
+			helpText += "- `Convention:` or `约定:` - Coding conventions and patterns\n";
+			helpText += "- `Success:` or `成功:` or `✅:` - Successful approaches\n";
+			helpText += "- `Failure:` or `失败:` or `❌:` - Failed attempts to avoid\n";
+			helpText += "- `Gotcha:` or `陷阱:` or `⚠️:` - Tricky details to watch out for\n";
+			helpText += "- `Command:` or `命令:` - Useful commands and scripts\n";
+			helpText += "- `Decision:` or `决策:` - Architecture decisions\n\n";
+			
+			helpText += "Wisdom is automatically injected into subsequent subagent tasks to maintain consistency.";
+
+			pi.sendMessage({ customType: "wisdom-help", content: helpText, display: true }, { triggerTurn: false });
 		},
 	});
 
