@@ -1,17 +1,17 @@
 ---
 name: "ralph-loop-gen"
-description: "任务管理系统模板生成器 - 根据用户输入生成任务索引、当前任务和任务文件模板（模板生成器，非直接执行器）"
+description: "任务管理系统模板生成器 - 根据用户输入或JSON配置生成完整的任务管理结构（模板生成器，非直接执行器）"
 ---
 
 # Ralph Loop Gen Skill
 
-**任务管理系统模板生成器** - 根据用户输入生成完整的任务管理结构模板。
+**任务管理系统模板生成器** - 根据用户输入或 JSON 配置生成完整的任务管理结构模板。
 
 > ⚠️ **注意**：此 skill 仅生成任务模板文件，不负责实际执行任务。执行时需要其他 agent 手动或自动读取这些模板文件。
 
 ## 用法
 
-### 命令行方式
+### 方式 1: 命令行交互式输入
 
 ```bash
 # 基本用法
@@ -23,15 +23,23 @@ bun ~/.pi/agent/skills/ralph-loop-gen/lib.ts --name myProject
 # 指定项目名称
 bun ~/.pi/agent/skills/ralph-loop-gen/lib.ts --name myProject --project "我的项目"
 
-# 使用 JSON 格式输入
-bun ~/.pi/agent/skills/ralph-loop-gen/lib.ts --format json
+# 指定输出目录
+bun ~/.pi/agent/skills/ralph-loop-gen/lib.ts --name myProject --output ./task
+```
+
+### 方式 2: Python 脚本生成（推荐）
+
+```bash
+# 使用 Python 脚本从 JSON 生成任务
+python3 ~/.pi/agent/skills/ralph-loop-gen/generate.py --config /path/to/tasks.json
+
+# 指定输出目录
+python3 ~/.pi/agent/skills/ralph-loop-gen/generate.py --config tasks.json --output ./task
 ```
 
 ### 输入格式
 
-支持多种任务列表输入格式：
-
-#### 格式 1：简单列表（默认）
+#### 格式 1: 简单列表（交互式输入）
 
 ```
 任务1: 初始化项目结构
@@ -42,28 +50,63 @@ bun ~/.pi/agent/skills/ralph-loop-gen/lib.ts --format json
 任务6: 集成测试 -> 依赖: 任务4, 任务5
 ```
 
-#### 格式 2：JSON 格式
+#### 格式 2: JSON 配置（Python 脚本）
 
 ```json
-[
-  {
-    "id": 1,
-    "title": "初始化项目结构",
-    "priority": "High",
-    "estimated": "2h",
-    "description": "创建项目基础目录和配置文件",
-    "steps": ["创建目录", "初始化git", "创建README"],
-    "dependencies": []
-  },
-  {
-    "id": 2,
-    "title": "安装依赖",
-    "priority": "Medium",
-    "estimated": "1h",
-    "description": "安装项目所需的npm包",
-    "dependencies": [1]
-  }
-]
+{
+  "taskSetName": "codmate-perf",
+  "projectName": "CodMate 性能优化",
+  "outputDir": "./task",
+  "goals": [
+    {"metric": "List 滚动 FPS", "before": "~30", "target": "60+", "improvement": "100%"},
+    {"metric": "CPU 占用（空闲）", "before": "~15%", "target": "<5%", "improvement": "67%"}
+  ],
+  "tasks": [
+    {
+      "id": "001",
+      "title": "建立性能基准测试",
+      "priority": "High",
+      "estimated": "3h",
+      "description": "建立性能基准测试框架，用于量化优化效果",
+      "steps": [
+        "安装和配置 Instruments Time Profiler",
+        "创建性能测试数据集（1000+ 会话）",
+        "建立基准测试脚本（滚动、搜索、加载）",
+        "记录当前性能指标（FPS、CPU、内存、响应时间）",
+        "创建性能回归测试用例"
+      ],
+      "dependencies": [],
+      "acceptance": [
+        "性能测试脚本可运行",
+        "基准数据已记录到 docs/performance-baseline.md",
+        "测试数据集已创建"
+      ]
+    },
+    {
+      "id": "002",
+      "title": "替换 SessionListColumnView 的 List 为 LazyVStack",
+      "priority": "High",
+      "estimated": "2h",
+      "description": "将 SessionListColumnView 中的 List 组件替换为 LazyVStack，提升滚动性能",
+      "steps": [
+        "备份当前 SessionListColumnView.swift",
+        "将 List + ForEach 替换为 ScrollView + LazyVStack",
+        "保留 selection 绑定功能",
+        "保留 Section header 功能",
+        "保留 contextMenu 功能",
+        "运行性能测试对比",
+        "回归测试：选择、拖拽、右键菜单"
+      ],
+      "dependencies": ["001"],
+      "acceptance": [
+        "滚动 FPS 达到 60+（基准数据对比）",
+        "选择功能正常",
+        "拖拽功能正常",
+        "右键菜单功能正常"
+      ]
+    }
+  ]
+}
 ```
 
 ## 输出结构
@@ -73,8 +116,8 @@ bun ~/.pi/agent/skills/ralph-loop-gen/lib.ts --format json
 ```
 task/
 └── {任务集名}/
-    ├── 任务索引.md          # 任务总览和依赖关系
-    ├── 当前任务.md          # 第一个任务（状态 In Progress）
+    ├── 任务索引.md          # 任务总览、依赖关系、执行计划
+    ├── 当前任务.md          # 当前待执行任务（指向第一个任务）
     ├── 任务001.md
     ├── 任务002.md
     ├── 任务003.md
@@ -88,7 +131,7 @@ task/
 - `templates/index.md` - 任务索引模板
 - `templates/task.md` - 单个任务模板
 
-模板使用 `{{占位符}}` 语法，lib.ts 会自动替换。
+模板使用 `{{占位符}}` 语法，lib.ts/generate.py 会自动替换。
 
 ### index.md 模板变量
 
@@ -105,6 +148,8 @@ task/
 - `{{PROGRESS_PERCENT}}` - 进度百分比
 - `{{ELAPSED_TIME}}` - 已用时间
 - `{{ESTIMATED_REMAINING}}` - 预计剩余时间
+- `{{GOALS_TABLE}}` - 项目/性能目标表格（可选）
+- `{{EXECUTION_PLAN}}` - 执行计划（可选）
 
 ### task.md 模板变量
 
@@ -222,7 +267,7 @@ git merge agent-b/task3
    - 可在任务文件中调整锁定超时
 
 4. **解锁条件**
-   - 任务完成 → 状态更新为 `Done`，移除锁定
+   - 任务完成 → 状态更新为 `Done`，移至 `completed/` 目录
    - 阻塞 → 状态更新为 `Blocked`，释放锁定
    - 超时 → 自动释放
    - 手动释放：Agent 主动放弃
@@ -230,7 +275,7 @@ git merge agent-b/task3
 #### 锁定状态流转
 
 ```
-Todo → Locked → In Progress → Done
+Todo → Locked → In Progress → Done → [移至 completed/]
   ↓        ↓
 Blocked  超时释放
 ```
@@ -244,6 +289,7 @@ Blocked  超时释放
    ## 阻塞原因
    - 等待任务003完成（状态：In Progress）
    - 等待API密钥审批
+   - 技术问题：需要解决XXX
    ```
 
 2. **更新状态**
@@ -301,24 +347,26 @@ Blocked  超时释放
 
 调度方案：
 阶段 1:
-  - Agent A: 任务001
+  - Agent A: 任务001 (3h)
 
 阶段 2:
-  - Agent A: 任务002
-  - Agent B: 任务003
+  - Agent A: 任务002 (2h)
+  - Agent B: 任务003 (2h)
 
 阶段 3:
-  - Agent A: 任务004
-  - Agent B: 任务005
+  - Agent A: 任务004 (2h)
+  - Agent B: 任务005 (2h)
   - Agent C: 等待
 
 阶段 4:
-  - Agent A: 任务006
+  - Agent A: 任务006 (2h)
   - Agent B: 等待
   - Agent C: 等待
 
 阶段 5:
-  - Agent A: 任务007
+  - Agent A: 任务007 (2h)
+
+总耗时: ~11h (3 Agent 并行)
 ```
 
 ### 最佳实践
@@ -328,3 +376,142 @@ Blocked  超时释放
 3. **及时更新状态**：方便其他 Agent 判断是否可开始
 4. **定期同步**：各 Agent 定期汇报进度
 5. **预留缓冲**：考虑任务可能超时
+
+---
+
+## 进阶功能
+
+### 批次自动分组
+
+系统会根据依赖关系自动识别可并行批次，并在任务索引中显示：
+
+```markdown
+### 批次 1（可立即执行）
+- 任务001: 建立性能基准测试 (Agent A)  ✅ 可并行执行
+
+### 批次 2（等待批次1完成）
+- 任务002: 替换 List 为 LazyVStack (Agent A)  ✅ 可并行执行
+- 任务003: 优化动画性能 (Agent B)  ✅ 可并行执行
+- 任务004: 搜索 debounce (Agent B)  ✅ 可并行执行
+```
+
+### 执行计划生成
+
+系统会根据任务依赖和预计时间生成执行计划：
+
+```markdown
+## 执行计划（3 Agent 并行）
+
+阶段 1: Agent A (3h)
+└── 任务001: 建立性能基准测试
+
+阶段 2: (3h)
+├── Agent A: 任务002 (2h) + 等待 (1h)
+├── Agent B: 任务003 (2h) + 等待 (1h)
+└── Agent C: 任务004 (1.5h) + 任务005 (1.5h)
+
+总耗时: ~18 小时（3 Agent 并行）
+```
+
+### 目标追踪
+
+支持在任务索引中添加项目目标表格：
+
+```markdown
+## 性能优化目标
+
+| 指标 | 优化前 | 目标 | 测量方法 |
+|------|--------|------|----------|
+| List 滚动 FPS | ~30 | 60+ | Instruments GPU/CPU |
+| CPU 占用（空闲） | ~15% | <5% | Activity Monitor |
+```
+
+---
+
+## 快速开始
+
+### 1. 创建任务配置文件
+
+```bash
+# 创建 tasks.json
+cat > tasks.json << 'EOF'
+{
+  "taskSetName": "my-project",
+  "projectName": "我的项目",
+  "outputDir": "./task",
+  "tasks": [
+    {
+      "id": "001",
+      "title": "初始化项目",
+      "priority": "High",
+      "estimated": "2h",
+      "description": "初始化项目基础结构",
+      "steps": [
+        "创建项目目录",
+        "初始化 Git",
+        "创建 README"
+      ],
+      "dependencies": [],
+      "acceptance": [
+        "项目目录创建完成",
+        "Git 仓库初始化完成",
+        "README 文件创建完成"
+      ]
+    }
+  ]
+}
+EOF
+```
+
+### 2. 生成任务模板
+
+```bash
+# 使用 Python 脚本生成
+python3 ~/.pi/agent/skills/ralph-loop-gen/generate.py --config tasks.json
+```
+
+### 3. 查看生成的任务
+
+```bash
+# 查看任务索引
+cat task/my-project/任务索引.md
+
+# 查看当前任务
+cat task/my-project/当前任务.md
+```
+
+### 4. 开始执行
+
+```bash
+# 编辑任务文件，更新状态
+vim task/my-project/任务001.md
+
+# 更新状态: Todo → Locked → In Progress
+# 填写占用者和锁定时间
+# 按照实施步骤执行
+```
+
+---
+
+## 经验总结
+
+### 任务设计原则
+
+1. **单一职责**：每个任务只做一件事
+2. **可验证**：有明确的验收标准
+3. **可估计**：有合理的预计时间
+4. **可并行**：尽可能减少依赖链深度
+
+### 依赖关系设计
+
+1. **避免循环依赖**：确保依赖图是 DAG
+2. **最小化依赖**：只依赖必要的任务
+3. **明确依赖**：在任务描述中说明为什么依赖
+4. **测试依赖**：确保依赖任务完成后，当前任务可以立即开始
+
+### 验收标准设计
+
+1. **可量化**：使用可测量的指标
+2. **可测试**：可以通过测试验证
+3. **完整覆盖**：覆盖所有关键功能
+4. **用户可见**：关注用户可感知的效果

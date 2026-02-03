@@ -6,7 +6,7 @@
 
 **占用者**: {{LOCK_OWNER}}
 **锁定时间**: {{LOCK_TIME}}
-**锁定超时**: {{LOCK_TIMEOUT}}（超时后自动释放）
+**锁定超时**: {{LOCK_TIMEOUT}} 分钟（超时后自动释放）
 
 ## 任务描述
 
@@ -14,7 +14,7 @@
 
 ## 依赖任务
 
-    {{DEPENDENCIES_LIST}}
+{{DEPENDENCIES_LIST}}
 
 **说明**: 只有所有标记的依赖任务状态为 Done 后，此任务才能开始执行。
 

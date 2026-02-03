@@ -1,289 +1,60 @@
-# Ralph Loop Gen - 完整技能文档
+# Changelog
 
-## 📁 目录结构
+All notable changes to the ralph-loop-gen skill will be documented in this file.
 
-```
-ralph-loop-gen/
-├── cli.ts                    # CLI 入口文件
-├── lib.ts                    # 核心逻辑
-├── test.ts                   # 测试脚本
-├── package.json              # 项目配置
-├── .gitignore                # Git 忽略配置
-├── README.md                 # 项目说明
-├── SKILL.md                  # 技能详细文档
-├── EXAMPLES.md               # 使用示例
-├── CHANGELOG.md              # 变更日志（本文件）
-├── templates/                # 模板文件
-│   ├── index.md             # 任务索引模板
-│   └── task.md              # 单个任务模板
-└── examples/                 # 示例文件
-    ├── user-management.txt  # 用户管理任务示例
-    └── full-project.json    # 完整项目示例
-```
+## [2.0.0] - 2026-01-30
 
-## 🚀 快速开始
+### Added
 
-### 基本用法
+- **Python 生成脚本** (`generate.py`)
+  - 支持从 JSON 配置文件生成任务
+  - 自动计算批次和并行任务
+  - 生成执行计划和依赖关系图
+  - 支持项目目标追踪表格
 
-```bash
-# 使用 CLI
-bun ~/.pi/agent/skills/ralph-loop-gen/cli.ts --name myProject
+- **增强的模板变量**
+  - `{{GOALS_TABLE}}` - 项目目标表格
+  - `{{EXECUTION_PLAN}}` - 执行计划
+  - 更详细的任务索引模板
 
-# 直接运行 lib
-bun ~/.pi/agent/skills/ralph-loop-gen/lib.ts --name myProject --project "我的项目"
+- **示例配置文件** (`examples/config-example.json`)
+  - 完整的 JSON 配置示例
+  - 包含 6 个示例任务
+  - 展示目标追踪功能
 
-# JSON 格式
-bun ~/.pi/agent/skills/ralph-loop-gen/lib.ts --format json
+- **改进的文档**
+  - 更新 SKILL.md，添加更多使用说明
+  - 重写 README.md，添加快速开始指南
+  - 添加配置文件格式说明
+  - 添加多 Agent 协作最佳实践
 
-# 查看帮助
-bun ~/.pi/agent/skills/ralph-loop-gen/cli.ts --help
-```
+### Changed
 
-### 从示例文件生成
+- **任务索引模板**
+  - 添加执行计划部分
+  - 添加项目目标表格
+  - 改进依赖关系图格式
+  - 优化并行任务分组显示
 
-```bash
-# 使用简单格式示例
-bun ~/.pi/agent/skills/ralph-loop-gen/lib.ts --name userMgmt \
-  < ~/.pi/agent/skills/ralph-loop-gen/examples/user-management.txt
+- **任务模板**
+  - 简化布局，提高可读性
+  - 优化验收标准格式
+  - 添加更清晰的说明文字
 
-# 使用 JSON 格式示例
-bun ~/.pi/agent/skills/ralph-loop-gen/lib.ts --name fullProject \
-  --format json < ~/.pi/agent/skills/ralph-loop-gen/examples/full-project.json
-```
+### Fixed
 
-### 运行测试
+- 修复任务状态初始化问题（第一个任务应显示为 Locked）
+- 修复依赖关系图显示问题
+- 修复并行任务分组算法
 
-```bash
-cd ~/.pi/agent/skills/ralph-loop-gen
-bun test.ts
-```
+## [1.0.0] - 2025-01-21
 
-## 📋 输入格式
+### Added
 
-### 简单格式（默认）
-
-```
-任务1: 初始化项目结构 (High, 2h)
-任务2: 安装依赖 -> 依赖: 任务1
-任务3: 配置开发环境 -> 依赖: 任务2
-任务4: 编写UI组件 (High, 4h) -> 依赖: 任务2
-任务5: 编写API接口 (High, 4h) -> 依赖: 任务3
-任务6: 集成测试 -> 依赖: 任务4, 任务5
-```
-
-### JSON 格式
-
-```json
-[
-  {
-    "id": 1,
-    "title": "初始化项目",
-    "priority": "High",
-    "estimated": "2h",
-    "description": "创建项目基础结构",
-    "steps": ["创建目录", "初始化git", "创建README"],
-    "dependencies": []
-  }
-]
-```
-
-## 📊 输出结构
-
-```
-task/
-└── {任务集名}/
-    ├── 任务索引.md          # 任务总览、依赖关系、并行分组
-    ├── 当前任务.md          # 第一个任务（状态 In Progress）
-    ├── 任务001.md
-    ├── 任务002.md
-    ├── 任务003.md
-    ├── ...
-    └── completed/           # 已完成任务目录
-```
-
-## 🔑 核心特性
-
-### 1. 任务依赖关系
-
-自动解析任务依赖，生成依赖关系图：
-
-```
-任务001 (初始化)
-├─→ 任务002 (安装依赖)
-│   ├─→ 任务003 (配置)
-│   └─→ 任务004 (UI)
-└─→ 任务005 (API)
-```
-
-### 2. 并行任务分组
-
-自动识别可并行任务：
-
-```markdown
-### 批次 2（等待 批次1 完成）
-- 任务002: 安装依赖 (依赖: 任务001)
-  - 任务005: 实现前端 (依赖: 任务001)
-  ✅ 可并行执行
-```
-
-### 3. 任务锁定机制
-
-防止多个 Agent 重复执行同一任务：
-
-- **Locked**: 任务已被认领
-- **In Progress**: 任务执行中
-- **Done**: 任务完成
-- **Blocked**: 任务阻塞
-- **Todo**: 待开始
-
-### 4. 多 Agent 协作
-
-支持多 Agent 并行开发：
-
-```
-Agent A: 任务001 → 任务002 → 任务004
-Agent B: 任务003 → 任务005
-```
-
-## 📖 使用场景
-
-### 场景 1：个人项目管理
-
-```bash
-bun ~/.pi/agent/skills/ralph-loop-gen/lib.ts --name personal-project
-```
-
-输入个人任务列表，生成任务模板，逐个完成。
-
-### 场景 2：团队协作开发
-
-```bash
-bun ~/.pi/agent/skills/ralph-loop-gen/lib.ts --name team-project
-```
-
-团队成员查看任务索引，各自认领任务，并行开发。
-
-### 场景 3：自动化工作流
-
-配合其他 tool 或脚本，自动生成任务模板并执行。
-
-## 🎯 最佳实践
-
-### 1. 任务粒度
-
-- ✅ 适中：单个任务 2-8 小时
-- ❌ 太大：超过 16 小时，难以跟踪
-- ❌ 太小：小于 1 小时，增加协调成本
-
-### 2. 依赖关系
-
-- ✅ 明确：所有依赖显式声明
-- ❌ 隐式：依赖关系不清晰
-- ❌ 循环：A 依赖 B，B 依赖 A
-
-### 3. 状态更新
-
-- ✅ 及时：任务状态变更立即更新
-- ✅ 同步：同时更新任务文件和任务索引
-- ❌ 延迟：长时间不更新状态
-
-### 4. Git 提交
-
-```bash
-# 每个任务完成后立即提交
-git add -A
-git commit -m "feat(task001): 初始化项目结构"
-
-# 移动已完成任务
-mv task/myProject/任务001.md task/myProject/completed/
-```
-
-## 🔧 模板变量
-
-### index.md 模板变量
-
-| 变量 | 说明 |
-|------|------|
-| `{{TOTAL_TASKS}}` | 总任务数 |
-| `{{COMPLETED}}` | 已完成数量 |
-| `{{IN_PROGRESS}}` | 进行中数量 |
-| `{{TODO}}` | 待开始数量 |
-| `{{LOCKED}}` | 已锁定数量 |
-| `{{PROJECT_NAME}}` | 项目名称 |
-| `{{CREATED_TIME}}` | 创建时间 |
-| `{{TASK_ROWS}}` | 任务列表表格 |
-| `{{DEP_GRAPH}}` | 依赖关系图 |
-| `{{PARALLEL_GROUPS}}` | 并行分组 |
-| `{{PROGRESS_PERCENT}}` | 进度百分比 |
-| `{{ELAPSED_TIME}}` | 已用时间 |
-| `{{ESTIMATED_REMAINING}}` | 预计剩余时间 |
-
-### task.md 模板变量
-
-| 变量 | 说明 |
-|------|------|
-| `{{TASK_ID}}` | 任务 ID |
-| `{{TASK_TITLE}}` | 任务标题 |
-| `{{STATUS}}` | 任务状态 |
-| `{{PRIORITY}}` | 优先级 |
-| `{{ESTIMATED_TIME}}` | 预计时间 |
-| `{{DESCRIPTION}}` | 任务描述 |
-| `{{DEPENDENCIES_LIST}}` | 依赖列表 |
-| `{{ACCEPTANCE_CRITERIA}}` | 验收标准 |
-| `{{IMPLEMENTATION_STEPS}}` | 实施步骤 |
-| `{{PARALLEL_HINT}}` | 并行提示 |
-| `{{LOCK_OWNER}}` | 占用者 |
-| `{{LOCK_TIME}}` | 锁定时间 |
-| `{{LOCK_TIMEOUT}}` | 锁定超时 |
-
-## 📝 开发说明
-
-### 添加新功能
-
-1. 修改 `lib.ts` 添加新逻辑
-2. 更新 `templates/` 中的模板文件
-3. 更新 `SKILL.md` 和 `EXAMPLES.md` 文档
-4. 添加测试用例到 `test.ts`
-
-### 自定义模板
-
-修改 `templates/index.md` 和 `templates/task.md`，使用 `{{变量名}}` 语法。
-
-### 扩展输入格式
-
-在 `lib.ts` 中添加新的解析函数，如 `parseCustomInput()`。
-
-## 🐛 故障排除
-
-### 问题：任务标题解析不完整
-
-**原因**：特殊字符或格式问题
-
-**解决**：检查输入格式，使用标准格式
-
-### 问题：依赖关系未正确识别
-
-**原因**：依赖格式不正确
-
-**解决**：使用 `-> 依赖: 任务X` 格式
-
-### 问题：并行分组不准确
-
-**原因**：依赖关系定义错误
-
-**解决**：检查依赖关系，确保无循环依赖
-
-## 📞 支持
-
-- 查看 `SKILL.md` 了解详细功能
-- 查看 `EXAMPLES.md` 了解使用示例
-- 查看 `README.md` 了解项目概述
-
-## 📄 许可证
-
-MIT
-
----
-
-**版本**: 1.0.0
-**最后更新**: 2026-01-20
+- 初始版本发布
+- 支持 Bun 命令行交互式输入
+- 基本任务模板生成
+- 依赖关系图生成
+- 并行任务分组
+- 任务锁定机制文档
+- 多 Agent 协作指南
