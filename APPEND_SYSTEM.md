@@ -7,7 +7,7 @@
 ## 标签层次（Tag Hierarchy）
 
 | 标签 | 执行级别 | 违规后果 | 适用场景 |
-|------|---------|---------|---------|
+|---|---|---|---|
 | `<critical>` | 不可违反 | 系统失败，立即终止 | 核心安全、基础协议 |
 | `<prohibited>` | 绝对禁止 | 严重违规，记录惩罚 | 危险操作、破坏性行为 |
 | `<important>` | 高优先级 | 需要理由说明 | 最佳实践、流程控制 |
@@ -24,8 +24,7 @@
 - **路径基座**：`~/.pi/agent/` 与 `.pi/`
 - **用户技能目录**：`~/.pi/agent/skills/`
 - **项目技能目录**：`.pi/skills/`
-
-说明：Claude Agent 使用 `~/.claude/` 与 `.claude/` 路径体系。
+- **说明**：Claude Agent 使用 `~/.claude/` 与 `.claude/` 路径体系
 </instruction>
 
 ---
@@ -100,18 +99,15 @@ rm -r
 <critical>
 ### 核心目标
 
-准确识别任务复杂度，避免将复杂任务简单化处理导致的烂尾问题。
-
+准确识别任务复杂度，避免将复杂任务简单化处理导致烂尾问题。  
 **违规后果**：未执行复杂度评估直接执行 L3+ 任务，视为严重违规。
 </critical>
 
 <instruction>
 ### 0.5.1 任务复杂度评估维度
 
-在接收到用户需求后，必须从以下维度评估任务复杂度：
-
 | 维度 | 评估指标 | 简单 (L1) | 中等 (L2) | 复杂 (L3) | 严重复杂 (L4) |
-|------|---------|-----------|-----------|-----------|---------------|
+|---|---|---|---|---|---|
 | **范围** | 涉及文件/模块数量 | 1-2 | 3-5 | 6-10 | 10+ |
 | **依赖** | 外部依赖/第三方集成 | 无 | 1-2 | 3-5 | 5+ |
 | **变更** | 代码变更行数预估 | <50 | 50-200 | 200-500 | 500+ |
@@ -180,7 +176,6 @@ rm -r
 <prohibited>
 ### 0.5.4 避免烂尾的禁止行为
 
-**禁止以下行为：**
 1. 将 L3/L4 任务当作 L1/L2 处理
 2. 跳过 Phase 2（分析）直接实现
 3. L3+ 任务不创建 Workhub Issue
@@ -339,12 +334,11 @@ for file in path1 path2 path3; do cat "$file"; done
 <instruction>
 **文件/路径搜索优先使用 `fd`**
 
-正确方式：
 ```bash
-fd "filename"              # 按文件名搜索
-fd -e ts                   # 按扩展名搜索
-fd "pattern" -t f          # 搜索匹配模式的文件
-fd -H ...                  # 包含隐藏文件
+fd "filename"
+fd -e ts
+fd "pattern" -t f
+fd -H ...
 ```
 
 **说明**：`fd` 自动排除 `node_modules`、更快、更干净。
@@ -410,10 +404,10 @@ tmux -S /tmp/pi-tmux-sockets/pi.sock attach -t {session-id}
 
 <prohibited>
 **绝对禁止的后台管理方式：**
-- `&` - 后台运行
-- `nohup` - 忽略挂起信号
-- `screen` - 终端复用
-- `disown` - 从作业表中移除
+- `&`
+- `nohup`
+- `screen`
+- `disown`
 - 阻塞主 shell 的任何方式
 
 **违规惩罚**：使用任一方式将被判定为严重违规。
@@ -425,36 +419,7 @@ tmux -S /tmp/pi-tmux-sockets/pi.sock attach -t {session-id}
 <critical>
 ### 安全删除协议
 
-<instruction>
-**正确方式：**
-```bash
-trash <file>
-trash <path/to/dir>/
-```
-
-**错误方式：**
-```bash
-rm <file>
-rm -rf <directory>
-rm -r
-```
-</instruction>
-
-<conditions>
-**例外场景（仅限以下情况）：**
-- 清理 `/tmp/` 临时文件
-- 清理 `/var/cache/` 缓存文件
-- 必须确认路径在允许范围内
-</conditions>
-
-<prohibited>
-**绝对禁止：**
-- `rm` / `rm -rf` / `rm -r`（所有场景）
-- `rm -i`（即使有确认也不允许）
-- `sudo rm`（提升权限更危险）
-
-**违规惩罚**：使用 `rm` 将被判定为严重违规。
-</prohibited>
+**本节与 0. 全局协议 / 安全删除协议一致。**
 </critical>
 
 ### 1.5 代码库搜索
@@ -462,21 +427,17 @@ rm -r
 <important>
 ### 工具选择原则
 
-根据场景选择最合适的工具，不要盲目使用 ace。
-
-**正确方式：** 根据场景选择 `fd` / `rg` / `ast-grep` / `ace`
-**禁止方式：** `grep` / `ag` / `find` 用于代码库分析
-
+根据场景选择最合适的工具，不要盲目使用 ace。  
+**正确方式：** `fd` / `rg` / `ast-grep` / `ace`  
+**禁止方式：** `grep` / `ag` / `find` 用于代码库分析  
 **违规惩罚**：使用 `find` / `rm` / `grep` / `rg` / `ag` 将被判定为严重违规。
 </important>
 
 <instruction>
 ### 1.5.1 工具选择优先级
 
-**判断标准（按优先级）：**
-
 | 场景 | 首选工具 | 原因 |
-|------|---------|------|
+|---|---|---|
 | 用户给出明确文件名/路径 | `fd` | 精确路径匹配最快 |
 | 用户给出函数名/类名/变量名 | `rg` / `ast-grep` | 精确符号搜索 |
 | 用户问"哪个文件" | `rg` | 快速定位文件 |
@@ -512,14 +473,12 @@ rm -r
 
 **基本用法：**
 ```bash
-# 语义搜索（自然语言查询）
 ace search "Where is auth?"
 ace search "How is database connected?"
-ace s "auth"                    # 简写
+ace s "auth"
 
-# 提示增强（用户消息包含 -enhance/-enhancer 时）
 ace enhance "Add login page"
-ace e "Add login"               # 简写
+ace e "Add login"
 ```
 
 **Ace 的局限性：**
@@ -546,9 +505,8 @@ ace e "Add login"               # 简写
 ### 1.6 复杂操作执行
 
 <instruction>
-### 复杂操作优先使用 Python3 代码执行方式
+**复杂操作优先使用 Python3 代码执行方式**
 
-**推荐方式：**
 ```bash
 python3 <<EOF
 import os
@@ -595,6 +553,48 @@ EOF
 </prohibited>
 </critical>
 
+### 1.8 Git 恢复操作
+
+<prohibited>
+**绝对禁止：**
+- `git restore .`
+- `git restore <dir>/`
+- `git checkout -- .`
+- `git reset --hard`
+
+**正确方式：**
+- `git restore <具体文件>`
+- 先用 `git status --short` 查看修改
+- 只恢复自己修改的文件，保留用户修改
+</prohibited>
+
+<critical>
+**核心原则：不要乱修改、删除用户的文件。**
+
+**禁止：**
+- 擅自删除备份文件、临时文件
+- 禁用 TypeScript 严格检查来绕过错误
+</critical>
+
+### 1.9 网络搜索
+
+<instruction>
+**网络搜索场景识别**
+
+当用户要求以下内容时，使用 Tavily Search 技能：
+- "搜索 XXX"、"最近很火的 XXX"、"介绍一下 XXX"
+- "XXX 是什么"、"XXX 最新消息"、"联网搜索 XXX"
+
+**排除场景**：搜索本地代码/项目文件 → 用 `fd` / `rg` / `ace`
+
+**使用方法**：
+```bash
+cd ~/.pi/agent/skills/tavily-search-free && python3 scripts/tavily_search.py --query "关键词"
+```
+
+**备用**：Tavily 不可用时，用 `web-browser` skill。
+</instruction>
+
 ---
 
 ## 2. 工作流（Workflow）
@@ -620,7 +620,7 @@ EOF
 **工具选择优先级（按场景）：**
 
 | 场景 | 首选工具 | 原因 |
-|------|---------|------|
+|---|---|---|
 | 已知文件名/路径 | `fd` | 精确路径匹配最快 |
 | 已知函数名/类名/变量名 | `rg` | 精确符号搜索 |
 | 已知代码片段/字符串 | `rg` | 文本匹配最直接 |
@@ -672,11 +672,8 @@ EOF
 <instruction>
 ### Phase 3 原型获取
 
-**路线 A（前端/UI/样式）：**
-- Gemini → Unified Diff（视觉基线）
-
-**路线 B（后端/逻辑/算法）：**
-- Gemini → Unified Diff（逻辑原型）
+**路线 A（前端/UI/样式）：** Gemini → Unified Diff（视觉基线）  
+**路线 B（后端/逻辑/算法）：** Gemini → Unified Diff（逻辑原型）
 
 **共同约束：**
 - 必须仅输出 Unified Diff
@@ -762,13 +759,8 @@ cd /path/to/project && ./.pi/skills/custom/script.sh args
 ### 3.5 路径验证
 
 ```bash
-# 验证用户级脚本
 ls -la ~/.pi/agent/skills/<skill-name>/<script>
-
-# 验证项目级脚本
 ls -la ./.pi/skills/<skill-name>/<script>
-
-# 验证工作目录
 pwd && ls -la
 ```
 </instruction>
@@ -788,6 +780,7 @@ pwd && ls -la
 
 | 阶段 | 功能 | 模型/工具 | 输入 | 输出 | 约束 |
 |---|---|---|---|---|---|
+| 0 | 网络搜索 | Tavily Search | 自然语言查询 | 结构化搜索结果 | 用户要求搜索网络信息时必须使用 |
 | 1 | 上下文检索 | fd/rg/ace/ast-grep | 标识符/自然语言 | 原始代码 | 精确工具优先，语义工具兜底；改代码前必检索 |
 | 2（可选） | 分析/规划 | Gemini | 原始需求 | 分步计划 | 仅复杂任务 |
 | 3A | 前端/UI | Gemini | 英文（<32k） | Unified Diff | 视觉基线 |
@@ -803,8 +796,7 @@ pwd && ls -la
 <important>
 ### Workhub 强制使用原则
 
-**要求：** 复杂任务必须使用 workhub 技能。
-
+**要求：** 复杂任务必须使用 workhub 技能。  
 **偏离要求：** L3+ 任务不使用 workhub 必须明确说明理由。
 </important>
 
@@ -840,7 +832,7 @@ cd /path/to/project
 bun ~/.pi/agent/skills/workhub/lib.ts create issue "task"
 ```
 
-**原因：** `lib.ts` 使用 `process.cwd()` 判断文档位置，必须在项目根执行。
+**原因：** `lib.ts` 使用 `process.cwd()` 判断文档位置，必须在项目根执行。  
 **验证：** 执行后检查 `ls -la docs/issues/`，应看到新文件。
 </instruction>
 </critical>
@@ -970,7 +962,7 @@ bun ~/.pi/agent/skills/workhub/lib.ts create pr "temp"
 - 3. 技能与资源 - 所有路径和资源指令
 - 4. Workhub 协议 - 所有操作指令
 
-**偏离要求：** 偏离需确认。
+**偏离要求**：偏离需确认。
 </instruction>
 
 <conditions>
@@ -981,7 +973,7 @@ bun ~/.pi/agent/skills/workhub/lib.ts create pr "temp"
 - 1. 工具与命令规范 - 安全删除例外场景、后台任务适用场景、截断输出触发条件
 - 2. 工作流 - Phase 1 触发条件
 
-**操作要求：** 未检查即违规。
+**操作要求**：未检查即违规。
 </conditions>
 
 <avoid>
@@ -991,5 +983,7 @@ bun ~/.pi/agent/skills/workhub/lib.ts create pr "temp"
 - 3. 技能与资源 - 常见错误与正确方式
 - 4. Workhub 协议 - 错误方式
 
-**替代方案：** 建议替代方案。
+**替代方案**：建议替代方案。
 </avoid>
+
+---
