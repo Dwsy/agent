@@ -16,3 +16,6 @@
 [submodule "skills/ace-tool"]
 	path = skills/ace-tool
 	url = https://github.com/Dwsy/ace-tool-skill
+[submodule "extensions/undo-redo"]
+	path = extensions/undo-redo
+	url = https://github.com/Dwsy/pi-undo-redo.git
