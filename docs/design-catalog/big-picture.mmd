@@ -1,0 +1,105 @@
+```mermaid
+flowchart LR
+    %% Style definitions
+    classDef event fill:#ff9800,stroke:#e65100,color:#000
+    classDef command fill:#2196f3,stroke:#0d47a1,color:#fff
+    classDef actor fill:#ffeb3b,stroke:#f57f17,color:#000
+    classDef system fill:#9c27b0,stroke:#4a148c,color:#fff
+    classDef aggregate fill:#4caf50,stroke:#1b5e20,color:#fff
+    classDef hotspot fill:#f44336,stroke:#b71c1c,color:#fff
+
+    %% Actors
+    Dev[Developer]:::actor
+
+    %% Commands
+    CmdLaunch[Launch App]:::command
+    CmdSearch[Search Sessions]:::command
+    CmdView[View Session]:::command
+    CmdSort[Sort Sessions]:::command
+    CmdToggle[Toggle Tool Calls]:::command
+
+    %% Events
+    EvtAppStarted[App Started]:::event
+    EvtSessionsLoaded[Sessions Indexed]:::event
+    EvtSearchExecuted[Search Executed]:::event
+    EvtResultsFiltered[Results Filtered]:::event
+    EvtSessionSelected[Session Selected]:::event
+    EvtHTMLRendered[HTML Rendered]:::event
+    EvtSortChanged[Sort Changed]:::event
+    EvtFilterChanged[Filter Changed]:::event
+
+    %% Aggregates
+    AggSession[Session Index]:::aggregate
+    AggSearch[Search State]:::aggregate
+    AggView[View State]:::aggregate
+
+    %% External Systems
+    PiSessions[Pi Sessions Directory<br/>~/.pi/agent/sessions/]:::system
+    PiTemplates[Pi HTML Templates<br/>template.html/css/js]:::system
+
+    %% Hotspots
+    Hot1[? Large session scale?]:::hotspot
+    Hot2[? Search algorithm choice?]:::hotspot
+    Hot3[? Template injection method?]:::hotspot
+
+    %% Main Flow
+    Dev --> CmdLaunch
+    CmdLaunch --> EvtAppStarted
+    EvtAppStarted -->|Read JSONL files| PiSessions
+    PiSessions --> EvtSessionsLoaded
+    EvtSessionsLoaded --> AggSession
+
+    Dev --> CmdSearch
+    CmdSearch --> EvtSearchExecuted
+    EvtSearchExecuted -->|Query index| AggSession
+    AggSession --> EvtResultsFiltered
+    EvtResultsFiltered --> AggSearch
+
+    Dev --> CmdView
+    CmdView --> EvtSessionSelected
+    EvtSessionSelected -->|Load session content| AggSession
+    AggSession -->|Inject into template| PiTemplates
+    PiTemplates --> EvtHTMLRendered
+    EvtHTMLRendered --> AggView
+
+    Dev --> CmdSort
+    CmdSort --> EvtSortChanged
+    EvtSortChanged -->|Reorder sessions| AggSession
+
+    Dev --> CmdToggle
+    CmdToggle --> EvtFilterChanged
+    EvtFilterChanged -->|Update search scope| AggSearch
+
+    %% Hotspot connections
+    EvtSessionsLoaded -.question.- Hot1
+    EvtSearchExecuted -.question.- Hot2
+    EvtHTMLRendered -.question.- Hot3
+```
+
+## EventStorming Legend
+
+| Color | Element | Description |
+|-------|---------|-------------|
+| 🟡 Yellow | Actor | Who initiates actions |
+| 🔵 Blue | Command | Action triggered by actor |
+| 🟠 Orange | Event | Something that happened |
+| 🟢 Green | Aggregate | Data entity that changes |
+| 🟣 Purple | System | External system |
+| 🔴 Red | Hotspot | Unclear area needing decision |
+
+## Key Business Events
+
+1. **App Started** - Application launches and begins indexing
+2. **Sessions Indexed** - All session files parsed and indexed in memory
+3. **Search Executed** - User performs a search query
+4. **Results Filtered** - Search results returned based on query
+5. **Session Selected** - User clicks on a session to view details
+6. **HTML Rendered** - Session content rendered using Pi's templates
+7. **Sort Changed** - User changes sort order (date/message count)
+8. **Filter Changed** - User toggles tool call inclusion
+
+## Hotspots
+
+1. **Large session scale** - How to handle 1000+ sessions efficiently?
+2. **Search algorithm** - Which fuzzy search implementation to use?
+3. **Template injection** - How to inject session data into Pi's HTML templates?

@@ -1,0 +1,88 @@
+```mermaid
+sequenceDiagram
+    actor Dev as Developer
+    participant UI as React UI
+    participant State as Search State
+    participant Index as Session Index
+    participant Search as Fuzzy Search
+
+    Note over Dev,Search: Happy Path: Successful search
+
+    Dev->>UI: Type "react component"
+    UI->>State: Update query("react component")
+    State->>UI: Trigger debounce (300ms)
+
+    Note over State: [Debouncing...]
+
+    State->>Index: Get search index
+    Index-->>State: Return searchIndex
+
+    State->>Search: Execute search(query, includeToolCalls)
+    Search->>Search: Match against allMessagesText
+    Search-->>State: Return [S1, S3, S5] (sorted by relevance)
+
+    State->>UI: Update results
+    UI->>Dev: Display 3 matching sessions
+
+    Note over Dev,Search: Error Path: Index not ready
+
+    Dev->>UI: Type "async"
+    UI->>State: Update query("async")
+    State->>Index: Get search index
+    Index-->>State: Error: "Index not ready"
+    State->>UI: Update error
+    UI->>Dev: Show error message
+
+    Note over Dev,Search: Filter Toggle Path
+
+    Dev->>UI: Click "Include Tool Calls"
+    UI->>State: Toggle includeToolCalls
+    State->>Search: Re-execute search(new filter)
+    Search-->>State: Return [S1, S2, S3, S5] (more results)
+    State->>UI: Update results
+    UI->>Dev: Display 4 matching sessions
+```
+
+## Sequence: Search Sessions
+
+### Participants
+
+| Participant | Role |
+|-------------|------|
+| **Developer** | User initiating search |
+| **React UI** | Frontend interface |
+| **Search State** | Manages query and results |
+| **Session Index** | In-memory search index |
+| **Fuzzy Search** | Search algorithm implementation |
+
+### Flows
+
+#### Happy Path: Successful Search
+1. User types query → UI updates state
+2. Debounce triggers after 300ms
+3. State retrieves search index
+4. Fuzzy search executes
+5. Results returned to UI
+6. User sees matching sessions
+
+#### Error Path: Index Not Ready
+1. User types query before sessions loaded
+2. State requests index
+3. Index not ready error
+4. Error displayed to user
+
+#### Filter Toggle Path
+1. User toggles "Include Tool Calls"
+2. State re-executes search with new filter
+3. More results returned
+4. UI updated with new results
+
+### Key Interactions
+
+| Interaction | Data Flow | Timing |
+|-------------|-----------|--------|
+| Type query | Dev → UI → State | Immediate |
+| Debounce | State internal | 300ms |
+| Get index | State → Index → State | < 10ms (in-memory) |
+| Execute search | State → Search → State | < 100ms (1000 sessions) |
+| Update results | State → UI → Dev | < 50ms |

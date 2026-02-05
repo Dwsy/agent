@@ -1,0 +1,103 @@
+```mermaid
+erDiagram
+    %% Core Entities
+    SessionInfo {
+        string path PK "File path"
+        string id "Session UUID"
+        string cwd "Working directory"
+        string name "Optional name"
+        datetime created "Creation time"
+        datetime modified "Last modified"
+        int messageCount "Number of messages"
+        string firstMessage "Preview text"
+        string allMessagesText "Concatenated search text"
+    }
+
+    SessionEntry {
+        string id PK "Entry ID"
+        string type "message|thinking|model|etc."
+        datetime timestamp "When entry was created"
+        string parentId "Optional parent message"
+        json data "Entry-specific data"
+    }
+
+    SessionMessageEntry {
+        string id PK "Message ID"
+        string role "user|assistant|toolResult"
+        content content "Message content blocks"
+        json metadata "Additional metadata"
+    }
+
+    ContentBlock {
+        string type "text|image|tool_use|tool_result"
+        string text "Text content"
+        string toolName "For tool_use/tool_result"
+        json toolInput "Tool parameters"
+        json toolOutput "Tool result"
+    }
+
+    SearchIndex {
+        string sessionId FK "Reference to SessionInfo"
+        json indexData "Pre-computed search vectors"
+        boolean includeToolCalls "Indexing configuration"
+    }
+
+    SearchState {
+        string query "Current search query"
+        boolean includeToolCalls "Search filter flag"
+        string sortBy "created|modified|messageCount"
+        string sortOrder "asc|desc"
+    }
+
+    ViewState {
+        string selectedSessionId "Currently viewing session"
+        int scrollPosition "Scroll position in pixels"
+        string renderedHTML "Generated HTML content"
+    }
+
+    %% Relationships
+    SessionInfo ||--o{ SessionEntry : "contains"
+    SessionInfo ||--|| SearchIndex : "indexed_by"
+    SessionEntry ||--|| SessionMessageEntry : "can_be"
+    SessionMessageEntry ||--o{ ContentBlock : "has_content"
+
+    %% State Entities (Runtime only, no persistence)
+    SearchState {
+        "" "Runtime state - no persistence"
+    }
+    ViewState {
+        "" "Runtime state - no persistence"
+    }
+```
+
+## Entity Descriptions
+
+### Core Entities
+
+| Entity | Description | Key Attributes |
+|--------|-------------|----------------|
+| **SessionInfo** | Metadata for a session file | id, path, created, modified, messageCount |
+| **SessionEntry** | A single entry in session JSONL | id, type, timestamp, parentId |
+| **SessionMessageEntry** | Message-type entry (user/assistant) | role, content, metadata |
+| **ContentBlock** | Content block within a message | type, text, toolName, toolInput/output |
+
+### Index/State Entities
+
+| Entity | Description | Key Attributes |
+|--------|-------------|----------------|
+| **SearchIndex** | Pre-computed search data for session | sessionId, indexData, includeToolCalls |
+| **SearchState** | Current search UI state | query, includeToolCalls, sortBy |
+| **ViewState** | Current view UI state | selectedSessionId, scrollPosition |
+
+### Relationships
+
+1. **SessionInfo → SessionEntry** (1:N) - One session contains many entries
+2. **SessionEntry → SessionMessageEntry** (1:1) - Entry can be a message
+3. **SessionMessageEntry → ContentBlock** (1:N) - Message has multiple content blocks
+4. **SessionInfo → SearchIndex** (1:1) - Session is indexed for search
+
+### Notes
+
+- **No persistence** for SearchState and ViewState (runtime only)
+- **Read-only** access to all entities (app doesn't modify session files)
+- **SearchIndex** is pre-computed on startup for performance

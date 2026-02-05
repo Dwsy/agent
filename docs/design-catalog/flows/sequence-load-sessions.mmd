@@ -1,0 +1,76 @@
+```mermaid
+sequenceDiagram
+    autonumber
+
+    participant Dev as Developer
+    participant UI as React UI
+    participant Tauri as Tauri Backend (Rust)
+    participant FS as File System
+    participant Index as Session Index (Memory)
+
+    Dev->>UI: Launch Application
+    UI->>Tauri: invoke("get_sessions_directory")
+    Tauri->>FS: read_dir("~/.pi/agent/sessions/")
+    FS-->>Tauri: [session-1.jsonl, session-2.jsonl, ...]
+
+    loop For each session file
+        Tauri->>FS: read_file("session-X.jsonl")
+        FS-->>Tauri: JSONL content
+        Tauri->>Tauri: parse JSONL lines
+        Tauri->>Tauri: extract metadata (id, created, modified, messageCount)
+        Tauri->>Tauri: build allMessagesText for search
+        Tauri->>Index: add SessionInfo
+    end
+
+    Tauri->>Index: build_fuzzy_search_index()
+    Index-->>Tauri: SearchIndex ready
+    Tauri-->>UI: return [SessionInfo array]
+    UI->>UI: render session list
+    UI-->>Dev: Display session list
+
+    Note over Dev,Index: Total time: ~2-5 seconds for 1000 sessions
+```
+
+## Sequence: Load Sessions on Startup
+
+### Participants
+
+| Participant | Role |
+|-------------|------|
+| **Developer** | Launches the application |
+| **React UI** | Frontend application |
+| **Tauri Backend** | Rust backend for file I/O |
+| **File System** | OS file system |
+| **Session Index** | In-memory index of all sessions |
+
+### Flow Description
+
+1. **Launch Application** - Developer starts the app
+2. **Get Sessions Directory** - UI requests session directory path from Tauri
+3. **Read Directory** - Tauri reads `~/.pi/agent/sessions/` directory
+4. **Parse Each Session** - Loop through each JSONL file:
+   - Read file content
+   - Parse JSONL lines
+   - Extract metadata (id, created, modified, messageCount)
+   - Build `allMessagesText` for search indexing
+5. **Build Search Index** - Create fuzzy search index from all sessions
+6. **Return Results** - Send SessionInfo array to UI
+7. **Render List** - UI displays session list to user
+
+### Performance Considerations
+
+| Step | Time Estimate | Optimization |
+|------|--------------|--------------|
+| Read directory | ~10ms | - |
+| Parse 1000 sessions | ~1-3s | Parallel file reads |
+| Build search index | ~500ms-1s | Incremental loading |
+| Render UI | ~50ms | Virtual list |
+
+### Error Handling
+
+| Error | Scenario | Recovery |
+|-------|----------|----------|
+| Directory not found | Pi not installed | Show error message |
+| File read failed | Corrupted session | Skip file, log warning |
+| Parse failed | Invalid JSON | Skip file, log warning |
+| Index build failed | Out of memory | Show partial results, warn user |

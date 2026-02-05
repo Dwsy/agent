@@ -1,0 +1,124 @@
+```mermaid
+flowchart TB
+    %% Style definitions
+    classDef event fill:#ff9800,stroke:#e65100,color:#000
+    classDef command fill:#2196f3,stroke:#0d47a1,color:#fff
+    classDef actor fill:#ffeb3y,stroke:#f57f17,color:#000
+    classDef aggregate fill:#4caf50,stroke:#1b5e20,color:#fff
+    classDef system fill:#9c27b0,stroke:#4a148c,color:#fff
+    classDef hotspot fill:#f44336,stroke:#b71c1c,color:#fff
+
+    %% Actors
+    Dev[Developer]:::actor
+
+    %% Commands
+    CmdSelect[Select Session]:::command
+    CmdScroll[Scroll View]:::command
+
+    %% Events
+    EvtSessionSelected[Session Selected]:::event
+    EvtSessionLoaded[Session Loaded]:::event
+    EvtTemplateRead[Template Read]:::event
+    EvtDataInjected[Data Injected]:::event
+    EvtHTMLGenerated[HTML Generated]:::event
+    EvtViewUpdated[View Updated]:::event
+
+    %% Aggregates
+    AggView[View State<br/>{selectedSession, scrollPos}]:::aggregate
+    AggSession[Session Data<br/>{entries, metadata}]:::aggregate
+    AggRender[Render State<br/>{htmlContent}]:::aggregate
+
+    %% External Systems
+    PiSessions[Pi Sessions Directory<br/>~/.pi/agent/sessions/]:::system
+    PiTemplates[Pi HTML Templates<br/>template.html/css/js]:::system
+
+    %% Hotspots
+    Hot1[? Template injection method?]:::hotspot
+    Hot2[? Large session rendering?]:::hotspot
+
+    %% Render Flow
+    Dev --> CmdSelect
+    CmdSelect --> EvtSessionSelected
+    EvtSessionSelected -->|Update selection| AggView
+
+    AggView -->|Load from file| PiSessions
+    PiSessions -->|Return JSONL content| EvtSessionLoaded
+    EvtSessionLoaded -->|Parse entries| AggSession
+
+    AggSession -->|Read template files| PiTemplates
+    PiTemplates -->|Return template strings| EvtTemplateRead
+    EvtTemplateRead -->|Inject session data| AggRender
+    AggRender --> EvtDataInjected
+    EvtDataInjected -->|Generate final HTML| EvtHTMLGenerated
+    EvtHTMLGenerated -->|Update iframe/webview| EvtViewUpdated
+    EvtViewUpdated --> AggView
+
+    %% Scroll Flow
+    Dev --> CmdScroll
+    CmdScroll -->|Update scroll position| AggView
+
+    %% Hotspot connections
+    EvtDataInjected -.question.- Hot1
+    EvtHTMLGenerated -.question.- Hot2
+
+    %% State annotations
+    AggView -.->|Before selection| selectedSession: null
+    AggView -.->|After selection| selectedSession: "session-123"
+    AggView -.->|Scrolling| scrollPos: 1500px
+
+    AggSession -.->|Loaded| entries: [Msg1, Msg2, Tool1, Msg3, ...]
+    AggSession -.->|Metadata| metadata: {id, cwd, created, modified, ...}
+
+    AggRender -.->|Generated| htmlContent: "<html>...</html>"
+```
+
+## Process: Render Session
+
+### Description
+User selects a session from the list, and the application renders it using Pi's HTML templates.
+
+### Aggregates
+
+| Aggregate | State | Events |
+|-----------|-------|--------|
+| **View State** | selectedSession, scrollPos | Session Selected, View Updated |
+| **Session Data** | entries, metadata | Session Loaded |
+| **Render State** | htmlContent | Data Injected, HTML Generated |
+
+### Event Details
+
+| Event | Trigger | Data Changes |
+|-------|---------|--------------|
+| Session Selected | User clicks session in list | ViewState.selectedSession |
+| Session Loaded | File read completes | SessionData.entries, metadata |
+| Template Read | Template files loaded | RenderState.templateContent |
+| Data Injected | Session data merged into template | RenderState.htmlContent |
+| HTML Generated | Final HTML string created | ViewState.displayContent |
+| View Updated | iframe/webview updated | User sees rendered session |
+
+### State Transitions
+
+```
+View State:
+  selectedSession: null → "session-123" → "session-456"
+  scrollPos: 0 → 1500 → 3000
+
+Session Data:
+  entries: [] → [Msg1, Msg2, Tool1, Msg3, ...]
+  metadata: {id: "session-123", cwd: "/project", ...}
+
+Render State:
+  htmlContent: "" → "<html>...</html>"
+```
+
+### Integration Points
+
+| External System | Interaction |
+|----------------|-------------|
+| **Pi Sessions Directory** | Read JSONL file for selected session |
+| **Pi HTML Templates** | Read template.html, template.css, template.js |
+
+### Hotspots
+
+1. **Template injection method** - How to merge session data into Pi's templates? (String interpolation? DOM manipulation?)
+2. **Large session rendering** - How to handle sessions with 1000+ messages? (Virtual scroll? Pagination?)

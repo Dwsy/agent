@@ -1,0 +1,110 @@
+```mermaid
+sequenceDiagram
+    actor Dev as Developer
+    participant UI as React UI
+    participant Rust as Rust Backend
+    participant FS as File System
+    participant State as View State
+    participant Template as Template Engine
+
+    Note over Dev,Template: Happy Path: Successful render
+
+    Dev->>UI: Click session "session-123"
+    UI->>State: Set selectedSession("session-123")
+    State->>Rust: Read session file("session-123")
+    Rust->>FS: Read ~/.pi/sessions/session-123.jsonl
+    FS-->>Rust: Return JSONL content
+    Rust->>Rust: Parse JSONL lines
+    Rust-->>State: Return SessionData {entries, metadata}
+    State->>Rust: Read template files
+    Rust->>FS: Read template.html, template.css, template.js
+    FS-->>Rust: Return template strings
+    Rust-->>State: Return templateContent
+    State->>Template: Inject session data
+    Template->>Template: Merge entries into HTML
+    Template-->>State: Return htmlContent
+    State->>UI: Render htmlContent
+    UI->>Dev: Display session in iframe/webview
+
+    Note over Dev,Template: Error Path: File not found
+
+    Dev->>UI: Click session "session-999"
+    UI->>State: Set selectedSession("session-999")
+    State->>Rust: Read session file("session-999")
+    Rust->>FS: Read ~/.pi/sessions/session-999.jsonl
+    FS-->>Rust: Error: File not found
+    Rust-->>State: Return error
+    State->>UI: Update error
+    UI->>Dev: Show error message
+
+    Note over Dev,Template: Large Session Path
+
+    Dev->>UI: Click session "session-456" (1000+ messages)
+    UI->>State: Set selectedSession("session-456")
+    State->>Rust: Read session file("session-456")
+    Rust->>FS: Read ~/.pi/sessions/session-456.jsonl
+    FS-->>Rust: Return 5MB JSONL content
+    Rust->>Rust: Parse and extract metadata
+    Rust-->>State: Return SessionData (entries: 1500)
+    State->>Template: Inject session data
+    Template-->>State: Return 8MB htmlContent
+    State->>UI: Render with virtual scroll
+    UI->>Dev: Display session with lazy loading
+```
+
+## Sequence: Render Session
+
+### Participants
+
+| Participant | Role |
+|-------------|------|
+| **Developer** | User selecting session |
+| **React UI** | Frontend interface |
+| **Rust Backend** | Tauri commands |
+| **File System** | OS file access |
+| **View State** | Manages selected session |
+| **Template Engine** | HTML generation |
+
+### Flows
+
+#### Happy Path: Successful Render
+1. User clicks session → UI updates state
+2. Rust reads session file from filesystem
+3. JSONL parsed into SessionData
+4. Template files read
+5. Session data injected into template
+6. HTML generated
+7. UI renders in iframe/webview
+
+#### Error Path: File Not Found
+1. User clicks non-existent session
+2. Rust attempts file read
+3. File not found error
+4. Error displayed to user
+
+#### Large Session Path
+1. User clicks session with 1000+ messages
+2. Large JSONL file read (5MB)
+3. Parsed into SessionData (1500 entries)
+4. HTML generated (8MB)
+5. UI renders with virtual scroll
+
+### Key Interactions
+
+| Interaction | Data Flow | Timing |
+|-------------|-----------|--------|
+| Select session | Dev → UI → State | Immediate |
+| Read file | Rust → FS → Rust | < 50ms (small), < 200ms (large) |
+| Parse JSONL | Rust internal | < 100ms (small), < 500ms (large) |
+| Read templates | Rust → FS → Rust | < 10ms |
+| Inject data | Template internal | < 200ms (small), < 1s (large) |
+| Render HTML | State → UI → Dev | < 50ms |
+
+### Performance Considerations
+
+| Session Size | File Size | Message Count | Total Time |
+|--------------|-----------|---------------|------------|
+| Small | < 100KB | < 50 | < 200ms |
+| Medium | 100KB - 1MB | 50 - 500 | 200ms - 1s |
+| Large | 1MB - 10MB | 500 - 5000 | 1s - 5s |
+| Very Large | > 10MB | > 5000 | > 5s (needs virtualization) |
