@@ -99,7 +99,7 @@ rm -r
 <critical>
 ### 核心目标
 
-准确识别任务复杂度，避免将复杂任务简单化处理导致烂尾问题。  
+准确识别任务复杂度，避免将复杂任务简单化处理导致烂尾问题。
 **违规后果**：未执行复杂度评估直接执行 L3+ 任务，视为严重违规。
 </critical>
 
@@ -361,25 +361,127 @@ fd -H ...
 **违规惩罚**：使用 `find` / `rm` / `grep` / `rg` / `ag` 将被判定为严重违规。
 </prohibited>
 
-### 1.3 后台任务
+### 1.3 后台任务管理
 
 <critical>
 ### 后台任务管理协议
 
-**强制：所有后台任务必须使用 tmux skill**
+**强制：所有后台任务必须使用 interactive_shell 或 tmux skill**
 
 <conditions>
-**适用场景：**
-- 长时间任务（>10s）：编译、训练、数据迁移
-- 交互式工具：Python REPL、gdb、数据库 CLI
-- 持续服务：dev server、数据库、守护进程
-- 需要监控输出或手动干预
+**适用场景与工具选择：**
+
+| 场景 | 推荐工具 | 原因 |
+|------|---------|------|
+| 代理任务（pi/claude/gemini） | `interactive_shell` | 原生支持，完整生命周期管理 |
+| 编译/测试/数据处理 | `interactive_shell` dispatch | 异步执行，自动通知 |
+| 长时间任务需监控 | `interactive_shell` hands-free | 实时查询，支持干预 |
+| Python REPL/gdb/数据库 CLI | `tmux` | 交互式工具，需要 send 命令 |
+| Dev server/守护进程 | `tmux` service | 持久化服务，需要长期运行 |
+| 需要用户直接控制 | `interactive_shell` interactive | 用户直接输入 |
+
+**禁止场景：**
+- 长时间任务（>10s）不使用后台管理
+- 交互式工具不使用 bash `&`
+- 持续服务不使用 `nohup`
 </conditions>
 
 <instruction>
-**tmux skill 命令：**
+### 1.3.1 Interactive Shell 方案（推荐优先）
+
+**优势：**
+- ✅ 原生支持代理（pi/claude/gemini/codex）
+- ✅ 完整的会话生命周期管理
+- ✅ 支持后台化（Ctrl+B）和重新附加
+- ✅ 实时查询进度和输出
+- ✅ 支持发送输入和快捷键
+- ✅ 自动状态追踪
+
+**Dispatch 模式（火力全开，推荐用于快速任务）：**
+```typescript
+interactive_shell({
+  command: 'pi "Compile project and run tests"',
+  mode: "dispatch",
+  reason: "Build and test"
+})
+// ✅ 立即返回，代理自主工作
+// ✅ 完成后自动通知
+// ✅ 无需轮询
+```
+
+**Hands-Free 模式（前台监控，推荐用于长时间任务）：**
+```typescript
+interactive_shell({
+  command: 'pi "Refactor codebase"',
+  mode: "hands-free",
+  reason: "Large refactoring"
+})
+// ✅ 返回 sessionId
+// ✅ 可随时查询进度
+// ✅ 支持后台化（Ctrl+B）
+// ✅ 支持发送输入干预
+```
+
+**后台化恢复流程：**
+```typescript
+// 1. 用户按 Ctrl+B 后台化
+// [Overlay 关闭，会话继续运行]
+
+// 2. 查看后台会话
+interactive_shell({ listBackground: true })
+
+// 3. 重新附加查看进度
+interactive_shell({
+  attach: "calm-reef",
+  mode: "hands-free"
+})
+
+// 4. 查询输出
+interactive_shell({
+  sessionId: "calm-reef",
+  outputLines: 50
+})
+
+// 5. 发送输入（如需干预）
+interactive_shell({
+  sessionId: "calm-reef",
+  input: "/compact\n"
+})
+
+// 6. 清理
+interactive_shell({ dismissBackground: "calm-reef" })
+```
+
+**会话管理命令：**
+```typescript
+// 列出所有后台会话
+interactive_shell({ listBackground: true })
+
+// 重新附加（三种模式）
+interactive_shell({ attach: "session-id" })                    // 交互
+interactive_shell({ attach: "session-id", mode: "hands-free" }) // 监控
+interactive_shell({ attach: "session-id", mode: "dispatch" })   // 异步
+
+// 查询状态
+interactive_shell({ sessionId: "session-id" })
+
+// 清理
+interactive_shell({ dismissBackground: "session-id" })         // 单个
+interactive_shell({ dismissBackground: true })                 // 全部
+```
+</instruction>
+
+<instruction>
+### 1.3.2 Tmux Skill 方案（交互式工具专用）
+
+**适用场景：**
+- Python REPL、gdb、数据库 CLI 等交互式工具
+- 需要 `send` 命令注入输入的场景
+- 持久化服务（dev server、数据库）
+
+**Tmux 命令：**
 ```bash
-# 创建（category: task/service/agent）
+# 创建会话（category: task/service/agent）
 bun ~/.pi/agent/skills/tmux/lib.ts create <name> <command> [category]
 
 # 观测
@@ -400,18 +502,90 @@ bun ~/.pi/agent/skills/tmux/lib.ts cleanup [hours]
 ```
 tmux -S /tmp/pi-tmux-sockets/pi.sock attach -t {session-id}
 ```
+
+**Python REPL 示例：**
+```bash
+# 创建 Python REPL
+bun ~/.pi/agent/skills/tmux/lib.ts create python "PYTHON_BASIC_REPL=1 python3 -q" task
+
+# 发送命令
+bun ~/.pi/agent/skills/tmux/lib.ts send pi-task-python-* "print('Hello')"
+
+# 查看输出
+bun ~/.pi/agent/skills/tmux/lib.ts capture pi-task-python-* 50
+```
+
+**Category 选择：**
+- `task`: 编译、测试、临时操作
+- `service`: dev server、数据库、持久化服务
+- `agent`: 训练、数据处理、代理特定任务
+```
+</instruction>
+
+<instruction>
+### 1.3.3 工具选择决策树
+
+```
+后台任务需求
+    ↓
+是否为代理任务（pi/claude/gemini）？
+    ├─ YES → interactive_shell
+    │   ├─ 快速任务 → mode: "dispatch"
+    │   ├─ 长时间任务 → mode: "hands-free"
+    │   └─ 用户直接控制 → mode: "interactive"
+    │
+    └─ NO → 是否为交互式工具？
+        ├─ YES（Python/gdb/数据库） → tmux
+        │   ├─ 临时 → category: "task"
+        │   └─ 持久 → category: "service"
+        │
+        └─ NO → 是否需要监控输出？
+            ├─ YES → tmux capture
+            └─ NO → tmux 后台运行
+```
 </instruction>
 
 <prohibited>
 **绝对禁止的后台管理方式：**
-- `&`
-- `nohup`
-- `screen`
-- `disown`
-- 阻塞主 shell 的任何方式
+- `&` - 使用 `interactive_shell` 或 `tmux` 替代
+- `nohup` - 使用 `interactive_shell` dispatch 替代
+- `screen` - 使用 `tmux` 替代
+- `disown` - 使用 `interactive_shell` background 替代
+- 阻塞主 shell 的任何方式 - 使用 `interactive_shell` 替代
 
 **违规惩罚**：使用任一方式将被判定为严重违规。
 </prohibited>
+
+<important>
+### 1.3.4 最佳实践
+
+**Interactive Shell 优先级：**
+1. 代理任务 → 必须用 `interactive_shell`
+2. 快速任务 → 用 `interactive_shell` dispatch
+3. 长时间任务 → 用 `interactive_shell` hands-free
+4. 需要干预 → 用 `interactive_shell` + send input
+
+**Tmux 使用场景：**
+1. 交互式 REPL（Python、gdb）
+2. 数据库 CLI（psql、mysql）
+3. 持久化服务（dev server、守护进程）
+4. 需要 `send` 命令的场景
+
+**混合使用：**
+```typescript
+// 启动 dev server（tmux）
+bun ~/.pi/agent/skills/tmux/lib.ts create dev-server "npm run dev" service
+
+// 启动测试任务（interactive_shell）
+interactive_shell({
+  command: 'pi "Run integration tests"',
+  mode: "dispatch"
+})
+
+// 两者可并行运行，互不干扰
+```
+</important>
+
 </critical>
 
 ### 1.4 安全删除
@@ -427,9 +601,9 @@ tmux -S /tmp/pi-tmux-sockets/pi.sock attach -t {session-id}
 <important>
 ### 工具选择原则
 
-根据场景选择最合适的工具，不要盲目使用 ace。  
-**正确方式：** `fd` / `rg` / `ast-grep` / `ace`  
-**禁止方式：** `grep` / `ag` / `find` 用于代码库分析  
+根据场景选择最合适的工具，不要盲目使用 ace。
+**正确方式：** `fd` / `rg` / `ast-grep` / `ace`
+**禁止方式：** `grep` / `ag` / `find` 用于代码库分析
 **违规惩罚**：使用 `find` / `rm` / `grep` / `rg` / `ag` 将被判定为严重违规。
 </important>
 
@@ -672,7 +846,7 @@ cd ~/.pi/agent/skills/tavily-search-free && python3 scripts/tavily_search.py --q
 <instruction>
 ### Phase 3 原型获取
 
-**路线 A（前端/UI/样式）：** Gemini → Unified Diff（视觉基线）  
+**路线 A（前端/UI/样式）：** Gemini → Unified Diff（视觉基线）
 **路线 B（后端/逻辑/算法）：** Gemini → Unified Diff（逻辑原型）
 
 **共同约束：**
@@ -796,7 +970,7 @@ pwd && ls -la
 <important>
 ### Workhub 强制使用原则
 
-**要求：** 复杂任务必须使用 workhub 技能。  
+**要求：** 复杂任务必须使用 workhub 技能。
 **偏离要求：** L3+ 任务不使用 workhub 必须明确说明理由。
 </important>
 
@@ -832,7 +1006,7 @@ cd /path/to/project
 bun ~/.pi/agent/skills/workhub/lib.ts create issue "task"
 ```
 
-**原因：** `lib.ts` 使用 `process.cwd()` 判断文档位置，必须在项目根执行。  
+**原因：** `lib.ts` 使用 `process.cwd()` 判断文档位置，必须在项目根执行。
 **验证：** 执行后检查 `ls -la docs/issues/`，应看到新文件。
 </instruction>
 </critical>
@@ -914,76 +1088,3 @@ bun ~/.pi/agent/skills/workhub/lib.ts create pr "temp"
 - **PR**：关联 Issue，列出变更与测试
 - **失败恢复**：检查 `docs/issues/`、确保在项目根执行、确认 workhub 安装，必要时阅读 `~/.pi/agent/skills/workhub/SKILL.md`
 </instruction>
-
----
-
-## 标签使用总结
-
-<critical>
-### Critical 标签使用位置
-
-- 0. 全局协议 - 核心安全协议、安全删除协议
-- 0.5. 任务复杂度识别 - 核心目标、后台任务管理协议、安全删除协议、截断输出处理协议
-- 2. 工作流 - Phase 1 强制执行协议
-- 4. Workhub 协议 - 执行规则
-
-**违规后果：** 系统失败，立即终止会话。
-</critical>
-
-<prohibited>
-### Prohibited 标签使用位置
-
-- 0. 全局协议 - 绝对禁止的行为
-- 0.5. 任务复杂度识别 - 避免烂尾的禁止行为、违规惩罚
-- 1. 工具与命令规范 - 绝对禁止的搜索工具、后台任务管理协议、安全删除协议
-- 2. 工作流 - Phase 1 强制执行协议
-
-**违规惩罚：** 严重违规，记录惩罚。
-</prohibited>
-
-<important>
-### Important 标签使用位置
-
-- 0. 全局协议 - 工程规范
-- 0.5. 任务复杂度识别 - 强制检查点、关键判断原则
-- 1. 工具与命令规范 - 工具选择原则
-- 2. 工作流 - Phase 5 审计与交付
-- 4. Workhub 协议 - Workhub 强制使用原则
-
-**偏离要求：** 需要理由说明。
-</important>
-
-<instruction>
-### Instruction 标签使用位置
-
-- 0.5. 任务复杂度识别 - 多个操作指令
-- 1. 工具与命令规范 - 文件读取、文件搜索、后台任务管理、安全删除、代码库搜索、复杂操作执行、截断输出处理
-- 2. 工作流 - 所有 Phase 指令
-- 3. 技能与资源 - 所有路径和资源指令
-- 4. Workhub 协议 - 所有操作指令
-
-**偏离要求**：偏离需确认。
-</instruction>
-
-<conditions>
-### Conditions 标签使用位置
-
-- 0. 全局协议 - 安全删除例外场景
-- 0.5. 任务复杂度识别 - 复杂度识别触发条件、后台任务适用场景
-- 1. 工具与命令规范 - 安全删除例外场景、后台任务适用场景、截断输出触发条件
-- 2. 工作流 - Phase 1 触发条件
-
-**操作要求**：未检查即违规。
-</conditions>
-
-<avoid>
-### Avoid 标签使用位置
-
-- 1. 工具与命令规范 - 反模式警告
-- 3. 技能与资源 - 常见错误与正确方式
-- 4. Workhub 协议 - 错误方式
-
-**替代方案**：建议替代方案。
-</avoid>
-
----
