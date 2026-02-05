@@ -1,0 +1,68 @@
+{
+  "$schema": "./categories.schema.json",
+  "version": "1.0.0",
+  "defaultModel": "proxypal/glm-4.7",
+  "description": "类别委托配置 - 按语义类别自动路由到最合适的代理",
+  "categories": {
+    "architecture": {
+      "agent": "oracle",
+      "model": "proxypal/glm-4.7",
+      "description": "架构决策、设计模式、技术选型、系统设计"
+    },
+    "documentation": {
+      "agent": "librarian",
+      "model": "proxypal/glm-4.7",
+      "description": "文档查阅、开源实现、代码库理解、API 文档"
+    },
+    "exploration": {
+      "agent": "scout",
+      "model": "proxypal/glm-4.7",
+      "description": "代码检索、文件定位、模式识别、依赖分析"
+    },
+    "planning": {
+      "agent": "planner",
+      "model": "proxypal/glm-4.7",
+      "description": "任务规划、方案设计、风险评估、五阶段工作流"
+    },
+    "implementation": {
+      "agent": "worker",
+      "model": "proxypal/glm-4.7",
+      "description": "代码实现、功能开发、Bug 修复、通用任务"
+    },
+    "security": {
+      "agent": "security-reviewer",
+      "model": "proxypal/glm-4.7",
+      "description": "安全审查、漏洞检测、风险评估、代码安全"
+    },
+    "review": {
+      "agent": "reviewer",
+      "model": "proxypal/glm-4.7",
+      "description": "代码审查、质量评估、改进建议、最佳实践"
+    },
+    "visual": {
+      "agent": "vision",
+      "model": "Qwen/Qwen3-VL-235B-A22B-Instruct",
+      "description": "图像分析、视频处理、OCR 提取、UI/UX 分析"
+    },
+    "frontend": {
+      "agent": "worker",
+      "model": "proxypal/glm-4.7",
+      "description": "前端开发、UI/UX、样式设计、组件开发"
+    },
+    "backend": {
+      "agent": "worker",
+      "model": "proxypal/glm-4.7",
+      "description": "后端开发、API 设计、数据库操作、服务端逻辑"
+    },
+    "testing": {
+      "agent": "worker",
+      "model": "proxypal/glm-4.7",
+      "description": "测试编写、测试策略、测试覆盖、质量保证"
+    },
+    "refactoring": {
+      "agent": "worker",
+      "model": "proxypal/glm-4.7",
+      "description": "代码重构、结构优化、性能改进、技术债务清理"
+    }
+  }
+}

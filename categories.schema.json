@@ -1,0 +1,59 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Pi Agent Categories Configuration",
+  "description": "类别委托配置 - 按语义类别自动路由到最合适的代理",
+  "type": "object",
+  "required": ["version", "categories"],
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "JSON Schema 引用"
+    },
+    "version": {
+      "type": "string",
+      "description": "配置文件版本",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "defaultModel": {
+      "type": "string",
+      "description": "默认模型"
+    },
+    "description": {
+      "type": "string",
+      "description": "配置文件描述"
+    },
+    "categories": {
+      "type": "object",
+      "description": "类别定义",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["agent", "description"],
+        "properties": {
+          "agent": {
+            "type": "string",
+            "description": "代理名称"
+          },
+          "model": {
+            "type": "string",
+            "description": "使用的模型"
+          },
+          "description": {
+            "type": "string",
+            "description": "类别描述"
+          },
+          "temperature": {
+            "type": "number",
+            "description": "温度参数",
+            "minimum": 0,
+            "maximum": 2
+          },
+          "maxTokens": {
+            "type": "integer",
+            "description": "最大 token 数",
+            "minimum": 1
+          }
+        }
+      }
+    }
+  }
+}
