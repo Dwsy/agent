@@ -149,7 +149,6 @@ interview/
 skills/.archive/
 
 # Temporary system files
-
 SYSTEM.md.back
 selected
 
@@ -158,3 +157,6 @@ agents/research.json
 agents/research.md
 agents/researcher.md
 agents/dynamic/*.md
+
+# undo-redo user config
+extensions/undo-redo/undo-redo-config.json
