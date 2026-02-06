@@ -157,8 +157,13 @@ New roles contain `BOOTSTRAP.md` which guides initial personality setup:
 - Auto-consolidation + duplicate cleanup
 - Auto-repair when structure drifts
 
-**Auto-memory extraction**:
-- After each turn, model extracts durable learnings/preferences
+**Auto-memory extraction (smart checkpoints)**:
+- Not on every turn
+- Triggers on:
+  - 5 turns accumulated
+  - user intent keywords (`结束` / `总结` / `退出` etc.)
+  - 30-minute interval with at least 2 turns gap
+  - session shutdown with pending turns
 - Writes back into MEMORY.md using strict heading rules
 - Skips duplicates and one-off noise
 

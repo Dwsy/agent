@@ -63,6 +63,10 @@ import {
 const AUTO_MEMORY_ENABLED = process.env.ROLE_AUTO_MEMORY !== "0" && process.env.RHO_SUBAGENT !== "1";
 const AUTO_MEMORY_MAX_ITEMS = 3;
 const AUTO_MEMORY_MAX_TEXT = 200;
+const AUTO_MEMORY_BATCH_TURNS = 5;
+const AUTO_MEMORY_MIN_TURNS = 2;
+const AUTO_MEMORY_INTERVAL_MS = 30 * 60 * 1000;
+const AUTO_MEMORY_FORCE_KEYWORDS = /结束|总结|退出|收尾|结束会话|final|summary|wrap\s?up|quit|exit/i;
 
 // Default prompt templates moved to role-template.ts
 
@@ -74,6 +78,68 @@ export default function rolePersonaExtension(pi: ExtensionAPI) {
   let currentRole: string | null = null;
   let currentRolePath: string | null = null;
   let autoMemoryInFlight = false;
+  let autoMemoryPendingTurns = 0;
+  let autoMemoryLastAt = 0;
+  let autoMemoryLastMessages: unknown[] | null = null;
+
+  function messageText(messages: unknown[]): string {
+    const parts: string[] = [];
+    for (const msg of messages as Array<any>) {
+      const content = Array.isArray(msg?.content) ? msg.content : [];
+      for (const item of content) {
+        if (item?.type === "text" && typeof item.text === "string") {
+          parts.push(item.text);
+        }
+      }
+    }
+    return parts.join("\n");
+  }
+
+  function shouldFlushAutoMemory(messages: unknown[]): { should: boolean; reason: string } {
+    const text = messageText(messages);
+    const now = Date.now();
+
+    if (AUTO_MEMORY_FORCE_KEYWORDS.test(text)) {
+      return { should: true, reason: "keyword" };
+    }
+
+    if (autoMemoryPendingTurns >= AUTO_MEMORY_BATCH_TURNS) {
+      return { should: true, reason: "batch-5-turns" };
+    }
+
+    const intervalReached = now - autoMemoryLastAt >= AUTO_MEMORY_INTERVAL_MS;
+    if (intervalReached && autoMemoryPendingTurns >= AUTO_MEMORY_MIN_TURNS) {
+      return { should: true, reason: "interval-30m" };
+    }
+
+    return { should: false, reason: "defer" };
+  }
+
+  async function flushAutoMemory(messages: unknown[], ctx: ExtensionContext, reason: string): Promise<void> {
+    if (!AUTO_MEMORY_ENABLED || autoMemoryInFlight) return;
+    if (!currentRole || !currentRolePath) return;
+
+    autoMemoryInFlight = true;
+    try {
+      const extracted = await runAutoMemoryExtraction(currentRole, currentRolePath, ctx, messages, {
+        enabled: AUTO_MEMORY_ENABLED,
+        maxItems: AUTO_MEMORY_MAX_ITEMS,
+        maxText: AUTO_MEMORY_MAX_TEXT,
+      });
+
+      autoMemoryLastAt = Date.now();
+      autoMemoryPendingTurns = 0;
+
+      if (ctx.hasUI && extracted && (extracted.storedLearnings > 0 || extracted.storedPrefs > 0)) {
+        ctx.ui.notify(
+          `Auto-memory checkpoint [${reason}]: ${extracted.storedLearnings}L ${extracted.storedPrefs}P`,
+          "info"
+        );
+      }
+    } finally {
+      autoMemoryInFlight = false;
+    }
+  }
 
   // ============ ROLE LOADING ============
 
@@ -218,6 +284,8 @@ export default function rolePersonaExtension(pi: ExtensionAPI) {
   async function activateRole(roleName: string, rolePath: string, ctx: ExtensionContext): Promise<void> {
     currentRole = roleName;
     currentRolePath = rolePath;
+    autoMemoryPendingTurns = 0;
+    autoMemoryLastMessages = null;
 
     ensureRoleMemoryFiles(rolePath, roleName);
     const repair = repairRoleMemory(rolePath, roleName);
@@ -335,28 +403,26 @@ ${buildMemoryEditInstruction(currentRolePath)}`;
     };
   });
 
-  // 3. Auto extract durable memory from conversation
+  // 3. Smart auto-memory checkpoints (not every turn)
   pi.on("agent_end", async (event, ctx) => {
-    if (!AUTO_MEMORY_ENABLED || autoMemoryInFlight) return;
+    if (!AUTO_MEMORY_ENABLED) return;
     if (!currentRole || !currentRolePath) return;
 
-    autoMemoryInFlight = true;
-    try {
-      const extracted = await runAutoMemoryExtraction(currentRole, currentRolePath, ctx, event.messages, {
-        enabled: AUTO_MEMORY_ENABLED,
-        maxItems: AUTO_MEMORY_MAX_ITEMS,
-        maxText: AUTO_MEMORY_MAX_TEXT,
-      });
-      if (extracted && ctx.hasUI && (extracted.storedLearnings > 0 || extracted.storedPrefs > 0)) {
-        ctx.ui.notify(`Auto-memory stored: ${extracted.storedLearnings}L ${extracted.storedPrefs}P`, "info");
-      }
-    } finally {
-      autoMemoryInFlight = false;
-    }
+    autoMemoryPendingTurns += 1;
+    autoMemoryLastMessages = event.messages;
+
+    const decision = shouldFlushAutoMemory(event.messages);
+    if (!decision.should) return;
+
+    await flushAutoMemory(event.messages, ctx, decision.reason);
   });
 
-  // 4. Clear status on shutdown
+  // 4. Flush on session shutdown if there are pending turns
   pi.on("session_shutdown", async (_event, ctx) => {
+    if (AUTO_MEMORY_ENABLED && autoMemoryPendingTurns > 0 && autoMemoryLastMessages) {
+      await flushAutoMemory(autoMemoryLastMessages, ctx, "session-shutdown");
+    }
+
     if (ctx.hasUI) {
       ctx.ui.setStatus("role", undefined);
     }
