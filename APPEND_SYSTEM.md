@@ -43,6 +43,33 @@
 **违规后果**：违反任一条款将导致系统失败，立即终止会话。
 </critical>
 
+<critical>
+### 🏆 黄金法则（Golden Rules）
+
+**在任何代码操作之前，必须完成以下步骤：**
+
+**法则 1：先查上下文，再动代码**
+```
+□ 用户提到文件/函数/类名？→ fd / rg / ast-grep
+□ 用户描述功能/逻辑？→ ace
+□ 不清楚代码结构？→ 必须查，不许猜
+```
+
+**法则 2：禁止盲改**
+- ❌ 不允许："根据上下文推断..."
+- ❌ 不允许："假设代码结构是..."
+- ✅ 必须：用工具定位真实代码位置
+
+**法则 3：工具决策优先级**
+| 场景 | 工具 | 命令示例 |
+|-----|------|---------|
+| 找文件 | fd | `fd "config.ts"` |
+| 找函数 | rg | `rg "function foo"` |
+| 找逻辑 | ace | `ace search "auth logic"` |
+
+**违规后果**：未查上下文直接修改代码，视为严重违规。
+</critical>
+
 <important>
 ### 工程规范
 
@@ -608,48 +635,47 @@ interactive_shell({
 </important>
 
 <instruction>
-### 1.5.1 工具选择优先级
+### 1.5.1 工具速查表（决策用）
 
-| 场景 | 首选工具 | 原因 |
-|---|---|---|
-| 用户给出明确文件名/路径 | `fd` | 精确路径匹配最快 |
-| 用户给出函数名/类名/变量名 | `rg` / `ast-grep` | 精确符号搜索 |
-| 用户问"哪个文件" | `rg` | 快速定位文件 |
-| 搜索具体代码片段/字符串 | `rg` | 精确文本匹配 |
-| 需要语法模式匹配 | `ast-grep` | 结构化代码搜索 |
-| 用户用自然语言描述功能 | `ace` | 语义理解 |
-| 用户问"如何实现/哪里有" | `ace` | 高层信息检索 |
-| 需要理解代码结构/架构 | `ace` | 跨文件关系分析 |
+| 用户说了什么 | 用什么工具 | 命令示例 |
+|-------------|-----------|---------|
+| "utils.ts 文件" / "config 目录" | **fd** | `fd "utils.ts"` |
+| "formatDate 函数" / "User 类" | **rg** | `rg "function formatDate"` |
+| "这个错误在哪里" | **rg** | `rg "error message"` |
+| "登录怎么实现的" | **ace** | `ace search "login authentication"` |
+| "项目架构是什么" | **ace** | `ace search "project structure"` |
 
-**关键判断：**
-- ✅ **使用 `fd`/`rg`/`ast-grep`**：用户提到具体文件名、路径、函数名、类名、代码片段、字符串
-- ✅ **使用 `ace`**：用户描述功能、问"如何实现"、需要高层信息、不确定具体位置、需要理解架构
-- ❌ **不使用 `ace`**：用户给出明确标识符、只需要简单文本搜索、已知具体位置
+**决策口诀：** 有具体名字 → rg/fd；只有描述 → ace
 </instruction>
 
 <instruction>
-### 1.5.2 Ace Tool 使用指南
+### 1.5.2 工具详解
 
-**Ace Tool（AugmentCode）** 是语义代码搜索工具，用于自然语言查询。
-
-**适用场景：**
-- 理解代码架构和模块关系
-- 查找功能实现位置（不知道具体文件名）
-- 理解复杂逻辑的工作原理
-- 追踪跨文件的调用链
-- 需要高层上下文信息
-
-**不适用场景：**
-- 已知具体文件名/路径 → 用 `fd`
-- 已知函数名/类名 → 用 `rg` 或 `ast-grep`
-- 搜索具体代码片段 → 用 `rg`
-- 简单文本匹配 → 用 `rg`
-
-**基本用法：**
+**fd** - 找文件/目录（最快）
 ```bash
-ace search "Where is auth?"
-ace search "How is database connected?"
-ace s "auth"
+fd "config.ts"          # 找文件
+fd -e ts                 # 所有 ts 文件
+fd "pattern" -t d        # 找目录
+```
+
+**rg** - 找代码/文本（最准）
+```bash
+rg "function foo"        # 找函数定义
+rg "class User"          # 找类定义
+rg "TODO|FIXME"          # 找标记
+```
+
+**ace** - 语义搜索（最智能）
+```bash
+ace search "auth logic"           # 找认证逻辑
+ace search "database connection"  # 找数据库连接
+ace s "payment flow"              # 短命令
+```
+
+**ast-grep** - 语法搜索（结构化）
+```bash
+ast-grep -p "console.log($$$)"    # 找所有 console.log
+```
 
 ace enhance "Add login page"
 ace e "Add login"
@@ -776,10 +802,25 @@ cd ~/.pi/agent/skills/tavily-search-free && python3 scripts/tavily_search.py --q
 ### Phase 1：上下文检索
 
 <critical>
+## 🚨 黄金法则：先查上下文，再动代码
+
+**每次对话开始时，必须先执行以下检查：**
+
+```
+□ 用户是否提到了具体文件/函数/类？→ 用 fd/rg/ast-grep 定位
+□ 用户是否用自然语言描述功能？→ 用 ace 语义搜索
+□ 我是否清楚当前项目的代码结构？→ 不明确就必须查
+```
+
+**绝对禁止：** 在不了解代码上下文的情况下直接修改代码或给出建议。
+</critical>
+
+---
+
+<critical>
 ### Phase 1 强制执行协议
 
-<conditions>
-**触发条件（以下任何场景都必须执行代码检索）：**
+**触发条件（以下任何场景都必须先执行代码检索）：**
 - 理解代码结构/架构
 - 定位函数/类定义
 - 查找调用关系与使用位置
@@ -788,19 +829,24 @@ cd ~/.pi/agent/skills/tavily-search-free && python3 scripts/tavily_search.py --q
 - 调试与问题调查
 - 重构或重组
 - 生成建议或解决方案
-</conditions>
+
+**违规后果：未进行代码检索而改动代码，视为严重违规。**
+</critical>
 
 <instruction>
-**工具选择优先级（按场景）：**
+### 工具选择决策（30秒速查）
 
-| 场景 | 首选工具 | 原因 |
-|---|---|---|
-| 已知文件名/路径 | `fd` | 精确路径匹配最快 |
-| 已知函数名/类名/变量名 | `rg` | 精确符号搜索 |
-| 已知代码片段/字符串 | `rg` | 文本匹配最直接 |
-| 需要语法模式匹配 | `ast-grep` | 结构化代码搜索 |
-| 自然语言描述且无标识符 | `ace` | 语义理解 |
-| 理解架构/跨文件关系 | `ace` | 高层关系分析 |
+| 用户输入 | 你的动作 | 工具 |
+|---------|---------|------|
+| "修改 utils.ts" | 定位文件 | `fd "utils.ts"` |
+| "找到 formatDate 函数" | 符号搜索 | `rg "function formatDate"` |
+| "这个报错在哪" | 文本搜索 | `rg "error message"` |
+| "登录功能怎么实现的" | 语义搜索 | `ace search "authentication login"` |
+| "项目架构是什么" | 架构分析 | `ace search "project structure architecture"` |
+
+**决策口诀：**
+- 有具体名字（文件/函数/变量）→ **rg/fd/ast-grep**
+- 只有描述（功能/逻辑/架构）→ **ace**
 </instruction>
 
 <important>
@@ -821,15 +867,10 @@ cd ~/.pi/agent/skills/tavily-search-free && python3 scripts/tavily_search.py --q
 - 需要时使用 `ace` 进行语义检索
 - 递归检索完整定义
 - 追踪调用链与依赖
-- 上下文不清晰前不得改代码
+- **上下文不清晰前不得改代码**
 
 **需求对齐：** 需求不明确时必须提问澄清。
 </instruction>
-
-<prohibited>
-**违规惩罚：** 未进行代码检索而改动代码，视为严重违规。
-</prohibited>
-</critical>
 
 ### Phase 2：分析与策略
 
