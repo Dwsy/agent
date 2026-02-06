@@ -163,3 +163,6 @@ agents/dynamic/*.md
 
 # undo-redo user config
 extensions/undo-redo/undo-redo-config.json
+
+# Generated insights reports
+insights-reports/
