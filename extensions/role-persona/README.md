@@ -164,6 +164,9 @@ New roles contain `BOOTSTRAP.md` which guides initial personality setup:
   - user intent keywords (`结束` / `总结` / `退出` etc.)
   - 30-minute interval with at least 2 turns gap
   - session shutdown with pending turns
+- Checkpoints run in background (non-blocking for normal turns)
+- Bottom status shows checkpoint result: `🧠 <role> · <reason> · xL yP`
+- Shutdown flush is best-effort with bounded wait
 - Writes back into MEMORY.md using strict heading rules
 - Skips duplicates and one-off noise
 

@@ -194,7 +194,7 @@ export class RoleMemoryViewerComponent {
     }
 
     result.push(border("├") + border("─".repeat(innerW)) + border("┤"));
-    const help = " 0/1/2/3 filter  ↑↓/jk scroll  PgUp/Dn page  Home/End jump  Esc close";
+    const help = ` Role: ${this.roleName}  ·  0/1/2/3 filter  ↑↓/jk scroll  PgUp/Dn page  Home/End jump  Esc close`;
     result.push(border("│") + truncateToWidth(dim(help), innerW, "", true) + border("│"));
     result.push(border("╰") + border("─".repeat(innerW)) + border("╯"));
 

@@ -78,6 +78,7 @@ export default function rolePersonaExtension(pi: ExtensionAPI) {
   let currentRole: string | null = null;
   let currentRolePath: string | null = null;
   let autoMemoryInFlight = false;
+  let autoMemoryBgScheduled = false;
   let autoMemoryPendingTurns = 0;
   let autoMemoryLastAt = 0;
   let autoMemoryLastMessages: unknown[] | null = null;
@@ -130,15 +131,30 @@ export default function rolePersonaExtension(pi: ExtensionAPI) {
       autoMemoryLastAt = Date.now();
       autoMemoryPendingTurns = 0;
 
-      if (ctx.hasUI && extracted && (extracted.storedLearnings > 0 || extracted.storedPrefs > 0)) {
-        ctx.ui.notify(
-          `Auto-memory checkpoint [${reason}]: ${extracted.storedLearnings}L ${extracted.storedPrefs}P`,
-          "info"
+      if (ctx.hasUI && extracted) {
+        const roleLabel = getRoleIdentity(currentRolePath)?.name || currentRole;
+        ctx.ui.setStatus(
+          "memory-checkpoint",
+          `🧠 ${roleLabel} · ${reason} · ${extracted.storedLearnings}L ${extracted.storedPrefs}P`
         );
       }
     } finally {
       autoMemoryInFlight = false;
     }
+  }
+
+  function scheduleAutoMemoryFlush(messages: unknown[], ctx: ExtensionContext, reason: string): void {
+    if (!AUTO_MEMORY_ENABLED) return;
+    autoMemoryLastMessages = messages;
+
+    if (autoMemoryInFlight || autoMemoryBgScheduled) return;
+    autoMemoryBgScheduled = true;
+
+    setTimeout(() => {
+      autoMemoryBgScheduled = false;
+      const latest = autoMemoryLastMessages || messages;
+      void flushAutoMemory(latest, ctx, reason);
+    }, 0);
   }
 
   // ============ ROLE LOADING ============
@@ -284,6 +300,8 @@ export default function rolePersonaExtension(pi: ExtensionAPI) {
   async function activateRole(roleName: string, rolePath: string, ctx: ExtensionContext): Promise<void> {
     currentRole = roleName;
     currentRolePath = rolePath;
+    autoMemoryInFlight = false;
+    autoMemoryBgScheduled = false;
     autoMemoryPendingTurns = 0;
     autoMemoryLastMessages = null;
 
@@ -297,6 +315,7 @@ export default function rolePersonaExtension(pi: ExtensionAPI) {
     const displayName = identity?.name || roleName;
 
     ctx.ui.setStatus("role", displayName);
+    ctx.ui.setStatus("memory-checkpoint", `🧠 ${displayName} · ready`);
 
     if (repair.repaired) {
       ctx.ui.notify(`MEMORY.md 已规范化修复 (${repair.issues} issues)`, "info");
@@ -414,17 +433,22 @@ ${buildMemoryEditInstruction(currentRolePath)}`;
     const decision = shouldFlushAutoMemory(event.messages);
     if (!decision.should) return;
 
-    await flushAutoMemory(event.messages, ctx, decision.reason);
+    // Non-blocking checkpoint: run in background, don't hold the turn.
+    scheduleAutoMemoryFlush(event.messages, ctx, decision.reason);
   });
 
-  // 4. Flush on session shutdown if there are pending turns
+  // 4. Flush on session shutdown if there are pending turns (best-effort, bounded wait)
   pi.on("session_shutdown", async (_event, ctx) => {
     if (AUTO_MEMORY_ENABLED && autoMemoryPendingTurns > 0 && autoMemoryLastMessages) {
-      await flushAutoMemory(autoMemoryLastMessages, ctx, "session-shutdown");
+      await Promise.race([
+        flushAutoMemory(autoMemoryLastMessages, ctx, "session-shutdown"),
+        new Promise<void>((resolve) => setTimeout(resolve, 1500)),
+      ]);
     }
 
     if (ctx.hasUI) {
       ctx.ui.setStatus("role", undefined);
+      ctx.ui.setStatus("memory-checkpoint", undefined);
     }
   });
 
