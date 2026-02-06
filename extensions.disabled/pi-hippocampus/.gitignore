@@ -1,0 +1,16 @@
+node_modules/
+.DS_Store
+Thumbs.db
+
+# Build
+dist/
+*.map
+
+# Editor
+.vscode/
+.idea/
+
+# Pi Specific
+.pi-hippocampus/
+hippocampus.db
+hippocampus.db-*
