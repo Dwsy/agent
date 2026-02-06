@@ -1,0 +1,65 @@
+{
+	"name": "@justram/pi-undo-redo",
+	"version": "0.2.0",
+	"description": "Buffered undo/redo extension for Pi coding agent",
+	"keywords": [
+		"pi-package",
+		"pi",
+		"pi-coding-agent",
+		"extension",
+		"undo-redo"
+	],
+	"author": "Jheng-Hong Yang",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/justram/pi-undo-redo.git"
+	},
+	"bugs": {
+		"url": "https://github.com/justram/pi-undo-redo/issues"
+	},
+	"homepage": "https://github.com/justram/pi-undo-redo#readme",
+	"type": "module",
+	"files": [
+		"*.ts",
+		"skills/**",
+		"README.md",
+		"LICENSE",
+		"package.json",
+		"tsconfig.json"
+	],
+	"pi": {
+		"extensions": [
+			"./index.ts"
+		],
+		"skills": [
+			"./skills"
+		]
+	},
+	"scripts": {
+		"check": "biome check --write --error-on-warnings . && tsgo --noEmit",
+		"test": "node --test --import tsx test/*.test.ts"
+	},
+	"dependencies": {
+		"diff": "^5.2.0",
+		"ignore": "^5.3.2"
+	},
+	"peerDependencies": {
+		"@mariozechner/pi-coding-agent": "^0.51.2",
+		"@mariozechner/pi-tui": "^0.51.2"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "2.3.5",
+		"@mariozechner/pi-coding-agent": "^0.51.2",
+		"@mariozechner/pi-tui": "^0.51.2",
+		"@types/diff": "^5.0.9",
+		"@types/node": "^22.10.5",
+		"@typescript/native-preview": "7.0.0-dev.20260120.1",
+		"tsx": "^4.20.3"
+	},
+	"pnpm": {
+		"onlyBuiltDependencies": [
+			"esbuild"
+		]
+	}
+}

@@ -1,0 +1,17 @@
+node_modules/
+.DS_Store
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.env
+.env.*
+coverage/
+dist/
+build/
+.vscode/
+.idea/
+
+# User config
+undo-redo-config.json
