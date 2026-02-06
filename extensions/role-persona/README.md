@@ -6,7 +6,12 @@ OpenClaw-style persona system for pi coding agent. Each role has isolated memory
 
 ```
 ~/.pi/agent/extensions/role-persona/
-├── index.ts              # Main extension entry
+├── index.ts              # Main extension entry (orchestration)
+├── role-template.ts      # Default prompt templates (AGENTS/SOUL/USER/...)
+├── role-store.ts         # Role filesystem + mapping config APIs
+├── memory-md.ts          # Markdown memory parser/writer/repair/consolidate
+├── memory-llm.ts         # LLM memory extraction + LLM tidy pipeline
+├── memory-viewer.ts      # Scrollable TUI memory viewer with filters
 └── README.md             # This file
 
 ~/.pi/agent/roles/        # Role storage (created automatically)
@@ -31,16 +36,29 @@ OpenClaw-style persona system for pi coding agent. Each role has isolated memory
 ### Create a Role
 
 ```
+/role create
 /role create architect
 ```
 
-Creates a new role with all default prompt files from OpenClaw.
+- `/role create`：交互式上下选择（可选预设或自定义输入）
+- `/role create <name>`：直接创建
+
+Creates a new role with default prompt files.
+
+Template generation is single-language (no bilingual line mixing):
+- Auto-detects system locale (`LANG` / `LC_ALL` / runtime locale)
+- `zh*` locale → Chinese templates
+- others → English templates
 
 ### Map Directory to Role
 
 ```
+/role map
 /role map architect
 ```
+
+- `/role map`：交互式上下选择角色（也可现场创建）
+- `/role map <role>`：直接映射
 
 Maps current working directory to the specified role. Auto-loads when entering this directory.
 
@@ -67,6 +85,33 @@ Lists all roles and their directory mappings.
 ```
 
 Removes the mapping for current directory.
+
+### Memory Commands
+
+```
+/memories      # Open scrollable overlay viewer (MEMORY.md + recent daily memory)
+/memory-fix    # Auto-repair malformed MEMORY.md structure
+/memory-tidy   # Manual tidy: repair + consolidate + summary
+/memory-tidy-llm [provider/model]  # LLM tidy (optional model override)
+```
+
+In `/memories` overlay:
+- `0` All
+- `1` Learnings
+- `2` Preferences
+- `3` Events
+- `↑↓/jk` scroll, `PgUp/PgDn` page, `Home/End` jump, `Esc` close
+
+### Memory Tool (for model/tool calls)
+
+`memory` tool actions:
+- `add_learning`
+- `add_preference`
+- `reinforce`
+- `search`
+- `list`
+- `consolidate`
+- `repair`
 
 ## How It Works
 
@@ -99,13 +144,23 @@ New roles contain `BOOTSTRAP.md` which guides initial personality setup:
 
 **Daily Memory** (`memory/YYYY-MM-DD.md`):
 - Raw logs of conversations
-- AI appends with timestamp and category
+- Appended with timestamp + category (`event|lesson|preference|context|decision`)
 - Auto-loaded for today + yesterday
 
 **Long-term Memory** (`MEMORY.md`):
-- Curated wisdom distilled from daily memories
-- Significant events, lessons, preferences
-- Only loaded in main sessions (security)
+- Markdown sectioned storage (no JSONL)
+- Headings isolate domains:
+  - `# Learnings (High Priority|Normal|New)`
+  - `# Preferences: <Category>`
+  - `# Events`
+- Learning line format: `- [Nx] text`
+- Auto-consolidation + duplicate cleanup
+- Auto-repair when structure drifts
+
+**Auto-memory extraction**:
+- After each turn, model extracts durable learnings/preferences
+- Writes back into MEMORY.md using strict heading rules
+- Skips duplicates and one-off noise
 
 ### 5. Self Evolution
 
