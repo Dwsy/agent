@@ -142,6 +142,7 @@ skills/xlsx/
 
 # New extensions (not yet committed)
 extensions/sandbox/
+extensions/whimsical.ts
 
 # Interview development files
 interview/
