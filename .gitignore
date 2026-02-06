@@ -109,6 +109,9 @@ skills/surge-manager/
 # User settings (personal configuration)
 settings.json
 
+# Role configurations (personal identity files)
+roles/
+
 # Docs build artifacts
 docs/assets/
 
