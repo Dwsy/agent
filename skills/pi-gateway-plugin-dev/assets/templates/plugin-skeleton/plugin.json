@@ -1,0 +1,7 @@
+{
+  "id": "__PLUGIN_ID__",
+  "name": "__PLUGIN_NAME__",
+  "version": "0.1.0",
+  "description": "__PLUGIN_DESCRIPTION__",
+  "main": "src/index.ts"
+}
