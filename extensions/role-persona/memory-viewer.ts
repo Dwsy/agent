@@ -116,6 +116,12 @@ export class RoleMemoryViewerComponent {
       this.setFilter("preferences");
     } else if (data === "3" || data === "e" || data === "E") {
       this.setFilter("events");
+    } else if (matchesKey(data, "shift+up")) {
+      this.scrollOffset = Math.max(0, this.scrollOffset - pageSize);
+      this.tui.requestRender();
+    } else if (matchesKey(data, "shift+down")) {
+      this.scrollOffset = Math.min(maxScroll, this.scrollOffset + pageSize);
+      this.tui.requestRender();
     } else if (matchesKey(data, Key.up) || matchesKey(data, "k")) {
       this.scrollOffset = Math.max(0, this.scrollOffset - 1);
       this.tui.requestRender();
@@ -194,7 +200,7 @@ export class RoleMemoryViewerComponent {
     }
 
     result.push(border("├") + border("─".repeat(innerW)) + border("┤"));
-    const help = ` Role: ${this.roleName}  ·  0/1/2/3 filter  ↑↓/jk scroll  PgUp/Dn page  Home/End jump  Esc close`;
+    const help = ` Role: ${this.roleName}  ·  0/1/2/3 filter  ↑↓/jk scroll  Shift+↑↓/PgUpDn page  Home/End jump  Esc close`;
     result.push(border("│") + truncateToWidth(dim(help), innerW, "", true) + border("│"));
     result.push(border("╰") + border("─".repeat(innerW)) + border("╯"));
 

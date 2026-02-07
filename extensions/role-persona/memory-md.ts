@@ -1,6 +1,7 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { join } from "node:path";
+import { log } from "./logger.ts";
 
 export const DEFAULT_MEMORY_CATEGORIES = ["Communication", "Code", "Tools", "Workflow", "General"] as const;
 export type MemoryCategory = (typeof DEFAULT_MEMORY_CATEGORIES)[number] | string;
@@ -457,6 +458,7 @@ export function appendDailyRoleMemory(
   const header = exists ? "" : `# Memory: ${date}\n\n`;
   const section = `## [${nowTime()}] ${category.toUpperCase()}\n\n${normalizeText(text)}\n\n`;
   writeFileSync(file, header + section, { encoding: "utf-8", flag: exists ? "a" : "w" });
+  log("daily-memory", `[${category}] ${text.slice(0, 120)}`);
 }
 
 export function addRoleLearning(
@@ -532,37 +534,122 @@ export function reinforceRoleLearning(
   return { updated: true, id: fuzzy.id, used: fuzzy.used, text: fuzzy.text };
 }
 
-export function searchRoleMemory(rolePath: string, roleName: string, query: string): MemorySearchMatch[] {
+/**
+ * Score a candidate text against a query using multiple signals.
+ * Returns 0-1 score (0 = no match, 1 = perfect match).
+ */
+function scoreMatch(queryLower: string, queryTokens: Set<string>, candidateLower: string): number {
+  let score = 0;
+
+  // 1. Exact substring match (highest signal)
+  if (candidateLower.includes(queryLower)) {
+    score += 0.5;
+  }
+
+  // 2. Token overlap (Jaccard similarity)
+  const candidateTokens = tokenize(candidateLower);
+  const jaccardScore = jaccard(queryTokens, candidateTokens);
+  score += jaccardScore * 0.3;
+
+  // 3. Individual token hits (partial match)
+  if (queryTokens.size > 0) {
+    let hits = 0;
+    for (const qt of queryTokens) {
+      if (candidateLower.includes(qt)) hits++;
+    }
+    score += (hits / queryTokens.size) * 0.2;
+  }
+
+  return Math.min(1, score);
+}
+
+export interface ScoredMemoryMatch extends MemorySearchMatch {
+  score: number;
+}
+
+/**
+ * Search role memory with scored ranking.
+ * Uses substring match + token overlap + individual token hits.
+ * Results sorted by score descending. Minimum threshold: 0.1.
+ */
+export function searchRoleMemory(
+  rolePath: string,
+  roleName: string,
+  query: string,
+  options?: { maxResults?: number; minScore?: number; includeDailyMemory?: boolean },
+): ScoredMemoryMatch[] {
   const q = normalizeText(query).toLowerCase();
   if (!q) return [];
 
+  const queryTokens = tokenize(q);
+  const maxResults = options?.maxResults ?? 20;
+  const minScore = options?.minScore ?? 0.1;
+  const scored: ScoredMemoryMatch[] = [];
+
   const data = readRoleMemory(rolePath, roleName);
-  const matches: MemorySearchMatch[] = [];
 
+  // Search MEMORY.md learnings
   for (const learning of data.learnings) {
-    if (learning.text.toLowerCase().includes(q)) {
-      matches.push({ kind: "learning", id: learning.id, text: learning.text, used: learning.used });
+    const s = scoreMatch(q, queryTokens, learning.text.toLowerCase());
+    if (s >= minScore) {
+      scored.push({ kind: "learning", id: learning.id, text: learning.text, used: learning.used, score: s });
     }
   }
 
+  // Search MEMORY.md preferences
   for (const pref of data.preferences) {
-    if (pref.text.toLowerCase().includes(q) || pref.category.toLowerCase().includes(q)) {
-      matches.push({
-        kind: "preference",
-        id: pref.id,
-        text: pref.text,
-        category: pref.category,
-      });
+    const combined = `${pref.category} ${pref.text}`.toLowerCase();
+    const s = scoreMatch(q, queryTokens, combined);
+    if (s >= minScore) {
+      scored.push({ kind: "preference", id: pref.id, text: pref.text, category: pref.category, score: s });
     }
   }
 
+  // Search MEMORY.md events
   for (const event of data.events) {
-    if (event.toLowerCase().includes(q)) {
-      matches.push({ kind: "event", text: event });
+    const s = scoreMatch(q, queryTokens, event.toLowerCase());
+    if (s >= minScore) {
+      scored.push({ kind: "event", text: event, score: s });
     }
   }
 
-  return matches;
+  // Search recent daily memory files (last 7 days)
+  if (options?.includeDailyMemory !== false) {
+    const dailyDir = join(rolePath, "memory");
+    if (existsSync(dailyDir)) {
+      const now = new Date();
+      for (let i = 0; i < 7; i++) {
+        const d = new Date(now);
+        d.setDate(d.getDate() - i);
+        const dateStr = d.toISOString().split("T")[0];
+        const dailyFile = join(dailyDir, `${dateStr}.md`);
+        if (!existsSync(dailyFile)) continue;
+
+        try {
+          const content = readFileSync(dailyFile, "utf-8");
+          // Split by ## headings (each is a memory entry)
+          const sections = content.split(/^## /m).filter(Boolean);
+          for (const section of sections) {
+            const text = normalizeText(section).slice(0, 500);
+            if (!text) continue;
+            const s = scoreMatch(q, queryTokens, text.toLowerCase());
+            if (s >= minScore) {
+              const firstLine = section.split("\n")[0]?.trim() ?? "";
+              scored.push({
+                kind: "event",
+                text: `[${dateStr}] ${firstLine}: ${text.slice(0, 200)}`,
+                score: s * 0.9, // Slight penalty for daily (less curated)
+              });
+            }
+          }
+        } catch { /* skip */ }
+      }
+    }
+  }
+
+  // Sort by score descending, limit results
+  scored.sort((a, b) => b.score - a.score);
+  return scored.slice(0, maxResults);
 }
 
 export function listRoleMemory(rolePath: string, roleName: string): {
@@ -625,12 +712,17 @@ export function consolidateRoleMemory(rolePath: string, roleName: string): {
   const afterLearnings = data.learnings.length;
   const afterPreferences = data.preferences.length;
 
+  const removed = (beforeLearnings - afterLearnings) + (beforePreferences - afterPreferences);
+  if (removed > 0) {
+    log("consolidate", `${roleName}: L ${beforeLearnings}->${afterLearnings} P ${beforePreferences}->${afterPreferences} removed=${removed}`);
+  }
+
   return {
     beforeLearnings,
     afterLearnings,
     beforePreferences,
     afterPreferences,
-    removed: (beforeLearnings - afterLearnings) + (beforePreferences - afterPreferences),
+    removed,
   };
 }
 
@@ -737,6 +829,8 @@ export function applyLlmTidyPlan(
 
   saveRoleMemory(rolePath, data);
 
+  log("llm-tidy-apply", `${roleName}: L ${beforeLearnings}->${data.learnings.length} P ${beforePreferences}->${data.preferences.length} +${addedLearnings}L +${addedPreferences}P -${removedLearningCount}L -${removedPreferenceCount}P rewrite=${rewrittenLearnings}L ${rewrittenPreferences}P`);
+
   return {
     beforeLearnings,
     afterLearnings: data.learnings.length,
@@ -787,6 +881,7 @@ export function repairRoleMemory(
   if (existsSync(file)) copyFileSync(file, backupPath);
   writeMemory(rolePath, canonical);
 
+  log("repair", `repaired ${roleName}: ${issues} issues, backup=${backupPath}`);
   return { repaired: true, issues, backupPath };
 }
 
@@ -818,5 +913,48 @@ export function extractMemoryFacts(rolePath: string, roleName: string): { learni
   return {
     learnings: data.learnings.map((l) => l.text),
     preferences: data.preferences.map((p) => `[${p.category}] ${p.text}`),
+  };
+}
+
+export interface MemoryStats {
+  roleName: string;
+  learnings: { total: number; highPriority: number; normal: number; new: number };
+  preferences: { total: number; categories: Record<string, number> };
+  events: number;
+  dailyMemoryFiles: number;
+  lastConsolidated: string | null;
+}
+
+/**
+ * Get statistics about a role's memory.
+ */
+export function getMemoryStats(rolePath: string, roleName: string): MemoryStats {
+  const data = readRoleMemory(rolePath, roleName);
+
+  const highPriority = data.learnings.filter((l) => l.used >= 3).length;
+  const normal = data.learnings.filter((l) => l.used >= 1 && l.used < 3).length;
+  const newLearnings = data.learnings.filter((l) => l.used === 0).length;
+
+  const categories: Record<string, number> = {};
+  for (const pref of data.preferences) {
+    categories[pref.category] = (categories[pref.category] || 0) + 1;
+  }
+
+  let dailyFiles = 0;
+  const dailyDir = join(rolePath, "memory");
+  if (existsSync(dailyDir)) {
+    try {
+      const { readdirSync } = require("node:fs") as typeof import("node:fs");
+      dailyFiles = readdirSync(dailyDir).filter((f: string) => f.endsWith(".md")).length;
+    } catch { /* ignore */ }
+  }
+
+  return {
+    roleName,
+    learnings: { total: data.learnings.length, highPriority, normal, new: newLearnings },
+    preferences: { total: data.preferences.length, categories },
+    events: data.events.length,
+    dailyMemoryFiles: dailyFiles,
+    lastConsolidated: data.lastConsolidated ?? null,
   };
 }

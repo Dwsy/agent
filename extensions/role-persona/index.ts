@@ -30,6 +30,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { StringEnum } from "@mariozechner/pi-ai";
 import { Type } from "@sinclair/typebox";
+import { log } from "./logger.ts";
 import { SelectList, Text, Container } from "@mariozechner/pi-tui";
 
 import {
@@ -50,19 +51,22 @@ import {
   createRole,
   DEFAULT_ROLE,
   ensureRolesDir,
-  getRoleForCwd,
   getRoleIdentity,
   getRoles,
   isFirstRun,
+  isRoleDisabledForCwd,
   loadRoleConfig,
   loadRolePrompts,
+  resolveRoleForCwd,
   ROLES_DIR,
   saveRoleConfig,
 } from "./role-store.ts";
 
 const AUTO_MEMORY_ENABLED = process.env.ROLE_AUTO_MEMORY !== "0" && process.env.RHO_SUBAGENT !== "1";
+const AUTO_MEMORY_MODEL = process.env.ROLE_AUTO_MEMORY_MODEL || "openai-codex/gpt-5.1-codex-mini";
 const AUTO_MEMORY_MAX_ITEMS = 3;
 const AUTO_MEMORY_MAX_TEXT = 200;
+const AUTO_MEMORY_RESERVE_TOKENS = Number(process.env.ROLE_AUTO_MEMORY_RESERVE_TOKENS) || 8192;
 const AUTO_MEMORY_BATCH_TURNS = 5;
 const AUTO_MEMORY_MIN_TURNS = 2;
 const AUTO_MEMORY_INTERVAL_MS = 30 * 60 * 1000;
@@ -82,6 +86,13 @@ export default function rolePersonaExtension(pi: ExtensionAPI) {
   let autoMemoryPendingTurns = 0;
   let autoMemoryLastAt = 0;
   let autoMemoryLastMessages: unknown[] | null = null;
+  let autoMemoryLastFlushLen = 0;  // 上次 flush 时的消息数组长度
+  let memoryCheckpointSpinner: ReturnType<typeof setInterval> | null = null;
+  let memoryCheckpointFrame = 0;
+
+  const AUTO_MEMORY_CONTEXT_OVERLAP = 4;  // flush 时额外带几条旧消息做上下文
+
+  const normalizePath = (path: string) => path.replace(/\/$/, "");
 
   function messageText(messages: unknown[]): string {
     const parts: string[] = [];
@@ -116,29 +127,84 @@ export default function rolePersonaExtension(pi: ExtensionAPI) {
     return { should: false, reason: "defer" };
   }
 
+  function stopMemoryCheckpointSpinner(): void {
+    if (memoryCheckpointSpinner) {
+      clearInterval(memoryCheckpointSpinner);
+      memoryCheckpointSpinner = null;
+    }
+  }
+
+  function startMemoryCheckpointSpinner(ctx: ExtensionContext): void {
+    if (!ctx.hasUI) return;
+    stopMemoryCheckpointSpinner();
+
+    const frames = ["✳", "✶", "✧", "✦"];
+    memoryCheckpointFrame = 0;
+    ctx.ui.setStatus("memory-checkpoint", frames[memoryCheckpointFrame]);
+
+    memoryCheckpointSpinner = setInterval(() => {
+      memoryCheckpointFrame = (memoryCheckpointFrame + 1) % frames.length;
+      ctx.ui.setStatus("memory-checkpoint", frames[memoryCheckpointFrame]);
+    }, 260);
+  }
+
+  function setMemoryCheckpointResult(ctx: ExtensionContext, reason: string, learnings: number, prefs: number): void {
+    if (!ctx.hasUI) return;
+
+    const badge = reason === "keyword"
+      ? "✳"
+      : reason === "batch-5-turns"
+        ? "✶"
+        : reason === "interval-30m"
+          ? "✦"
+          : "✧";
+
+    const reasonLabel = reason === "keyword"
+      ? "关键词"
+      : reason === "batch-5-turns"
+        ? "5轮"
+        : reason === "interval-30m"
+          ? "30m"
+          : reason === "session-shutdown"
+            ? "退出"
+            : "check";
+
+    ctx.ui.setStatus("memory-checkpoint", `${badge} ${reasonLabel} ${learnings}L ${prefs}P`);
+  }
+
   async function flushAutoMemory(messages: unknown[], ctx: ExtensionContext, reason: string): Promise<void> {
     if (!AUTO_MEMORY_ENABLED || autoMemoryInFlight) return;
     if (!currentRole || !currentRolePath) return;
 
     autoMemoryInFlight = true;
+    startMemoryCheckpointSpinner(ctx);
+
+    const sliceStart = Math.max(0, autoMemoryLastFlushLen - AUTO_MEMORY_CONTEXT_OVERLAP);
+    const recentMessages = messages.slice(sliceStart);
+
+    log("checkpoint", `flush reason=${reason} totalMessages=${messages.length} sliceStart=${sliceStart} newMessages=${recentMessages.length} pendingTurns=${autoMemoryPendingTurns}`);
+
     try {
-      const extracted = await runAutoMemoryExtraction(currentRole, currentRolePath, ctx, messages, {
+      const extracted = await runAutoMemoryExtraction(currentRole, currentRolePath, ctx, recentMessages, {
         enabled: AUTO_MEMORY_ENABLED,
+        model: AUTO_MEMORY_MODEL,
         maxItems: AUTO_MEMORY_MAX_ITEMS,
         maxText: AUTO_MEMORY_MAX_TEXT,
+        reserveTokens: AUTO_MEMORY_RESERVE_TOKENS,
       });
 
+      autoMemoryLastFlushLen = messages.length;
       autoMemoryLastAt = Date.now();
       autoMemoryPendingTurns = 0;
 
-      if (ctx.hasUI && extracted) {
-        const roleLabel = getRoleIdentity(currentRolePath)?.name || currentRole;
-        ctx.ui.setStatus(
-          "memory-checkpoint",
-          `🧠 ${roleLabel} · ${reason} · ${extracted.storedLearnings}L ${extracted.storedPrefs}P`
-        );
+      if (extracted) {
+        log("checkpoint", `result: ${extracted.storedLearnings}L ${extracted.storedPrefs}P`);
+        setMemoryCheckpointResult(ctx, reason, extracted.storedLearnings, extracted.storedPrefs);
+      } else {
+        log("checkpoint", "result: null (no extraction)");
       }
     } finally {
+      stopMemoryCheckpointSpinner();
       autoMemoryInFlight = false;
     }
   }
@@ -303,7 +369,9 @@ export default function rolePersonaExtension(pi: ExtensionAPI) {
     autoMemoryInFlight = false;
     autoMemoryBgScheduled = false;
     autoMemoryPendingTurns = 0;
+    autoMemoryLastFlushLen = 0;
     autoMemoryLastMessages = null;
+    stopMemoryCheckpointSpinner();
 
     ensureRoleMemoryFiles(rolePath, roleName);
     const repair = repairRoleMemory(rolePath, roleName);
@@ -315,7 +383,7 @@ export default function rolePersonaExtension(pi: ExtensionAPI) {
     const displayName = identity?.name || roleName;
 
     ctx.ui.setStatus("role", displayName);
-    ctx.ui.setStatus("memory-checkpoint", `🧠 ${displayName} · ready`);
+    ctx.ui.setStatus("memory-checkpoint", undefined);
 
     if (repair.repaired) {
       ctx.ui.notify(`MEMORY.md 已规范化修复 (${repair.issues} issues)`, "info");
@@ -336,22 +404,26 @@ export default function rolePersonaExtension(pi: ExtensionAPI) {
 
     const config = loadRoleConfig();
     const cwd = ctx.cwd;
-    
-    // 查找当前目录对应的角色
-    const mappedRole = getRoleForCwd(cwd);
-    
-    if (mappedRole) {
-      const rolePath = join(ROLES_DIR, mappedRole);
+    const resolution = resolveRoleForCwd(cwd, config);
+    const roleName = resolution.role;
+
+    if (roleName) {
+      const rolePath = join(ROLES_DIR, roleName);
+
+      // 默认角色缺失时自动创建，保证 fallback 可用
+      if (!existsSync(rolePath) && resolution.source === "default") {
+        createRole(roleName);
+      }
+
       if (existsSync(rolePath)) {
-        await activateRole(mappedRole, rolePath, ctx);
+        await activateRole(roleName, rolePath, ctx);
       } else {
-        ctx.ui?.notify(`[WARN] 映射的角色 "${mappedRole}" 不存在`, "warning");
+        ctx.ui?.notify(`[WARN] 角色 "${roleName}" 不存在（source: ${resolution.source}）`, "warning");
         ctx.ui?.setStatus("role", "none");
       }
     } else {
-      // 无角色映射
       if (ctx.hasUI) {
-        ctx.ui.setStatus("role", "none");
+        ctx.ui.setStatus("role", resolution.source === "disabled" ? "off" : "none");
       }
     }
   });
@@ -446,6 +518,8 @@ ${buildMemoryEditInstruction(currentRolePath)}`;
       ]);
     }
 
+    stopMemoryCheckpointSpinner();
+
     if (ctx.hasUI) {
       ctx.ui.setStatus("role", undefined);
       ctx.ui.setStatus("memory-checkpoint", undefined);
@@ -472,12 +546,20 @@ ${buildMemoryEditInstruction(currentRolePath)}`;
         return { content: [{ type: "text", text: "No active role mapped in current directory." }], details: { error: true } };
       }
 
+      log("memory-tool", `action=${params.action} role=${currentRole}`, {
+        content: params.content?.slice(0, 80),
+        category: params.category,
+        query: params.query,
+        id: params.id,
+      });
+
       switch (params.action) {
         case "add_learning": {
           if (!params.content) {
             return { content: [{ type: "text", text: "Error: content is required" }], details: { error: true } };
           }
           const result = addRoleLearning(currentRolePath, currentRole, params.content, { appendDaily: true });
+          log("memory-tool", `add_learning: ${result.stored ? "stored" : result.reason} id=${result.id || "-"}`, params.content);
           if (!result.stored) {
             return {
               content: [{ type: "text", text: result.duplicate ? "Already stored" : "Not stored" }],
@@ -501,6 +583,7 @@ ${buildMemoryEditInstruction(currentRolePath)}`;
             params.content,
             { appendDaily: true }
           );
+          log("memory-tool", `add_preference: ${result.stored ? "stored" : result.reason} [${result.category}] id=${result.id || "-"}`, params.content);
           if (!result.stored) {
             return {
               content: [{ type: "text", text: result.duplicate ? "Already stored" : "Not stored" }],
@@ -519,6 +602,7 @@ ${buildMemoryEditInstruction(currentRolePath)}`;
             return { content: [{ type: "text", text: "Error: id/query/content required" }], details: { error: true } };
           }
           const result = reinforceRoleLearning(currentRolePath, currentRole, needle);
+          log("memory-tool", `reinforce: ${result.updated ? `ok [${result.id}] ${result.used}x` : "not found"}`, needle);
           if (!result.updated) {
             return { content: [{ type: "text", text: "Learning not found" }], details: { error: true } };
           }
@@ -534,6 +618,7 @@ ${buildMemoryEditInstruction(currentRolePath)}`;
             return { content: [{ type: "text", text: "Error: query required" }], details: { error: true } };
           }
           const matches = searchRoleMemory(currentRolePath, currentRole, query);
+          log("memory-tool", `search: "${query}" -> ${matches.length} matches`);
           const text = matches.length
             ? matches
                 .map((m) => {
@@ -548,6 +633,7 @@ ${buildMemoryEditInstruction(currentRolePath)}`;
 
         case "list": {
           const result = listRoleMemory(currentRolePath, currentRole);
+          log("memory-tool", `list: ${result.learnings}L ${result.preferences}P ${result.issues} issues`);
           return {
             content: [{ type: "text", text: result.text }],
             details: { learnings: result.learnings, preferences: result.preferences, issues: result.issues },
@@ -556,6 +642,7 @@ ${buildMemoryEditInstruction(currentRolePath)}`;
 
         case "consolidate": {
           const result = consolidateRoleMemory(currentRolePath, currentRole);
+          log("memory-tool", `consolidate: L ${result.beforeLearnings}->${result.afterLearnings} P ${result.beforePreferences}->${result.afterPreferences}`);
           return {
             content: [
               {
@@ -569,6 +656,7 @@ ${buildMemoryEditInstruction(currentRolePath)}`;
 
         case "repair": {
           const result = repairRoleMemory(currentRolePath, currentRole, { force: true });
+          log("memory-tool", `repair: ${result.repaired ? `repaired (${result.issues} issues)` : "healthy"}`);
           return {
             content: [
               {
@@ -583,10 +671,13 @@ ${buildMemoryEditInstruction(currentRolePath)}`;
         }
 
         case "llm_tidy": {
+          log("memory-tool", `llm_tidy start model=${params.model || "(session)"}`);
           const llm = await runLlmMemoryTidy(currentRolePath, currentRole, _ctx, params.model);
           if ("error" in llm) {
+            log("memory-tool", `llm_tidy failed: ${llm.error}`);
             return { content: [{ type: "text", text: `LLM tidy failed: ${llm.error}` }], details: { error: true } };
           }
+          log("memory-tool", `llm_tidy done via ${llm.model}: L ${llm.apply.beforeLearnings}->${llm.apply.afterLearnings} P ${llm.apply.beforePreferences}->${llm.apply.afterPreferences}`);
           return {
             content: [
               {
@@ -720,13 +811,16 @@ ${buildMemoryEditInstruction(currentRolePath)}`;
 
       switch (cmd) {
         case "info": {
-          // 显示当前目录的角色映射状态
-          const mappedRole = getRoleForCwd(cwd);
-          
+          const resolution = resolveRoleForCwd(cwd, config);
+          const mappedRole = resolution.role;
+
           let info = `## 角色状态\n\n`;
           info += `**当前目录**: ${cwd}\n`;
-          info += `**映射角色**: ${mappedRole || "无"}\n\n`;
-          
+          info += `**生效角色**: ${mappedRole || "无"}\n`;
+          info += `**来源**: ${resolution.source}${resolution.matchedPath ? ` (${resolution.matchedPath})` : ""}\n`;
+          info += `**默认角色**: ${config.defaultRole || DEFAULT_ROLE}\n`;
+          info += `**本目录禁用角色**: ${isRoleDisabledForCwd(cwd, config) ? "是" : "否"}\n\n`;
+
           if (mappedRole && currentRole) {
             const isFirst = isFirstRun(currentRolePath!);
             const identity = getRoleIdentity(currentRolePath!);
@@ -734,11 +828,11 @@ ${buildMemoryEditInstruction(currentRolePath)}`;
             info += `**显示名称**: ${identity?.name || "未设置"}\n`;
             info += `**状态**: ${isFirst ? "[FIRST RUN] 首次运行" : "[OK] 已配置"}\n`;
           }
-          
+
           info += `\n### 可用命令\n\n`;
           info += `- \`/role create [name]\` - 创建新角色（不填则上下选择）\n`;
           info += `- \`/role map [role]\` - 映射目录到角色（不填则上下选择）\n`;
-          info += `- \`/role unmap\` - 取消当前目录映射\n`;
+          info += `- \`/role unmap\` - 取消映射并禁用本目录角色（含默认角色）\n`;
           info += `- \`/role list\` - 列出所有角色和映射\n`;
           info += `- \`/memories\` - 查看 MEMORY.md 与最近 daily memory\n`;
           info += `- \`/memory-fix\` - 强制修复 MEMORY.md 结构\n`;
@@ -779,10 +873,13 @@ ${buildMemoryEditInstruction(currentRolePath)}`;
 
           const shouldMap = await ctx.ui.confirm("映射", `将当前目录映射到 "${roleName}"?`);
           if (shouldMap) {
-            config.mappings[cwd] = roleName;
+            const cwdKey = normalizePath(cwd);
+            config.mappings[cwdKey] = roleName;
+            config.disabledPaths = (config.disabledPaths || []).filter((path) => normalizePath(path) !== cwdKey);
+
             saveRoleConfig(config);
             await activateRole(roleName, rolePath, ctx);
-            ctx.ui.notify(`已映射: ${cwd} → ${roleName}`, "success");
+            ctx.ui.notify(`已映射: ${cwdKey} → ${roleName}`, "success");
           }
           break;
         }
@@ -826,32 +923,48 @@ ${buildMemoryEditInstruction(currentRolePath)}`;
             return;
           }
 
-          config.mappings[cwd] = roleName;
+          const cwdKey = normalizePath(cwd);
+          config.mappings[cwdKey] = roleName;
+          config.disabledPaths = (config.disabledPaths || []).filter((path) => normalizePath(path) !== cwdKey);
+
           saveRoleConfig(config);
           await activateRole(roleName, rolePath, ctx);
-          ctx.ui.notify(`已映射: ${cwd} → ${roleName}`, "success");
+          ctx.ui.notify(`已映射: ${cwdKey} → ${roleName}`, "success");
           break;
         }
 
         case "unmap": {
-          // 查找并删除当前目录的映射
-          let found = false;
+          const cwdKey = normalizePath(cwd);
+
+          // 仅移除当前目录的显式映射，不误伤父目录映射
+          let removedMapping = false;
           for (const [path] of Object.entries(config.mappings)) {
-            if (path === cwd || cwd.startsWith(path + "/")) {
+            if (normalizePath(path) === cwdKey) {
               delete config.mappings[path];
-              found = true;
+              removedMapping = true;
             }
           }
-          
-          if (found) {
-            saveRoleConfig(config);
-            currentRole = null;
-            currentRolePath = null;
-            ctx.ui.setStatus("role", "none");
-            ctx.ui.notify("已取消当前目录的角色映射", "info");
-          } else {
-            ctx.ui.notify("当前目录没有角色映射", "info");
+
+          // 标记当前目录禁用角色（包含默认角色）
+          const disabled = new Set((config.disabledPaths || []).map((path) => normalizePath(path)));
+          disabled.add(cwdKey);
+          config.disabledPaths = Array.from(disabled);
+
+          saveRoleConfig(config);
+
+          currentRole = null;
+          currentRolePath = null;
+          if (ctx.hasUI) {
+            ctx.ui.setStatus("role", "off");
+            ctx.ui.setStatus("memory-checkpoint", undefined);
           }
+
+          ctx.ui.notify(
+            removedMapping
+              ? "已取消当前目录映射，并标记为不使用角色（默认角色也禁用）"
+              : "当前目录已标记为不使用角色（默认角色禁用）",
+            "info"
+          );
           break;
         }
 
@@ -866,13 +979,26 @@ ${buildMemoryEditInstruction(currentRolePath)}`;
             info += `- **${role}** ${identity?.name || ""}\n`;
           }
           
+          info += `\n### 默认角色\n\n`;
+          info += `- **${config.defaultRole || DEFAULT_ROLE}**\n`;
+
           info += `\n### 目录映射\n\n`;
           const mappings = Object.entries(config.mappings);
           if (mappings.length === 0) {
             info += "无映射\n";
           } else {
             for (const [path, role] of mappings) {
-              info += `- \`${path}\` → **${role}**\n`;
+              info += `- \`${normalizePath(path)}\` → **${role}**\n`;
+            }
+          }
+
+          info += `\n### 禁用角色目录（unmap 结果）\n\n`;
+          const disabledPaths = (config.disabledPaths || []).map((path) => normalizePath(path));
+          if (disabledPaths.length === 0) {
+            info += "无\n";
+          } else {
+            for (const path of disabledPaths) {
+              info += `- \`${path}\`\n`;
             }
           }
           

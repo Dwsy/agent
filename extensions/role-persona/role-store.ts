@@ -12,6 +12,13 @@ export const DEFAULT_ROLE = "default";
 export interface RoleConfig {
   mappings: Record<string, string>;
   defaultRole?: string;
+  disabledPaths?: string[];
+}
+
+export interface RoleResolution {
+  role: string | null;
+  source: "mapped" | "default" | "disabled" | "none";
+  matchedPath?: string;
 }
 
 export function ensureRolesDir(): void {
@@ -70,39 +77,105 @@ export function getRoleIdentity(rolePath: string): { name?: string; emoji?: stri
 
 export function loadRoleConfig(): RoleConfig {
   if (!existsSync(ROLE_CONFIG_FILE)) {
-    return { mappings: {} };
+    return { mappings: {}, defaultRole: DEFAULT_ROLE, disabledPaths: [] };
   }
   try {
     const content = readFileSync(ROLE_CONFIG_FILE, "utf-8");
-    return JSON.parse(content) as RoleConfig;
+    const parsed = JSON.parse(content) as RoleConfig;
+    return {
+      mappings: parsed?.mappings || {},
+      defaultRole: parsed?.defaultRole || DEFAULT_ROLE,
+      disabledPaths: Array.isArray(parsed?.disabledPaths) ? parsed.disabledPaths : [],
+    };
   } catch {
-    return { mappings: {} };
+    return { mappings: {}, defaultRole: DEFAULT_ROLE, disabledPaths: [] };
   }
 }
 
 export function saveRoleConfig(config: RoleConfig): void {
   ensureRolesDir();
-  writeFileSync(ROLE_CONFIG_FILE, JSON.stringify(config, null, 2), "utf-8");
+
+  const normalizedMappings: Record<string, string> = {};
+  for (const [path, role] of Object.entries(config.mappings || {})) {
+    const key = normalizePath(path);
+    if (key && role) normalizedMappings[key] = role;
+  }
+
+  const normalizedDisabled = Array.from(
+    new Set((config.disabledPaths || []).map((path) => normalizePath(path)).filter(Boolean))
+  );
+
+  const payload: RoleConfig = {
+    mappings: normalizedMappings,
+    defaultRole: config.defaultRole || DEFAULT_ROLE,
+    disabledPaths: normalizedDisabled,
+  };
+
+  writeFileSync(ROLE_CONFIG_FILE, JSON.stringify(payload, null, 2), "utf-8");
+}
+
+function normalizePath(path: string): string {
+  return path.replace(/\/$/, "");
+}
+
+function pathMatches(cwd: string, basePath: string): boolean {
+  const c = normalizePath(cwd);
+  const b = normalizePath(basePath);
+  return c === b || c.startsWith(b + "/");
+}
+
+function findBestMappedRole(cwd: string, mappings: Record<string, string>): { role: string; path: string } | null {
+  let best: { role: string; path: string } | null = null;
+  for (const [path, role] of Object.entries(mappings)) {
+    if (!pathMatches(cwd, path)) continue;
+    if (!best || normalizePath(path).length > normalizePath(best.path).length) {
+      best = { role, path: normalizePath(path) };
+    }
+  }
+  return best;
+}
+
+function findBestDisabledPath(cwd: string, disabledPaths: string[]): string | null {
+  let best: string | null = null;
+  for (const path of disabledPaths) {
+    if (!pathMatches(cwd, path)) continue;
+    const n = normalizePath(path);
+    if (!best || n.length > best.length) {
+      best = n;
+    }
+  }
+  return best;
+}
+
+export function resolveRoleForCwd(cwd: string, config?: RoleConfig): RoleResolution {
+  const state = config || loadRoleConfig();
+
+  // Explicit mapping has highest priority.
+  const mapped = findBestMappedRole(cwd, state.mappings || {});
+  if (mapped) {
+    return { role: mapped.role, source: "mapped", matchedPath: mapped.path };
+  }
+
+  // Explicitly disabled project skips default role.
+  const disabled = findBestDisabledPath(cwd, state.disabledPaths || []);
+  if (disabled) {
+    return { role: null, source: "disabled", matchedPath: disabled };
+  }
+
+  const defaultRole = (state.defaultRole || DEFAULT_ROLE).trim();
+  if (defaultRole && defaultRole.toLowerCase() !== "none") {
+    return { role: defaultRole, source: "default" };
+  }
+
+  return { role: null, source: "none" };
 }
 
 export function getRoleForCwd(cwd: string, config?: RoleConfig): string | null {
-  const state = config || loadRoleConfig();
-  let matchedRole: string | null = null;
-  let matchedPath = "";
+  return resolveRoleForCwd(cwd, config).role;
+}
 
-  for (const [path, role] of Object.entries(state.mappings)) {
-    const normalizedPath = path.replace(/\/$/, "");
-    const normalizedCwd = cwd.replace(/\/$/, "");
-
-    if (normalizedCwd === normalizedPath || normalizedCwd.startsWith(normalizedPath + "/")) {
-      if (path.length > matchedPath.length) {
-        matchedPath = path;
-        matchedRole = role;
-      }
-    }
-  }
-
-  return matchedRole;
+export function isRoleDisabledForCwd(cwd: string, config?: RoleConfig): boolean {
+  return resolveRoleForCwd(cwd, config).source === "disabled";
 }
 
 export function loadRolePrompts(rolePath: string): string {

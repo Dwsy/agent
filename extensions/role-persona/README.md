@@ -84,7 +84,8 @@ Lists all roles and their directory mappings.
 /role unmap
 ```
 
-Removes the mapping for current directory.
+Removes explicit mapping for current directory **and marks this directory as role-disabled**.
+That means default role fallback is also disabled for this path until you map it again.
 
 ### Memory Commands
 
@@ -100,7 +101,7 @@ In `/memories` overlay:
 - `1` Learnings
 - `2` Preferences
 - `3` Events
-- `↑↓/jk` scroll, `PgUp/PgDn` page, `Home/End` jump, `Esc` close
+- `↑↓/jk` scroll, `Shift+↑/↓` 或 `PgUp/PgDn` 翻页, `Home/End` 跳转, `Esc` 关闭
 
 ### Memory Tool (for model/tool calls)
 
@@ -118,9 +119,10 @@ In `/memories` overlay:
 ### 1. Role Auto-Loading
 
 When pi starts in a directory:
-1. Check `~/.pi/agent/roles/config.json` for cwd mapping
-2. If found, load that role's prompts and memories
-3. Display role name in TUI status bar
+1. Check `~/.pi/agent/roles/config.json` for explicit cwd mapping
+2. If no mapping, use `defaultRole` fallback (default: `default`)
+3. If cwd is in `disabledPaths`, skip role loading entirely
+4. Display effective role name in TUI status bar
 
 ### 2. Prompt Injection
 
@@ -165,7 +167,7 @@ New roles contain `BOOTSTRAP.md` which guides initial personality setup:
   - 30-minute interval with at least 2 turns gap
   - session shutdown with pending turns
 - Checkpoints run in background (non-blocking for normal turns)
-- Bottom status shows checkpoint result: `🧠 <role> · <reason> · xL yP`
+- Bottom status uses animated star glyphs during sync (`✳ ✶ ✧ ✦`) and result as `<glyph> <标签> xL yP`（如 `✶ 5轮 0L 2P`）
 - Shutdown flush is best-effort with bounded wait
 - Writes back into MEMORY.md using strict heading rules
 - Skips duplicates and one-off noise
@@ -246,11 +248,15 @@ When user says "remember this" or you learn something important:
 
 ```json
 {
+  "defaultRole": "default",
   "mappings": {
     "/Users/will/projects/web-app": "architect",
     "/Users/will/projects/api": "backend",
     "/Users/will/playground": "mentor"
-  }
+  },
+  "disabledPaths": [
+    "/Users/will/scratch/no-role"
+  ]
 }
 ```
 
