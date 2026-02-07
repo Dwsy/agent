@@ -99,6 +99,7 @@ class GwApp extends LitElement {
   static properties = {
     activeTab: { type: String },
     connected: { type: Boolean },
+    isMobile: { type: Boolean },
   };
 
   static styles = css`
@@ -189,6 +190,9 @@ class GwApp extends LitElement {
     super();
     this.activeTab = "chat";
     this.connected = false;
+    this.isMobile = window.matchMedia("(max-width: 768px)").matches;
+    this.touchStartX = 0;
+    this.touchStartY = 0;
   }
 
   connectedCallback() {
@@ -198,6 +202,55 @@ class GwApp extends LitElement {
       gw.connect(`ws://${location.host}`);
     } else if (gw.connected) {
       this.connected = true;
+    }
+
+    // Mobile detection
+    const mql = window.matchMedia("(max-width: 768px)");
+    mql.addEventListener("change", (e) => {
+      this.isMobile = e.matches;
+      this.requestUpdate();
+    });
+
+    // Touch gesture support for mobile
+    this.addEventListener("touchstart", this.handleTouchStart, { passive: true });
+    this.addEventListener("touchend", this.handleTouchEnd, { passive: true });
+
+    // Prevent zoom on double tap
+    this.addEventListener("dblclick", (e) => e.preventDefault());
+  }
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    this.removeEventListener("touchstart", this.handleTouchStart);
+    this.removeEventListener("touchend", this.handleTouchEnd);
+  }
+
+  handleTouchStart(e) {
+    this.touchStartX = e.touches[0].clientX;
+    this.touchStartY = e.touches[0].clientY;
+  }
+
+  handleTouchEnd(e) {
+    if (!this.isMobile) return;
+
+    const touchEndX = e.changedTouches[0].clientX;
+    const touchEndY = e.changedTouches[0].clientY;
+
+    const deltaX = touchEndX - this.touchStartX;
+    const deltaY = touchEndY - this.touchStartY;
+
+    // Horizontal swipe detection (minimum 50px)
+    if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 50) {
+      const tabs = ["chat", "sessions", "plugins", "health"];
+      const currentIndex = tabs.indexOf(this.activeTab);
+
+      if (deltaX < 0 && currentIndex < tabs.length - 1) {
+        // Swipe left -> next tab
+        this.switchTab(tabs[currentIndex + 1]);
+      } else if (deltaX > 0 && currentIndex > 0) {
+        // Swipe right -> previous tab
+        this.switchTab(tabs[currentIndex - 1]);
+      }
     }
   }
 
@@ -214,16 +267,25 @@ class GwApp extends LitElement {
     ];
 
     return html`
-      <nav>
-        <div class="nav-header">
-          <h1>pi-gateway</h1>
+      ${this.isMobile ? html`
+        <div class="status-bar">
+          <span class="title">pi-gateway</span>
           <span class="dot ${this.connected ? "on" : ""}"></span>
         </div>
+      ` : ""}
+      <nav class="${this.isMobile ? "mobile" : ""}">
+        ${!this.isMobile ? html`
+          <div class="nav-header">
+            <h1>pi-gateway</h1>
+            <span class="dot ${this.connected ? "on" : ""}"></span>
+          </div>
+        ` : ""}
         <ul class="nav-items">
           ${tabs.map((t) => html`
             <li class="nav-item ${this.activeTab === t.id ? "active" : ""}"
                 @click=${() => this.switchTab(t.id)}>
-              <span>${t.icon}</span> ${t.label}
+              <span class="icon">${t.icon}</span>
+              <span class="label">${t.label}</span>
             </li>
           `)}
         </ul>
@@ -401,6 +463,64 @@ class GwChat extends LitElement {
     button.abort { background: var(--danger); }
     button.abort:hover { background: #da3633; }
     button:disabled { opacity: .4; cursor: default; }
+
+    /* Mobile responsive */
+    @media (max-width: 768px) {
+      .messages {
+        padding: 12px;
+        padding-top: 60px;
+        gap: 8px;
+      }
+
+      .msg {
+        max-width: 85%;
+        padding: 10px 14px;
+        font-size: 15px;
+        line-height: 1.5;
+      }
+
+      .welcome {
+        padding: 0 20px;
+      }
+
+      .welcome h2 {
+        font-size: 18px;
+      }
+
+      .input-area {
+        position: fixed;
+        bottom: 60px;
+        left: 0;
+        right: 0;
+        padding: 12px;
+        background: var(--bg-primary);
+        z-index: 90;
+      }
+
+      form {
+        gap: 10px;
+      }
+
+      textarea {
+        font-size: 16px;
+        padding: 12px 16px;
+        border-radius: 20px;
+        min-height: 44px;
+      }
+
+      button {
+        width: 44px;
+        height: 44px;
+        border-radius: 50%;
+      }
+    }
+
+    @media (max-width: 375px) {
+      .msg {
+        max-width: 90%;
+        font-size: 14px;
+      }
+    }
   `;
 
   constructor() {

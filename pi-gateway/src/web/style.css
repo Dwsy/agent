@@ -45,3 +45,219 @@ body { overflow: hidden; }
 
 /* Utility */
 .mono { font-family: var(--font-mono); font-size: 12px; }
+
+/* ============================================================================
+   Mobile Responsive Styles
+   ============================================================================ */
+
+/* Mobile viewport fix */
+@viewport {
+  width: device-width;
+  initial-scale: 1;
+  maximum-scale: 1;
+  user-scalable: no;
+}
+
+/* Touch optimization */
+* {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+/* Mobile breakpoint: <= 768px */
+@media (max-width: 768px) {
+  :root {
+    --sidebar-width: 0;
+    --header-height: 56px;
+    --input-height: 64px;
+  }
+
+  html {
+    font-size: 16px;
+  }
+
+  /* Mobile layout adjustments */
+  .app-container {
+    flex-direction: column !important;
+  }
+
+  /* Sidebar becomes bottom nav on mobile */
+  .sidebar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    width: 100%;
+    height: auto;
+    max-height: 60px;
+    flex-direction: row !important;
+    justify-content: space-around;
+    padding: 8px 0;
+    border-top: 1px solid var(--border);
+    border-right: none;
+    z-index: 100;
+    background: var(--bg-secondary);
+  }
+
+  .sidebar .nav-item {
+    flex: 1;
+    flex-direction: column;
+    align-items: center;
+    padding: 4px;
+    font-size: 12px;
+  }
+
+  .sidebar .nav-item .icon {
+    font-size: 20px;
+    margin-bottom: 2px;
+  }
+
+  .sidebar .nav-item .label {
+    display: block;
+    font-size: 10px;
+  }
+
+  /* Main content area */
+  .main-content {
+    padding-bottom: 70px;
+    height: calc(100vh - 60px);
+  }
+
+  /* Chat panel mobile */
+  .chat-container {
+    padding: 12px;
+  }
+
+  .message {
+    max-width: 85%;
+    padding: 10px 14px;
+    font-size: 15px;
+    line-height: 1.5;
+  }
+
+  .message.user {
+    margin-left: auto;
+  }
+
+  /* Input area fixed at bottom above nav */
+  .input-area {
+    position: fixed;
+    bottom: 60px;
+    left: 0;
+    right: 0;
+    padding: 12px;
+    background: var(--bg-primary);
+    border-top: 1px solid var(--border);
+    z-index: 90;
+  }
+
+  .input-area input {
+    font-size: 16px;
+    padding: 12px 16px;
+    border-radius: 24px;
+  }
+
+  .input-area button {
+    min-width: 44px;
+    min-height: 44px;
+    border-radius: 50%;
+  }
+
+  /* Status bar for mobile */
+  .status-bar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: var(--header-height);
+    padding: 0 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border);
+    z-index: 100;
+  }
+
+  .status-bar .title {
+    font-size: 18px;
+    font-weight: 600;
+  }
+
+  /* Panels padding adjustment */
+  .panel {
+    padding-top: var(--header-height);
+  }
+
+  /* Touch-friendly list items */
+  .list-item {
+    min-height: 56px;
+    padding: 12px 16px;
+  }
+
+  /* Modal/dialog mobile sizing */
+  .modal {
+    width: 100%;
+    max-width: 100%;
+    margin: 0;
+    border-radius: 16px 16px 0 0;
+    position: fixed;
+    bottom: 0;
+    max-height: 90vh;
+    overflow-y: auto;
+  }
+}
+
+/* Small mobile: <= 375px */
+@media (max-width: 375px) {
+  .message {
+    max-width: 90%;
+    padding: 8px 12px;
+    font-size: 14px;
+  }
+
+  .sidebar .nav-item .label {
+    display: none;
+  }
+}
+
+/* Tablet: 769px - 1024px */
+@media (min-width: 769px) and (max-width: 1024px) {
+  :root {
+    --sidebar-width: 200px;
+  }
+
+  .sidebar {
+    width: var(--sidebar-width);
+  }
+}
+
+/* Safe area for notched devices */
+@supports (padding-top: env(safe-area-inset-top)) {
+  .status-bar {
+    padding-top: env(safe-area-inset-top);
+  }
+
+  .sidebar {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  .input-area {
+    padding-bottom: calc(12px + env(safe-area-inset-bottom));
+  }
+}
+
+/* Landscape mobile optimization */
+@media (max-width: 768px) and (orientation: landscape) {
+  .sidebar {
+    max-height: 48px;
+  }
+
+  .sidebar .nav-item .label {
+    display: none;
+  }
+
+  .main-content {
+    height: calc(100vh - 48px);
+  }
+}
