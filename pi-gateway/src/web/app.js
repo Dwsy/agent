@@ -12,7 +12,8 @@
  * Gateway req/res/event protocol (aligned with OpenClaw).
  */
 
-import { LitElement, html, css, unsafeHTML } from "lit";
+import { LitElement, html, css } from "lit";
+import { unsafeHTML } from "lit/directives/unsafe-html.js";
 
 // ============================================================================
 // Markdown / HTML Renderer (aligned with Telegram Bot)
