@@ -12,7 +12,72 @@
  * Gateway req/res/event protocol (aligned with OpenClaw).
  */
 
-import { LitElement, html, css } from "lit";
+import { LitElement, html, css, unsafeHTML } from "lit";
+import { unsafeHTML as _unsafeHTML } from "lit/directives/unsafe-html.js";
+
+// ============================================================================
+// Markdown / HTML Renderer (aligned with Telegram Bot)
+// ============================================================================
+
+/**
+ * Convert markdown-like text to HTML (safe subset aligned with Telegram HTML mode)
+ * Supports: **bold**, *italic*, `code`, ```code blocks```, [links](url)
+ */
+function renderMarkdown(text) {
+  if (!text) return "";
+
+  // Escape HTML first
+  let html = text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+
+  // Code blocks (```...```)
+  html = html.replace(
+    /```(\w*)\n?([\s\S]*?)```/g,
+    (match, lang, code) => `<pre><code class="language-${lang || "text"}">${code.trim()}</code></pre>`
+  );
+
+  // Inline code (`...`)
+  html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
+
+  // Bold (**...**)
+  html = html.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+
+  // Italic (*...* or _..._)
+  html = html.replace(/(^|[^*])\*([^*]+)\*([^*]|$)/g, "$1<em>$2</em>$3");
+  html = html.replace(/(^|[^_])_([^_]+)_([^_]|$)/g, "$1<em>$2</em>$3");
+
+  // Links [text](url)
+  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+
+  // Line breaks
+  html = html.replace(/\n/g, "<br>");
+
+  return html;
+}
+
+/**
+ * Check if text contains HTML tags
+ */
+function containsHtml(text) {
+  return /<[a-z][\s\S]*>/i.test(text);
+}
+
+/**
+ * Render message content (auto-detect markdown or HTML)
+ */
+function renderMessageContent(text) {
+  if (!text) return html``;
+
+  // If already HTML (from Telegram), use directly
+  if (containsHtml(text)) {
+    return unsafeHTML(text);
+  }
+
+  // Otherwise, render markdown
+  return unsafeHTML(renderMarkdown(text));
+}
 
 // ============================================================================
 // WebSocket Connection Manager
@@ -347,6 +412,18 @@ class GwApp extends LitElement {
     this.activeTab = tab;
   }
 
+  _handleSessionSelect(session) {
+    // Switch to chat tab and pass session info
+    this.switchTab("chat");
+    // Store selected session for gw-chat to pick up
+    this.selectedSession = session;
+    // Notify gw-chat to load session history
+    const chat = this.renderRoot.querySelector("gw-chat");
+    if (chat && chat.loadSession) {
+      chat.loadSession(session.sessionKey);
+    }
+  }
+
   render() {
     const tabs = [
       { id: "chat", label: "Chat", icon: "💬" },
@@ -382,8 +459,8 @@ class GwApp extends LitElement {
           <div class="nav-footer">v0.1.0</div>
         </nav>
         <main>
-          ${this.activeTab === "chat" ? html`<gw-chat .connection=${gw}></gw-chat>` : ""}
-          ${this.activeTab === "sessions" ? html`<gw-sessions .connection=${gw}></gw-sessions>` : ""}
+          ${this.activeTab === "chat" ? html`<gw-chat .connection=${gw} .sessionKey=${this.selectedSession?.sessionKey}></gw-chat>` : ""}
+          ${this.activeTab === "sessions" ? html`<gw-sessions .connection=${gw} .onSessionSelect=${(s) => this._handleSessionSelect(s)}></gw-sessions>` : ""}
           ${this.activeTab === "plugins" ? html`<gw-plugins .connection=${gw}></gw-plugins>` : ""}
           ${this.activeTab === "health" ? html`<gw-health .connection=${gw}></gw-health>` : ""}
         </main>
@@ -405,6 +482,7 @@ class GwChat extends LitElement {
     isStreaming: { type: Boolean },
     isTyping: { type: Boolean },
     wsConnected: { type: Boolean },
+    sessionKey: { type: String },
   };
 
   static styles = css`
@@ -686,6 +764,27 @@ class GwChat extends LitElement {
     if (this._connPoll) clearInterval(this._connPoll);
   }
 
+  async updated(changed) {
+    if (changed.has("sessionKey") && this.sessionKey) {
+      await this.loadSession(this.sessionKey);
+    }
+  }
+
+  async loadSession(sessionKey) {
+    if (!sessionKey) return;
+    this.sessionKey = sessionKey;
+    try {
+      const history = await gw.request("chat.history", { sessionKey });
+      this.messages = (history?.messages || []).map((m) => ({
+        role: m.role,
+        text: m.content,
+      }));
+      this._scrollBottom();
+    } catch (err) {
+      console.error("Failed to load session history:", err);
+    }
+  }
+
   async _send(e) {
     e.preventDefault();
     const text = this.inputText.trim();
@@ -745,7 +844,7 @@ class GwChat extends LitElement {
             </div>`
           : this.messages.map((m) => html`
               <div class="msg ${m.role === "streaming" ? "assistant" : m.role}">
-                ${m.text}
+                ${renderMessageContent(m.text)}
               </div>
             `)}
         ${this.isTyping && !this.messages.some((m) => m.role === "streaming")
@@ -783,6 +882,7 @@ class GwSessions extends LitElement {
   static properties = {
     sessions: { type: Array },
     loading: { type: Boolean },
+    onSessionSelect: { type: Function },
   };
 
   static styles = css`
@@ -848,6 +948,37 @@ class GwSessions extends LitElement {
     .badge.streaming { background: rgba(63,185,80,.15); color: var(--success); }
     .badge.idle { background: var(--bg-tertiary); color: var(--text-secondary); }
     .empty { color: var(--text-muted); text-align: center; padding: 40px; }
+
+    tr {
+      cursor: pointer;
+      transition: background var(--transition);
+    }
+    tr:hover { background: var(--bg-hover); }
+    tr.selected { background: var(--accent-muted); }
+
+    .actions {
+      display: flex;
+      gap: 8px;
+    }
+    .actions button {
+      padding: 4px 10px;
+      font-size: 11px;
+    }
+    .actions button.primary {
+      background: var(--accent);
+      color: #fff;
+      border-color: var(--accent);
+    }
+    .actions button.primary:hover {
+      background: var(--accent-hover);
+    }
+    .actions button.danger {
+      color: var(--danger);
+      border-color: var(--danger);
+    }
+    .actions button.danger:hover {
+      background: rgba(248,81,73,.1);
+    }
   `;
 
   constructor() {
@@ -871,6 +1002,31 @@ class GwSessions extends LitElement {
     this.loading = false;
   }
 
+  _selectSession(session) {
+    if (this.onSessionSelect) {
+      this.onSessionSelect(session);
+    }
+  }
+
+  async _resumeSession(sessionKey) {
+    try {
+      await gw.request("session.resume", { sessionKey });
+      this._selectSession({ sessionKey });
+    } catch (err) {
+      console.error("Failed to resume session:", err);
+    }
+  }
+
+  async _closeSession(sessionKey, ev) {
+    ev.stopPropagation();
+    try {
+      await gw.request("session.close", { sessionKey });
+      this._load();
+    } catch (err) {
+      console.error("Failed to close session:", err);
+    }
+  }
+
   render() {
     return html`
       <div class="header">
@@ -890,12 +1046,17 @@ class GwSessions extends LitElement {
             </tr></thead>
             <tbody>
               ${this.sessions.map((s) => html`
-                <tr>
+                <tr @click=${() => this._selectSession(s)}>
                   <td class="key">${s.sessionKey}</td>
                   <td>${s.role ?? "default"}</td>
                   <td>${s.messageCount}</td>
                   <td><span class="badge ${s.isStreaming ? "streaming" : "idle"}">${s.isStreaming ? "streaming" : "idle"}</span></td>
-                  <td>${new Date(s.lastActivity).toLocaleTimeString()}</td>
+                  <td>
+                    <div class="actions">
+                      <button class="primary" @click=${(e) => { e.stopPropagation(); this._resumeSession(s.sessionKey); }}>Resume</button>
+                      <button class="danger" @click=${(e) => this._closeSession(s.sessionKey, e)}>Close</button>
+                    </div>
+                  </td>
                 </tr>
               `)}
             </tbody>
