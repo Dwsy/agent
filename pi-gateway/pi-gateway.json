@@ -4,7 +4,7 @@
 
   "gateway": {
     "port": 18789,
-    "bind": "loopback",
+    "bind": "0.0.0.0",
     "auth": {
       "mode": "off"
     }

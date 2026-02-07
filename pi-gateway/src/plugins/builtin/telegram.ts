@@ -168,7 +168,7 @@ interface DebouncedMessage {
   timer: ReturnType<typeof setTimeout>;
 }
 
-const DEFAULT_DEBOUNCE_MS = 120;
+const DEFAULT_DEBOUNCE_MS = 0;
 const DEFAULT_EDIT_THROTTLE_MS = 250;
 const DEFAULT_STREAM_START_CHARS = 1;
 const DEFAULT_STREAM_PLACEHOLDER = "…";
@@ -183,6 +183,24 @@ function debounceInbound(
   debounceMs: number,
   flush: (chatId: string, combined: DebouncedMessage) => void,
 ): void {
+  // Keep OpenClaw-like behavior: when debounce is disabled, flush immediately.
+  if (debounceMs <= 0) {
+    const existing = debounceMap.get(chatId);
+    if (existing) {
+      clearTimeout(existing.timer);
+      debounceMap.delete(chatId);
+    }
+    const entry: DebouncedMessage = {
+      texts: text ? [text] : [],
+      images: [...images],
+      ctx,
+      source,
+      timer: setTimeout(() => {}, 0),
+    };
+    flush(chatId, entry);
+    return;
+  }
+
   const existing = debounceMap.get(chatId);
 
   if (existing) {
@@ -370,10 +388,19 @@ const telegramPlugin: ChannelPlugin = {
       let creatingReplyMsg = false;
       let lastEditAt = 0;
       let editInFlight = false;
+      let lastTypingAt = 0;
       const MAX_TOOL_LINES = 12;
       let latestAccumulated = "";
       const toolLines: string[] = [];
       const seenToolCalls = new Set<string>();
+      const TYPING_MIN_INTERVAL_MS = 3000;
+
+      const pingTyping = () => {
+        const now = Date.now();
+        if (now - lastTypingAt < TYPING_MIN_INTERVAL_MS) return;
+        lastTypingAt = now;
+        botClient.api.sendChatAction(chatId, "typing").catch(() => {});
+      };
 
       const ensureReplyMessage = (textForFirstMessage?: string) => {
         if (replyMsgId || creatingReplyMsg) return;
@@ -426,9 +453,9 @@ const telegramPlugin: ChannelPlugin = {
 
       // Typing indicator
       const typingInterval = setInterval(() => {
-        botClient.api.sendChatAction(chatId, "typing").catch(() => {});
+        pingTyping();
       }, 3500);
-      botClient.api.sendChatAction(chatId, "typing").catch(() => {});
+      pingTyping();
       // Send placeholder immediately so user can see near-real-time updates.
       ensureReplyMessage();
 
@@ -440,7 +467,7 @@ const telegramPlugin: ChannelPlugin = {
 
         // --- Streaming callback: called on each text_delta ---
         onStreamDelta: (accumulated: string, _delta: string) => {
-          botClient.api.sendChatAction(chatId, "typing").catch(() => {});
+          pingTyping();
           latestAccumulated = accumulated;
 
           // Wait for enough text before sending first message
@@ -450,7 +477,7 @@ const telegramPlugin: ChannelPlugin = {
 
         // --- Tool callback: called when a tool starts ---
         onToolStart: (toolName: string, args?: Record<string, unknown>, toolCallId?: string) => {
-          botClient.api.sendChatAction(chatId, "typing").catch(() => {});
+          pingTyping();
           if (toolCallId) {
             if (seenToolCalls.has(toolCallId)) return;
             seenToolCalls.add(toolCallId);

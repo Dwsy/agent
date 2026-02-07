@@ -8,7 +8,7 @@
  *     gw-plugins     Plugins list panel
  *     gw-health      Health/stats panel
  *
- * Communication: WebSocket to ws://localhost:{port} using the
+ * Communication: WebSocket to ws(s)://{host}:{port} using the
  * Gateway req/res/event protocol (aligned with OpenClaw).
  */
 
@@ -199,7 +199,8 @@ class GwApp extends LitElement {
     super.connectedCallback();
     gw.onStatusChange = (c) => { this.connected = c; };
     if (!gw.ws) {
-      gw.connect(`ws://${location.host}`);
+      const protocol = location.protocol === "https:" ? "wss:" : "ws:";
+      gw.connect(`${protocol}//${location.host}`);
     } else if (gw.connected) {
       this.connected = true;
     }

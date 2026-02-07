@@ -1,0 +1,7 @@
+{
+  "id": "pingan-gateway",
+  "name": "PingAn Gateway Prompt Injector",
+  "version": "1.0.0",
+  "description": "Inject safety/system constraints for RPC mode to enforce non-blocking background execution with interactive skill + tmux.",
+  "main": "index.ts"
+}
