@@ -13,7 +13,6 @@
  */
 
 import { LitElement, html, css, unsafeHTML } from "lit";
-import { unsafeHTML as _unsafeHTML } from "lit/directives/unsafe-html.js";
 
 // ============================================================================
 // Markdown / HTML Renderer (aligned with Telegram Bot)
