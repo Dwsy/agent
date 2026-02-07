@@ -1,0 +1,31 @@
+{
+  "name": "pi-gateway",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Local AI Gateway for pi agent — Telegram, Discord, WebChat, and more",
+  "bin": {
+    "pi-gw": "src/cli.ts"
+  },
+  "scripts": {
+    "dev": "bun run --watch src/cli.ts gateway",
+    "start": "bun run src/cli.ts gateway",
+    "check": "bun run tsc --noEmit"
+  },
+  "dependencies": {
+    "@grammyjs/runner": "^2.0.3",
+    "@grammyjs/transformer-throttler": "^1.2.1",
+    "croner": "^10.0.1",
+    "discord.js": "^14.16.0",
+    "grammy": "^1.31.0"
+  },
+  "devDependencies": {
+    "@mariozechner/pi-agent-core": "^0.52.7",
+    "@mariozechner/pi-ai": "^0.52.7",
+    "@types/bun": "^1.1.0",
+    "typescript": "^5.7.0"
+  },
+  "engines": {
+    "bun": ">=1.1.0"
+  },
+  "license": "MIT"
+}

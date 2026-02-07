@@ -1,0 +1,78 @@
+{
+  // Pi Gateway Configuration
+  // Aligned with OpenClaw's openclaw.json key structure
+
+  "gateway": {
+    "port": 18789,
+    "bind": "loopback",
+    "auth": {
+      "mode": "off"
+    }
+  },
+
+  "agent": {
+    "piCliPath": "pi",
+    "model": "claude-kiro-local/claude-haiku-4-5-20251001",
+    "thinkingLevel": "off",
+    // "appendSystemPrompt": "~/.pi/agent/APPEND_SYSTEM.md",
+    // "extensions": [
+    //   "~/.pi/agent/extensions/role-persona/index.ts",
+    //   "~/.pi/agent/extensions/subagent/index.ts",
+    //   "~/.pi/gateway/pi-extensions/auto-model-router/index.ts"
+    // ],
+    // "skills": ["~/.pi/agent/skills"],
+    // "promptTemplates": ["~/.pi/agent/prompts"],
+    // "noExtensions": false,
+    // "noSkills": false,
+    // "noPromptTemplates": false,
+    "pool": {
+      "min": 1,
+      "max": 4,
+      "idleTimeoutMs": 300000
+    },
+    "tools": {
+      "profile": "coding"
+    }
+  },
+
+  "session": {
+    "dmScope": "main"
+  },
+
+  "channels": {
+    // "telegram": {
+    //   "enabled": true,
+    //   "botToken": "YOUR_BOT_TOKEN",
+    //   "dmPolicy": "pairing",
+    //   "allowFrom": [],
+    //   "role": "default",
+    //   "groups": {}
+    // },
+    // "discord": {
+    //   "enabled": true,
+    //   "token": "YOUR_BOT_TOKEN",
+    //   "dmPolicy": "pairing",
+    //   "role": "default",
+    //   "dm": { "enabled": true, "allowFrom": [] },
+    //   "guilds": {}
+    // }
+  },
+
+  "plugins": {
+    "dirs": [],
+    "disabled": []
+  },
+
+  "roles": {
+    "workspaceDirs": {}
+  },
+
+  "hooks": {
+    "enabled": false
+  },
+
+  "cron": {
+    "enabled": false,
+    "jobs": []
+  }
+}

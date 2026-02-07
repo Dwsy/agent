@@ -1,0 +1,14 @@
+version: "3.8"
+
+services:
+  pi-gateway:
+    build: .
+    container_name: pi-gateway
+    ports:
+      - "18789:18789"
+    volumes:
+      - ${HOME}/.pi/gateway:/root/.pi/gateway
+      - ${HOME}/.pi/agent:/root/.pi/agent
+    environment:
+      - PI_GATEWAY_CONFIG=/app/pi-gateway.json
+    restart: unless-stopped
