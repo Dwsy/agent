@@ -106,8 +106,15 @@ class GwApp extends LitElement {
     :host {
       display: flex;
       height: 100vh;
+      height: 100dvh;
       width: 100vw;
       overflow: hidden;
+    }
+
+    .app-container {
+      display: flex;
+      width: 100%;
+      height: 100%;
     }
 
     nav {
@@ -118,6 +125,87 @@ class GwApp extends LitElement {
       display: flex;
       flex-direction: column;
       padding: 16px 0;
+    }
+
+    nav.mobile {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      width: 100%;
+      height: auto;
+      max-height: 60px;
+      flex-direction: row !important;
+      justify-content: space-around;
+      padding: 8px 0;
+      border-top: 1px solid var(--border);
+      border-right: none;
+      z-index: 100;
+      background: var(--bg-secondary);
+    }
+
+    .status-bar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 56px;
+      padding: 0 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: var(--bg-secondary);
+      border-bottom: 1px solid var(--border);
+      z-index: 100;
+    }
+
+    .status-bar .title {
+      font-size: 18px;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    /* Mobile styles */
+    @media (max-width: 768px) {
+      .app-container {
+        flex-direction: column;
+        padding-top: 56px;
+        padding-bottom: 60px;
+      }
+
+      nav.mobile .nav-items {
+        flex-direction: row;
+        display: flex;
+        width: 100%;
+        justify-content: space-around;
+        padding: 0;
+      }
+
+      nav.mobile .nav-item {
+        flex: 1;
+        flex-direction: column;
+        align-items: center;
+        padding: 4px;
+        font-size: 12px;
+        border-left: none;
+        gap: 2px;
+      }
+
+      nav.mobile .nav-item .icon {
+        font-size: 20px;
+      }
+
+      nav.mobile .nav-item .label {
+        font-size: 10px;
+      }
+
+      nav.mobile .nav-footer {
+        display: none;
+      }
+
+      main {
+        height: calc(100dvh - 56px - 60px);
+      }
     }
 
     .nav-header {
@@ -274,30 +362,32 @@ class GwApp extends LitElement {
           <span class="dot ${this.connected ? "on" : ""}"></span>
         </div>
       ` : ""}
-      <nav class="${this.isMobile ? "mobile" : ""}">
-        ${!this.isMobile ? html`
-          <div class="nav-header">
-            <h1>pi-gateway</h1>
-            <span class="dot ${this.connected ? "on" : ""}"></span>
-          </div>
-        ` : ""}
-        <ul class="nav-items">
-          ${tabs.map((t) => html`
-            <li class="nav-item ${this.activeTab === t.id ? "active" : ""}"
-                @click=${() => this.switchTab(t.id)}>
-              <span class="icon">${t.icon}</span>
-              <span class="label">${t.label}</span>
-            </li>
-          `)}
-        </ul>
-        <div class="nav-footer">v0.1.0</div>
-      </nav>
-      <main>
-        ${this.activeTab === "chat" ? html`<gw-chat .connection=${gw}></gw-chat>` : ""}
-        ${this.activeTab === "sessions" ? html`<gw-sessions .connection=${gw}></gw-sessions>` : ""}
-        ${this.activeTab === "plugins" ? html`<gw-plugins .connection=${gw}></gw-plugins>` : ""}
-        ${this.activeTab === "health" ? html`<gw-health .connection=${gw}></gw-health>` : ""}
-      </main>
+      <div class="app-container">
+        <nav class="sidebar ${this.isMobile ? "mobile" : ""}">
+          ${!this.isMobile ? html`
+            <div class="nav-header">
+              <h1>pi-gateway</h1>
+              <span class="dot ${this.connected ? "on" : ""}"></span>
+            </div>
+          ` : ""}
+          <ul class="nav-items">
+            ${tabs.map((t) => html`
+              <li class="nav-item ${this.activeTab === t.id ? "active" : ""}"
+                  @click=${() => this.switchTab(t.id)}>
+                <span class="icon">${t.icon}</span>
+                <span class="label">${t.label}</span>
+              </li>
+            `)}
+          </ul>
+          <div class="nav-footer">v0.1.0</div>
+        </nav>
+        <main>
+          ${this.activeTab === "chat" ? html`<gw-chat .connection=${gw}></gw-chat>` : ""}
+          ${this.activeTab === "sessions" ? html`<gw-sessions .connection=${gw}></gw-sessions>` : ""}
+          ${this.activeTab === "plugins" ? html`<gw-plugins .connection=${gw}></gw-plugins>` : ""}
+          ${this.activeTab === "health" ? html`<gw-health .connection=${gw}></gw-health>` : ""}
+        </main>
+      </div>
     `;
   }
 }
@@ -467,9 +557,12 @@ class GwChat extends LitElement {
 
     /* Mobile responsive */
     @media (max-width: 768px) {
+      :host {
+        height: calc(100dvh - 56px - 60px);
+      }
+
       .messages {
         padding: 12px;
-        padding-top: 60px;
         gap: 8px;
       }
 
