@@ -20,6 +20,7 @@ import { initFileLogger, createFileLogger } from "./core/logger-file.ts";
 import { CronEngine } from "./core/cron.ts";
 import { TranscriptLogger } from "./core/transcript-logger.ts";
 import { searchMemory, getMemoryStats, getRoleInfo, listRoles } from "./core/memory-access.ts";
+import { buildCapabilityProfile } from "./core/capability-profile.ts";
 import {
   createPluginRegistry,
   PluginLoader,
@@ -131,8 +132,10 @@ export class Gateway {
 
     // Load plugins
     const loader = new PluginLoader(this.config, this.registry, (id, m) => this.createPluginApi(id, m));
+    // Precedence: external plugins first, builtins as fallback.
+    const { errors } = await loader.loadAll();
     await loader.loadBuiltins();
-    const { loaded, errors } = await loader.loadAll();
+    const loaded = loader.getLoadedPluginIds();
     this.log.info(`Plugins loaded: ${loaded.join(", ") || "(none)"}`);
     for (const { id, error } of errors) {
       this.log.error(`Plugin ${id} failed: ${error}`);
@@ -179,6 +182,7 @@ export class Gateway {
     this.configWatcher = watchConfig(resolveConfigPath(), (newConfig) => {
       this.log.info("Config file changed, reloading...");
       this.config = newConfig;
+      this.pool.setConfig(newConfig);
     });
 
     this.log.info(`Gateway listening on ${this.config.gateway.bind}:${this.config.gateway.port}`);
@@ -210,6 +214,11 @@ export class Gateway {
 
     // Stop cron
     this.cron?.stop();
+
+    // Dispatch session_end for persisted sessions
+    for (const session of this.sessions.toArray()) {
+      await this.registry.hooks.dispatch("session_end", { sessionKey: session.sessionKey });
+    }
 
     // Persist sessions
     this.sessions.dispose();
@@ -251,6 +260,163 @@ export class Gateway {
     "/plan",
   ]);
 
+  private buildSessionProfile(sessionKey: SessionKey, role: string) {
+    const cwd = getCwdForRole(role, this.config);
+    return buildCapabilityProfile({
+      config: this.config,
+      role,
+      cwd,
+      sessionKey,
+    });
+  }
+
+  private parseSlashCommand(text: string): { name: string; args: string } | null {
+    const trimmed = text.trim();
+    const match = trimmed.match(/^\/([a-zA-Z0-9._-]+)(?:\s+([\s\S]*))?$/);
+    if (!match) return null;
+    return {
+      name: match[1].toLowerCase(),
+      args: (match[2] ?? "").trim(),
+    };
+  }
+
+  private normalizeOutgoingText(value: unknown, fallback: string): string {
+    if (typeof value === "string") return value;
+    if (value === null || value === undefined) return fallback;
+    return String(value);
+  }
+
+  private async tryHandleRegisteredCommand(msg: InboundMessage, startedAt: number): Promise<boolean> {
+    const parsed = this.parseSlashCommand(msg.text);
+    if (!parsed) return false;
+
+    const registered = this.registry.commands.get(parsed.name);
+    if (!registered) return false;
+
+    const sendCommandReply = async (rawText: string) => {
+      const outbound = {
+        channel: msg.source.channel,
+        target: msg.source.chatId,
+        text: this.normalizeOutgoingText(rawText, ""),
+      };
+
+      await this.registry.hooks.dispatch("message_sending", { message: outbound });
+      outbound.text = this.normalizeOutgoingText(outbound.text, "");
+      await msg.respond(outbound.text);
+      await this.registry.hooks.dispatch("message_sent", { message: outbound });
+      this.transcripts.logResponse(msg.sessionKey, outbound.text, Date.now() - startedAt);
+    };
+
+    try {
+      await registered.handler({
+        sessionKey: msg.sessionKey,
+        senderId: msg.source.senderId,
+        channel: msg.source.channel,
+        args: parsed.args,
+        respond: sendCommandReply,
+      });
+    } catch (err: any) {
+      const errMsg = err?.message ?? String(err);
+      await sendCommandReply(`Command /${parsed.name} failed: ${errMsg}`);
+    }
+
+    return true;
+  }
+
+  private getRegisteredToolSpecs() {
+    return Array.from(this.registry.tools.values()).map((tool) => ({
+      plugin: tool.name,
+      description: tool.description,
+      tools: tool.tools.map((def) => ({
+        name: def.name,
+        description: def.description,
+        parameters: def.parameters ?? {},
+        optional: def.optional ?? false,
+      })),
+    }));
+  }
+
+  private resolveToolPlugin(toolName: string): ToolPlugin | null {
+    for (const plugin of this.registry.tools.values()) {
+      if (plugin.tools.some((def) => def.name === toolName)) {
+        return plugin;
+      }
+    }
+    return null;
+  }
+
+  private async executeRegisteredTool(
+    toolName: string,
+    params: Record<string, unknown>,
+    sessionKey: SessionKey,
+  ) {
+    const plugin = this.resolveToolPlugin(toolName);
+    if (!plugin) {
+      throw new Error(`Tool not found: ${toolName}`);
+    }
+
+    const beforePayload = {
+      sessionKey,
+      toolName,
+      args: { ...params },
+    };
+    await this.registry.hooks.dispatch("before_tool_call", beforePayload);
+
+    const toolLogger = this.config.logging.file
+      ? createFileLogger(`tool:${toolName}`)
+      : createConsoleLogger(`tool:${toolName}`);
+
+    try {
+      const result = await plugin.execute(toolName, beforePayload.args, {
+        sessionKey,
+        logger: toolLogger,
+      });
+
+      const afterPayload = {
+        sessionKey,
+        toolName,
+        result,
+        isError: Boolean(result?.isError),
+      };
+      await this.registry.hooks.dispatch("after_tool_call", afterPayload);
+
+      const persistPayload = {
+        sessionKey,
+        toolName,
+        result: afterPayload.result,
+      };
+      await this.registry.hooks.dispatch("tool_result_persist", persistPayload);
+
+      return persistPayload.result;
+    } catch (err: any) {
+      const errorResult = {
+        content: [{ type: "text", text: `Tool error: ${err?.message ?? String(err)}` }],
+        isError: true,
+      };
+      await this.registry.hooks.dispatch("after_tool_call", {
+        sessionKey,
+        toolName,
+        result: errorResult,
+        isError: true,
+      });
+      throw err;
+    }
+  }
+
+  private async compactSessionWithHooks(sessionKey: SessionKey, instructions?: string): Promise<void> {
+    const rpc = this.pool.getForSession(sessionKey);
+    if (!rpc) {
+      throw new Error("No active session");
+    }
+
+    await this.registry.hooks.dispatch("before_compaction", { sessionKey });
+    const result = await rpc.compact(instructions);
+    const summary = (result && typeof result === "object" && "summary" in result && typeof (result as any).summary === "string")
+      ? (result as any).summary as string
+      : undefined;
+    await this.registry.hooks.dispatch("after_compaction", { sessionKey, summary });
+  }
+
   private async processMessage(msg: InboundMessage): Promise<void> {
     const { sessionKey, text, images, respond, setTyping, source } = msg;
     const startTime = Date.now();
@@ -260,6 +426,11 @@ export class Gateway {
     this.transcripts.logMeta(sessionKey, "process_start", {
       source: { channel: source.channel, chatType: source.chatType, chatId: source.chatId },
     });
+
+    // Plugin slash commands bypass LLM.
+    if (await this.tryHandleRegisteredCommand(msg, startTime)) {
+      return;
+    }
 
     // Guard: intercept pi extension commands that use TUI (would hang in RPC mode)
     const trimmedCmd = text.trim().toLowerCase();
@@ -288,14 +459,14 @@ export class Gateway {
     session.lastActivity = Date.now();
     session.messageCount++;
 
-    // Resolve role → CWD for RPC process
+    // Resolve role → capability profile for RPC process
     const role = session.role ?? "default";
-    const cwd = getCwdForRole(role, this.config);
+    const profile = this.buildSessionProfile(sessionKey, role);
 
     // Acquire RPC process
     let rpc;
     try {
-      rpc = await this.pool.acquire(sessionKey, cwd);
+      rpc = await this.pool.acquire(sessionKey, profile);
     } catch (err: any) {
       const errMsg = `Failed to acquire RPC process: ${err?.message ?? String(err)}`;
       this.log.error(errMsg);
@@ -305,7 +476,13 @@ export class Gateway {
     }
     session.rpcProcessId = rpc.id;
     session.isStreaming = true;
-    this.transcripts.logMeta(sessionKey, "rpc_acquired", { rpcId: rpc.id, cwd });
+    this.transcripts.logMeta(sessionKey, "rpc_acquired", {
+      rpcId: rpc.id,
+      cwd: profile.cwd,
+      role: profile.role,
+      signature: profile.signature.slice(0, 12),
+      capabilities: profile.resourceCounts,
+    });
 
     // Typing indicator
     await setTyping(true);
@@ -345,11 +522,18 @@ export class Gateway {
         agentEndMessages = (event as any).messages ?? [];
       }
 
-      // Capture stop reason from message_end
+      // Capture stop reason from message_end and extract full text if missing
       if (event.type === "message_end") {
         const msg = event as any;
-        if (msg.message?.role === "assistant" && msg.message?.stopReason) {
-          agentEndStopReason = msg.message.stopReason;
+        if (msg.message?.role === "assistant") {
+          if (msg.message?.stopReason) {
+            agentEndStopReason = msg.message.stopReason;
+          }
+          // Fallback: if no text_delta was received, extract from message_end
+          if (!fullText.trim() && msg.message?.content) {
+            fullText = msg.message.content;
+            this.log.debug(`Extracted text from message_end for ${sessionKey}: ${fullText.length} chars`);
+          }
         }
       }
 
@@ -378,11 +562,13 @@ export class Gateway {
 
     try {
       // Hook: before_agent_start
-      await this.registry.hooks.dispatch("before_agent_start", { sessionKey, message: text });
+      const beforeAgentPayload = { sessionKey, message: text };
+      await this.registry.hooks.dispatch("before_agent_start", beforeAgentPayload);
+      const promptText = this.normalizeOutgoingText(beforeAgentPayload.message, text);
 
       // Send prompt to pi agent
-      this.log.info(`[processMessage] Sending prompt to ${rpc.id} for ${sessionKey}: "${text.slice(0, 80)}"`);
-      await rpc.prompt(text, images);
+      this.log.info(`[processMessage] Sending prompt to ${rpc.id} for ${sessionKey}: "${promptText.slice(0, 80)}"`);
+      await rpc.prompt(promptText, images);
       await rpc.waitForIdle(timeoutMs);
 
       // Fallback: some runs may produce no text_delta events even with a final assistant message.
@@ -422,22 +608,23 @@ export class Gateway {
       fullText = "我这次没有生成可发送的文本，请再发一次或换个问法。";
     }
 
-    // Transcript: log final response
-    this.transcripts.logResponse(sessionKey, fullText, Date.now() - startTime);
+    const outbound = { channel: source.channel, target: source.chatId, text: fullText };
+    await this.registry.hooks.dispatch("message_sending", { message: outbound });
+    outbound.text = this.normalizeOutgoingText(outbound.text, fullText);
+
+    // Transcript: log final response (after message_sending mutations)
+    this.transcripts.logResponse(sessionKey, outbound.text, Date.now() - startTime);
     this.transcripts.logMeta(sessionKey, "process_end", {
       durationMs: Date.now() - startTime,
       eventCount,
-      textLength: fullText.length,
+      textLength: outbound.text.length,
       toolCount: toolLabels.length,
       tools: toolLabels,
       abortAttempted,
     });
 
-    const outbound = { channel: source.channel, target: source.chatId, text: fullText };
-    await this.registry.hooks.dispatch("message_sending", { message: outbound });
-
     // Send response
-    await respond(fullText);
+    await respond(outbound.text);
 
     // Hook: message_sent
     await this.registry.hooks.dispatch("message_sent", { message: outbound });
@@ -662,6 +849,16 @@ export class Gateway {
       });
     }
 
+    // Registered gateway tools
+    if (url.pathname === "/api/tools" && req.method === "GET") {
+      return Response.json({ tools: this.getRegisteredToolSpecs() });
+    }
+
+    // Invoke registered gateway tool
+    if (url.pathname === "/api/tools/call" && req.method === "POST") {
+      return await this.handleApiToolCall(req);
+    }
+
     // Webhook endpoints (aligned with OpenClaw POST /hooks/*)
     const hooksBase = this.config.hooks.path ?? "/hooks";
     if (url.pathname === `${hooksBase}/wake` && req.method === "POST") {
@@ -700,7 +897,9 @@ export class Gateway {
 
       const sessionKey = body.sessionKey ?? "agent:main:main:main";
       this.queue.enqueue(sessionKey, async () => {
-        const rpc = await this.pool.acquire(sessionKey);
+        const role = this.sessions.get(sessionKey)?.role ?? "default";
+        const profile = this.buildSessionProfile(sessionKey, role);
+        const rpc = await this.pool.acquire(sessionKey, profile);
         await rpc.prompt(`[WEBHOOK] ${body.text}`);
         await rpc.waitForIdle();
       });
@@ -766,6 +965,29 @@ export class Gateway {
     }
   }
 
+  private async handleApiToolCall(req: Request): Promise<Response> {
+    try {
+      const body = await req.json() as {
+        tool?: string;
+        toolName?: string;
+        params?: Record<string, unknown>;
+        sessionKey?: string;
+      };
+
+      const toolName = (body.toolName ?? body.tool ?? "").trim();
+      if (!toolName) {
+        return Response.json({ error: "toolName is required" }, { status: 400 });
+      }
+
+      const sessionKey = body.sessionKey ?? "agent:main:main:main";
+      const params = body.params && typeof body.params === "object" ? body.params : {};
+      const result = await this.executeRegisteredTool(toolName, params, sessionKey);
+      return Response.json({ ok: true, toolName, sessionKey, result });
+    } catch (err: any) {
+      return Response.json({ error: err?.message ?? "Tool call failed" }, { status: 500 });
+    }
+  }
+
   /**
    * POST /api/chat — Synchronous chat. Sends message, waits for full reply.
    * Curl-friendly: `curl -X POST localhost:18789/api/chat -d '{"message":"hi"}'`
@@ -800,9 +1022,8 @@ export class Gateway {
       const sessionKey = body.sessionKey ?? "agent:main:main:main";
       const startTime = Date.now();
 
-      // Resolve role + CWD
       const role = this.sessions.get(sessionKey)?.role ?? "default";
-      const cwd = getCwdForRole(role, this.config);
+      const profile = this.buildSessionProfile(sessionKey, role);
 
       // Ensure session exists
       if (!this.sessions.has(sessionKey)) {
@@ -820,7 +1041,7 @@ export class Gateway {
       session.messageCount++;
 
       // Acquire RPC process
-      const rpc = await this.pool.acquire(sessionKey, cwd);
+      const rpc = await this.pool.acquire(sessionKey, profile);
       session.rpcProcessId = rpc.id;
       session.isStreaming = true;
 
@@ -880,9 +1101,8 @@ export class Gateway {
     const sessionKey = body.sessionKey ?? "agent:main:main:main";
     const startTime = Date.now();
 
-    // Resolve role + CWD
     const role = this.sessions.get(sessionKey)?.role ?? "default";
-    const cwd = getCwdForRole(role, this.config);
+    const profile = this.buildSessionProfile(sessionKey, role);
 
     // Ensure session exists
     if (!this.sessions.has(sessionKey)) {
@@ -912,7 +1132,7 @@ export class Gateway {
 
         let rpc: Awaited<ReturnType<typeof self.pool.acquire>>;
         try {
-          rpc = await self.pool.acquire(sessionKey, cwd);
+          rpc = await self.pool.acquire(sessionKey, profile);
         } catch (err: any) {
           send({ type: "error", error: err?.message ?? "Pool acquire failed" });
           controller.close();
@@ -1106,7 +1326,7 @@ export class Gateway {
 
       const sessionKey = "agent:main:main:main";
       const role = this.sessions.get(sessionKey)?.role ?? "default";
-      const cwd = getCwdForRole(role, this.config);
+      const profile = this.buildSessionProfile(sessionKey, role);
 
       if (!this.sessions.has(sessionKey)) {
         this.sessions.getOrCreate(sessionKey, {
@@ -1118,7 +1338,7 @@ export class Gateway {
       session.lastActivity = Date.now();
       session.messageCount++;
 
-      const rpc = await this.pool.acquire(sessionKey, cwd);
+      const rpc = await this.pool.acquire(sessionKey, profile);
       session.rpcProcessId = rpc.id;
 
       const modelName = body.model ?? this.config.agent.model ?? "pi-gateway";
@@ -1410,16 +1630,11 @@ export class Gateway {
         case "sessions.compact": {
           const cKey = (params?.sessionKey as string);
           if (!cKey) { respond(false, undefined, "sessionKey required"); break; }
-          const cRpc = this.pool.getForSession(cKey);
-          if (cRpc) {
-            try {
-              await cRpc.compact(params?.instructions as string);
-              respond(true, { ok: true });
-            } catch (err: any) {
-              respond(false, undefined, err?.message);
-            }
-          } else {
-            respond(false, undefined, "No active session");
+          try {
+            await this.compactSessionWithHooks(cKey, params?.instructions as string);
+            respond(true, { ok: true });
+          } catch (err: any) {
+            respond(false, undefined, err?.message ?? "Compaction failed");
           }
           break;
         }
@@ -1427,6 +1642,7 @@ export class Gateway {
         case "sessions.delete": {
           const dKey = (params?.sessionKey as string);
           if (!dKey) { respond(false, undefined, "sessionKey required"); break; }
+          await this.registry.hooks.dispatch("session_end", { sessionKey: dKey });
           this.pool.release(dKey);
           this.sessions.delete(dKey);
           respond(true, { ok: true });
@@ -1474,6 +1690,29 @@ export class Gateway {
           });
           break;
 
+        case "tools.list":
+          respond(true, { tools: this.getRegisteredToolSpecs() });
+          break;
+
+        case "tools.call": {
+          const toolName = String((params?.toolName ?? params?.tool ?? "")).trim();
+          if (!toolName) {
+            respond(false, undefined, "toolName is required");
+            break;
+          }
+          const tSessionKey = (params?.sessionKey as string) ?? "agent:main:main:main";
+          const tParams = params?.params && typeof params.params === "object"
+            ? (params.params as Record<string, unknown>)
+            : {};
+          try {
+            const result = await this.executeRegisteredTool(toolName, tParams, tSessionKey);
+            respond(true, { toolName, sessionKey: tSessionKey, result });
+          } catch (err: any) {
+            respond(false, undefined, err?.message ?? "Tool call failed");
+          }
+          break;
+        }
+
         default:
           respond(false, undefined, `Unknown method: ${method}`);
       }
@@ -1504,6 +1743,7 @@ export class Gateway {
       name: manifest.name,
       source: "gateway",
       config: self.config,
+      pluginConfig: self.config.plugins.config?.[pluginId],
       logger: pluginLogger,
 
       registerChannel(channel: ChannelPlugin) {
@@ -1540,8 +1780,13 @@ export class Gateway {
       },
 
       registerCommand(name: string, handler: CommandHandler) {
-        self.registry.commands.set(name, { pluginId, handler });
-        pluginLogger.info(`Registered command: /${name}`);
+        const normalized = name.replace(/^\//, "").trim().toLowerCase();
+        if (!normalized) {
+          pluginLogger.warn("Skipped empty command registration");
+          return;
+        }
+        self.registry.commands.set(normalized, { pluginId, handler });
+        pluginLogger.info(`Registered command: /${normalized}`);
       },
 
       registerService(service: BackgroundService) {
@@ -1600,10 +1845,7 @@ export class Gateway {
       },
 
       async compactSession(sessionKey: SessionKey, instructions?: string) {
-        const rpc = self.pool.getForSession(sessionKey);
-        if (rpc) {
-          await rpc.compact(instructions);
-        }
+        await self.compactSessionWithHooks(sessionKey, instructions);
       },
 
       async abortSession(sessionKey: SessionKey) {
