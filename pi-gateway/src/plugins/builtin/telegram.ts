@@ -14,6 +14,7 @@
  * - Native slash commands registered to Telegram API
  * - Typing indicators
  * - Message chunking (4096 char limit)
+ * - Outbound media options: /media, /photo, /audio
  */
 
 import { Bot } from "grammy";
@@ -236,6 +237,122 @@ function asNonNegativeInt(value: unknown, fallback: number): number {
 }
 
 // ============================================================================
+// Outbound Media Parsing/Sending
+// ============================================================================
+
+type TelegramMediaKind = "photo" | "audio";
+
+interface TelegramMediaDirective {
+  kind: TelegramMediaKind;
+  url: string;
+  caption?: string;
+}
+
+interface ParsedOutbound {
+  text: string;
+  media: TelegramMediaDirective[];
+}
+
+function clipCaption(text: string, max = 1024): string {
+  const trimmed = text.trim();
+  if (!trimmed) return "";
+  return trimmed.length <= max ? trimmed : `${trimmed.slice(0, max - 3)}...`;
+}
+
+function parseMediaCommandArgs(raw: string): { url: string; caption?: string } | null {
+  const input = raw.trim();
+  if (!input) return null;
+  const parts = input.split(/\s+/);
+  const url = parts[0] ?? "";
+  if (!/^https?:\/\//i.test(url)) return null;
+  const rest = input.slice(url.length).trim();
+  return {
+    url,
+    caption: rest || undefined,
+  };
+}
+
+function parseOutboundMediaDirectives(text: string): ParsedOutbound {
+  const lines = text.split("\n");
+  const media: TelegramMediaDirective[] = [];
+  const remain: string[] = [];
+  const directiveRe = /^\s*\[(photo|audio)\]\s+(https?:\/\/\S+)(?:\s*\|\s*(.+))?\s*$/i;
+
+  for (const line of lines) {
+    const match = line.match(directiveRe);
+    if (!match) {
+      remain.push(line);
+      continue;
+    }
+    media.push({
+      kind: match[1].toLowerCase() as TelegramMediaKind,
+      url: match[2],
+      caption: match[3]?.trim() || undefined,
+    });
+  }
+
+  return {
+    text: remain.join("\n").trim(),
+    media,
+  };
+}
+
+async function sendTelegramMedia(
+  botClient: Bot,
+  chatId: string,
+  item: TelegramMediaDirective,
+): Promise<void> {
+  const caption = item.caption ? clipCaption(item.caption) : undefined;
+  if (item.kind === "photo") {
+    if (caption) {
+      await botClient.api.sendPhoto(chatId, item.url, {
+        caption: markdownToTelegramHtml(caption),
+        parse_mode: "HTML",
+      });
+    } else {
+      await botClient.api.sendPhoto(chatId, item.url);
+    }
+    return;
+  }
+
+  if (caption) {
+    await botClient.api.sendAudio(chatId, item.url, {
+      caption: markdownToTelegramHtml(caption),
+      parse_mode: "HTML",
+    });
+  } else {
+    await botClient.api.sendAudio(chatId, item.url);
+  }
+}
+
+async function sendTelegramTextAndMedia(
+  botClient: Bot,
+  chatId: string,
+  text: string,
+): Promise<void> {
+  const parsed = parseOutboundMediaDirectives(text);
+
+  if (parsed.text) {
+    const chunks = splitMessage(parsed.text, 4096);
+    for (const chunk of chunks) {
+      try {
+        await botClient.api.sendMessage(chatId, markdownToTelegramHtml(chunk), { parse_mode: "HTML" });
+      } catch {
+        await botClient.api.sendMessage(chatId, chunk);
+      }
+    }
+  }
+
+  for (const item of parsed.media) {
+    try {
+      await sendTelegramMedia(botClient, chatId, item);
+    } catch {
+      await botClient.api.sendMessage(chatId, `Failed to send ${item.kind}: ${item.url}`).catch(() => {});
+    }
+  }
+}
+
+// ============================================================================
 // Channel Plugin
 // ============================================================================
 
@@ -255,15 +372,7 @@ const telegramPlugin: ChannelPlugin = {
     maxLength: 4096,
     async sendText(target: string, text: string) {
       if (!bot) return;
-      const chunks = splitMessage(text, 4096);
-      for (const chunk of chunks) {
-        try {
-          await bot.api.sendMessage(target, markdownToTelegramHtml(chunk), { parse_mode: "HTML" });
-        } catch {
-          // Fallback to plain text if HTML parse fails
-          await bot.api.sendMessage(target, chunk);
-        }
-      }
+      await sendTelegramTextAndMedia(bot, target, text);
     },
   },
 
@@ -443,11 +552,19 @@ const telegramPlugin: ChannelPlugin = {
         // Throttled edit: don't spam Telegram API
         if (editInFlight || now - lastEditAt < streamEditThrottleMs) return;
         editInFlight = true;
+
+        // Safety timeout: force reset editInFlight if it gets stuck
+        const editTimeout = setTimeout(() => {
+          editInFlight = false;
+        }, 5000);
+
         botClient.api.editMessageText(chatId, replyMsgId, rendered).then(() => {
           lastEditAt = Date.now();
           editInFlight = false;
+          clearTimeout(editTimeout);
         }).catch(() => {
           editInFlight = false;
+          clearTimeout(editTimeout);
         });
       };
 
@@ -492,18 +609,33 @@ const telegramPlugin: ChannelPlugin = {
         respond: async (reply) => {
           clearInterval(typingInterval);
           const finalReply = toolLines.length > 0 ? `${toolLines.join("\n")}\n\n${reply}` : reply;
+          const parsedFinal = parseOutboundMediaDirectives(finalReply);
+          const finalText = parsedFinal.text;
+
+          // Check if streaming already sent substantial content
+          const streamingSentContent = replyMsgId && latestAccumulated.length > streamStartChars;
 
           if (replyMsgId) {
             // Final edit with full HTML formatting
             try {
-              const htmlChunks = splitMessage(finalReply, 4096);
-              await botClient.api.editMessageText(
-                chatId, replyMsgId,
-                markdownToTelegramHtml(htmlChunks[0]),
-                { parse_mode: "HTML" },
-              );
+              const textForEdit = finalText || "媒体已发送。";
+              const htmlChunks = splitMessage(textForEdit, 4096);
+
+              // If streaming already sent content, only send remaining chunks as new messages
+              // Don't re-send the first chunk that was already edited during streaming
+              const startIndex = streamingSentContent ? 1 : 0;
+
+              if (!streamingSentContent) {
+                // No substantial streaming happened, edit the placeholder
+                await botClient.api.editMessageText(
+                  chatId, replyMsgId,
+                  markdownToTelegramHtml(htmlChunks[0]),
+                  { parse_mode: "HTML" },
+                );
+              }
+
               // Additional chunks as new messages
-              for (let i = 1; i < htmlChunks.length; i++) {
+              for (let i = startIndex; i < htmlChunks.length; i++) {
                 try {
                   await botClient.api.sendMessage(chatId, markdownToTelegramHtml(htmlChunks[i]), { parse_mode: "HTML" });
                 } catch {
@@ -512,20 +644,32 @@ const telegramPlugin: ChannelPlugin = {
               }
             } catch {
               // Edit failed (message too old?), send as new
-              const chunks = splitMessage(finalReply, 4096);
-              for (const chunk of chunks) {
-                await botClient.api.sendMessage(chatId, chunk).catch(() => {});
+              if (finalText) {
+                const chunks = splitMessage(finalText, 4096);
+                for (const chunk of chunks) {
+                  await botClient.api.sendMessage(chatId, chunk).catch(() => {});
+                }
               }
             }
           } else {
             // No streaming happened (very short response), send directly with HTML
-            const chunks = splitMessage(finalReply, 4096);
-            for (const chunk of chunks) {
-              try {
-                await botClient.api.sendMessage(chatId, markdownToTelegramHtml(chunk), { parse_mode: "HTML" });
-              } catch {
-                await botClient.api.sendMessage(chatId, chunk).catch(() => {});
+            if (finalText) {
+              const chunks = splitMessage(finalText, 4096);
+              for (const chunk of chunks) {
+                try {
+                  await botClient.api.sendMessage(chatId, markdownToTelegramHtml(chunk), { parse_mode: "HTML" });
+                } catch {
+                  await botClient.api.sendMessage(chatId, chunk).catch(() => {});
+                }
               }
+            }
+          }
+
+          for (const item of parsedFinal.media) {
+            try {
+              await sendTelegramMedia(botClient, chatId, item);
+            } catch {
+              await botClient.api.sendMessage(chatId, `Failed to send ${item.kind}: ${item.url}`).catch(() => {});
             }
           }
         },
@@ -676,11 +820,77 @@ const telegramPlugin: ChannelPlugin = {
         "/model &lt;provider/model&gt; — Switch model",
         "/compact — Compact context",
         "/stop — Stop current agent run",
+        "/media — Show media options",
+        "/photo &lt;url&gt; [caption] — Send photo",
+        "/audio &lt;url&gt; [caption] — Send audio",
         "/help — This message",
         "",
         "<i>Any other text is sent to the AI agent.</i>",
+        "",
+        "<b>Media directives in AI reply:</b>",
+        "<code>[photo] https://... | optional caption</code>",
+        "<code>[audio] https://... | optional caption</code>",
       ];
       await ctx.reply(lines.join("\n"), { parse_mode: "HTML" });
+    });
+
+    // /media — show media send options
+    bot.command("media", async (ctx) => {
+      const lines = [
+        "<b>Media Send Options</b>",
+        "",
+        "/photo &lt;url&gt; [caption]",
+        "/audio &lt;url&gt; [caption]",
+        "",
+        "<b>Also supported in AI final reply:</b>",
+        "<code>[photo] https://... | optional caption</code>",
+        "<code>[audio] https://... | optional caption</code>",
+      ];
+      await ctx.reply(lines.join("\n"), { parse_mode: "HTML" });
+    });
+
+    // /photo <url> [caption]
+    bot.command("photo", async (ctx) => {
+      const parsed = parseMediaCommandArgs(String(ctx.match ?? ""));
+      if (!parsed) {
+        await ctx.reply("Usage: /photo <https://url> [caption]");
+        return;
+      }
+      try {
+        const caption = parsed.caption ? clipCaption(parsed.caption) : undefined;
+        if (caption) {
+          await bot!.api.sendPhoto(String(ctx.chat.id), parsed.url, {
+            caption: markdownToTelegramHtml(caption),
+            parse_mode: "HTML",
+          });
+        } else {
+          await bot!.api.sendPhoto(String(ctx.chat.id), parsed.url);
+        }
+      } catch (err: any) {
+        await ctx.reply(`Photo send failed: ${err?.message ?? "unknown error"}`);
+      }
+    });
+
+    // /audio <url> [caption]
+    bot.command("audio", async (ctx) => {
+      const parsed = parseMediaCommandArgs(String(ctx.match ?? ""));
+      if (!parsed) {
+        await ctx.reply("Usage: /audio <https://url> [caption]");
+        return;
+      }
+      try {
+        const caption = parsed.caption ? clipCaption(parsed.caption) : undefined;
+        if (caption) {
+          await bot!.api.sendAudio(String(ctx.chat.id), parsed.url, {
+            caption: markdownToTelegramHtml(caption),
+            parse_mode: "HTML",
+          });
+        } else {
+          await bot!.api.sendAudio(String(ctx.chat.id), parsed.url);
+        }
+      } catch (err: any) {
+        await ctx.reply(`Audio send failed: ${err?.message ?? "unknown error"}`);
+      }
     });
 
     // /think off|minimal|low|medium|high|xhigh (aligned with OpenClaw)
@@ -747,6 +957,9 @@ const telegramPlugin: ChannelPlugin = {
         { command: "model", description: "Switch model (provider/modelId)" },
         { command: "compact", description: "Compact context" },
         { command: "stop", description: "Stop current agent run" },
+        { command: "media", description: "Show media send options" },
+        { command: "photo", description: "Send photo: /photo <url> [caption]" },
+        { command: "audio", description: "Send audio: /audio <url> [caption]" },
         { command: "help", description: "List available commands" },
       ]);
       gatewayApi?.logger.info("Telegram: native commands registered");
