@@ -1,0 +1,8 @@
+{
+  "intentModel": "openai-codex/gpt-5.1-codex-mini",
+  "defaultLanguage": "zh",
+  "enableIntentDetection": true,
+  "confidenceThreshold": 0.7,
+  "customPrompts": {},
+  "debugMode": false
+}
