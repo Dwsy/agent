@@ -260,6 +260,18 @@ for file in path1 path2 path3; do cat "$file"; done
 | 找语法结构 | **ast-grep** | `ast-grep -p "console.log($$$)"` |
 | 语义理解/自然语言 | **ace** | `ace search "auth logic"` / `ace s "payment flow"` |
 
+**并行检索策略（提高成功率）：**
+```bash
+# fd: 同时搜索多个模式
+fd "(config|settings)"           # 多关键词或匹配
+fd "(router|controller|service)" # 多文件类型模式
+
+# rg: 同时搜索多个模式
+rg "(UserService\|UserController\|UserMapper)"   # 多符号
+rg "TODO\|FIXME\|XXX\|HACK"                       # 多标签
+rg "(function\|const\|class).*Auth"              # 多语法模式
+```
+
 **Ace 局限性：**
 - 不适合精确符号搜索（用 rg/ast-grep）
 - 不适合已知路径定位（用 fd）

@@ -124,6 +124,9 @@ docs/assets/
 sandbox.json
 test-interview.json
 
+# Local archive (backups, logs, sessions)
+archive/
+
 # Landing page development files
 landing-page/ANALYSIS_SUMMARY.md
 landing-page/DEPLOYMENT.md
