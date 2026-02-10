@@ -146,6 +146,13 @@ export class PluginLoader {
     }
   }
 
+  /**
+   * Snapshot loaded plugin IDs in precedence order.
+   */
+  getLoadedPluginIds(): string[] {
+    return Array.from(this.loaded.keys());
+  }
+
   // ==========================================================================
   // Discovery
   // ==========================================================================

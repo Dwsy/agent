@@ -14,6 +14,23 @@ import { loadConfig, resolveConfigPath, type CronJob } from "./core/config.ts";
 import { listPendingRequests, approvePairingRequest } from "./security/pairing.ts";
 import { CronEngine } from "./core/cron.ts";
 import { installDaemon, uninstallDaemon } from "./core/daemon.ts";
+import { createPluginRegistry, PluginLoader } from "./plugins/loader.ts";
+import type {
+  GatewayPluginApi,
+  PluginManifest,
+  PluginHookName,
+  HookHandler,
+  ChannelPlugin,
+  ToolPlugin,
+  BackgroundService,
+  CommandHandler,
+  HttpHandler,
+  WsMethodHandler,
+  CliProgram,
+  CliCommandHandler,
+} from "./plugins/types.ts";
+import type { InboundMessage, SessionKey } from "./core/types.ts";
+import { createLogger } from "./core/types.ts";
 
 // ============================================================================
 // Argument Parsing
@@ -30,6 +47,131 @@ function getArg(name: string): string | undefined {
   const idx = args.indexOf(`--${name}`);
   if (idx === -1 || idx + 1 >= args.length) return undefined;
   return args[idx + 1];
+}
+
+function parseCliArgs(argv: string[]): { positional: string[]; flags: Record<string, string | boolean> } {
+  const positional: string[] = [];
+  const flags: Record<string, string | boolean> = {};
+
+  for (let i = 0; i < argv.length; i++) {
+    const token = argv[i];
+    if (!token.startsWith("--")) {
+      positional.push(token);
+      continue;
+    }
+
+    const key = token.slice(2);
+    const next = argv[i + 1];
+    if (next && !next.startsWith("--")) {
+      flags[key] = next;
+      i++;
+    } else {
+      flags[key] = true;
+    }
+  }
+
+  return { positional, flags };
+}
+
+interface RegisteredCliEntry {
+  pluginId: string;
+  description: string;
+  handler: CliCommandHandler;
+}
+
+function createCliOnlyPluginApi(
+  config: ReturnType<typeof loadConfig>,
+  pluginId: string,
+  manifest: PluginManifest,
+  registry: ReturnType<typeof createPluginRegistry>,
+): GatewayPluginApi {
+  const logger = createLogger(`plugin-cli:${pluginId}`);
+
+  return {
+    id: pluginId,
+    name: manifest.name,
+    version: manifest.version,
+    description: manifest.description,
+    source: "gateway",
+    config,
+    pluginConfig: config.plugins.config?.[pluginId],
+    logger,
+
+    registerChannel(_channel: ChannelPlugin): void {},
+    registerTool(_tool: ToolPlugin): void {},
+    registerHook(_events: PluginHookName[], _handler: HookHandler): void {},
+    registerHttpRoute(_method: string, _path: string, _handler: HttpHandler): void {},
+    registerGatewayMethod(_method: string, _handler: WsMethodHandler): void {},
+    registerCommand(_name: string, _handler: CommandHandler): void {},
+    registerService(_service: BackgroundService): void {},
+    registerCli(registrar: (program: unknown) => void): void {
+      registry.cliRegistrars.push({ pluginId, registrar: registrar as (program: CliProgram) => void });
+    },
+    on<T extends PluginHookName>(_hook: T, _handler: HookHandler<T>): void {},
+
+    async dispatch(_msg: InboundMessage): Promise<void> {
+      throw new Error("dispatch is not available in CLI-only plugin context");
+    },
+    async sendToChannel(_channel: string, _target: string, _text: string): Promise<void> {
+      throw new Error("sendToChannel is not available in CLI-only plugin context");
+    },
+    getSessionState(_sessionKey: SessionKey) {
+      return null;
+    },
+    async resetSession(_sessionKey: SessionKey): Promise<void> {},
+    async setThinkingLevel(_sessionKey: SessionKey, _level: string): Promise<void> {},
+    async setModel(_sessionKey: SessionKey, _provider: string, _modelId: string): Promise<void> {},
+    async getAvailableModels(_sessionKey: SessionKey): Promise<unknown[]> { return []; },
+    async getSessionMessageMode(): Promise<"steer" | "follow-up" | "interrupt"> { return "steer"; },
+    async setSessionMessageMode(): Promise<void> {},
+    async compactSession(_sessionKey: SessionKey, _instructions?: string): Promise<void> {},
+    async abortSession(_sessionKey: SessionKey): Promise<void> {},
+  };
+}
+
+async function loadPluginCliCommands(configPath?: string): Promise<Map<string, RegisteredCliEntry>> {
+  const config = loadConfig(configPath);
+  const registry = createPluginRegistry();
+  const entries = new Map<string, RegisteredCliEntry>();
+
+  const loader = new PluginLoader(
+    config,
+    registry,
+    (pluginId, manifest) => createCliOnlyPluginApi(config, pluginId, manifest, registry),
+  );
+
+  await loader.loadAll();
+  await loader.loadBuiltins();
+
+  for (const { pluginId, registrar } of registry.cliRegistrars) {
+    const program: CliProgram = {
+      command(name: string, description: string, handler: CliCommandHandler) {
+        const key = name.trim();
+        if (!key) return;
+        if (entries.has(key)) return;
+        entries.set(key, { pluginId, description, handler });
+      },
+    };
+
+    try {
+      registrar(program);
+    } catch (err: any) {
+      console.warn(`Plugin CLI registrar failed (${pluginId}): ${err?.message ?? String(err)}`);
+    }
+  }
+
+  return entries;
+}
+
+async function runPluginCliIfMatched(): Promise<boolean> {
+  if (!command) return false;
+  const pluginCommands = await loadPluginCliCommands(getArg("config"));
+  const entry = pluginCommands.get(command);
+  if (!entry) return false;
+
+  const { positional, flags } = parseCliArgs(args.slice(1));
+  await entry.handler(positional, flags);
+  return true;
 }
 
 // ============================================================================
@@ -57,6 +199,9 @@ async function runGateway(): Promise<void> {
 async function runDoctor(): Promise<void> {
   const config = loadConfig(getArg("config"));
   const configPath = resolveConfigPath();
+  const normalizeMessageMode = (value: unknown): "steer" | "follow-up" | "interrupt" | null => {
+    return value === "steer" || value === "follow-up" || value === "interrupt" ? value : null;
+  };
 
   console.log("pi-gateway doctor");
   console.log("=================\n");
@@ -84,8 +229,32 @@ async function runDoctor(): Promise<void> {
 
   // Channels
   console.log("\nChannels:");
-  if (config.channels.telegram?.enabled && config.channels.telegram?.botToken) {
-    console.log(`  Telegram: configured (token: ${config.channels.telegram.botToken.slice(0, 8)}...)`);
+  const tg = config.channels.telegram;
+  if (tg?.enabled) {
+    const topLevelMode = normalizeMessageMode(tg.messageMode) ?? "steer";
+    const accountEntries = Object.entries(tg.accounts ?? {});
+    if (accountEntries.length === 0) {
+      const mode = tg.webhookUrl ? "webhook" : "polling";
+      const tokenHint = tg.botToken ? `${tg.botToken.slice(0, 8)}...` : (tg.tokenFile ? `tokenFile:${tg.tokenFile}` : "env/none");
+      console.log(`  Telegram[default]: enabled, mode=${mode}, messageMode=${topLevelMode}, token=${tokenHint}`);
+    } else {
+      const hasDefault = accountEntries.some(([id]) => id === "default");
+      if (!hasDefault && (tg.botToken || tg.tokenFile)) {
+        const mode = tg.webhookUrl ? "webhook" : "polling";
+        const tokenHint = tg.botToken ? `${tg.botToken.slice(0, 8)}...` : `tokenFile:${tg.tokenFile}`;
+        console.log(`  Telegram[default]: enabled, mode=${mode}, messageMode=${topLevelMode}, token=${tokenHint}`);
+      }
+      for (const [id, ac] of accountEntries) {
+        const mode = ac.webhookUrl ? "webhook" : "polling";
+        const enabled = ac.enabled !== false;
+        const resolvedMessageMode = normalizeMessageMode(ac.messageMode) ?? topLevelMode;
+        const tokenHint = ac.botToken ? `${ac.botToken.slice(0, 8)}...` : (ac.tokenFile ? `tokenFile:${ac.tokenFile}` : "inherit/env/none");
+        console.log(
+          `  Telegram[${id}]: ${enabled ? "enabled" : "disabled"}, mode=${mode}, messageMode=${resolvedMessageMode}, token=${tokenHint}`,
+        );
+      }
+    }
+    console.log("  Telegram commands: /queue [steer|follow-up|interrupt]");
   } else {
     console.log("  Telegram: not configured");
   }
@@ -117,7 +286,7 @@ async function runSend(): Promise<void> {
   const message = getArg("message");
 
   if (!to || !message) {
-    console.error("Usage: pi-gw send --to <channel:target> --message <text>");
+    console.error(`Usage: pi-gw send --to <channel:target> --message <text>\nExamples: telegram:123456 | telegram:default:123456 | telegram:default:123456:topic:1`);
     process.exit(1);
   }
 
@@ -152,10 +321,11 @@ function showConfig(): void {
 
 async function runPairing(): Promise<void> {
   const subcommand = args[1];
+  const account = getArg("account");
 
   if (subcommand === "list") {
     const channel = getArg("channel");
-    const requests = listPendingRequests(channel);
+    const requests = listPendingRequests(channel, account);
 
     if (requests.length === 0) {
       console.log("No pending pairing requests.");
@@ -182,17 +352,17 @@ async function runPairing(): Promise<void> {
       process.exit(1);
     }
 
-    const senderId = approvePairingRequest(channel, code);
+    const senderId = approvePairingRequest(channel, code, account);
     if (senderId) {
-      console.log(`Approved! Sender ${senderId} added to ${channel} allowlist.`);
+      console.log(`Approved! Sender ${senderId} added to ${channel}${account ? `(${account})` : ""} allowlist.`);
     } else {
       console.error(`Pairing code not found or expired: ${code}`);
       process.exit(1);
     }
   } else {
     console.log("Usage:");
-    console.log("  pi-gw pairing list [--channel <channel>]");
-    console.log("  pi-gw pairing approve <channel> <code>");
+    console.log("  pi-gw pairing list [--channel <channel>] [--account <accountId>]");
+    console.log("  pi-gw pairing approve <channel> <code> [--account <accountId>]");
   }
 }
 
@@ -268,19 +438,20 @@ pi-gateway — Local AI Gateway for pi agent
 Usage:
   pi-gw gateway [--port N] [--verbose] [--config path]   Start the gateway
   pi-gw doctor [--config path]                            Health check
-  pi-gw send --to <target> --message <text>               Send a message
+  pi-gw send --to <target> --message <text>               Send a message (telegram:<chatId> or telegram:<accountId>:<chatId>[:topic:<tid>])
   pi-gw config show                                       Show configuration
-  pi-gw pairing list [--channel <ch>]                     List pending pairing requests
-  pi-gw pairing approve <channel> <code>                  Approve a pairing request
+  pi-gw pairing list [--channel <ch>] [--account <id>]    List pending pairing requests
+  pi-gw pairing approve <channel> <code> [--account <id>] Approve a pairing request
   pi-gw cron list                                         List cron jobs
   pi-gw cron add <id> --schedule <expr> --text <text>     Add a cron job
   pi-gw cron remove <id>                                  Remove a cron job
   pi-gw install-daemon [--port N]                         Install as system daemon
   pi-gw uninstall-daemon                                  Remove system daemon
   pi-gw help                                              Show this help
+  pi-gw <plugin-command> [...]                            Run plugin-registered CLI command
 
 Environment:
-  PI_GATEWAY_CONFIG   Path to config file (default: ~/.pi/gateway/pi-gateway.json)
+  PI_GATEWAY_CONFIG   Path to config file (default: ~/.pi/gateway/pi-gateway.jsonc)
 `);
 }
 
@@ -324,8 +495,12 @@ switch (command) {
   case undefined:
     showHelp();
     break;
-  default:
+  default: {
+    if (await runPluginCliIfMatched()) {
+      break;
+    }
     console.error(`Unknown command: ${command}`);
     showHelp();
     process.exit(1);
+  }
 }

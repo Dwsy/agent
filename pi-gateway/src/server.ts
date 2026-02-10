@@ -10,12 +10,13 @@
 import type { Server, ServerWebSocket } from "bun";
 import { join } from "node:path";
 import { timingSafeEqual } from "node:crypto";
+import { existsSync, renameSync } from "node:fs";
 import { loadConfig, ensureDataDir, type Config, resolveConfigPath, watchConfig } from "./core/config.ts";
 import { RpcPool } from "./core/rpc-pool.ts";
 import { MessageQueueManager } from "./core/message-queue.ts";
 import { resolveSessionKey, resolveRoleForSession, getCwdForRole } from "./core/session-router.ts";
 import { createLogger as createConsoleLogger, type Logger, type InboundMessage, type SessionKey, type SessionState, type WsFrame } from "./core/types.ts";
-import { SessionStore, getSessionDir } from "./core/session-store.ts";
+import { SessionStore, encodeSessionDir, getSessionDir } from "./core/session-store.ts";
 import { initFileLogger, createFileLogger } from "./core/logger-file.ts";
 import { CronEngine } from "./core/cron.ts";
 import { TranscriptLogger } from "./core/transcript-logger.ts";
@@ -63,6 +64,15 @@ function redactConfig(config: Config): Record<string, unknown> {
 
   // Channel tokens
   if (json.channels?.telegram?.botToken) json.channels.telegram.botToken = "***";
+  if (json.channels?.telegram?.webhookSecret) json.channels.telegram.webhookSecret = "***";
+  if (json.channels?.telegram?.accounts && typeof json.channels.telegram.accounts === "object") {
+    for (const account of Object.values(json.channels.telegram.accounts as Record<string, any>)) {
+      if (!account || typeof account !== "object") continue;
+      if (account.botToken) account.botToken = "***";
+      if (account.webhookSecret) account.webhookSecret = "***";
+      if (account.tokenFile) account.tokenFile = "***";
+    }
+  }
   if (json.channels?.discord?.token) json.channels.discord.token = "***";
 
   // Hooks token
@@ -81,6 +91,8 @@ export interface GatewayOptions {
   verbose?: boolean;
 }
 
+type TelegramMessageMode = "steer" | "follow-up" | "interrupt";
+
 export class Gateway {
   private config: Config;
   private pool: RpcPool;
@@ -95,6 +107,9 @@ export class Gateway {
   private server: Server<WsClientData> | null = null;
   private log: Logger;
   private nextClientId = 0;
+  private sessionMessageModeOverrides = new Map<SessionKey, TelegramMessageMode>();
+  /** 缓存每个 channel 注册时的 api 引用，供 init 调用 */
+  private _channelApis = new Map<string, GatewayPluginApi>();
 
   constructor(options: GatewayOptions = {}) {
     this.config = loadConfig(options.configPath);
@@ -143,6 +158,19 @@ export class Gateway {
 
     // Dispatch gateway_start hook
     await this.registry.hooks.dispatch("gateway_start", {});
+
+    // Breaking-change migration: add telegram account dimension to legacy session keys.
+    this.migrateTelegramSessionKeys();
+
+    // Init channel plugins (确保 init 完成后再 start)
+    for (const [id, channel] of this.registry.channels) {
+      try {
+        const api = this._channelApis.get(id);
+        if (api) await channel.init(api);
+      } catch (err: any) {
+        this.log.error(`Channel ${id} init failed: ${err?.message}`);
+      }
+    }
 
     // Start channel plugins
     for (const [id, channel] of this.registry.channels) {
@@ -219,6 +247,7 @@ export class Gateway {
     for (const session of this.sessions.toArray()) {
       await this.registry.hooks.dispatch("session_end", { sessionKey: session.sessionKey });
     }
+    this.sessionMessageModeOverrides.clear();
 
     // Persist sessions
     this.sessions.dispose();
@@ -227,6 +256,86 @@ export class Gateway {
     await this.pool.stop();
 
     this.log.info("Gateway stopped");
+  }
+
+  private migrateTelegramSessionKeys(): void {
+    const migrations: Array<{ oldKey: string; newKey: string }> = [];
+    for (const session of this.sessions.toArray()) {
+      const oldKey = session.sessionKey;
+      let newKey: string | null = null;
+      if (oldKey.startsWith("agent:main:telegram:group:")) {
+        newKey = oldKey.replace(
+          "agent:main:telegram:",
+          "agent:main:telegram:account:default:",
+        );
+      } else if (oldKey.startsWith("agent:main:telegram:dm:")) {
+        newKey = oldKey.replace(
+          "agent:main:telegram:",
+          "agent:main:telegram:account:default:",
+        );
+      }
+      if (!newKey || newKey === oldKey) continue;
+      if (this.sessions.has(newKey)) {
+        this.log.warn(`Skip session migration (target exists): ${oldKey} -> ${newKey}`);
+        continue;
+      }
+      migrations.push({ oldKey, newKey });
+    }
+
+    if (migrations.length === 0) return;
+    const transcriptDir = join(this.config.session.dataDir, "transcripts");
+    for (const migration of migrations) {
+      const state = this.sessions.get(migration.oldKey);
+      if (!state) continue;
+      this.sessions.delete(migration.oldKey);
+      state.sessionKey = migration.newKey;
+      this.sessions.set(migration.newKey, state);
+
+      const oldSessionDir = getSessionDir(this.config.session.dataDir, migration.oldKey);
+      const newSessionDir = getSessionDir(this.config.session.dataDir, migration.newKey);
+      if (existsSync(oldSessionDir) && !existsSync(newSessionDir)) {
+        try {
+          renameSync(oldSessionDir, newSessionDir);
+        } catch (err: any) {
+          this.log.warn(`Session dir migration failed ${migration.oldKey}: ${err?.message ?? String(err)}`);
+        }
+      }
+
+      const oldTranscript = join(transcriptDir, `${encodeSessionDir(migration.oldKey)}.jsonl`);
+      const newTranscript = join(transcriptDir, `${encodeSessionDir(migration.newKey)}.jsonl`);
+      if (existsSync(oldTranscript) && !existsSync(newTranscript)) {
+        try {
+          renameSync(oldTranscript, newTranscript);
+        } catch (err: any) {
+          this.log.warn(`Transcript migration failed ${migration.oldKey}: ${err?.message ?? String(err)}`);
+        }
+      }
+      this.log.info(`Migrated Telegram session key: ${migration.oldKey} -> ${migration.newKey}`);
+    }
+    this.sessions.flushIfDirty();
+  }
+
+  private normalizeTelegramMessageMode(value: unknown): TelegramMessageMode | null {
+    return value === "steer" || value === "follow-up" || value === "interrupt"
+      ? value
+      : null;
+  }
+
+  private extractTelegramAccountId(sessionKey: SessionKey, sourceAccountId?: string): string {
+    if (sourceAccountId?.trim()) return sourceAccountId.trim();
+    const matched = sessionKey.match(/^agent:[^:]+:telegram:account:([^:]+):/);
+    return matched?.[1] ?? "default";
+  }
+
+  private resolveTelegramMessageMode(sessionKey: SessionKey, sourceAccountId?: string): TelegramMessageMode {
+    const override = this.sessionMessageModeOverrides.get(sessionKey);
+    if (override) return override;
+
+    const tg = this.config.channels.telegram;
+    const accountId = this.extractTelegramAccountId(sessionKey, sourceAccountId);
+    const accountMode = this.normalizeTelegramMessageMode(tg?.accounts?.[accountId]?.messageMode);
+    const channelMode = this.normalizeTelegramMessageMode(tg?.messageMode);
+    return accountMode ?? channelMode ?? "steer";
   }
 
   // ==========================================================================
@@ -242,6 +351,37 @@ export class Gateway {
     await this.registry.hooks.dispatch("message_received", { message: msg });
 
     const { sessionKey } = msg;
+
+    if (msg.source.channel === "telegram") {
+      const session = this.sessions.get(sessionKey);
+      const rpc = this.pool.getForSession(sessionKey);
+      if (session?.isStreaming && rpc) {
+        const mode = this.resolveTelegramMessageMode(sessionKey, msg.source.accountId);
+
+        if (mode === "interrupt") {
+          try {
+            await rpc.abort();
+          } catch (err: any) {
+            this.log.warn(`Failed to abort streaming session ${sessionKey}: ${err?.message ?? String(err)}`);
+          }
+        } else {
+          const rpcMode = mode === "follow-up" ? "followUp" : "steer";
+          this.transcripts.logMeta(sessionKey, "inbound_injected", {
+            mode,
+            textLen: msg.text.length,
+            hasImages: (msg.images?.length ?? 0) > 0,
+          });
+          try {
+            await rpc.prompt(msg.text, msg.images, rpcMode);
+            return;
+          } catch (err: any) {
+            this.log.warn(
+              `Failed to inject telegram message into active run for ${sessionKey}: ${err?.message ?? String(err)}`,
+            );
+          }
+        }
+      }
+    }
 
     // Enqueue for serial processing
     const enqueued = this.queue.enqueue(sessionKey, async () => {
@@ -947,7 +1087,7 @@ export class Gateway {
       // Parse "channel:target" format
       const colonIdx = body.to.indexOf(":");
       if (colonIdx === -1) {
-        return Response.json({ error: "Invalid 'to' format. Use 'channel:target' (e.g. 'telegram:123456')" }, { status: 400 });
+        return Response.json({ error: "Invalid 'to' format. Use 'channel:target' (e.g. 'telegram:123456' or 'telegram:default:123456:topic:1')" }, { status: 400 });
       }
 
       const channel = body.to.slice(0, colonIdx);
@@ -1644,6 +1784,7 @@ export class Gateway {
           if (!dKey) { respond(false, undefined, "sessionKey required"); break; }
           await this.registry.hooks.dispatch("session_end", { sessionKey: dKey });
           this.pool.release(dKey);
+          this.sessionMessageModeOverrides.delete(dKey);
           this.sessions.delete(dKey);
           respond(true, { ok: true });
           break;
@@ -1751,8 +1892,9 @@ export class Gateway {
           pluginLogger.warn(`Channel ${channel.id} already registered, skipping`);
           return;
         }
-        channel.init(this).catch((err) => pluginLogger.error(`Channel ${channel.id} init error:`, err));
         self.registry.channels.set(channel.id, channel);
+        // 保存 api 引用，供后续 init 调用使用
+        self._channelApis.set(channel.id, this);
         pluginLogger.info(`Registered channel: ${channel.id}`);
       },
 
@@ -1842,6 +1984,21 @@ export class Gateway {
         if (rpc) {
           await rpc.setModel(provider, modelId);
         }
+      },
+
+      async getAvailableModels(sessionKey: SessionKey) {
+        const rpc = self.pool.getForSession(sessionKey);
+        if (!rpc) return [];
+        const models = await rpc.getAvailableModels();
+        return Array.isArray(models) ? models : [];
+      },
+
+      async getSessionMessageMode(sessionKey: SessionKey) {
+        return self.resolveTelegramMessageMode(sessionKey);
+      },
+
+      async setSessionMessageMode(sessionKey: SessionKey, mode: "steer" | "follow-up" | "interrupt") {
+        self.sessionMessageModeOverrides.set(sessionKey, mode);
       },
 
       async compactSession(sessionKey: SessionKey, instructions?: string) {
