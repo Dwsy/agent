@@ -1,5 +1,106 @@
 # Changelog
 
+## [0.5.6] - 2026-02-08
+
+### Changed
+
+**Telegram Channel Re-Architecture (OpenClaw-aligned)**
+- Replaced monolithic `src/plugins/builtin/telegram.ts` with modular implementation under `src/plugins/builtin/telegram/`.
+- Built per-account runtime model (`Map<accountId, BotRuntime>`) with independent lifecycle/start mode.
+- Added account-scoped inbound routing and session source metadata (`MessageSource.accountId`).
+- Implemented account-aware outbound target parsing:
+  - legacy: `telegram:<chatId>`
+  - new: `telegram:<accountId>:<chatId>[:topic:<threadId>]`
+
+### Added
+
+- New Telegram modules:
+  - `index.ts`, `bot.ts`, `handlers.ts`, `commands.ts`
+  - `accounts.ts`, `config-compat.ts`, `monitor.ts`, `webhook.ts`
+  - `media-download.ts`, `media-send.ts`, `format.ts`, `model-buttons.ts`
+  - `group-migration.ts`, `reaction-level.ts`, `network-errors.ts`, `proxy.ts`, `update-offset-store.ts`, `sent-message-cache.ts`
+- Native command and callback capability upgrades:
+  - command help pagination buttons
+  - model provider/model selection callback buttons
+- Telegram tests:
+  - `src/plugins/builtin/telegram/__tests__/accounts.test.ts`
+  - `src/plugins/builtin/telegram/__tests__/target.test.ts`
+
+### Security / Migration
+
+- Allowlist and pairing storage upgraded to account-isolated keys with backward-compatible auto migration.
+- Telegram session key migration to account dimension (`account:default`) runs on gateway startup.
+
+### Tooling / Docs
+
+- `pi-gw doctor` now prints Telegram account-level mode/token source hints.
+- `pi-gw pairing` now supports `--account <accountId>`.
+- Updated `README.md`, `pi-gateway.jsonc`, and `docs/TELEGRAM-GAP-ANALYSIS.md` to match multi-account and media behavior.
+
+## [0.5.5] - 2026-02-08
+
+### Added
+
+**Layered Capability Profile (Role/Gateway/Base)**
+- Added `CapabilityProfile` builder (`src/core/capability-profile.ts`) to compute per-session RPC startup capabilities with deterministic ordering and signature.
+- New layered config fields in `pi-gateway.jsonc`:
+  - `agent.runtime.agentDir` (mapped to `PI_CODING_AGENT_DIR`)
+  - `agent.runtime.packageDir` (mapped to `PI_PACKAGE_DIR`)
+  - `agent.skillsBase[]`, `agent.skillsGateway[]`
+  - `roles.mergeMode` (`append`)
+  - `roles.capabilities[role]` with `skills[]`, `extensions[]`, `promptTemplates[]`
+- Layer merge priority:
+  - `skills`: role -> gateway -> base
+  - `extensions`: role -> global
+  - `promptTemplates`: role -> global
+- Path dedupe uses first-win semantics on absolute paths, preserving role/gateway priority.
+
+**Profile Metadata in Runtime Diagnostics**
+- Added profile diagnostics to transcript metadata on RPC acquire:
+  - `role`, `cwd`, signature prefix, and capability resource counts.
+
+### Documentation
+
+- Added `docs/GATEWAY-EXTENSIBILITY-DEEP-AUDIT.md`: decision-grade deep audit across Gateway plugin capabilities and Agent passthrough capabilities.
+- Added `docs/GATEWAY-EXTENSIBILITY-REMEDIATION-BACKLOG.md`: implementation-ready remediation backlog with priorities, acceptance criteria, risks, and rollback points.
+
+### Changed
+
+**RPC Pool Reuse Isolation Upgraded (CWD + Signature)**
+- `RpcPool.acquire()` now takes a capability profile instead of plain cwd.
+- Idle process reuse now requires both:
+  - matching `cwd`
+  - matching capability `signature`
+- If a bound session's profile no longer matches, the process is recycled and respawned with the new profile (lazy switch on next acquire).
+- `RpcClientOptions` now carries:
+  - `env` (for runtime isolation vars)
+  - `signature` (for observability and reuse control)
+- `Gateway` config hot-reload now also updates pool config via `pool.setConfig(newConfig)`.
+
+**Role Mapping Write Target Isolated**
+- `session-router` role mapping sync now writes to:
+  - `<agent.runtime.agentDir>/roles/config.json` when runtime agent dir is configured
+  - falls back to `~/.pi/agent/roles/config.json` only when runtime dir is not set
+- This avoids polluting the default `~/.pi/agent` runtime when gateway isolation is enabled.
+
+**Server Entry Points Unified on Capability Profiles**
+- Updated all RPC acquire call sites (`dispatch`, `/api/chat`, `/api/chat/stream`, OpenAI-compatible endpoint, webhook wake) to use session role-based capability profiles.
+
+**Docs and Sample Config Updated**
+- Updated `README.md` and `pi-gateway.jsonc` sample comments to document:
+  - runtime isolation fields
+  - layered skill loading
+  - role-specific capability overlays
+
+### Added (tests)
+
+- `src/core/capability-profile.test.ts`
+  - verifies merge order, dedupe behavior, legacy fallback, signature stability, runtime env mapping
+- `src/core/session-router.test.ts`
+  - verifies role mapping writes under runtime agent dir and workspace dir behavior
+- `src/core/rpc-pool.integration.test.ts`
+  - verifies reuse on same signature, non-reuse on different signature, and lazy switching after profile change
+
 ## [0.5.4] - 2026-02-07
 
 ### Added
@@ -23,7 +124,7 @@
   - `extensions[]`, `skills[]`, `promptTemplates[]`
   - `noExtensions`, `noSkills`, `noPromptTemplates`
 - `RpcPool.spawnClient()` maps these fields to CLI flags (`--append-system-prompt`, repeated `--extension`, repeated `--skill`, repeated `--prompt-template`, etc.) so AI capabilities are available at process start, not only via runtime instructions.
-- Added examples in `pi-gateway.json` and `README.md` for explicit extension/prompt injection.
+- Added examples in `pi-gateway.jsonc` and `README.md` for explicit extension/prompt injection.
 
 ## [0.5.2] - 2026-02-07
 
@@ -75,7 +176,7 @@
 
 **Infrastructure**
 - WS tick keepalive: broadcasts `event:tick` with timestamp every 30s to prevent proxy/CDN connection timeouts. Aligned with OpenClaw `tick` event.
-- Config hot-reload: `fs.watch` on config file with 500ms debounce. Changes to `pi-gateway.json` are automatically applied without restart. Also available via WS `config.reload` method.
+- Config hot-reload: `fs.watch` on config file with 500ms debounce. Changes to `pi-gateway.jsonc` are automatically applied without restart. Also available via WS `config.reload` method.
 - Cleanup on stop: tick timer and config watcher properly disposed.
 
 ## [0.4.0] - 2026-02-07
@@ -309,7 +410,7 @@ Aligned with OpenClaw `src/telegram/` feature set. Gap analysis documented in `d
 **Configuration**
 - JSON5 config file with key structure aligned to `openclaw.json`
 - Top-level keys: `gateway`, `agent`, `session`, `channels`, `plugins`, `roles`, `hooks`, `cron`, `logging`
-- Config search order: `$PI_GATEWAY_CONFIG` > `./pi-gateway.json` > `~/.pi/gateway/pi-gateway.json`
+- Config search order: `$PI_GATEWAY_CONFIG` > `./pi-gateway.jsonc` > `./pi-gateway.json` > `~/.pi/gateway/pi-gateway.jsonc` > `~/.pi/gateway/pi-gateway.json`
 
 **Web UI**
 - Lit-based SPA served from Gateway, zero build step (CDN importmap)

@@ -10,5 +10,5 @@ services:
       - ${HOME}/.pi/gateway:/root/.pi/gateway
       - ${HOME}/.pi/agent:/root/.pi/agent
     environment:
-      - PI_GATEWAY_CONFIG=/app/pi-gateway.json
+      - PI_GATEWAY_CONFIG=/app/pi-gateway.jsonc
     restart: unless-stopped

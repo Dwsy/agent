@@ -14,7 +14,7 @@ RUN bun install --frozen-lockfile
 
 # Copy source
 COPY src/ src/
-COPY pi-gateway.json ./
+COPY pi-gateway.jsonc ./
 
 EXPOSE 18789
 
