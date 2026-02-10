@@ -24,6 +24,9 @@ function zhPrompts(): Record<string, string> {
   return {
     "AGENTS.md": `# AGENTS.md - 你的工作空间
 
+> 何时更新：工作规则变化、安全边界调整、用户明确说"更新 AGENTS.md"时。
+> 如何更新：使用 write 或 edit 工具直接修改。
+
 这个目录就是家。把它当作长期工作环境来维护。
 
 ## 每次会话开始前
@@ -71,6 +74,9 @@ function zhPrompts(): Record<string, string> {
 
     "IDENTITY.md": `# IDENTITY.md
 
+> 何时更新：身份定义调整、名字/风格变化、用户明确说"更新 IDENTITY.md"时。
+> 如何更新：使用 write 或 edit 工具直接修改。
+
 - **名字：**
 - **定位：**
 - **风格：**
@@ -81,6 +87,9 @@ function zhPrompts(): Record<string, string> {
 `,
 
     "USER.md": `# USER.md
+
+> 何时更新：用户信息变化、偏好调整、禁忌明确、用户明确说"更新 USER.md"时。
+> 如何更新：使用 write 或 edit 工具直接修改。
 
 - **名字：**
 - **如何称呼：**
@@ -94,6 +103,9 @@ function zhPrompts(): Record<string, string> {
 `,
 
     "SOUL.md": `# SOUL.md - 你是谁
+
+> 何时更新：核心原则变化、风格调整、用户明确说"更新 SOUL.md"时。
+> 如何更新：使用 write 或 edit 工具直接修改，完成后告知用户。
 
 ## 核心原则
 
@@ -112,11 +124,12 @@ function zhPrompts(): Record<string, string> {
 
 - 简洁、直接、可执行
 - 复杂问题要给结构化方案
-
-> 如果你更新这个文件，要告诉用户。
 `,
 
     "HEARTBEAT.md": `# HEARTBEAT.md
+
+> 何时更新：检查项调整、主动任务变化、用户明确说"更新 HEARTBEAT.md"时。
+> 如何更新：使用 write 或 edit 工具直接修改。
 
 ## 检查清单
 
@@ -131,11 +144,15 @@ function zhPrompts(): Record<string, string> {
 
     "TOOLS.md": `# TOOLS.md
 
+> 何时更新：工具偏好变化、新路径/命令、环境变量调整、用户明确说"记住这个工具配置"时。
+> 如何更新：使用 write 或 edit 工具直接修改。
+
 记录你在本机的工具习惯与注意事项。
 
 示例：
-- 常用命令偏好
-- 本地脚本入口
+- SSH: ssh user@host
+- 截图目录: ~/Screenshots
+- 编辑器: Cursor
 - 特殊环境变量
 `,
 
@@ -178,6 +195,9 @@ function zhPrompts(): Record<string, string> {
 function enPrompts(): Record<string, string> {
   return {
     "AGENTS.md": `# AGENTS.md - Your Workspace
+
+> When to update: When work rules change, safety boundaries shift, or user explicitly says "update AGENTS.md".
+> How to update: Use write or edit tool to modify directly.
 
 This directory is home. Maintain it as long-term operating context.
 
@@ -226,6 +246,9 @@ Delete this file after initialization.
 
     "IDENTITY.md": `# IDENTITY.md
 
+> When to update: When identity definition changes, name/style shifts, or user explicitly says "update IDENTITY.md".
+> How to update: Use write or edit tool to modify directly.
+
 - **Name:**
 - **Role:**
 - **Vibe:**
@@ -236,6 +259,9 @@ Delete this file after initialization.
 `,
 
     "USER.md": `# USER.md
+
+> When to update: When user info changes, preferences shift, boundaries clarified, or user explicitly says "update USER.md".
+> How to update: Use write or edit tool to modify directly.
 
 - **Name:**
 - **How to address:**
@@ -249,6 +275,9 @@ Store durable context only.
 `,
 
     "SOUL.md": `# SOUL.md - Who You Are
+
+> When to update: When core principles change, style adjusts, or user explicitly says "update SOUL.md".
+> How to update: Use write or edit tool to modify directly, then notify user.
 
 ## Core principles
 
@@ -267,11 +296,12 @@ Store durable context only.
 
 - Concise, direct, actionable
 - Structured for complex issues
-
-> Tell user when you update this file.
 `,
 
     "HEARTBEAT.md": `# HEARTBEAT.md
+
+> When to update: When check items change, proactive tasks shift, or user explicitly says "update HEARTBEAT.md".
+> How to update: Use write or edit tool to modify directly.
 
 ## Checklist
 
@@ -286,7 +316,16 @@ No new signal and no blockers.
 
     "TOOLS.md": `# TOOLS.md
 
+> When to update: When tool preferences change, new paths/commands added, env vars adjusted, or user explicitly says "remember this tool config".
+> How to update: Use write or edit tool to modify directly.
+
 Local tool preferences and caveats.
+
+Examples:
+- SSH: ssh user@host
+- Screenshots: ~/Screenshots
+- Editor: Cursor
+- Special env vars
 `,
 
     "MEMORY.md": `# Memory: default

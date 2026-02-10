@@ -32,6 +32,7 @@ import { StringEnum } from "@mariozechner/pi-ai";
 import { Type } from "@sinclair/typebox";
 import { log } from "./logger.ts";
 import { SelectList, Text, Container } from "@mariozechner/pi-tui";
+import { config, reloadConfig } from "./config.ts";
 
 import {
   addRoleLearning,
@@ -41,12 +42,14 @@ import {
   ensureRoleMemoryFiles,
   listRoleMemory,
   readMemoryPromptBlocks,
+  readRoleMemory,
   reinforceRoleLearning,
   repairRoleMemory,
   searchRoleMemory,
 } from "./memory-md.ts";
 import { RoleMemoryViewerComponent, buildRoleMemoryViewerMarkdown } from "./memory-viewer.ts";
 import { runAutoMemoryExtraction, runLlmMemoryTidy } from "./memory-llm.ts";
+import { getAllTags, buildTagCloudHTML } from "./memory-tags.ts";
 import {
   createRole,
   DEFAULT_ROLE,
@@ -62,15 +65,21 @@ import {
   saveRoleConfig,
 } from "./role-store.ts";
 
-const AUTO_MEMORY_ENABLED = process.env.ROLE_AUTO_MEMORY !== "0" && process.env.RHO_SUBAGENT !== "1";
-const AUTO_MEMORY_MODEL = process.env.ROLE_AUTO_MEMORY_MODEL || "openai-codex/gpt-5.1-codex-mini";
-const AUTO_MEMORY_MAX_ITEMS = 3;
-const AUTO_MEMORY_MAX_TEXT = 200;
-const AUTO_MEMORY_RESERVE_TOKENS = Number(process.env.ROLE_AUTO_MEMORY_RESERVE_TOKENS) || 8192;
-const AUTO_MEMORY_BATCH_TURNS = 5;
-const AUTO_MEMORY_MIN_TURNS = 2;
-const AUTO_MEMORY_INTERVAL_MS = 30 * 60 * 1000;
-const AUTO_MEMORY_FORCE_KEYWORDS = /结束|总结|退出|收尾|结束会话|final|summary|wrap\s?up|quit|exit/i;
+// 配置从 config.ts 加载，环境变量可覆盖
+const AUTO_MEMORY_ENABLED = config.autoMemory.enabled;
+const AUTO_MEMORY_MODEL = config.autoMemory.model;
+const AUTO_MEMORY_MAX_ITEMS = config.autoMemory.maxItems;
+const AUTO_MEMORY_MAX_TEXT = config.autoMemory.maxText;
+const AUTO_MEMORY_RESERVE_TOKENS = config.autoMemory.reserveTokens;
+const AUTO_MEMORY_BATCH_TURNS = config.autoMemory.batchTurns;
+const AUTO_MEMORY_MIN_TURNS = config.autoMemory.minTurns;
+const AUTO_MEMORY_INTERVAL_MS = config.autoMemory.intervalMs;
+const AUTO_MEMORY_FORCE_KEYWORDS = new RegExp(config.advanced.forceKeywords, "i");
+const AUTO_MEMORY_CONTEXT_OVERLAP = config.autoMemory.contextOverlap;
+const SHUTDOWN_FLUSH_TIMEOUT = config.advanced.shutdownFlushTimeoutMs;
+const EVOLUTION_REMINDER_TURNS = config.advanced.evolutionReminderTurns;
+const SPINNER_INTERVAL = config.ui.spinnerIntervalMs;
+const SPINNER_FRAMES = config.ui.spinnerFrames;
 
 // Default prompt templates moved to role-template.ts
 
@@ -89,8 +98,6 @@ export default function rolePersonaExtension(pi: ExtensionAPI) {
   let autoMemoryLastFlushLen = 0;  // 上次 flush 时的消息数组长度
   let memoryCheckpointSpinner: ReturnType<typeof setInterval> | null = null;
   let memoryCheckpointFrame = 0;
-
-  const AUTO_MEMORY_CONTEXT_OVERLAP = 4;  // flush 时额外带几条旧消息做上下文
 
   const normalizePath = (path: string) => path.replace(/\/$/, "");
 
@@ -138,14 +145,13 @@ export default function rolePersonaExtension(pi: ExtensionAPI) {
     if (!ctx.hasUI) return;
     stopMemoryCheckpointSpinner();
 
-    const frames = ["✳", "✶", "✧", "✦"];
     memoryCheckpointFrame = 0;
-    ctx.ui.setStatus("memory-checkpoint", frames[memoryCheckpointFrame]);
+    ctx.ui.setStatus("memory-checkpoint", SPINNER_FRAMES[memoryCheckpointFrame]);
 
     memoryCheckpointSpinner = setInterval(() => {
-      memoryCheckpointFrame = (memoryCheckpointFrame + 1) % frames.length;
-      ctx.ui.setStatus("memory-checkpoint", frames[memoryCheckpointFrame]);
-    }, 260);
+      memoryCheckpointFrame = (memoryCheckpointFrame + 1) % SPINNER_FRAMES.length;
+      ctx.ui.setStatus("memory-checkpoint", SPINNER_FRAMES[memoryCheckpointFrame]);
+    }, SPINNER_INTERVAL);
   }
 
   function setMemoryCheckpointResult(ctx: ExtensionContext, reason: string, learnings: number, prefs: number): void {
@@ -514,7 +520,7 @@ ${buildMemoryEditInstruction(currentRolePath)}`;
     if (AUTO_MEMORY_ENABLED && autoMemoryPendingTurns > 0 && autoMemoryLastMessages) {
       await Promise.race([
         flushAutoMemory(autoMemoryLastMessages, ctx, "session-shutdown"),
-        new Promise<void>((resolve) => setTimeout(resolve, 1500)),
+        new Promise<void>((resolve) => setTimeout(resolve, SHUTDOWN_FLUSH_TIMEOUT)),
       ]);
     }
 
@@ -558,8 +564,10 @@ ${buildMemoryEditInstruction(currentRolePath)}`;
           if (!params.content) {
             return { content: [{ type: "text", text: "Error: content is required" }], details: { error: true } };
           }
-          const result = addRoleLearning(currentRolePath, currentRole, params.content, { appendDaily: true });
-          log("memory-tool", `add_learning: ${result.stored ? "stored" : result.reason} id=${result.id || "-"}`, params.content);
+          // Use async version with LLM tag extraction
+          const { addRoleLearningWithTags } = await import("./memory-md.ts");
+          const result = await addRoleLearningWithTags(ctx, currentRolePath, currentRole, params.content, { appendDaily: true });
+          log("memory-tool", `add_learning: ${result.stored ? "stored" : result.reason} id=${result.id || "-"} tags=${result.tags?.join(",") || "-"}`, params.content);
           if (!result.stored) {
             return {
               content: [{ type: "text", text: result.duplicate ? "Already stored" : "Not stored" }],
@@ -567,7 +575,7 @@ ${buildMemoryEditInstruction(currentRolePath)}`;
             };
           }
           return {
-            content: [{ type: "text", text: `Stored learning: ${params.content}` }],
+            content: [{ type: "text", text: `Stored learning: ${params.content}${result.tags?.length ? ` [tags: ${result.tags.join(", ")}]` : ""}` }],
             details: result,
           };
         }
@@ -725,6 +733,120 @@ ${buildMemoryEditInstruction(currentRolePath)}`;
           },
         },
       );
+    },
+  });
+
+  pi.registerCommand("memory-tags", {
+    description: "Browse memory by auto-extracted tags with forgetting curve visualization",
+    args: {
+      query: { type: "string", optional: true, description: "Filter tags by keyword" },
+      export: { type: "boolean", optional: true, description: "Export tag cloud to HTML" },
+    },
+    handler: async (args, ctx) => {
+      if (!currentRole || !currentRolePath) {
+        ctx.ui.notify("当前目录未映射角色", "warning");
+        return;
+      }
+
+      const memoryData = readRoleMemory(currentRolePath, currentRole);
+      const tagRegistry = getAllTags(memoryData);
+
+      if (args.export) {
+        const html = buildTagCloudHTML(tagRegistry, memoryData.roleName);
+        const os = await import("node:os");
+        const fs = await import("node:fs");
+        const path = await import("node:path");
+        const tmpDir = os.tmpdir();
+        const tmpFile = path.join(tmpDir, `${currentRole}-tags.html`);
+        fs.writeFileSync(tmpFile, html);
+        ctx.ui.notify(`Tag cloud exported: ${tmpFile}`, "success");
+        return;
+      }
+
+      if (!ctx.hasUI) {
+        const lines = [`# Tag Cloud for ${currentRole}`, ""];
+        const sortedTags = Object.entries(tagRegistry)
+          .sort((a, b) => b[1].weight - a[1].weight)
+          .slice(0, 50);
+
+        for (const [tag, meta] of sortedTags) {
+          const strength = meta.weight > 5 ? "🔥" : meta.weight > 2 ? "⭐" : "💤";
+          lines.push(`- ${strength} **${tag}** (${meta.count} memories, weight: ${meta.weight.toFixed(2)})`);
+        }
+
+        pi.sendMessage({ customType: "role-tags", content: lines.join("\n"), display: true }, { triggerTurn: false });
+        return;
+      }
+
+      // Build TUI tag browser
+      const { SelectList, Text, Container } = await import("@mariozechner/pi-tui");
+
+      await ctx.ui.custom<void>((tui, theme, _kb, done) => {
+        const container = new Container();
+
+        container.addChild(new Text(theme.fg("accent", theme.bold("Tag Cloud - " + currentRole))));
+        container.addChild(new Text(""));
+
+        const sortedTags = Object.entries(tagRegistry)
+          .sort((a, b) => b[1].weight - a[1].weight)
+          .filter(([tag]) => !args.query || tag.toLowerCase().includes(args.query.toLowerCase()));
+
+        const items = sortedTags.map(([tag, meta]) => ({
+          label: tag.padEnd(20) + " " + meta.count + "x w:" + meta.weight.toFixed(1) + (meta.forgotten ? " [fading]" : ""),
+          value: tag,
+        }));
+
+        if (items.length === 0) {
+          container.addChild(new Text("No tags found"));
+        } else {
+          const tagList = new SelectList(
+            items.map(i => i.label),
+            Math.min(items.length, 15),
+            {
+              onSelect: (index) => {
+                const tag = items[index].value;
+                const meta = tagRegistry[tag];
+                const preview = [
+                  "Tag: " + tag,
+                  "Count: " + meta.count + " memories",
+                  "Weight: " + meta.weight.toFixed(2),
+                  "Last Used: " + new Date(meta.lastUsed).toLocaleDateString(),
+                  "",
+                  "Related memories:",
+                  ...meta.memories.slice(0, 5).map((m) => "  - " + m.text.slice(0, 80) + "..."),
+                ].join("\n");
+                ctx.ui.notify(preview, "info");
+              },
+            }
+          );
+          container.addChild(tagList);
+        }
+
+        return {
+          render(width: number) {
+            return container.render(width);
+          },
+          invalidate() {
+            container.invalidate();
+          },
+          handleInput(data: string) {
+            const children = container["children"] || [];
+            const list = children.find((c: any) => c instanceof SelectList);
+            if (list) {
+              list.handleInput(data);
+              tui.requestRender();
+            }
+          },
+        };
+      }, {
+        overlay: true,
+        overlayOptions: {
+          anchor: "center",
+          width: "80%",
+          minWidth: 50,
+          maxHeight: "80%",
+        },
+      });
     },
   });
 
@@ -1029,8 +1151,8 @@ ${buildMemoryEditInstruction(currentRolePath)}`;
     turnCount++;
     const today = new Date().toISOString().split("T")[0];
 
-    // Daily check (once per day, after 5+ turns)
-    if (lastEvolutionDate !== today && turnCount >= 5) {
+    // Daily check (once per day, after N turns)
+    if (lastEvolutionDate !== today && turnCount >= EVOLUTION_REMINDER_TURNS) {
       lastEvolutionDate = today;
       turnCount = 0;
 

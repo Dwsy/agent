@@ -189,12 +189,14 @@ export function loadRolePrompts(rolePath: string): string {
           { name: "IDENTITY.md", header: "IDENTITY.md - 身份" },
           { name: "SOUL.md", header: "SOUL.md - 核心人格" },
           { name: "USER.md", header: "USER.md - 用户画像" },
+          { name: "TOOLS.md", header: "TOOLS.md - 工具偏好" },
         ]
       : [
           { name: "AGENTS.md", header: "AGENTS.md - Workspace Rules" },
           { name: "IDENTITY.md", header: "IDENTITY.md - Identity" },
           { name: "SOUL.md", header: "SOUL.md - Personality" },
           { name: "USER.md", header: "USER.md - User Profile" },
+          { name: "TOOLS.md", header: "TOOLS.md - Tool Preferences" },
         ];
 
   for (const { name, header } of files) {

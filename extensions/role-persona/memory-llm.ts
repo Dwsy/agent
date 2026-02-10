@@ -1,6 +1,7 @@
 import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { convertToLlm, serializeConversation } from "@mariozechner/pi-coding-agent";
 import { complete, completeSimple } from "@mariozechner/pi-ai";
+import { config } from "./config.ts";
 
 import {
   addRoleLearning,
@@ -186,6 +187,11 @@ export async function runLlmMemoryTidy(
 
   log("llm-tidy", `LLM response length: ${text.length} chars`);
 
+  if (!text) {
+    log("llm-tidy", `empty response from model: ${resolved.label}`);
+    return { error: `Model ${resolved.label} returned empty response. Try a different model.` };
+  }
+
   const plan = parseLlmTidyPlan(text);
   if (!plan) {
     log("llm-tidy", `parse failed, raw response: ${text.slice(0, 500)}`);
@@ -309,7 +315,7 @@ export async function runAutoMemoryExtraction(
   log("auto-extract", `model: ${resolved.label} contextWindow=${resolved.model.contextWindow || "?"}`);
 
   // Token-budget message selection (newest first, like pi's prepareBranchEntries)
-  const reserveTokens = options?.reserveTokens ?? 8192;
+  const reserveTokens = options?.reserveTokens ?? config.autoMemory.reserveTokens;
   const conversationText = prepareConversationWithBudget(
     messages,
     reserveTokens,
@@ -371,8 +377,8 @@ export async function runAutoMemoryExtraction(
 
   log("auto-extract", `parsed: ${parsed.learnings?.length || 0} learnings, ${parsed.preferences?.length || 0} preferences`);
 
-  const maxItems = options?.maxItems ?? 3;
-  const maxText = options?.maxText ?? 200;
+  const maxItems = options?.maxItems ?? config.autoMemory.maxItems;
+  const maxText = options?.maxText ?? config.autoMemory.maxText;
 
   let remaining = maxItems;
   let storedLearnings = 0;

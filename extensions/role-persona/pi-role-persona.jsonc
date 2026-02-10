@@ -1,0 +1,112 @@
+// Role Persona Extension Configuration
+// Path: ~/.pi/agent/extensions/role-persona/pi-role-persona.jsonc
+//
+// 配置优先级（高到低）：
+// 1. 环境变量（ROLE_*）
+// 2. 本配置文件
+// 3. 内置默认值
+
+{
+  // ==================== 自动记忆配置 ====================
+  "autoMemory": {
+    // 总开关：是否启用自动记忆提取
+    // 环境变量覆盖：ROLE_AUTO_MEMORY
+    "enabled": true,
+
+    // 自动记忆提取使用的模型
+    // 格式: "provider/model-id"
+    // 环境变量覆盖：ROLE_AUTO_MEMORY_MODEL
+    "model": "openai-codex/gpt-5.1-codex-mini",
+
+    // 标签提取专用模型（默认继承 autoMemory.model）
+    // 环境变量覆盖：ROLE_TAG_MODEL
+    "tagModel": null,
+
+    // Token 预算：为上下文预留的 token 数
+    // 环境变量覆盖：ROLE_AUTO_MEMORY_RESERVE_TOKENS
+    "reserveTokens": 8192,
+
+    // 单次提取最多条目数（防止过度提取）
+    "maxItems": 3,
+
+    // 单条记忆最大字符数
+    "maxText": 200,
+
+    // Checkpoint 触发：累计轮数
+    "batchTurns": 5,
+
+    // 间隔触发：最小轮数（配合 intervalMs）
+    "minTurns": 2,
+
+    // 间隔触发：时间间隔（毫秒）
+    // 默认 30 分钟
+    "intervalMs": 1800000,
+
+    // Flush 时保留的上下文重叠消息数
+    "contextOverlap": 4
+  },
+
+  // ==================== 日志配置 ====================
+  "logging": {
+    // 是否启用日志
+    // 环境变量覆盖：ROLE_LOG
+    "enabled": true,
+
+    // 日志级别: "debug" | "info" | "warn" | "error"
+    "level": "info",
+
+    // 日志保留天数（0 表示不自动清理）
+    "retentionDays": 7
+  },
+
+  // ==================== 记忆管理配置 ====================
+  "memory": {
+    // 默认学习分类（用于 Preferences）
+    "defaultCategories": [
+      "Communication",
+      "Code",
+      "Tools",
+      "Workflow",
+      "General"
+    ],
+
+    // 每日记忆文件路径模板
+    // 变量: {rolePath}, {date}
+    "dailyPathTemplate": "{rolePath}/memory/{date}.md",
+
+    // 记忆去重相似度阈值（0-1，Jaccard 系数）
+    "dedupeThreshold": 0.9,
+
+    // 搜索默认参数
+    "searchDefaults": {
+      "maxResults": 20,
+      "minScore": 0.1,
+      "includeDailyMemory": true
+    }
+  },
+
+  // ==================== UI 配置 ====================
+  "ui": {
+    // Checkpoint 动画帧间隔（毫秒）
+    "spinnerIntervalMs": 260,
+
+    // Checkpoint 动画帧符号
+    "spinnerFrames": ["✳", "✶", "✧", "✦"],
+
+    // 记忆查看器默认过滤
+    // "all" | "learnings" | "preferences" | "events"
+    "viewerDefaultFilter": "all"
+  },
+
+  // ==================== 高级配置 ====================
+  "advanced": {
+    // 会话关闭时 flush 的最大等待时间（毫秒）
+    "shutdownFlushTimeoutMs": 1500,
+
+    // 检查点触发的强制关键词（正则表达式字符串）
+    "forceKeywords": "结束|总结|退出|收尾|结束会话|final|summary|wrap\\s?up|quit|exit",
+
+    // 自动整理：进化提醒间隔（每 N 轮触发一次）
+    "evolutionReminderTurns": 5
+  }
+}

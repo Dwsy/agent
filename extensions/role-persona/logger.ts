@@ -2,15 +2,16 @@
  * Simple file logger for role-persona extension.
  *
  * - Logs to extensions/role-persona/.log/YYYY-MM-DD.log
- * - Enabled by default, disable with ROLE_LOG=0
+ * - Enabled by default, disable with ROLE_LOG=0 or config.logging.enabled
  * - Each line: [HH:MM:SS] [TAG] message
  */
 
 import { existsSync, mkdirSync, appendFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { config } from "./config.ts";
 
-const ENABLED = process.env.ROLE_LOG !== "0";
+const ENABLED = config.logging.enabled;
 
 function getLogDir(): string {
   // __dirname equivalent for ESM

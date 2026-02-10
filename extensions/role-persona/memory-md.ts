@@ -2,8 +2,11 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from
 import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { log } from "./logger.ts";
+import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
+import { extractTagsWithLLM, updateTagWeights, type TagRegistry } from "./memory-tags.ts";
+import { config } from "./config.ts";
 
-export const DEFAULT_MEMORY_CATEGORIES = ["Communication", "Code", "Tools", "Workflow", "General"] as const;
+export const DEFAULT_MEMORY_CATEGORIES = config.memory.defaultCategories as unknown as readonly string[];
 export type MemoryCategory = (typeof DEFAULT_MEMORY_CATEGORIES)[number] | string;
 
 export interface MemoryLearningRecord {
@@ -11,12 +14,16 @@ export interface MemoryLearningRecord {
   text: string;
   used: number;
   source?: string;
+  tags?: string[];
+  weight?: number;
+  lastAccessed?: string;
 }
 
 export interface MemoryPreferenceRecord {
   id: string;
   category: string;
   text: string;
+  tags?: string[];
 }
 
 export interface RoleMemoryData {
@@ -161,7 +168,7 @@ function dedupeLearnings(learnings: MemoryLearningRecord[]): MemoryLearningRecor
   const kept: MemoryLearningRecord[] = [];
   for (const current of candidates) {
     const currentTokens = tokenize(current.text);
-    const similar = kept.find((k) => jaccard(currentTokens, tokenize(k.text)) >= 0.9);
+    const similar = kept.find((k) => jaccard(currentTokens, tokenize(k.text)) >= config.memory.dedupeThreshold);
     if (!similar) {
       kept.push(current);
     } else {
@@ -465,7 +472,7 @@ export function addRoleLearning(
   rolePath: string,
   roleName: string,
   text: string,
-  options?: { source?: string; appendDaily?: boolean }
+  options?: { source?: string; appendDaily?: boolean; tags?: string[]; weight?: number }
 ): { stored: boolean; duplicate?: boolean; id?: string; reason?: string } {
   const normalized = normalizeText(text);
   if (!normalized || normalized === "(none)") return { stored: false, reason: "empty" };
@@ -474,7 +481,15 @@ export function addRoleLearning(
   const duplicate = data.learnings.find((l) => normalizeText(l.text).toLowerCase() === normalized.toLowerCase());
   if (duplicate) return { stored: false, duplicate: true, id: duplicate.id, reason: "duplicate" };
 
-  data.learnings.push({ id: hashId("learning", normalized), text: normalized, used: 0, source: options?.source });
+  data.learnings.push({
+    id: hashId("learning", normalized),
+    text: normalized,
+    used: 0,
+    source: options?.source,
+    tags: options?.tags,
+    weight: options?.weight ?? 1.0,
+    lastAccessed: today(),
+  });
   data.lastConsolidated = data.lastConsolidated || today();
   saveRoleMemory(rolePath, data);
 
@@ -483,6 +498,42 @@ export function addRoleLearning(
   }
 
   return { stored: true, id: hashId("learning", normalized) };
+}
+
+export async function addRoleLearningWithTags(
+  ctx: ExtensionContext,
+  rolePath: string,
+  roleName: string,
+  text: string,
+  options?: { source?: string; appendDaily?: boolean; tagModel?: string }
+): Promise<{ stored: boolean; duplicate?: boolean; id?: string; reason?: string; tags?: string[] }> {
+  const normalized = normalizeText(text);
+  if (!normalized || normalized === "(none)") return { stored: false, reason: "empty" };
+
+  const data = readRoleMemory(rolePath, roleName);
+  const duplicate = data.learnings.find((l) => normalizeText(l.text).toLowerCase() === normalized.toLowerCase());
+  if (duplicate) return { stored: false, duplicate: true, id: duplicate.id, reason: "duplicate" };
+
+  // Extract tags using LLM
+  const tags = await extractTagsWithLLM(ctx, normalized, { model: options?.tagModel });
+
+  data.learnings.push({
+    id: hashId("learning", normalized),
+    text: normalized,
+    used: 0,
+    source: options?.source,
+    tags,
+    weight: 1.0,
+    lastAccessed: today(),
+  });
+  data.lastConsolidated = data.lastConsolidated || today();
+  saveRoleMemory(rolePath, data);
+
+  if (options?.appendDaily !== false) {
+    appendDailyRoleMemory(rolePath, "lesson", normalized);
+  }
+
+  return { stored: true, id: hashId("learning", normalized), tags };
 }
 
 export function addRolePreference(
@@ -582,8 +633,8 @@ export function searchRoleMemory(
   if (!q) return [];
 
   const queryTokens = tokenize(q);
-  const maxResults = options?.maxResults ?? 20;
-  const minScore = options?.minScore ?? 0.1;
+  const maxResults = options?.maxResults ?? config.memory.searchDefaults.maxResults;
+  const minScore = options?.minScore ?? config.memory.searchDefaults.minScore;
   const scored: ScoredMemoryMatch[] = [];
 
   const data = readRoleMemory(rolePath, roleName);
@@ -877,7 +928,11 @@ export function repairRoleMemory(
   const issues = parsed.issues.length;
   if (!changed && issues === 0) return { repaired: false, issues: 0 };
 
-  const backupPath = join(rolePath, `MEMORY.backup-${Date.now()}.md`);
+  const backupDir = join(rolePath, ".backup", "memory");
+  if (!existsSync(backupDir)) {
+    mkdirSync(backupDir, { recursive: true });
+  }
+  const backupPath = join(backupDir, `MEMORY.backup-${Date.now()}.md`);
   if (existsSync(file)) copyFileSync(file, backupPath);
   writeMemory(rolePath, canonical);
 
