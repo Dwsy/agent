@@ -30,6 +30,8 @@ export interface RpcClientOptions {
   piCliPath?: string;
   /** Working directory for the pi process */
   cwd?: string;
+  /** Capability signature used for pool reuse isolation. */
+  signature?: string;
   /** Environment variables to pass */
   env?: Record<string, string>;
   /** Additional CLI arguments */
@@ -145,6 +147,10 @@ export class RpcClient {
     return this.options.cwd;
   }
 
+  get signature(): string | undefined {
+    return this.options.signature;
+  }
+
   getStderr(): string {
     return this.stderr;
   }
@@ -165,8 +171,12 @@ export class RpcClient {
   // Commands
   // ==========================================================================
 
-  async prompt(message: string, images?: ImageContent[]): Promise<void> {
-    await this.send({ type: "prompt", message, images });
+  async prompt(
+    message: string,
+    images?: ImageContent[],
+    streamingBehavior?: "steer" | "followUp",
+  ): Promise<void> {
+    await this.send({ type: "prompt", message, images, streamingBehavior });
   }
 
   async steer(message: string): Promise<void> {
@@ -277,7 +287,11 @@ export class RpcClient {
   /**
    * Send prompt and collect the full assistant text.
    */
-  async promptAndCollect(message: string, timeoutMs = 120_000): Promise<string> {
+  async promptAndCollect(
+    message: string,
+    timeoutMs = 120_000,
+    streamingBehavior?: "steer" | "followUp",
+  ): Promise<string> {
     let text = "";
     const unsub = this.onEvent((event) => {
       if (event.type === "message_update") {
@@ -288,7 +302,7 @@ export class RpcClient {
       }
     });
 
-    await this.prompt(message);
+    await this.prompt(message, undefined, streamingBehavior);
     await this.waitForIdle(timeoutMs);
     unsub();
     return text;

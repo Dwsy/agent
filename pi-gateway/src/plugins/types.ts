@@ -268,6 +268,15 @@ export interface GatewayPluginApi {
   /** Set model for a session (calls RPC set_model) */
   setModel(sessionKey: SessionKey, provider: string, modelId: string): Promise<void>;
 
+  /** Get available models from the bound RPC session */
+  getAvailableModels(sessionKey: SessionKey): Promise<unknown[]>;
+
+  /** Get resolved Telegram message concurrency mode for a session. */
+  getSessionMessageMode(sessionKey: SessionKey): Promise<"steer" | "follow-up" | "interrupt">;
+
+  /** Override Telegram message concurrency mode for a session (process-local). */
+  setSessionMessageMode(sessionKey: SessionKey, mode: "steer" | "follow-up" | "interrupt"): Promise<void>;
+
   /** Compact session context (calls RPC compact) */
   compactSession(sessionKey: SessionKey, instructions?: string): Promise<void>;
 

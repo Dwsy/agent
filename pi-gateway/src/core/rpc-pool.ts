@@ -15,7 +15,7 @@ import type { Config } from "./config.ts";
 import { createLogger, type Logger, type SessionKey } from "./types.ts";
 import { getSessionDir } from "./session-store.ts";
 import { getCwdForRole } from "./session-router.ts";
-import { homedir } from "node:os";
+import { buildCapabilityProfile, type CapabilityProfile } from "./capability-profile.ts";
 
 // ============================================================================
 // Types
@@ -43,6 +43,10 @@ export class RpcPool {
     this.log = createLogger("rpc-pool");
   }
 
+  setConfig(config: Config): void {
+    this.config = config;
+  }
+
   // ==========================================================================
   // Lifecycle
   // ==========================================================================
@@ -54,10 +58,10 @@ export class RpcPool {
     this.log.info(`Starting pool (min=${this.poolConfig.min}, max=${this.poolConfig.max})`);
 
     // Spawn min processes
-    const prewarmCwd = this.resolveTargetCwd();
+    const prewarmProfile = this.buildDefaultProfile();
     const startPromises: Promise<unknown>[] = [];
     for (let i = 0; i < this.poolConfig.min; i++) {
-      startPromises.push(this.spawnClient(prewarmCwd));
+      startPromises.push(this.spawnClient(prewarmProfile));
     }
     await Promise.allSettled(startPromises);
 
@@ -94,18 +98,18 @@ export class RpcPool {
    * Acquire an RPC client for a session.
    * Returns an existing bound client, or assigns an idle one, or spawns a new one.
    */
-  async acquire(sessionKey: SessionKey, cwd?: string): Promise<RpcClient> {
-    const targetCwd = this.resolveTargetCwd(cwd);
+  async acquire(sessionKey: SessionKey, profile: CapabilityProfile): Promise<RpcClient> {
+    const targetCwd = profile.cwd;
 
     // Already bound?
     const existingId = this.sessionBindings.get(sessionKey);
     if (existingId) {
       const existing = this.clients.get(existingId);
       if (existing?.isAlive) {
-        if (!this.cwdMatches(existing, targetCwd)) {
+        if (!this.matchesProfile(existing, profile)) {
           // Session role/CWD changed: recycle old process to avoid running in wrong workspace.
           this.log.warn(
-            `Bound process ${existing.id} cwd mismatch for ${sessionKey} (have: ${existing.cwd ?? "<none>"}, need: ${targetCwd}), respawning`,
+            `Bound process ${existing.id} profile mismatch for ${sessionKey} (have cwd=${existing.cwd ?? "<none>"}, sig=${existing.signature?.slice(0, 12) ?? "<none>"}; need cwd=${targetCwd}, sig=${profile.signature.slice(0, 12)}), respawning`,
           );
           await existing.stop().catch(() => {});
           this.clients.delete(existingId);
@@ -121,9 +125,9 @@ export class RpcPool {
       }
     }
 
-    // Find an idle process with matching CWD
+    // Find an idle process with matching profile (cwd + capability signature)
     for (const client of this.clients.values()) {
-      if (client.isIdle && client.isAlive && this.cwdMatches(client, targetCwd)) {
+      if (client.isIdle && client.isAlive && this.matchesProfile(client, profile)) {
         client.sessionKey = sessionKey;
         client.lastActivity = Date.now();
         this.sessionBindings.set(sessionKey, client.id);
@@ -151,7 +155,7 @@ export class RpcPool {
     }
 
     // Spawn a new process
-    const client = await this.spawnClient(targetCwd, sessionKey);
+    const client = await this.spawnClient(profile, sessionKey);
     client.sessionKey = sessionKey;
     this.sessionBindings.set(sessionKey, client.id);
     this.log.info(`Spawned new process ${client.id} for ${sessionKey}`);
@@ -217,8 +221,16 @@ export class RpcPool {
     return this.config.agent.pool;
   }
 
-  private resolveTargetCwd(cwd?: string): string {
-    if (cwd) return cwd;
+  private buildDefaultProfile(): CapabilityProfile {
+    const cwd = this.resolveDefaultCwd();
+    return buildCapabilityProfile({
+      config: this.config,
+      role: "default",
+      cwd,
+    });
+  }
+
+  private resolveDefaultCwd(): string {
     try {
       return getCwdForRole("default", this.config);
     } catch {
@@ -226,8 +238,8 @@ export class RpcPool {
     }
   }
 
-  private cwdMatches(client: RpcClient, cwd: string): boolean {
-    return (client.cwd ?? "") === cwd;
+  private matchesProfile(client: RpcClient, profile: CapabilityProfile): boolean {
+    return (client.cwd ?? "") === profile.cwd && (client.signature ?? "") === profile.signature;
   }
 
   /**
@@ -238,52 +250,17 @@ export class RpcPool {
     try {
       await client.setAutoCompaction(true);
       await client.setAutoRetry(true);
+      // Align with OpenClaw runtime defaults for incremental steering/follow-up handling.
+      await client.setSteeringMode("one-at-a-time");
+      await client.setFollowUpMode("one-at-a-time");
     } catch (err) {
       this.log.warn(`Failed to initialize RPC state for ${client.id}: ${err}`);
     }
   }
 
-  private async spawnClient(cwd?: string, sessionKey?: SessionKey): Promise<RpcClient> {
+  private async spawnClient(profile: CapabilityProfile, sessionKey?: SessionKey): Promise<RpcClient> {
     const id = `rpc-${++this.nextId}`;
-
-    // Parse model config: "provider/modelId" format
-    const extraArgs: string[] = [];
-    const modelStr = this.config.agent.model;
-    if (modelStr && modelStr.includes("/")) {
-      const slashIdx = modelStr.indexOf("/");
-      extraArgs.push("--provider", modelStr.slice(0, slashIdx));
-      extraArgs.push("--model", modelStr.slice(slashIdx + 1));
-    }
-    if (this.config.agent.thinkingLevel && this.config.agent.thinkingLevel !== "off") {
-      extraArgs.push("--thinking", this.config.agent.thinkingLevel);
-    }
-    if (this.config.agent.systemPrompt?.trim()) {
-      extraArgs.push("--system-prompt", expandHome(this.config.agent.systemPrompt.trim()));
-    }
-    if (this.config.agent.appendSystemPrompt?.trim()) {
-      extraArgs.push("--append-system-prompt", expandHome(this.config.agent.appendSystemPrompt.trim()));
-    }
-    if (this.config.agent.noExtensions) {
-      extraArgs.push("--no-extensions");
-    }
-    if (this.config.agent.noSkills) {
-      extraArgs.push("--no-skills");
-    }
-    if (this.config.agent.noPromptTemplates) {
-      extraArgs.push("--no-prompt-templates");
-    }
-    for (const ext of this.config.agent.extensions ?? []) {
-      if (!ext?.trim()) continue;
-      extraArgs.push("--extension", expandHome(ext.trim()));
-    }
-    for (const skill of this.config.agent.skills ?? []) {
-      if (!skill?.trim()) continue;
-      extraArgs.push("--skill", expandHome(skill.trim()));
-    }
-    for (const template of this.config.agent.promptTemplates ?? []) {
-      if (!template?.trim()) continue;
-      extraArgs.push("--prompt-template", expandHome(template.trim()));
-    }
+    const extraArgs: string[] = [...profile.args];
 
     // Session persistence: always set --session-dir so pi writes JSONL transcripts.
     // If we have a session key, use a session-specific dir. Otherwise use a pool temp dir.
@@ -298,7 +275,9 @@ export class RpcPool {
 
     const clientOpts: RpcClientOptions = {
       piCliPath: this.config.agent.piCliPath,
-      cwd,
+      cwd: profile.cwd,
+      signature: profile.signature,
+      env: profile.env,
       args: extraArgs.length > 0 ? extraArgs : undefined,
     };
 
@@ -364,15 +343,11 @@ export class RpcPool {
     // Ensure min processes
     while (this.clients.size < this.poolConfig.min) {
       try {
-        await this.spawnClient(this.resolveTargetCwd());
+        await this.spawnClient(this.buildDefaultProfile());
       } catch (err) {
         this.log.error("Failed to spawn replacement process:", err);
         break;
       }
     }
   }
-}
-
-function expandHome(input: string): string {
-  return input.replace(/^~(?=\/|$)/, homedir());
 }

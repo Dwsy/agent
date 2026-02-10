@@ -45,8 +45,9 @@ export function createPairingRequest(
   channel: string,
   senderId: string,
   senderName?: string,
+  accountId?: string,
 ): string | null {
-  const pending = getPendingRequests(channel);
+  const pending = getPendingRequests(channel, accountId);
 
   // Clean expired
   const now = Date.now();
@@ -62,7 +63,7 @@ export function createPairingRequest(
   // Generate code
   const code = generateCode();
   active.push({ code, senderId, senderName, channel, createdAt: now });
-  savePendingRequests(channel, active);
+  savePendingRequests(channel, active, accountId);
 
   return code;
 }
@@ -71,8 +72,8 @@ export function createPairingRequest(
  * Approve a pairing request by code.
  * Returns the sender ID if found and approved, null otherwise.
  */
-export function approvePairingRequest(channel: string, code: string): string | null {
-  const pending = getPendingRequests(channel);
+export function approvePairingRequest(channel: string, code: string, accountId?: string): string | null {
+  const pending = getPendingRequests(channel, accountId);
   const idx = pending.findIndex((r) => r.code.toUpperCase() === code.toUpperCase());
   if (idx === -1) return null;
 
@@ -81,14 +82,14 @@ export function approvePairingRequest(channel: string, code: string): string | n
   // Check expiry
   if (Date.now() - request.createdAt > CODE_EXPIRY_MS) {
     pending.splice(idx, 1);
-    savePendingRequests(channel, pending);
+    savePendingRequests(channel, pending, accountId);
     return null;
   }
 
   // Approve: add to allowlist and remove from pending
-  approveSender(channel, request.senderId);
+  approveSender(channel, request.senderId, accountId);
   pending.splice(idx, 1);
-  savePendingRequests(channel, pending);
+  savePendingRequests(channel, pending, accountId);
 
   return request.senderId;
 }
@@ -96,8 +97,8 @@ export function approvePairingRequest(channel: string, code: string): string | n
 /**
  * List all pending pairing requests for a channel.
  */
-export function listPendingRequests(channel?: string): PairingRequest[] {
-  if (channel) return getPendingRequests(channel);
+export function listPendingRequests(channel?: string, accountId?: string): PairingRequest[] {
+  if (channel) return getPendingRequests(channel, accountId);
 
   // List all channels
   if (!existsSync(CREDENTIALS_DIR)) return [];
@@ -106,8 +107,13 @@ export function listPendingRequests(channel?: string): PairingRequest[] {
 
   for (const file of files) {
     if (file.endsWith("-pairing.json")) {
-      const ch = file.replace("-pairing.json", "");
-      results.push(...getPendingRequests(ch));
+      const path = join(CREDENTIALS_DIR, file);
+      try {
+        const data = JSON.parse(readFileSync(path, "utf-8")) as PairingRequest[];
+        results.push(...data);
+      } catch {
+        // ignore bad file
+      }
     }
   }
 
@@ -118,25 +124,50 @@ export function listPendingRequests(channel?: string): PairingRequest[] {
 // Internal
 // ============================================================================
 
-function getPendingRequests(channel: string): PairingRequest[] {
-  const path = join(CREDENTIALS_DIR, `${channel}-pairing.json`);
-  if (!existsSync(path)) return [];
-  try {
-    return JSON.parse(readFileSync(path, "utf-8"));
-  } catch {
-    return [];
+function getPendingRequests(channel: string, accountId?: string): PairingRequest[] {
+  const scoped = scopedChannelKey(channel, accountId);
+  const scopedPath = join(CREDENTIALS_DIR, `${scoped}-pairing.json`);
+  if (existsSync(scopedPath)) {
+    try {
+      return JSON.parse(readFileSync(scopedPath, "utf-8"));
+    } catch {
+      return [];
+    }
   }
+
+  // Automatic migration from legacy channel-level file.
+  const isDefaultAccount = !accountId || accountId === "default";
+  if (isDefaultAccount) {
+    const legacyPath = join(CREDENTIALS_DIR, `${channel}-pairing.json`);
+    if (existsSync(legacyPath)) {
+      try {
+        const legacy = JSON.parse(readFileSync(legacyPath, "utf-8")) as PairingRequest[];
+        savePendingRequests(channel, legacy, "default");
+        return legacy;
+      } catch {
+        return [];
+      }
+    }
+  }
+  return [];
 }
 
-function savePendingRequests(channel: string, requests: PairingRequest[]): void {
+function savePendingRequests(channel: string, requests: PairingRequest[], accountId?: string): void {
   if (!existsSync(CREDENTIALS_DIR)) {
     mkdirSync(CREDENTIALS_DIR, { recursive: true });
   }
+  const scoped = scopedChannelKey(channel, accountId);
   writeFileSync(
-    join(CREDENTIALS_DIR, `${channel}-pairing.json`),
+    join(CREDENTIALS_DIR, `${scoped}-pairing.json`),
     JSON.stringify(requests, null, 2),
     "utf-8",
   );
+}
+
+function scopedChannelKey(channel: string, accountId?: string): string {
+  if (!accountId || accountId === "default") return `${channel}__default`;
+  const normalized = accountId.replace(/[^a-zA-Z0-9_-]/g, "_");
+  return `${channel}__${normalized}`;
 }
 
 function generateCode(): string {

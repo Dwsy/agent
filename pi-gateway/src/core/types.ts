@@ -110,6 +110,8 @@ export interface SessionState {
 /** Source of an inbound message */
 export interface MessageSource {
   channel: string;
+  /** Optional channel account id (e.g. telegram account) */
+  accountId?: string;
   chatType: "dm" | "group" | "channel" | "thread";
   chatId: string;
   threadId?: string;
@@ -135,12 +137,23 @@ export interface InboundMessage {
   onToolStart?: (toolName: string, args?: Record<string, unknown>, toolCallId?: string) => void;
 }
 
+/** Attachment in outbound message */
+export interface OutboundAttachment {
+  type: "image" | "audio" | "file";
+  /** Local file path or HTTP(S) URL */
+  url: string;
+  /** Optional caption for the attachment */
+  caption?: string;
+}
+
 /** Outbound message sent to a channel */
 export interface OutboundMessage {
   channel: string;
   target: string;
   text: string;
   replyTo?: string;
+  /** Optional attachments (images, audio, files) */
+  attachments?: OutboundAttachment[];
 }
 
 // ============================================================================
@@ -162,8 +175,15 @@ export type GatewayMethod =
   | "agent"
   | "sessions.list"
   | "sessions.get"
+  | "sessions.compact"
+  | "sessions.delete"
   | "plugins.list"
-  | "config.get";
+  | "tools.list"
+  | "tools.call"
+  | "config.get"
+  | "config.reload"
+  | "models.list"
+  | "usage.status";
 
 // ============================================================================
 // Logger

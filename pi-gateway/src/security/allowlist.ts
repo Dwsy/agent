@@ -29,7 +29,8 @@ export function isSenderAllowed(
   channel: string,
   senderId: string,
   policy: DmPolicy,
-  configAllowFrom?: string[],
+  configAllowFrom?: Array<string | number>,
+  accountId?: string,
 ): boolean {
   switch (policy) {
     case "disabled":
@@ -40,20 +41,22 @@ export function isSenderAllowed(
 
     case "allowlist": {
       // Check config allowFrom
-      if (configAllowFrom?.includes(senderId) || configAllowFrom?.includes("*")) {
+      const allow = (configAllowFrom ?? []).map((v) => String(v));
+      if (allow.includes(senderId) || allow.includes("*")) {
         return true;
       }
       // Check persisted allowlist
-      return getPersistedAllowlist(channel).includes(senderId);
+      return getPersistedAllowlist(channel, accountId).includes(senderId);
     }
 
     case "pairing": {
       // Check config allowFrom first
-      if (configAllowFrom?.includes(senderId) || configAllowFrom?.includes("*")) {
+      const allow = (configAllowFrom ?? []).map((v) => String(v));
+      if (allow.includes(senderId) || allow.includes("*")) {
         return true;
       }
       // Check approved (persisted) allowlist
-      return getPersistedAllowlist(channel).includes(senderId);
+      return getPersistedAllowlist(channel, accountId).includes(senderId);
     }
 
     default:
@@ -64,38 +67,63 @@ export function isSenderAllowed(
 /**
  * Add a sender to the persisted allowlist.
  */
-export function approveSender(channel: string, senderId: string): void {
-  const list = getPersistedAllowlist(channel);
+export function approveSender(channel: string, senderId: string, accountId?: string): void {
+  const list = getPersistedAllowlist(channel, accountId);
   if (!list.includes(senderId)) {
     list.push(senderId);
-    saveAllowlist(channel, list);
+    saveAllowlist(channel, list, accountId);
   }
 }
 
 /**
  * Remove a sender from the persisted allowlist.
  */
-export function revokeSender(channel: string, senderId: string): void {
-  const list = getPersistedAllowlist(channel).filter((id) => id !== senderId);
-  saveAllowlist(channel, list);
+export function revokeSender(channel: string, senderId: string, accountId?: string): void {
+  const list = getPersistedAllowlist(channel, accountId).filter((id) => id !== senderId);
+  saveAllowlist(channel, list, accountId);
 }
 
 /**
  * Get the persisted allowlist for a channel.
  */
-export function getPersistedAllowlist(channel: string): string[] {
-  const path = join(CREDENTIALS_DIR, `${channel}-allowFrom.json`);
-  if (!existsSync(path)) return [];
-  try {
-    return JSON.parse(readFileSync(path, "utf-8"));
-  } catch {
-    return [];
+export function getPersistedAllowlist(channel: string, accountId?: string): string[] {
+  const scoped = scopedChannelKey(channel, accountId);
+  const scopedPath = join(CREDENTIALS_DIR, `${scoped}-allowFrom.json`);
+  if (existsSync(scopedPath)) {
+    try {
+      return JSON.parse(readFileSync(scopedPath, "utf-8"));
+    } catch {
+      return [];
+    }
   }
+
+  // Automatic migration: legacy channel-level allowlist -> default account allowlist.
+  const isDefaultAccount = !accountId || accountId === "default";
+  if (isDefaultAccount) {
+    const legacyPath = join(CREDENTIALS_DIR, `${channel}-allowFrom.json`);
+    if (existsSync(legacyPath)) {
+      try {
+        const legacy = JSON.parse(readFileSync(legacyPath, "utf-8")) as string[];
+        saveAllowlist(channel, legacy, "default");
+        return legacy;
+      } catch {
+        return [];
+      }
+    }
+  }
+  return [];
 }
 
-function saveAllowlist(channel: string, list: string[]): void {
+function saveAllowlist(channel: string, list: string[], accountId?: string): void {
   if (!existsSync(CREDENTIALS_DIR)) {
     mkdirSync(CREDENTIALS_DIR, { recursive: true });
   }
-  writeFileSync(join(CREDENTIALS_DIR, `${channel}-allowFrom.json`), JSON.stringify(list, null, 2), "utf-8");
+  const scoped = scopedChannelKey(channel, accountId);
+  writeFileSync(join(CREDENTIALS_DIR, `${scoped}-allowFrom.json`), JSON.stringify(list, null, 2), "utf-8");
+}
+
+function scopedChannelKey(channel: string, accountId?: string): string {
+  if (!accountId || accountId === "default") return `${channel}__default`;
+  const normalized = accountId.replace(/[^a-zA-Z0-9_-]/g, "_");
+  return `${channel}__${normalized}`;
 }

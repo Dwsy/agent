@@ -7,8 +7,8 @@
  * Examples:
  *   agent:main:main:main                              DM (dmScope=main)
  *   agent:main:dm:{peerId}                            DM (per-peer)
- *   agent:main:telegram:group:{chatId}                Telegram group
- *   agent:main:telegram:group:{chatId}:topic:{tid}    Telegram forum topic
+ *   agent:main:telegram:account:{accountId}:group:{chatId}                Telegram group
+ *   agent:main:telegram:account:{accountId}:group:{chatId}:topic:{tid}    Telegram forum topic
  *   agent:main:discord:channel:{channelId}            Discord channel
  *   agent:main:discord:channel:{cid}:thread:{tid}     Discord thread
  *   agent:main:webchat:{tabId}                        WebChat tab
@@ -29,7 +29,7 @@ const AGENT_ID = "main";
  * Resolve a session key from an inbound message source.
  */
 export function resolveSessionKey(source: MessageSource, config: Config): SessionKey {
-  const { channel, chatType, chatId, threadId, topicId } = source;
+  const { channel, accountId, chatType, chatId, threadId, topicId } = source;
 
   // DM routing
   if (chatType === "dm") {
@@ -38,6 +38,9 @@ export function resolveSessionKey(source: MessageSource, config: Config): Sessio
 
   // Group / channel / thread routing
   let key = `agent:${AGENT_ID}:${channel}`;
+  if (channel === "telegram") {
+    key += `:account:${accountId ?? "default"}`;
+  }
 
   if (chatType === "group") {
     key += `:group:${chatId}`;
@@ -61,21 +64,28 @@ export function resolveSessionKey(source: MessageSource, config: Config): Sessio
  */
 function resolveDmSessionKey(source: MessageSource, config: Config): SessionKey {
   const { dmScope } = config.session;
-  const { channel, senderId } = source;
+  const { channel, accountId, senderId } = source;
+  const accountPart = channel === "telegram" ? `:account:${accountId ?? "default"}` : "";
 
   switch (dmScope) {
     case "main":
       // All DMs collapse to the main session (OpenClaw default)
-      return `agent:${AGENT_ID}:main:main`;
+      return channel === "telegram"
+        ? `agent:${AGENT_ID}:${channel}${accountPart}:main`
+        : `agent:${AGENT_ID}:main:main`;
 
     case "per-peer":
-      return `agent:${AGENT_ID}:dm:${senderId}`;
+      return channel === "telegram"
+        ? `agent:${AGENT_ID}:${channel}${accountPart}:dm:${senderId}`
+        : `agent:${AGENT_ID}:dm:${senderId}`;
 
     case "per-channel-peer":
-      return `agent:${AGENT_ID}:${channel}:dm:${senderId}`;
+      return `agent:${AGENT_ID}:${channel}${accountPart}:dm:${senderId}`;
 
     default:
-      return `agent:${AGENT_ID}:main:main`;
+      return channel === "telegram"
+        ? `agent:${AGENT_ID}:${channel}${accountPart}:main`
+        : `agent:${AGENT_ID}:main:main`;
   }
 }
 
@@ -94,7 +104,7 @@ function resolveDmSessionKey(source: MessageSource, config: Config): SessionKey 
  *   5. Global default (null → use default role from role-persona)
  */
 export function resolveRoleForSession(source: MessageSource, config: Config): string | null {
-  const { channel, chatType, chatId, guildId } = source;
+  const { channel, accountId, chatType, chatId, guildId } = source;
 
   // Discord: check guild > channel hierarchy
   if (channel === "discord" && config.channels.discord) {
@@ -114,9 +124,15 @@ export function resolveRoleForSession(source: MessageSource, config: Config): st
   // Telegram: check group > channel hierarchy
   if (channel === "telegram" && config.channels.telegram) {
     const tg = config.channels.telegram as any;
-    if (chatType === "group" && tg.groups?.[chatId]?.role) {
-      return tg.groups[chatId].role;
+    const accountCfg = accountId ? tg.accounts?.[accountId] : undefined;
+    const groups = accountCfg?.groups ?? tg.groups;
+    if (chatType === "group" && groups?.[chatId]?.role) {
+      return groups[chatId].role;
     }
+    if (chatType === "group" && groups?.["*"]?.role) {
+      return groups["*"].role;
+    }
+    if (accountCfg?.role) return accountCfg.role;
     if (tg.role) return tg.role;
   }
 
@@ -137,9 +153,6 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 
-const ROLES_DIR = join(homedir(), ".pi", "agent", "roles");
-const ROLE_CONFIG_FILE = join(ROLES_DIR, "config.json");
-
 /**
  * Get the CWD that maps to a role for the RPC process.
  * Also ensures the role mapping exists in role-persona's config.json.
@@ -150,14 +163,14 @@ export function getCwdForRole(role: string, config: Config): string {
   if (configured) {
     const resolved = configured.replace(/^~/, homedir());
     ensureDir(resolved);
-    ensureRoleMapping(resolved, role);
+    ensureRoleMapping(resolved, role, config);
     return resolved;
   }
 
   // Default: ~/.pi/gateway/workspaces/{role}
   const defaultDir = join(homedir(), ".pi", "gateway", "workspaces", role);
   ensureDir(defaultDir);
-  ensureRoleMapping(defaultDir, role);
+  ensureRoleMapping(defaultDir, role, config);
   return defaultDir;
 }
 
@@ -165,14 +178,16 @@ export function getCwdForRole(role: string, config: Config): string {
  * Ensure role-persona's config.json has a CWD → role mapping.
  * This allows pi's role-persona extension to auto-resolve the role from CWD.
  */
-function ensureRoleMapping(cwd: string, role: string): void {
+function ensureRoleMapping(cwd: string, role: string, config: Config): void {
   try {
-    ensureDir(ROLES_DIR);
+    const rolesDir = resolveRolesDir(config);
+    const roleConfigFile = join(rolesDir, "config.json");
+    ensureDir(rolesDir);
 
     let roleConfig: { mappings: Record<string, string>; defaultRole?: string; disabledPaths?: string[] };
 
-    if (existsSync(ROLE_CONFIG_FILE)) {
-      roleConfig = JSON.parse(readFileSync(ROLE_CONFIG_FILE, "utf-8"));
+    if (existsSync(roleConfigFile)) {
+      roleConfig = JSON.parse(readFileSync(roleConfigFile, "utf-8"));
     } else {
       roleConfig = { mappings: {}, defaultRole: "default" };
     }
@@ -182,11 +197,19 @@ function ensureRoleMapping(cwd: string, role: string): void {
     // Only update if mapping doesn't exist or is different
     if (roleConfig.mappings[cwd] !== role) {
       roleConfig.mappings[cwd] = role;
-      writeFileSync(ROLE_CONFIG_FILE, JSON.stringify(roleConfig, null, 2), "utf-8");
+      writeFileSync(roleConfigFile, JSON.stringify(roleConfig, null, 2), "utf-8");
     }
   } catch {
     // Non-fatal: role-persona will fall back to default role
   }
+}
+
+function resolveRolesDir(config: Config): string {
+  const runtimeAgentDir = config.agent.runtime?.agentDir?.trim();
+  if (runtimeAgentDir) {
+    return join(runtimeAgentDir.replace(/^~/, homedir()), "roles");
+  }
+  return join(homedir(), ".pi", "agent", "roles");
 }
 
 function ensureDir(dir: string): void {

@@ -48,14 +48,26 @@ export interface SandboxConfig {
   scope: "session" | "agent" | "shared";
 }
 
+export interface AgentRuntimeConfig {
+  /** Isolated runtime agent dir (mapped to PI_CODING_AGENT_DIR). */
+  agentDir?: string;
+  /** Optional isolated package dir (mapped to PI_PACKAGE_DIR). */
+  packageDir?: string;
+}
+
 export interface AgentConfig {
   model?: string;
   thinkingLevel?: ThinkingLevel;
   piCliPath?: string;
+  runtime?: AgentRuntimeConfig;
   /** Replace default system prompt (text or file path). */
   systemPrompt?: string;
   /** Append extra system prompt instructions (text or file path). */
   appendSystemPrompt?: string;
+  /** Layered base skills (legacy/original pi skills). */
+  skillsBase?: string[];
+  /** Layered gateway-specific skills (higher priority than base). */
+  skillsGateway?: string[];
   /** Explicit extension file/directory paths (mapped to repeated --extension). */
   extensions?: string[];
   /** Explicit skill file/directory paths (mapped to repeated --skill). */
@@ -83,15 +95,73 @@ export interface SessionConfig {
 export interface TelegramGroupConfig {
   requireMention?: boolean;
   role?: string;
+  groupPolicy?: "open" | "disabled" | "allowlist";
+  enabled?: boolean;
+  allowFrom?: Array<string | number>;
+  topics?: Record<string, TelegramTopicConfig>;
+  skills?: string[];
+  systemPrompt?: string;
+  tools?: Record<string, unknown>;
+  toolsBySender?: Record<string, unknown>;
 }
 
-export interface TelegramChannelConfig {
-  enabled: boolean;
+export interface TelegramTopicConfig {
+  requireMention?: boolean;
+  role?: string;
+  groupPolicy?: "open" | "disabled" | "allowlist";
+  enabled?: boolean;
+  allowFrom?: Array<string | number>;
+  skills?: string[];
+  systemPrompt?: string;
+}
+
+export interface TelegramProviderCommandsConfig {
+  native?: boolean | "auto";
+  nativeSkills?: boolean | "auto";
+}
+
+export interface TelegramCustomCommand {
+  command: string;
+  description: string;
+}
+
+export interface TelegramDraftChunkConfig {
+  minChars?: number;
+  maxChars?: number;
+  breakPreference?: "newline" | "sentence" | "word";
+}
+
+export interface TelegramAccountConfig {
+  enabled?: boolean;
   botToken?: string;
+  tokenFile?: string;
   dmPolicy?: "pairing" | "allowlist" | "open" | "disabled";
-  allowFrom?: string[];
+  allowFrom?: Array<string | number>;
+  groupAllowFrom?: Array<string | number>;
+  groupPolicy?: "open" | "disabled" | "allowlist";
+  messageMode?: "steer" | "follow-up" | "interrupt";
   role?: string;
   groups?: Record<string, TelegramGroupConfig>;
+  mediaMaxMb?: number;
+  streamMode?: "off" | "partial" | "block";
+  replyToMode?: "off" | "first" | "all";
+  proxy?: string;
+  webhookUrl?: string;
+  webhookSecret?: string;
+  webhookPath?: string;
+  reactionLevel?: "off" | "ack" | "minimal" | "extensive";
+  reactionNotifications?: "off" | "own" | "all";
+  commands?: TelegramProviderCommandsConfig;
+  customCommands?: TelegramCustomCommand[];
+  draftChunk?: TelegramDraftChunkConfig;
+  textChunkLimit?: number;
+  chunkMode?: "length" | "newline";
+  linkPreview?: boolean;
+}
+
+export interface TelegramChannelConfig extends TelegramAccountConfig {
+  enabled: boolean;
+  accounts?: Record<string, TelegramAccountConfig>;
 }
 
 export interface DiscordDmConfig {
@@ -123,10 +193,23 @@ export interface ChannelsConfig {
 export interface PluginsConfig {
   dirs?: string[];
   disabled?: string[];
+  /**
+   * Per-plugin config bag, accessed as api.pluginConfig.
+   * Example: plugins.config.myPlugin -> api.pluginConfig for plugin id "myPlugin"
+   */
+  config?: Record<string, Record<string, unknown>>;
+}
+
+export interface RoleCapabilityConfig {
+  skills?: string[];
+  extensions?: string[];
+  promptTemplates?: string[];
 }
 
 export interface RolesConfig {
+  mergeMode?: "append";
   workspaceDirs?: Record<string, string>;
+  capabilities?: Record<string, RoleCapabilityConfig>;
 }
 
 export interface HooksConfig {
@@ -197,9 +280,12 @@ export const DEFAULT_CONFIG: Config = {
   plugins: {
     dirs: [],
     disabled: [],
+    config: {},
   },
   roles: {
+    mergeMode: "append",
     workspaceDirs: {},
+    capabilities: {},
   },
   hooks: {
     enabled: false,
@@ -222,17 +308,26 @@ export const DEFAULT_CONFIG: Config = {
 
 /**
  * Resolve the config file path.
- * Search order: $PI_GATEWAY_CONFIG > ./pi-gateway.json > ~/.pi/gateway/pi-gateway.json
+ * Search order: $PI_GATEWAY_CONFIG > ./pi-gateway.jsonc > ./pi-gateway.json > ~/.pi/gateway/pi-gateway.jsonc > ~/.pi/gateway/pi-gateway.json
  */
 export function resolveConfigPath(): string {
   if (process.env.PI_GATEWAY_CONFIG) {
     return process.env.PI_GATEWAY_CONFIG;
   }
 
-  const localPath = join(process.cwd(), "pi-gateway.json");
-  if (existsSync(localPath)) return localPath;
+  // cwd 优先，.jsonc > .json
+  for (const ext of [".jsonc", ".json"]) {
+    const p = join(process.cwd(), `pi-gateway${ext}`);
+    if (existsSync(p)) return p;
+  }
 
-  return join(DEFAULT_DATA_DIR, "pi-gateway.json");
+  // fallback 到 ~/.pi/gateway/，.jsonc > .json
+  for (const ext of [".jsonc", ".json"]) {
+    const p = join(DEFAULT_DATA_DIR, `pi-gateway${ext}`);
+    if (existsSync(p)) return p;
+  }
+
+  return join(DEFAULT_DATA_DIR, "pi-gateway.jsonc");
 }
 
 /**
@@ -257,7 +352,13 @@ export function loadConfig(configPath?: string): Config {
     }
   }
 
-  return deepMerge(DEFAULT_CONFIG as unknown as Record<string, unknown>, fileConfig as Record<string, unknown>) as unknown as Config;
+  const migrated = applyConfigMigrations(fileConfig as Record<string, unknown>);
+  const merged = deepMerge(
+    DEFAULT_CONFIG as unknown as Record<string, unknown>,
+    migrated as Record<string, unknown>,
+  ) as unknown as Config;
+  validateTelegramConfig(merged);
+  return merged;
 }
 
 /**
@@ -270,7 +371,8 @@ export function ensureDataDir(config: Config): void {
     join(DEFAULT_DATA_DIR, "credentials"),
     join(DEFAULT_DATA_DIR, "logs"),
     join(DEFAULT_DATA_DIR, "plugins"),
-  ];
+    config.agent.runtime?.agentDir,
+  ].filter((v): v is string => typeof v === "string" && v.length > 0);
 
   for (const dir of dirs) {
     const resolved = dir.replace(/^~/, homedir());
@@ -345,4 +447,90 @@ function deepMerge<T extends Record<string, unknown>>(target: T, source: Partial
     }
   }
   return result as T;
+}
+
+function applyConfigMigrations(fileConfig: Record<string, unknown>): Record<string, unknown> {
+  const cloned = JSON.parse(JSON.stringify(fileConfig ?? {})) as Record<string, unknown>;
+
+  // Legacy: top-level telegram.* -> channels.telegram.*
+  const legacyTelegram = cloned.telegram;
+  if (legacyTelegram && typeof legacyTelegram === "object") {
+    const channels = (cloned.channels && typeof cloned.channels === "object")
+      ? cloned.channels as Record<string, unknown>
+      : {};
+    const existingTg = (channels.telegram && typeof channels.telegram === "object")
+      ? channels.telegram as Record<string, unknown>
+      : {};
+    channels.telegram = { ...legacyTelegram as Record<string, unknown>, ...existingTg };
+    cloned.channels = channels;
+    delete cloned.telegram;
+  }
+
+  const channels = cloned.channels;
+  if (!channels || typeof channels !== "object") return cloned;
+  const telegram = (channels as Record<string, unknown>).telegram;
+  if (!telegram || typeof telegram !== "object") return cloned;
+
+  const tg = telegram as Record<string, unknown>;
+
+  // Legacy: channels.telegram.requireMention -> channels.telegram.groups["*"].requireMention
+  if (typeof tg.requireMention === "boolean") {
+    const groups = (tg.groups && typeof tg.groups === "object")
+      ? tg.groups as Record<string, unknown>
+      : {};
+    const wildcard = (groups["*"] && typeof groups["*"] === "object")
+      ? groups["*"] as Record<string, unknown>
+      : {};
+    if (typeof wildcard.requireMention !== "boolean") {
+      wildcard.requireMention = tg.requireMention;
+    }
+    groups["*"] = wildcard;
+    tg.groups = groups;
+    delete tg.requireMention;
+  }
+
+  // Legacy: channels.telegram.streaming.* -> streamMode / draftChunk
+  if (tg.streaming && typeof tg.streaming === "object") {
+    const streaming = tg.streaming as Record<string, unknown>;
+    if (typeof tg.streamMode !== "string") {
+      tg.streamMode = "partial";
+    }
+    const draftChunk = (tg.draftChunk && typeof tg.draftChunk === "object")
+      ? tg.draftChunk as Record<string, unknown>
+      : {};
+    if (typeof draftChunk.minChars !== "number" && typeof streaming.streamStartChars === "number") {
+      draftChunk.minChars = Math.max(1, Math.floor(streaming.streamStartChars));
+    }
+    if (Object.keys(draftChunk).length > 0) {
+      tg.draftChunk = draftChunk;
+    }
+    delete tg.streaming;
+  }
+
+  (channels as Record<string, unknown>).telegram = tg;
+  cloned.channels = channels;
+  return cloned;
+}
+
+function validateTelegramConfig(config: Config): void {
+  const tg = config.channels.telegram;
+  if (!tg) return;
+
+  const validateOne = (entry: TelegramAccountConfig, path: string) => {
+    if (entry.dmPolicy === "open") {
+      const allow = entry.allowFrom?.map((v) => String(v)) ?? [];
+      if (!allow.includes("*")) {
+        throw new Error(`${path}.dmPolicy=\"open\" requires ${path}.allowFrom to include \"*\"`);
+      }
+    }
+    if (entry.webhookUrl && !entry.webhookSecret && !tg.webhookSecret) {
+      throw new Error(`${path}.webhookUrl requires ${path}.webhookSecret or channels.telegram.webhookSecret`);
+    }
+  };
+
+  validateOne(tg, "channels.telegram");
+  for (const [accountId, account] of Object.entries(tg.accounts ?? {})) {
+    if (!account) continue;
+    validateOne(account, `channels.telegram.accounts.${accountId}`);
+  }
 }
