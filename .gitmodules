@@ -15,4 +15,7 @@
 	url = https://github.com/Dwsy/ace-tool-skill
 [submodule "extensions/pi-interactive-shell"]
 	path = extensions/pi-interactive-shell
-	url = https://github.com/Dwsy/pi-interactive-shell
+	url = https://github.com/nicobailon/pi-interactive-shell.git
+[submodule "extensions/pi-subagents"]
+	path = extensions/pi-subagents
+	url = https://github.com/nicobailon/pi-subagents.git
