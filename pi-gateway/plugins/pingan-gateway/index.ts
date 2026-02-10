@@ -29,7 +29,12 @@ function normalizeChannels(v: unknown): Set<string> {
 }
 
 export default function register(api: GatewayPluginApi) {
-  const cfg = ((api.config as any)?.plugins?.pinganGateway ?? {}) as PluginCfg;
+  const cfg = (
+    api.pluginConfig
+    ?? (api.config as any)?.plugins?.config?.pinganGateway
+    ?? (api.config as any)?.plugins?.pinganGateway
+    ?? {}
+  ) as PluginCfg;
   const enabled = cfg.enabled !== false;
   const channels = normalizeChannels(cfg.channels);
   const prepend = typeof cfg.prepend === "string" && cfg.prepend.trim()
@@ -45,11 +50,15 @@ export default function register(api: GatewayPluginApi) {
     if (!message?.text?.trim()) return;
     const channel = String(message.source?.channel || "").toLowerCase();
     if (!channels.has(channel)) return;
+    const original = message.text.trim();
+
+    // Keep slash-command behavior intact so gateway-side TUI blocking guards still work.
+    if (original.startsWith("/")) return;
 
     // Avoid duplicate prefixing on retries/re-dispatch.
     if (message.text.includes(MARKER)) return;
 
-    message.text = `${prepend}\n${message.text}`;
+    message.text = `${message.text}\n\n${prepend}`;
   });
 
   api.logger.info(
