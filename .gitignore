@@ -54,6 +54,9 @@ auth.json
 *.key
 *.pem
 
+# Gateway configuration (local only)
+pi-gateway/pi-gateway.jsonc
+
 # Environment files
 .env
 .env.local

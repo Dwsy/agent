@@ -1,0 +1,59 @@
+{
+  // Pi Gateway Configuration Example
+  // Copy this file to pi-gateway.jsonc and fill in your actual values
+
+  "gateway": {
+    "port": 18789,
+    "bind": "0.0.0.0",
+    "auth": {
+      "mode": "off"
+    }
+  },
+
+  "agent": {
+    "piCliPath": "pi",
+    "model": "claude-kiro-local/claude-haiku-4-5-20251001",
+    "thinkingLevel": "off",
+    "pool": {
+      "min": 1,
+      "max": 4,
+      "idleTimeoutMs": 300000
+    },
+    "tools": {
+      "profile": "coding"
+    }
+  },
+
+  "session": {
+    "dmScope": "main"
+  },
+
+  "channels": {
+    "telegram": {
+      "enabled": true,
+      "botToken": "${TELEGRAM_BOT_TOKEN}",
+      "dmPolicy": "allowlist",
+      "allowFrom": [YOUR_TELEGRAM_USER_ID],
+      "mediaMaxMb": 10,
+      "streamMode": "partial"
+    }
+  },
+
+  "plugins": {
+    "dirs": [],
+    "disabled": []
+  },
+
+  "roles": {
+    "workspaceDirs": {}
+  },
+
+  "hooks": {
+    "enabled": false
+  },
+
+  "cron": {
+    "enabled": false,
+    "jobs": []
+  }
+}
