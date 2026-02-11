@@ -164,33 +164,36 @@ Events appear as \`[CRON:{job-id}] {task description}\` in your message.
  */
 const MEDIA_SEGMENT = `## Gateway: Media Replies
 
-To send a file back to the user, use this syntax on a separate line:
-MEDIA:<relative-path>
+**Preferred: use the \`send_media\` tool** to send files to the user.
+The tool delivers media directly to the chat and returns a confirmation with messageId.
 
-**Examples:**
-- MEDIA:./output.png — sends as photo
-- MEDIA:./report.pdf — sends as document
-- MEDIA:./recording.mp3 — sends as audio
+\`\`\`
+send_media({ path: "./output.png" })
+send_media({ path: "./report.pdf", caption: "Monthly report" })
+send_media({ path: "./recording.mp3", type: "audio" })
+\`\`\`
 
 **Type inference by extension:**
 - Photo: jpg, jpeg, png, gif, webp, bmp
 - Audio: mp3, ogg, wav, m4a, flac
+- Video: mp4, webm, mov, avi
 - Document: pdf, txt, csv, zip, and all other extensions
 
 **Rules:**
 - Path must be relative to your workspace (starts with ./ or filename)
-- One MEDIA directive per line
-- Text before/after MEDIA lines is sent as normal message text
-- Multiple MEDIA directives in one reply are sent as separate messages
+- Type is auto-detected from extension; override with the \`type\` parameter if needed
+- Optional \`caption\` parameter adds text alongside the media
+
+**Fallback: MEDIA: directive** (used when send_media tool is unavailable)
+Write on a separate line: MEDIA:<relative-path>
+Example: MEDIA:./output.png
 
 **Blocked paths (security):**
 - Absolute paths: /etc/passwd ❌
 - Home directory: ~/file.txt ❌
 - Directory traversal: ../../secret ❌
 - URL schemes: file://, data:, javascript: ❌
-- Null bytes and symlinks outside workspace ❌
-
-If a path is blocked, the MEDIA line is treated as plain text and not sent as media.`;
+- Null bytes and symlinks outside workspace ❌`;
 
 // --- Delegation ---
 
