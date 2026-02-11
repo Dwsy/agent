@@ -1026,16 +1026,21 @@ export async function sendMediaViaAccount(params: {
 
   const threadId = parsed.topicId ? Number.parseInt(parsed.topicId, 10) : undefined;
 
-  // Map MediaSendOptions.type to media-send.ts kind
+  // Map MediaSendOptions.type to TelegramMediaDirective.kind ("photo" | "audio" | "file")
   const ext = params.filePath.split(".").pop()?.toLowerCase() ?? "";
   const imageExts = new Set(["jpg", "jpeg", "png", "gif", "webp", "bmp"]);
   const audioExts = new Set(["mp3", "ogg", "wav", "m4a", "flac"]);
-  const kind = params.opts?.type
-    ?? (imageExts.has(ext) ? "photo" : audioExts.has(ext) ? "audio" : "document");
+  const typeHint = params.opts?.type;
+  const kind: "photo" | "audio" | "file" = typeHint === "photo" ? "photo"
+    : typeHint === "audio" ? "audio"
+    : typeHint === "video" || typeHint === "document" ? "file"
+    : imageExts.has(ext) ? "photo"
+    : audioExts.has(ext) ? "audio"
+    : "file";
 
   try {
     await sendTelegramMedia(account.bot, parsed.chatId, {
-      kind: kind as "photo" | "audio" | "document",
+      kind,
       url: params.filePath,
       caption: params.opts?.caption,
     }, threadId ? { messageThreadId: threadId } : undefined);

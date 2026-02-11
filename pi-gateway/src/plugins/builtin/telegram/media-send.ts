@@ -72,7 +72,7 @@ export function parseOutboundMediaDirectives(text: string): TelegramParsedOutbou
       const ext = path.split(".").pop()?.toLowerCase() ?? "";
       const imageExts = new Set(["jpg", "jpeg", "png", "gif", "webp", "bmp"]);
       const audioExts = new Set(["mp3", "ogg", "wav", "m4a", "flac"]);
-      const kind = imageExts.has(ext) ? "photo" : audioExts.has(ext) ? "audio" : "document";
+      const kind = imageExts.has(ext) ? "photo" : audioExts.has(ext) ? "audio" : "file";
       media.push({ kind: kind as any, url: path });
       continue;
     }
@@ -115,12 +115,21 @@ async function sendLocalFileByKind(bot: Bot, chatId: string, item: TelegramMedia
     } else {
       await bot.api.sendPhoto(chatId, file, htmlCaption ? { caption: htmlCaption, parse_mode: "HTML", ...threadOpts, ...replyOpts } : { ...threadOpts, ...replyOpts });
     }
-  } else {
-    // Audio kind: prefer sendAudio. Voice mode is explicit by extension/ogg.
+  } else if (item.kind === "audio") {
     if (fileName.toLowerCase().endsWith(".ogg")) {
       await bot.api.sendVoice(chatId, file, htmlCaption ? { caption: htmlCaption, parse_mode: "HTML", ...threadOpts, ...replyOpts } : { ...threadOpts, ...replyOpts });
     } else {
       await bot.api.sendAudio(chatId, file, htmlCaption ? { caption: htmlCaption, parse_mode: "HTML", ...threadOpts, ...replyOpts } : { ...threadOpts, ...replyOpts });
+    }
+  } else {
+    // kind === "file": video or generic document
+    const videoExts = new Set(["mp4", "webm", "mov", "avi"]);
+    const lower = fileName.toLowerCase();
+    const ext = lower.split(".").pop() ?? "";
+    if (videoExts.has(ext)) {
+      await bot.api.sendVideo(chatId, file, htmlCaption ? { caption: htmlCaption, parse_mode: "HTML", ...threadOpts, ...replyOpts } : { ...threadOpts, ...replyOpts });
+    } else {
+      await bot.api.sendDocument(chatId, file, htmlCaption ? { caption: htmlCaption, parse_mode: "HTML", ...threadOpts, ...replyOpts } : { ...threadOpts, ...replyOpts });
     }
   }
 
