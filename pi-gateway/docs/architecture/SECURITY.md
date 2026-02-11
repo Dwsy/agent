@@ -1,6 +1,6 @@
 # SECURITY.md — pi-gateway 安全架构
 
-TL;DR: pi-gateway 通过 4 层安全机制保护：访问控制（allowlist/pairing）、媒体路径校验（7 层防御）、媒体 URL 签名（HMAC-SHA256）、通道级策略（dmPolicy）。v3.3 待补 SSRF guard、Exec safety、Auth fail-closed。
+TL;DR: pi-gateway 通过 5 层安全机制保护：访问控制（allowlist/pairing）、媒体路径校验（7 层防御）、媒体 URL 签名（HMAC-SHA256）、通道级策略（dmPolicy）、send_media tool 双重认证。v3.4 待补 SSRF guard、Exec safety、Auth fail-closed。
 
 ---
 
@@ -68,15 +68,73 @@ TL;DR: pi-gateway 通过 4 层安全机制保护：访问控制（allowlist/pair
 - 文件存在 → `realpathSync` 解析真实路径，`realpathSync(workspaceRoot)` 解析真实根
 - 文件不存在 → `resolve()` 双边一致（避免 macOS symlink workspace 下 startsWith 不匹配）
 
-### 调用点
+### 调用点（5 处）
 
-- `telegram/media-send.ts` — `parseOutboundMediaDirectives()` 解析 `MEDIA:` 指令时校验
-- `telegram/media-send.ts` — `sendLocalFileByKind()` 发送前二次校验
-- `gw-chat/index.ts` — WebChat 媒体服务端点（复用同一函数）
+| 调用点 | 文件 | 场景 |
+|---|---|---|
+| `parseOutboundMediaDirectives` | `telegram/media-send.ts` | 解析 `MEDIA:` 和 `[photo]`/`[audio]` 指令 |
+| `sendLocalFileByKind` | `telegram/media-send.ts` | 发送前二次校验 |
+| `sendTelegramMedia` | `telegram/media-send.ts` | 入口校验（覆盖 `/photo`/`/audio` 命令） |
+| `processWebChatMediaDirectives` | `api/media-routes.ts` | WebChat MEDIA 指令解析（带 workspace） |
+| `handleMediaServe` | `api/media-routes.ts` | WebChat 签名 URL 文件服务（带 workspace） |
+| `handleMediaSendRequest` | `api/media-send.ts` | send_media tool API（带 workspace） |
+
+### v3.3 修复的 3 个 Gap
+
+| Gap | 风险 | 修复 |
+|---|---|---|
+| `[photo]`/`[audio]` 指令无路径校验 | 本地路径绕过 MEDIA: 校验直接发送 | 加 `validateMediaPath` 检查（S1-2~S1-5） |
+| `sendTelegramMedia` 入口无校验 | `/photo`/`/audio` 命令路径直通 | 加入口 guard（S1-7~S1-10） |
+| `normalizePath` 展开 `file://` | 死代码，与安全策略矛盾 | 清理为 passthrough |
 
 ---
 
-## 3. 媒体 URL 签名 — media-token.ts
+## 3. send_media Tool 安全模型（v3.3 新增）
+
+### 端点：`POST /api/media/send`（`api/media-send.ts`）
+
+Agent 通过 gateway-tools 扩展的 `send_media` tool 调用此端点发送媒体文件。
+
+### 双重认证（Dual Auth）
+
+| 认证方式 | 参数 | 验证逻辑 | 适用场景 |
+|---|---|---|---|
+| Session Key | `body.sessionKey` | `pool.getForSession(sessionKey)` — 必须是活跃 RPC 会话 | 正常 agent 调用 |
+| Internal Token | `body.token` | 与 `getGatewayInternalToken(config)` 比较 | 内部/调试调用 |
+
+至少提供一种，否则返回 400。两种都无效返回 403。
+
+### Internal Token 派生（`getGatewayInternalToken`）
+
+```
+seed = JSON.stringify({ port, bind, auth, pid })
+token = SHA256(seed).slice(0, 32)
+```
+
+特性：
+- 每次 gateway 重启后变化（包含 `process.pid`）
+- 同一进程内稳定（缓存）
+- 不持久化，不可预测
+- 派生自 config，不需要额外配置
+
+### 请求处理流程
+
+```
+POST /api/media/send
+  → 解析 JSON body
+  → 认证（sessionKey OR internalToken）
+  → 解析 agentId → 解析 workspace
+  → validateMediaPath(filePath, workspace)  ← 7 层校验
+  → existsSync(fullPath)
+  → 推断媒体类型（photo/audio/video/document）
+  → 返回 { ok, path, type, directive: "MEDIA:..." }
+```
+
+通道 handler 收到 directive 后走正常的 MEDIA 发送流程（已有路径校验）。
+
+---
+
+## 4. 媒体 URL 签名 — media-token.ts
 
 ### HMAC-SHA256 签名机制（`core/media-token.ts`）
 
@@ -99,9 +157,18 @@ URL = /api/media/{token}/{filename}?sk={sessionKey}&path={filePath}&exp={expiry}
 - Token TTL：默认 1 小时（`channels.webchat.mediaTokenTtlMs` 可配）
 - 常量时间比较：逐字符 XOR，防止时序侧信道
 
+### WebChat 媒体服务安全（`api/media-routes.ts`）
+
+`GET /api/media/:token/:filename` 额外检查：
+- HMAC token 验证
+- `validateMediaPath(filePath, workspace)` — 带 workspace 的完整 7 层校验
+- 文件大小限制（`mediaMaxMb`，默认 10MB）
+- SVG 文件强制 `Content-Disposition: attachment` + `Content-Security-Policy: sandbox`（防 XSS）
+- `X-Content-Type-Options: nosniff`（防 MIME 嗅探）
+
 ---
 
-## 4. 通道级安全策略
+## 5. 通道级安全策略
 
 ### Telegram
 
@@ -116,7 +183,7 @@ URL = /api/media/{token}/{filename}?sk={sessionKey}&path={filePath}&exp={expiry}
 Telegram handler 安全检查链（`handlers.ts`）：
 1. DM → `isSenderAllowed()` 检查 → 未通过走 pairing 流程
 2. 群组 → 检查 `groupAllowFrom` + `requireMention`
-3. 媒体 → `validateMediaPath()` 校验出站路径
+3. 媒体 → `validateMediaPath()` 校验出站路径（3 处调用）
 
 ### Discord
 
@@ -128,15 +195,15 @@ Telegram handler 安全检查链（`handlers.ts`）：
 
 ---
 
-## 5. 已知安全 Gap（v3.3 待修）
+## 6. 已知安全 Gap（v3.4 scope）
 
 | ID | Gap | 风险 | 计划 |
 |---|---|---|---|
-| S2 | SSRF Guard | agent 可通过 MEDIA URL 触发服务端请求到内网 | v3.3: URL 校验 + 私有 IP 段拦截 |
-| S3 | Exec Safety | bash 工具可执行任意命令（当前靠 config 禁用） | v3.3: 命令 allowlist + 审计日志 |
-| S4 | Auth Fail-Closed | `auth.mode=off` 时无任何认证 | v3.3: 默认 fail-closed，显式 opt-out |
-| S5 | `hasAnyChannel` 类型安全 | `(channels as any)` 类型断言 | v3.3: 清理为类型安全检查 |
+| S2 | Auth Fail-Closed | `auth.mode=off` 时 HTTP/WS 端点无认证 | v3.4: 默认 fail-closed，显式 opt-out |
+| S3 | SSRF Guard | agent 可通过 MEDIA URL 触发服务端请求到内网 | v3.4: URL 校验 + 私有 IP 段拦截 |
+| S4 | Exec Safety | bash 工具可执行任意命令（当前靠 config 禁用） | v3.4: 命令 allowlist + 审计日志 |
+| S5 | `hasAnyChannel` 类型安全 | `(channels as any)` 类型断言 | v3.4: 清理为类型安全检查 |
 
 ---
 
-*Author: KeenDragon (TrueJaguar) | Based on: media-security.ts, media-token.ts, allowlist.ts, pairing.ts, handlers.ts, config.ts*
+*Author: KeenDragon (TrueJaguar) | v3.2: initial | v3.3: send_media tool, S1 gap fixes, media-routes security*

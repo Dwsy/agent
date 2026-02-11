@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 import type { Config, RoleCapabilityConfig } from "./config.ts";
@@ -50,12 +51,13 @@ export function buildCapabilityProfile(input: CapabilityProfileInput): Capabilit
   const softArgs: string[] = [];
   appendModelArgs(softArgs, config);
 
-  // Auto-inject gateway-tools extension for send_media tool
+  // Auto-inject gateway-tools extension for send_media tool (only if file exists)
   const gatewayToolsExt = resolve(import.meta.dir, "../../extensions/gateway-tools/index.ts");
+  const gatewayExts = existsSync(gatewayToolsExt) ? [gatewayToolsExt] : [];
   const extensions = dedupePaths([
-    gatewayToolsExt,
     ...(roleCaps.extensions ?? []),
     ...(config.agent.extensions ?? []),
+    ...gatewayExts,
   ]);
   const skills = resolveSkills(config, roleCaps);
   const promptTemplates = dedupePaths([
@@ -85,7 +87,6 @@ export function buildCapabilityProfile(input: CapabilityProfileInput): Capabilit
   const host = bind === "loopback" ? "127.0.0.1" : "0.0.0.0";
   env.PI_GATEWAY_URL = `http://${host}:${port}`;
   env.PI_GATEWAY_INTERNAL_TOKEN = getGatewayInternalToken(config);
-  }
 
   const piCliPath = config.agent.piCliPath ?? "pi";
   const mergeMode = config.roles.mergeMode ?? "append";
