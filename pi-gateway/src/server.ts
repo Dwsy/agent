@@ -11,17 +11,39 @@ import type { Server, ServerWebSocket } from "bun";
 import { join } from "node:path";
 import { timingSafeEqual } from "node:crypto";
 import { existsSync, renameSync } from "node:fs";
+
+// Web asset embedding: populated at build time, empty in dev (falls back to filesystem)
+import { WEB_ASSETS } from "./_web-assets.ts";
+
+const CONTENT_TYPES: Record<string, string> = {
+  html: "text/html; charset=utf-8",
+  css: "text/css; charset=utf-8",
+  js: "application/javascript; charset=utf-8",
+  json: "application/json",
+  svg: "image/svg+xml",
+  png: "image/png",
+  ico: "image/x-icon",
+};
 import { loadConfig, ensureDataDir, type Config, resolveConfigPath, watchConfig } from "./core/config.ts";
 import { RpcPool } from "./core/rpc-pool.ts";
-import { MessageQueueManager } from "./core/message-queue.ts";
-import { resolveSessionKey, resolveRoleForSession, getCwdForRole } from "./core/session-router.ts";
-import { createLogger as createConsoleLogger, type Logger, type InboundMessage, type SessionKey, type SessionState, type WsFrame } from "./core/types.ts";
+import type { RpcClient } from "./core/rpc-client.ts";
+import { MessageQueueManager, type PrioritizedWork } from "./core/message-queue.ts";
+import { resolveSessionKey, resolveAgentId, resolveRoleForSession, getCwdForRole } from "./core/session-router.ts";
+import { createLogger as createConsoleLogger, type Logger, type InboundMessage, type SessionKey, type SessionState, type WsFrame, type ImageContent, type MessageSource } from "./core/types.ts";
 import { SessionStore, encodeSessionDir, getSessionDir } from "./core/session-store.ts";
 import { initFileLogger, createFileLogger } from "./core/logger-file.ts";
 import { CronEngine } from "./core/cron.ts";
 import { TranscriptLogger } from "./core/transcript-logger.ts";
 import { searchMemory, getMemoryStats, getRoleInfo, listRoles } from "./core/memory-access.ts";
 import { buildCapabilityProfile } from "./core/capability-profile.ts";
+import { ExtensionUIForwarder } from "./core/extension-ui-forwarder.ts";
+import type { ExtensionUIResponse } from "./core/extension-ui-types.ts";
+import { DeduplicationCache } from "./core/dedup-cache.ts";
+import { MetricsCollector, type MetricsDataSource } from "./core/metrics.ts";
+import { DelegateExecutor } from "./core/delegate-executor.ts";
+import { HeartbeatExecutor } from "./core/heartbeat-executor.ts";
+import { SystemEventsQueue } from "./core/system-events.ts";
+import { DELEGATE_TO_AGENT_TOOL_NAME, validateDelegateParams } from "./tools/delegate-to-agent.ts";
 import {
   createPluginRegistry,
   PluginLoader,
@@ -89,6 +111,7 @@ export interface GatewayOptions {
   configPath?: string;
   port?: number;
   verbose?: boolean;
+  noGui?: boolean;
 }
 
 type TelegramMessageMode = "steer" | "follow-up" | "interrupt";
@@ -100,6 +123,8 @@ export class Gateway {
   private registry: PluginRegistryState;
   private sessions: SessionStore;
   private transcripts: TranscriptLogger;
+  private metrics: MetricsCollector;
+  private extensionUI = new ExtensionUIForwarder();
   private cron: CronEngine | null = null;
   private tickTimer: ReturnType<typeof setInterval> | null = null;
   private configWatcher: (() => void) | null = null;
@@ -107,13 +132,19 @@ export class Gateway {
   private server: Server<WsClientData> | null = null;
   private log: Logger;
   private nextClientId = 0;
+  private dedup: DeduplicationCache;
   private sessionMessageModeOverrides = new Map<SessionKey, TelegramMessageMode>();
+  private delegateExecutor: DelegateExecutor | null = null;
+  private heartbeatExecutor: HeartbeatExecutor | null = null;
+  private systemEvents = new SystemEventsQueue();
+  private noGui: boolean;
   /** 缓存每个 channel 注册时的 api 引用，供 init 调用 */
   private _channelApis = new Map<string, GatewayPluginApi>();
 
   constructor(options: GatewayOptions = {}) {
     this.config = loadConfig(options.configPath);
     if (options.port) this.config.gateway.port = options.port;
+    this.noGui = options.noGui ?? false;
 
     // Initialize file logging if configured
     const logDir = join(this.config.session.dataDir, "..", "logs");
@@ -125,11 +156,40 @@ export class Gateway {
       retentionDays: this.config.logging.retentionDays,
     });
     this.log = this.config.logging.file ? createFileLogger("gateway") : createConsoleLogger("gateway");
-    this.pool = new RpcPool(this.config);
-    this.queue = new MessageQueueManager();
+    this.metrics = new MetricsCollector();
+    this.pool = new RpcPool(this.config, this.metrics);
+    const qc = this.config.queue;
+    this.queue = new MessageQueueManager(
+      qc.maxPerSession,
+      { mode: qc.mode, collectDebounceMs: qc.collectDebounceMs },
+      this.metrics,
+      qc.globalMaxPending,
+    );
+    this.dedup = new DeduplicationCache({ cacheSize: qc.dedup.cacheSize, ttlMs: qc.dedup.ttlMs });
     this.registry = createPluginRegistry();
     this.sessions = new SessionStore(this.config.session.dataDir);
     this.transcripts = new TranscriptLogger(join(this.config.session.dataDir, "transcripts"));
+
+    // Initialize v3 delegate executor if multi-agent config exists
+    if (this.config.agents && this.config.agents.list.length > 0) {
+      this.delegateExecutor = new DelegateExecutor(this.config, this.pool, this.log, this.metrics);
+    }
+
+    // Initialize heartbeat executor (v3.1) with system events
+    this.heartbeatExecutor = new HeartbeatExecutor(this.config, this.pool, {
+      onHeartbeatStart: (agentId) => {
+        this.log.debug(`Heartbeat started for agent: ${agentId}`);
+      },
+      onHeartbeatComplete: (agentId, result) => {
+        this.log.debug(`Heartbeat completed for agent ${agentId}: ${result.status}`);
+        if (result.status === "alert" && result.response) {
+          this.deliverHeartbeatAlert(agentId, result.response);
+        }
+      },
+      onHeartbeatSkip: (agentId, reason) => {
+        this.log.debug(`Heartbeat skipped for agent ${agentId}: ${reason}`);
+      },
+    }, this.systemEvents);
   }
 
   // ==========================================================================
@@ -144,6 +204,9 @@ export class Gateway {
 
     // Start RPC pool
     await this.pool.start();
+
+    // Start metrics collector
+    this.metrics.start(this.createMetricsDataSource());
 
     // Load plugins
     const loader = new PluginLoader(this.config, this.registry, (id, m) => this.createPluginApi(id, m));
@@ -182,6 +245,9 @@ export class Gateway {
       }
     }
 
+    // Register built-in commands
+    this.registerBuiltinCommands();
+
     // Start background services
     for (const service of this.registry.services) {
       try {
@@ -194,9 +260,19 @@ export class Gateway {
 
     // Start cron engine
     if (this.config.cron.enabled) {
-      this.cron = new CronEngine(this.config.session.dataDir.replace(/\/sessions$/, ""), this);
+      this.cron = new CronEngine(
+        this.config.session.dataDir.replace(/\/sessions$/, ""),
+        this,
+        this.config,
+        undefined, // announcer - TODO: implement if needed
+        this.systemEvents,
+        (agentId) => this.heartbeatExecutor?.requestNow(agentId),
+      );
       this.cron.start();
     }
+
+    // Start heartbeat executor (v3.1)
+    this.heartbeatExecutor?.start();
 
     // Start HTTP + WebSocket server
     this.startServer();
@@ -204,6 +280,8 @@ export class Gateway {
     // WS tick keepalive (aligned with OpenClaw event:tick, 30s)
     this.tickTimer = setInterval(() => {
       this.broadcastToWs("tick", { ts: Date.now() });
+      // Cleanup expired system events (v3.1)
+      this.systemEvents.gc();
     }, 30_000);
 
     // Config file watcher (hot reload)
@@ -214,7 +292,11 @@ export class Gateway {
     });
 
     this.log.info(`Gateway listening on ${this.config.gateway.bind}:${this.config.gateway.port}`);
-    this.log.info(`Web UI: http://localhost:${this.config.gateway.port}`);
+    if (this.noGui) {
+      this.log.info("Web UI disabled (--no-gui mode)");
+    } else {
+      this.log.info(`Web UI: http://localhost:${this.config.gateway.port}`);
+    }
   }
 
   async stop(): Promise<void> {
@@ -243,6 +325,9 @@ export class Gateway {
     // Stop cron
     this.cron?.stop();
 
+    // Stop heartbeat executor (v3.1)
+    this.heartbeatExecutor?.stop();
+
     // Dispatch session_end for persisted sessions
     for (const session of this.sessions.toArray()) {
       await this.registry.hooks.dispatch("session_end", { sessionKey: session.sessionKey });
@@ -254,6 +339,9 @@ export class Gateway {
 
     // Stop RPC pool
     await this.pool.stop();
+
+    // Stop metrics collector
+    this.metrics.stop();
 
     this.log.info("Gateway stopped");
   }
@@ -321,6 +409,54 @@ export class Gateway {
       : null;
   }
 
+  /**
+   * Deliver heartbeat alert to agent's bound channel.
+   * Looks up agent bindings to find target channel for delivery.
+   */
+  private async deliverHeartbeatAlert(agentId: string, alertText: string): Promise<void> {
+    // Find binding for this agent
+    const binding = this.config.agents?.bindings?.find(b => b.agentId === agentId);
+    if (!binding) {
+      this.log.warn(`No binding found for agent ${agentId}, cannot deliver heartbeat alert`);
+      return;
+    }
+
+    const channelName = binding.match.channel;
+    if (!channelName) {
+      this.log.warn(`No channel specified in binding for agent ${agentId}`);
+      return;
+    }
+
+    // Get channel plugin
+    const channel = this.registry.channels.get(channelName);
+    if (!channel) {
+      this.log.warn(`Channel ${channelName} not available for heartbeat alert delivery`);
+      return;
+    }
+
+    // Construct target from binding match
+    let target: string;
+    if (binding.match.peer?.id) {
+      target = binding.match.peer.id;
+    } else if (binding.match.guildId) {
+      target = binding.match.guildId;
+    } else {
+      this.log.warn(`Cannot determine target for agent ${agentId} heartbeat alert`);
+      return;
+    }
+
+    try {
+      await channel.outbound.sendText(
+        target,
+        `🔔 **Heartbeat Alert** (${agentId}):\n${alertText.slice(0, 1000)}`,
+        { parseMode: "Markdown" },
+      );
+      this.log.info(`Heartbeat alert delivered to ${channelName}:${target}`);
+    } catch (err: any) {
+      this.log.error(`Failed to deliver heartbeat alert: ${err?.message}`);
+    }
+  }
+
   private extractTelegramAccountId(sessionKey: SessionKey, sourceAccountId?: string): string {
     if (sourceAccountId?.trim()) return sourceAccountId.trim();
     const matched = sessionKey.match(/^agent:[^:]+:telegram:account:([^:]+):/);
@@ -338,6 +474,42 @@ export class Gateway {
     return accountMode ?? channelMode ?? "steer";
   }
 
+  /**
+   * Compute numeric priority for an inbound message.
+   * Higher = more urgent. DM=10, group=5, webhook=3, allowlist=+2.
+   */
+  private computePriority(msg: InboundMessage): number {
+    const pc = this.config.queue.priority;
+    let p = msg.source.chatType === "dm" ? pc.dm : pc.group;
+    // Allowlist bonus
+    const channelCfg = this.config.channels[msg.source.channel] as Record<string, unknown> | undefined;
+    const allowFrom = channelCfg?.allowFrom as Array<string | number> | undefined;
+    if (allowFrom?.some(id => String(id) === msg.source.senderId)) p += pc.allowlistBonus;
+    return p;
+  }
+
+  // ==========================================================================
+  // Message Mode Resolution
+  // ==========================================================================
+
+  /**
+   * Resolve message handling mode for any channel.
+   * Channel-specific config overrides global default.
+   */
+  private resolveMessageMode(sessionKey: SessionKey, source: MessageSource): TelegramMessageMode {
+    // Check for session-level override first
+    const override = this.sessionMessageModeOverrides.get(sessionKey);
+    if (override) return override;
+
+    // Channel-specific config
+    if (source.channel === "telegram") {
+      return this.resolveTelegramMessageMode(sessionKey, source.accountId);
+    }
+
+    // WebChat and other channels: use global default
+    return this.config.agent.messageMode ?? "steer";
+  }
+
   // ==========================================================================
   // Message Dispatch (core pipeline)
   // ==========================================================================
@@ -347,46 +519,140 @@ export class Gateway {
    * Called by channel plugins and WebChat.
    */
   async dispatch(msg: InboundMessage): Promise<void> {
+    // Layer 0: Deduplication
+    if (this.config.queue.dedup.enabled && this.dedup.isDuplicate(msg)) {
+      this.log.debug(`Dedup: skipping duplicate message from ${msg.source.senderId} on ${msg.source.channel}`);
+      return;
+    }
+
     // Hook: message_received
     await this.registry.hooks.dispatch("message_received", { message: msg });
 
-    const { sessionKey } = msg;
+    const { sessionKey, source } = msg;
+    const session = this.sessions.get(sessionKey);
+    const rpc = this.pool.getForSession(sessionKey);
 
-    if (msg.source.channel === "telegram") {
-      const session = this.sessions.get(sessionKey);
-      const rpc = this.pool.getForSession(sessionKey);
-      if (session?.isStreaming && rpc) {
-        const mode = this.resolveTelegramMessageMode(sessionKey, msg.source.accountId);
+    // Check if session is active (streaming) and we should handle injection/interrupt
+    if (session?.isStreaming && rpc) {
+      const mode = this.resolveMessageMode(sessionKey, source);
 
-        if (mode === "interrupt") {
-          try {
-            await rpc.abort();
-          } catch (err: any) {
-            this.log.warn(`Failed to abort streaming session ${sessionKey}: ${err?.message ?? String(err)}`);
-          }
-        } else {
-          const rpcMode = mode === "follow-up" ? "followUp" : "steer";
-          this.transcripts.logMeta(sessionKey, "inbound_injected", {
-            mode,
-            textLen: msg.text.length,
-            hasImages: (msg.images?.length ?? 0) > 0,
-          });
-          try {
-            await rpc.prompt(msg.text, msg.images, rpcMode);
-            return;
-          } catch (err: any) {
-            this.log.warn(
-              `Failed to inject telegram message into active run for ${sessionKey}: ${err?.message ?? String(err)}`,
-            );
-          }
-        }
+      if (mode === "interrupt") {
+        // INTERRUPT MODE: abort current run + clear queue + re-dispatch
+        await this.handleInterruptMode(sessionKey, rpc, msg);
+        return;
+      } else {
+        // STEER/FOLLOW-UP MODE: inject message into active run
+        const handled = await this.handleInjectionMode(sessionKey, rpc, msg, mode);
+        if (handled) return;
       }
     }
 
-    // Enqueue for serial processing
-    const enqueued = this.queue.enqueue(sessionKey, async () => {
-      await this.processMessage(msg);
+    // Normal enqueue flow (no active streaming or injection failed)
+    await this.enqueueMessage(msg);
+  }
+
+  /**
+   * Handle interrupt mode: abort current run, clear queue, re-dispatch.
+   */
+  private async handleInterruptMode(
+    sessionKey: SessionKey,
+    rpc: RpcClient,
+    msg: InboundMessage,
+  ): Promise<void> {
+    this.log.info(`[INTERRUPT] ${sessionKey}: Starting interrupt sequence`);
+
+    // 1. Clear collect buffer and pending queue first
+    const bufferCleared = this.queue.clearCollectBuffer(sessionKey);
+    if (bufferCleared > 0) {
+      this.log.info(`[INTERRUPT] ${sessionKey}: Cleared ${bufferCleared} items from collect buffer`);
+    }
+
+    // 2. Abort current RPC run
+    try {
+      await rpc.abort();
+      this.log.info(`[INTERRUPT] ${sessionKey}: RPC abort sent`);
+    } catch (err: any) {
+      this.log.warn(`[INTERRUPT] ${sessionKey}: Failed to abort RPC: ${err?.message ?? String(err)}`);
+    }
+
+    // 3. Reset session state
+    const session = this.sessions.get(sessionKey);
+    if (session) {
+      session.isStreaming = false;
+    }
+
+    // 4. Log interrupt event
+    this.transcripts.logMeta(sessionKey, "interrupt", {
+      textLen: msg.text.length,
+      hasImages: (msg.images?.length ?? 0) > 0,
+      bufferCleared,
     });
+
+    // 5. Re-dispatch as new message (will enqueue normally)
+    this.log.info(`[INTERRUPT] ${sessionKey}: Re-dispatching message after interrupt`);
+    await this.enqueueMessage(msg);
+  }
+
+  /**
+   * Handle steer/follow-up mode: inject message into active run.
+   */
+  private async handleInjectionMode(
+    sessionKey: SessionKey,
+    rpc: RpcClient,
+    msg: InboundMessage,
+    mode: "steer" | "follow-up",
+  ): Promise<boolean> {
+    const rpcMode = mode === "follow-up" ? "followUp" : "steer";
+
+    this.transcripts.logMeta(sessionKey, "inbound_injected", {
+      mode,
+      textLen: msg.text.length,
+      hasImages: (msg.images?.length ?? 0) > 0,
+    });
+
+    try {
+      await rpc.prompt(msg.text, msg.images, rpcMode);
+      this.log.info(`[INJECT] ${sessionKey}: Message injected with mode=${mode}`);
+      return true;
+    } catch (err: any) {
+      this.log.warn(`[INJECT] ${sessionKey}: Failed to inject: ${err?.message}. Falling back to enqueue.`);
+      return false;
+    }
+  }
+
+  /**
+   * Enqueue message for normal serial processing.
+   */
+  private async enqueueMessage(msg: InboundMessage): Promise<void> {
+    const { sessionKey } = msg;
+    const item: PrioritizedWork = {
+      work: async () => { await this.processMessage(msg, item); },
+      priority: this.computePriority(msg),
+      enqueuedAt: Date.now(),
+      ttl: 0,
+      source: msg.source,
+      text: msg.text,
+      summaryLine: msg.text.slice(0, 140) || undefined,
+      images: msg.images,
+      onBeforeCollectWork: async (batch) => {
+        // Trigger typing from the first message's context
+        const firstMsg = batch[0] as PrioritizedWork & { _msg?: InboundMessage };
+        if (firstMsg._msg?.setTyping) {
+          await firstMsg._msg.setTyping(true);
+        }
+        // Concat all images from the batch into the last item's msg
+        const allImages: ImageContent[] = [];
+        for (const b of batch) {
+          if (b.images?.length) allImages.push(...b.images);
+        }
+        if (allImages.length > 0) {
+          msg.images = allImages;
+        }
+      },
+    };
+    // Stash msg reference for onBeforeCollectWork to access setTyping
+    (item as PrioritizedWork & { _msg?: InboundMessage })._msg = msg;
+    const enqueued = this.queue.enqueue(sessionKey, item);
 
     if (!enqueued) {
       await msg.respond("Too many messages queued. Please wait.");
@@ -426,41 +692,105 @@ export class Gateway {
     return String(value);
   }
 
-  private async tryHandleRegisteredCommand(msg: InboundMessage, startedAt: number): Promise<boolean> {
+  private async tryHandleRegisteredCommand(msg: InboundMessage, startedAt: number, rpc?: RpcClient): Promise<boolean> {
     const parsed = this.parseSlashCommand(msg.text);
-    if (!parsed) return false;
-
-    const registered = this.registry.commands.get(parsed.name);
-    if (!registered) return false;
-
-    const sendCommandReply = async (rawText: string) => {
-      const outbound = {
-        channel: msg.source.channel,
-        target: msg.source.chatId,
-        text: this.normalizeOutgoingText(rawText, ""),
-      };
-
-      await this.registry.hooks.dispatch("message_sending", { message: outbound });
-      outbound.text = this.normalizeOutgoingText(outbound.text, "");
-      await msg.respond(outbound.text);
-      await this.registry.hooks.dispatch("message_sent", { message: outbound });
-      this.transcripts.logResponse(msg.sessionKey, outbound.text, Date.now() - startedAt);
-    };
-
-    try {
-      await registered.handler({
-        sessionKey: msg.sessionKey,
-        senderId: msg.source.senderId,
-        channel: msg.source.channel,
-        args: parsed.args,
-        respond: sendCommandReply,
-      });
-    } catch (err: any) {
-      const errMsg = err?.message ?? String(err);
-      await sendCommandReply(`Command /${parsed.name} failed: ${errMsg}`);
+    if (!parsed) {
+      this.log.debug(`[SLASH-CMD] ${msg.sessionKey} not a slash command: ${msg.text.slice(0, 50)}`);
+      return false;
     }
 
-    return true;
+    this.log.info(`[SLASH-CMD] ${msg.sessionKey} parsed: name=${parsed.name}, args=${parsed.args}, hasRPC=${!!rpc}`);
+
+    const registered = this.registry.commands.get(parsed.name);
+    this.log.info(`[SLASH-CMD] ${msg.sessionKey} local command found: ${!!registered}, registry size=${this.registry.commands.size}`);
+    
+    // Gateway 本地命令优先
+    if (registered) {
+      this.log.info(`[SLASH-CMD] ${msg.sessionKey} executing local command /${parsed.name}`);
+      const sendCommandReply = async (rawText: string) => {
+        const outbound = {
+          channel: msg.source.channel,
+          target: msg.source.chatId,
+          text: this.normalizeOutgoingText(rawText, ""),
+        };
+
+        await this.registry.hooks.dispatch("message_sending", { message: outbound });
+        outbound.text = this.normalizeOutgoingText(outbound.text, "");
+        await msg.respond(outbound.text);
+        await this.registry.hooks.dispatch("message_sent", { message: outbound });
+        this.transcripts.logResponse(msg.sessionKey, outbound.text, Date.now() - startedAt);
+      };
+
+      try {
+        await registered.handler({
+          sessionKey: msg.sessionKey,
+          senderId: msg.source.senderId,
+          channel: msg.source.channel,
+          args: parsed.args,
+          respond: sendCommandReply,
+        });
+        this.log.info(`[SLASH-CMD] ${msg.sessionKey} local command /${parsed.name} executed successfully`);
+      } catch (err: any) {
+        const errMsg = err?.message ?? String(err);
+        this.log.error(`[SLASH-CMD] ${msg.sessionKey} local command /${parsed.name} failed: ${errMsg}`);
+        await sendCommandReply(`Command /${parsed.name} failed: ${errMsg}`);
+      }
+      return true;
+    }
+
+    // 如果没有本地命令，但有 RPC 客户端，将斜杠命令发送给 pi 处理
+    if (rpc) {
+      // Strip pi_ prefix for RPC forwarding (Telegram registers as /pi_compact, pi expects /compact)
+      const rpcCmdName = parsed.name.startsWith("pi_") ? parsed.name.slice(3) : parsed.name;
+      const rpcText = `/${rpcCmdName}${parsed.args ? " " + parsed.args : ""}`;
+      this.log.info(`[SLASH-CMD] ${msg.sessionKey} forwarding /${parsed.name} → ${rpcText} to pi RPC`);
+      try {
+        // 设置临时事件监听器来捕获命令响应
+        let cmdResponse = "";
+        let cmdEventCount = 0;
+        const cmdUnsub = rpc.onEvent((event) => {
+          if (rpc.sessionKey !== msg.sessionKey) return;
+          cmdEventCount++;
+          this.log.debug(`[SLASH-CMD-EVENT] ${msg.sessionKey} type=${(event as any).type} count=${cmdEventCount}`);
+          
+          // 收集文本响应
+          if ((event as any).type === "message_update") {
+            const ame = (event as any).assistantMessageEvent ?? (event as any).assistant_message_event;
+            if (ame?.type === "text_delta" && ame.delta) {
+              cmdResponse += ame.delta;
+            }
+          }
+          // 命令结束
+          if ((event as any).type === "agent_end" || (event as any).type === "message_end") {
+            this.log.info(`[SLASH-CMD] ${msg.sessionKey} command completed, events=${cmdEventCount}, response=${cmdResponse.length} chars`);
+          }
+        });
+        
+        await rpc.prompt(rpcText);
+        this.log.info(`[SLASH-CMD] ${msg.sessionKey} forwarded ${rpcText}, waiting for completion...`);
+        
+        // 等待命令完成（最多 30 秒）
+        await rpc.waitForIdle(30000);
+        
+        // 清理监听器
+        cmdUnsub();
+        
+        // 发送响应
+        if (cmdResponse.trim()) {
+          await msg.respond(cmdResponse.trim());
+        } else {
+          await msg.respond(`Command /${parsed.name} executed.`);
+        }
+        this.log.info(`[SLASH-CMD] ${msg.sessionKey} completed with ${cmdResponse.length} chars response`);
+      } catch (err: any) {
+        this.log.error(`[SLASH-CMD] ${msg.sessionKey} failed to execute /${parsed.name}: ${err?.message ?? String(err)}`);
+        await msg.respond(`Failed to execute command: ${err?.message ?? String(err)}`);
+      }
+      return true;
+    }
+
+    this.log.warn(`[SLASH-CMD] ${msg.sessionKey} no RPC available for /${parsed.name}`);
+    return false;
   }
 
   private getRegisteredToolSpecs() {
@@ -490,6 +820,31 @@ export class Gateway {
     params: Record<string, unknown>,
     sessionKey: SessionKey,
   ) {
+    // v3: Intercept delegate_to_agent tool call
+    if (toolName === DELEGATE_TO_AGENT_TOOL_NAME && this.delegateExecutor) {
+      const validation = validateDelegateParams(params);
+      if (!validation.valid) {
+        return {
+          content: [{ type: "text", text: `Invalid delegation: ${validation.error}` }],
+          isError: true,
+        };
+      }
+
+      const result = await this.delegateExecutor.executeDelegation(sessionKey, validation.data);
+
+      // Format result as tool response
+      if (result.status === "completed") {
+        return {
+          content: [{ type: "text", text: result.response ?? "Task completed" }],
+        };
+      } else {
+        return {
+          content: [{ type: "text", text: result.error ?? `Delegation ${result.status}` }],
+          isError: true,
+        };
+      }
+    }
+
     const plugin = this.resolveToolPlugin(toolName);
     if (!plugin) {
       throw new Error(`Tool not found: ${toolName}`);
@@ -557,8 +912,11 @@ export class Gateway {
     await this.registry.hooks.dispatch("after_compaction", { sessionKey, summary });
   }
 
-  private async processMessage(msg: InboundMessage): Promise<void> {
-    const { sessionKey, text, images, respond, setTyping, source } = msg;
+  private async processMessage(msg: InboundMessage, queueItem?: PrioritizedWork): Promise<void> {
+    // If collect mode merged multiple messages, use the merged text
+    const effectiveText = queueItem?.collectMergedText ?? msg.text;
+    const { sessionKey, images, respond, setTyping, source } = msg;
+    const text = effectiveText;
     const startTime = Date.now();
 
     // Transcript: log inbound prompt
@@ -566,11 +924,6 @@ export class Gateway {
     this.transcripts.logMeta(sessionKey, "process_start", {
       source: { channel: source.channel, chatType: source.chatType, chatId: source.chatId },
     });
-
-    // Plugin slash commands bypass LLM.
-    if (await this.tryHandleRegisteredCommand(msg, startTime)) {
-      return;
-    }
 
     // Guard: intercept pi extension commands that use TUI (would hang in RPC mode)
     const trimmedCmd = text.trim().toLowerCase();
@@ -616,6 +969,10 @@ export class Gateway {
     }
     session.rpcProcessId = rpc.id;
     session.isStreaming = true;
+
+    // Wire Extension UI forwarding to WebChat clients
+    rpc.extensionUIHandler = (data, writeToRpc) =>
+      this.extensionUI.forward(data, this.wsClients, writeToRpc);
     this.transcripts.logMeta(sessionKey, "rpc_acquired", {
       rpcId: rpc.id,
       cwd: profile.cwd,
@@ -627,31 +984,157 @@ export class Gateway {
     // Typing indicator
     await setTyping(true);
 
+    // Plugin slash commands bypass LLM (forward to pi RPC if not handled locally)
+    if (await this.tryHandleRegisteredCommand(msg, startTime, rpc)) {
+      return;
+    }
+
     // Collect response
     let fullText = "";
+    let thinkingText = "";
     let toolLabels: string[] = [];
     let agentEndMessages: unknown[] = [];
     let agentEndStopReason = "stop";
     let eventCount = 0;
 
     const unsub = rpc.onEvent((event) => {
+      // Ignore events if this RPC process has been rebound to a different session
+      if (rpc.sessionKey !== sessionKey) return;
+
       eventCount++;
+
+      // Log every RPC event received
+      this.log.info(`[RPC-EVENT] ${sessionKey} type=${(event as any).type} eventCount=${eventCount}`);
+      this.log.debug(`[RPC-EVENT] ${sessionKey} full event: ${JSON.stringify(event).slice(0, 1000)}`);
 
       // Transcript: log every agent event
       this.transcripts.logEvent(sessionKey, event as Record<string, unknown>);
 
-      // Stream text deltas
-      if (event.type === "message_update") {
-        const ame = (event as any).assistantMessageEvent;
-        if (ame?.type === "text_delta" && ame.delta) {
-          fullText += ame.delta;
-          msg.onStreamDelta?.(fullText, ame.delta);
+      // Helper: extract partial text exactly like dev branch
+      const extractPartialText = (partial: unknown): { text?: string; thinking?: string } => {
+        this.log.debug(`[RPC-EVENT] ${sessionKey} extractPartialText input: ${JSON.stringify(partial).slice(0, 500)}`);
+        if (!partial || typeof partial !== 'object') {
+          this.log.debug(`[RPC-EVENT] ${sessionKey} extractPartialText: no partial or not object`);
+          return {}
         }
+        const record = partial as Record<string, unknown>
+        let content = record.content
+        if (!Array.isArray(content) && record.message && typeof record.message === 'object') {
+          const message = record.message as Record<string, unknown>
+          if (Array.isArray(message.content)) {
+            content = message.content
+          }
+        }
+        let text: string | undefined
+        let thinking: string | undefined
+        if (Array.isArray(content)) {
+          for (const part of content) {
+            if (!part || typeof part !== 'object') continue
+            const p = part as Record<string, unknown>
+            const partType = typeof p.type === 'string' ? p.type : ''
+            if (partType === 'text' && typeof p.text === 'string') {
+              text = p.text
+            }
+            if (partType === 'thinking' && typeof p.thinking === 'string') {
+              thinking = p.thinking
+            }
+          }
+        } else {
+          if (typeof record.text === 'string') {
+            text = record.text
+          }
+          if (typeof record.thinking === 'string') {
+            thinking = record.thinking
+          }
+        }
+        this.log.debug(`[RPC-EVENT] ${sessionKey} extractPartialText result: text=${text?.length ?? 0} chars, thinking=${thinking?.length ?? 0} chars`);
+        return { text, thinking }
+      }
+
+      // Stream text and thinking deltas - aligned with dev branch usePiRPC
+      if (event.type === "message_update") {
+        const ame = (event as any).assistantMessageEvent ?? (event as any).assistant_message_event;
+        this.log.debug(`[RPC-EVENT] ${sessionKey} message_update ame.type=${ame?.type} ame.delta=${ame?.delta?.length ?? 0} chars`);
+        this.log.debug(`[RPC-EVENT] ${sessionKey} ame.full: ${JSON.stringify(ame).slice(0, 800)}`);
+        
+        const partial = extractPartialText(ame?.partial);
+        this.log.debug(`[RPC-EVENT] ${sessionKey} partial extracted: text=${partial.text?.length ?? 0} chars, thinking=${partial.thinking?.length ?? 0} chars`);
+
+        const beforeFullText = fullText;
+        switch (ame?.type) {
+          case 'text_delta':
+            if (ame.delta) {
+              fullText += ame.delta;
+              this.log.debug(`[RPC-EVENT] ${sessionKey} text_delta: added ${ame.delta.length} chars, total=${fullText.length}`);
+              msg.onStreamDelta?.(fullText, ame.delta);
+            } else if (partial.text) {
+              fullText = partial.text;
+              this.log.debug(`[RPC-EVENT] ${sessionKey} text_delta (from partial): total=${fullText.length}`);
+              msg.onStreamDelta?.(fullText, partial.text);
+            } else {
+              this.log.warn(`[RPC-EVENT] ${sessionKey} text_delta: no delta and no partial.text`);
+            }
+            break;
+          case 'text_start':
+            fullText = '';
+            if (partial.text) {
+              fullText = partial.text;
+              this.log.info(`[RPC-EVENT] ${sessionKey} text_start: total=${fullText.length}`);
+              msg.onStreamDelta?.(fullText, partial.text);
+            } else {
+              this.log.info(`[RPC-EVENT] ${sessionKey} text_start: empty`);
+            }
+            break;
+          case 'text_end':
+            if (ame.content) {
+              const content = Array.isArray(ame.content)
+                ? ame.content.map((c: any) => c.type === 'text' ? c.text : '').join('')
+                : String(ame.content);
+              fullText = content;
+              this.log.info(`[RPC-EVENT] ${sessionKey} text_end: total=${fullText.length}`);
+              msg.onStreamDelta?.(fullText, content);
+            } else if (partial.text) {
+              fullText = partial.text;
+              this.log.info(`[RPC-EVENT] ${sessionKey} text_end (from partial): total=${fullText.length}`);
+              msg.onStreamDelta?.(fullText, partial.text);
+            } else {
+              this.log.warn(`[RPC-EVENT] ${sessionKey} text_end: no content and no partial.text`);
+            }
+            break;
+          case 'thinking_delta': {
+            const thinkDelta = ame.delta || ame.thinking || '';
+            if (thinkDelta) {
+              thinkingText += thinkDelta;
+              msg.onThinkingDelta?.(thinkingText, thinkDelta);
+            }
+            this.log.debug(`[RPC-EVENT] ${sessionKey} thinking_delta: ${thinkDelta.length} chars`);
+            break;
+          }
+          case 'thinking_start':
+            thinkingText = '';
+            this.log.info(`[RPC-EVENT] ${sessionKey} thinking_start`);
+            break;
+          case 'thinking_end':
+            this.log.info(`[RPC-EVENT] ${sessionKey} thinking_end (${thinkingText.length} chars total)`);
+            break;
+          case 'start':
+            if (partial.text) {
+              fullText = partial.text;
+              this.log.info(`[RPC-EVENT] ${sessionKey} start (text): total=${fullText.length}`);
+              msg.onStreamDelta?.(fullText, partial.text);
+            }
+            // Ignore partial.thinking - don't render it
+            break;
+          default:
+            this.log.warn(`[RPC-EVENT] ${sessionKey} unhandled ame.type: ${ame?.type}`);
+        }
+        this.log.debug(`[RPC-EVENT] ${sessionKey} fullText changed: ${beforeFullText.length} -> ${fullText.length} chars`);
       }
 
       // Tool execution labels
       if (event.type === "tool_execution_start") {
         const eventAny = event as any;
+        this.log.info(`[RPC-EVENT] ${sessionKey} tool_execution_start: ${eventAny.toolName}`);
         const label = (eventAny.args as any)?.label || eventAny.toolName;
         if (label) toolLabels.push(label);
         msg.onToolStart?.(eventAny.toolName, eventAny.args, eventAny.toolCallId);
@@ -659,21 +1142,16 @@ export class Gateway {
 
       // Capture agent_end data for hooks
       if (event.type === "agent_end") {
+        this.log.info(`[RPC-EVENT] ${sessionKey} agent_end`);
         agentEndMessages = (event as any).messages ?? [];
       }
 
-      // Capture stop reason from message_end and extract full text if missing
+      // Capture stop reason from message_end
       if (event.type === "message_end") {
-        const msg = event as any;
-        if (msg.message?.role === "assistant") {
-          if (msg.message?.stopReason) {
-            agentEndStopReason = msg.message.stopReason;
-          }
-          // Fallback: if no text_delta was received, extract from message_end
-          if (!fullText.trim() && msg.message?.content) {
-            fullText = msg.message.content;
-            this.log.debug(`Extracted text from message_end for ${sessionKey}: ${fullText.length} chars`);
-          }
+        const msgEnd = event as any;
+        this.log.info(`[RPC-EVENT] ${sessionKey} message_end: role=${msgEnd.message?.role}, stopReason=${msgEnd.message?.stopReason}`);
+        if (msgEnd.message?.role === "assistant" && msgEnd.message?.stopReason) {
+          agentEndStopReason = msgEnd.message.stopReason;
         }
       }
 
@@ -687,6 +1165,7 @@ export class Gateway {
     const abortTimer = setTimeout(() => {
       this.log.warn(`Agent timeout for ${sessionKey} (${timeoutMs}ms), aborting`);
       this.transcripts.logError(sessionKey, `Agent timeout after ${timeoutMs}ms`, { eventCount, textLen: fullText.length });
+      this.metrics?.incRpcTimeout();
       abortAttempted = true;
       rpc.abort().catch(() => {});
       // If abort doesn't unstick within 5s (e.g. TUI hang), force-kill the process
@@ -711,19 +1190,6 @@ export class Gateway {
       await rpc.prompt(promptText, images);
       await rpc.waitForIdle(timeoutMs);
 
-      // Fallback: some runs may produce no text_delta events even with a final assistant message.
-      if (!fullText.trim()) {
-        this.transcripts.logMeta(sessionKey, "fallback_get_last_text", { eventCount });
-        try {
-          const lastAssistantText = await rpc.getLastAssistantText();
-          if (lastAssistantText?.trim()) {
-            fullText = lastAssistantText;
-          }
-        } catch (err: any) {
-          this.log.warn(`Failed to read last assistant text for ${sessionKey}: ${err?.message ?? String(err)}`);
-        }
-      }
-
       // Hook: agent_end with real messages from the RPC event stream
       await this.registry.hooks.dispatch("agent_end", {
         sessionKey,
@@ -732,7 +1198,7 @@ export class Gateway {
       });
     } catch (err: any) {
       const errMsg = err?.message ?? "Unknown error";
-      fullText = fullText || `Error: ${errMsg}`;
+      fullText = typeof fullText === 'string' && fullText.trim() ? fullText : `Error: ${errMsg}`;
       this.log.error(`Agent error for ${sessionKey}: ${errMsg}`);
       this.transcripts.logError(sessionKey, errMsg, { eventCount, abortAttempted, textLen: fullText.length });
     } finally {
@@ -741,6 +1207,9 @@ export class Gateway {
       session.isStreaming = false;
       await setTyping(false);
     }
+
+    this.log.info(`[RPC-EVENT] ${sessionKey} Final fullText: ${fullText.length} chars, eventCount=${eventCount}`);
+    this.log.debug(`[RPC-EVENT] ${sessionKey} Final fullText content: ${fullText.slice(0, 500)}`);
 
     // Hook: message_sending
     if (!fullText.trim()) {
@@ -753,15 +1222,20 @@ export class Gateway {
     outbound.text = this.normalizeOutgoingText(outbound.text, fullText);
 
     // Transcript: log final response (after message_sending mutations)
-    this.transcripts.logResponse(sessionKey, outbound.text, Date.now() - startTime);
+    const durationMs = Date.now() - startTime;
+    this.transcripts.logResponse(sessionKey, outbound.text, durationMs);
     this.transcripts.logMeta(sessionKey, "process_end", {
-      durationMs: Date.now() - startTime,
+      durationMs,
       eventCount,
       textLength: outbound.text.length,
       toolCount: toolLabels.length,
       tools: toolLabels,
       abortAttempted,
     });
+
+    // Metrics: record message processed and latency
+    this.metrics?.incMessageProcessed();
+    this.metrics?.recordLatency(durationMs);
 
     // Send response
     await respond(outbound.text);
@@ -829,6 +1303,8 @@ export class Gateway {
         open(ws) {
           self.wsClients.set(ws.data.clientId, ws);
           self.log.debug(`WS client connected: ${ws.data.clientId}`);
+          // Re-send pending Extension UI requests to newly connected client
+          self.extensionUI.resendPending(ws);
         },
         close(ws) {
           self.wsClients.delete(ws.data.clientId);
@@ -860,6 +1336,15 @@ export class Gateway {
         queue: this.queue.getStats(),
         sessions: this.sessions.size,
         channels: Array.from(this.registry.channels.keys()),
+      });
+    }
+
+    // Metrics endpoint (JSON snapshot — pool/queue/latency/counters)
+    if (url.pathname === "/api/metrics" && req.method === "GET") {
+      const snapshot = this.metrics.getSnapshot();
+      return new Response(JSON.stringify(snapshot, null, 2), {
+        status: 200,
+        headers: { "Content-Type": "application/json", "Cache-Control": "no-cache" },
       });
     }
 
@@ -1036,13 +1521,25 @@ export class Gateway {
       }
 
       const sessionKey = body.sessionKey ?? "agent:main:main:main";
-      this.queue.enqueue(sessionKey, async () => {
-        const role = this.sessions.get(sessionKey)?.role ?? "default";
-        const profile = this.buildSessionProfile(sessionKey, role);
-        const rpc = await this.pool.acquire(sessionKey, profile);
-        await rpc.prompt(`[WEBHOOK] ${body.text}`);
-        await rpc.waitForIdle();
-      });
+      const webhookItem: PrioritizedWork = {
+        work: async () => {
+          const role = this.sessions.get(sessionKey)?.role ?? "default";
+          const profile = this.buildSessionProfile(sessionKey, role);
+          const rpc = await this.pool.acquire(sessionKey, profile);
+          await rpc.prompt(`[WEBHOOK] ${body.text}`);
+          await rpc.waitForIdle();
+        },
+        priority: this.config.queue.priority.webhook,
+        enqueuedAt: Date.now(),
+        ttl: 30000,
+        text: body.text,
+        summaryLine: `[WEBHOOK] ${body.text.slice(0, 120)}`,
+      };
+      const enqueued = this.queue.enqueue(sessionKey, webhookItem);
+
+      if (!enqueued) {
+        return Response.json({ error: "Queue full", sessionKey }, { status: 429 });
+      }
 
       return Response.json({ ok: true, sessionKey });
     } catch {
@@ -1188,8 +1685,11 @@ export class Gateway {
       // Collect response
       let fullText = "";
       const unsub = rpc.onEvent((event) => {
+        // Ignore events if this RPC process has been rebound to a different session
+        if (rpc.sessionKey !== sessionKey) return;
+
         if (event.type === "message_update") {
-          const ame = (event as any).assistantMessageEvent;
+          const ame = (event as any).assistantMessageEvent ?? (event as any).assistant_message_event;
           if (ame?.type === "text_delta" && ame.delta) {
             fullText += ame.delta;
           }
@@ -1283,11 +1783,24 @@ export class Gateway {
         session.isStreaming = true;
 
         const unsub = rpc.onEvent((event) => {
+          // Ignore events if this RPC process has been rebound to a different session
+          if (rpc.sessionKey !== sessionKey) return;
+
           if (event.type === "message_update") {
-            const ame = (event as any).assistantMessageEvent;
+            const ame = (event as any).assistantMessageEvent ?? (event as any).assistant_message_event;
             if (ame?.type === "text_delta" && ame.delta) {
               fullText += ame.delta;
               send({ type: "delta", text: ame.delta });
+            }
+            // Handle thinking events
+            if (ame?.type === "thinking_start") {
+              send({ type: "delta", text: "\n<think>\n" });
+            }
+            if (ame?.type === "thinking_delta" && ame.delta) {
+              send({ type: "delta", text: ame.delta });
+            }
+            if (ame?.type === "thinking_end") {
+              send({ type: "delta", text: "\n</think>\n" });
             }
           }
           if (event.type === "tool_execution_start") {
@@ -1497,8 +2010,11 @@ export class Gateway {
 
             let fullText = "";
             const unsub = rpc.onEvent((event) => {
+              // Ignore events if this RPC process has been rebound to a different session
+              if (rpc.sessionKey !== sessionKey) return;
+
               if (event.type === "message_update") {
-                const ame = (event as any).assistantMessageEvent;
+                const ame = (event as any).assistantMessageEvent ?? (event as any).assistant_message_event;
                 if (ame?.type === "text_delta" && ame.delta) {
                   fullText += ame.delta;
                   send({
@@ -1507,6 +2023,34 @@ export class Gateway {
                     created: Math.floor(Date.now() / 1000),
                     model: modelName,
                     choices: [{ index: 0, delta: { content: ame.delta }, finish_reason: null }],
+                  });
+                }
+                // Handle thinking events
+                if (ame?.type === "thinking_start") {
+                  send({
+                    id: requestId,
+                    object: "chat.completion.chunk",
+                    created: Math.floor(Date.now() / 1000),
+                    model: modelName,
+                    choices: [{ index: 0, delta: { content: "\n<think>\n" }, finish_reason: null }],
+                  });
+                }
+                if (ame?.type === "thinking_delta" && ame.delta) {
+                  send({
+                    id: requestId,
+                    object: "chat.completion.chunk",
+                    created: Math.floor(Date.now() / 1000),
+                    model: modelName,
+                    choices: [{ index: 0, delta: { content: ame.delta }, finish_reason: null }],
+                  });
+                }
+                if (ame?.type === "thinking_end") {
+                  send({
+                    id: requestId,
+                    object: "chat.completion.chunk",
+                    created: Math.floor(Date.now() / 1000),
+                    model: modelName,
+                    choices: [{ index: 0, delta: { content: "\n</think>\n" }, finish_reason: null }],
                   });
                 }
               }
@@ -1543,7 +2087,7 @@ export class Gateway {
       const startTime = Date.now();
       const unsub = rpc.onEvent((event) => {
         if (event.type === "message_update") {
-          const ame = (event as any).assistantMessageEvent;
+          const ame = (event as any).assistantMessageEvent ?? (event as any).assistant_message_event;
           if (ame?.type === "text_delta" && ame.delta) fullText += ame.delta;
         }
       });
@@ -1574,41 +2118,39 @@ export class Gateway {
   }
 
   private serveStaticFile(pathname: string): Response {
-    const webDir = new URL("./web", import.meta.url).pathname;
+    if (this.noGui) {
+      return Response.json({ error: "Web UI disabled (--no-gui mode)" }, { status: 404 });
+    }
 
-    // Map paths
-    let filePath: string;
+    let filename: string;
     if (pathname === "/" || pathname === "/index.html") {
-      filePath = `${webDir}/index.html`;
+      filename = "index.html";
     } else if (pathname.startsWith("/web/")) {
-      filePath = `${webDir}/${pathname.slice(5)}`;
+      filename = pathname.slice(5);
     } else {
       return new Response("Not Found", { status: 404 });
     }
 
-    // Serve file
-    const file = Bun.file(filePath);
+    const ext = filename.split(".").pop() ?? "";
+    const contentType = CONTENT_TYPES[ext] ?? "application/octet-stream";
+
+    // Compiled binary: serve from embedded assets
+    const embedded = WEB_ASSETS[filename];
+    if (embedded) {
+      return new Response(embedded, {
+        headers: { "content-type": contentType, "cache-control": "no-cache" },
+      });
+    }
+
+    // Dev mode fallback: serve from filesystem
+    const webDir = new URL("./web", import.meta.url).pathname;
+    const file = Bun.file(`${webDir}/${filename}`);
     if (!file.size) {
       return new Response("Not Found", { status: 404 });
     }
 
-    // Content-type mapping
-    const ext = filePath.split(".").pop() ?? "";
-    const types: Record<string, string> = {
-      html: "text/html; charset=utf-8",
-      css: "text/css; charset=utf-8",
-      js: "application/javascript; charset=utf-8",
-      json: "application/json",
-      svg: "image/svg+xml",
-      png: "image/png",
-      ico: "image/x-icon",
-    };
-
     return new Response(file, {
-      headers: {
-        "content-type": types[ext] ?? "application/octet-stream",
-        "cache-control": "no-cache",
-      },
+      headers: { "content-type": contentType, "cache-control": "no-cache" },
     });
   }
 
@@ -1635,6 +2177,20 @@ export class Gateway {
 
       // Built-in methods (aligned with OpenClaw)
       switch (method) {
+        case "extension_ui_response": {
+          const uiResponse: ExtensionUIResponse = {
+            type: "extension_ui_response",
+            id: (params?.id as string) ?? "",
+            value: params?.value as string | string[] | undefined,
+            confirmed: params?.confirmed as boolean | undefined,
+            cancelled: params?.cancelled as boolean | undefined,
+            timestamp: Date.now(),
+          };
+          const handled = this.extensionUI.handleResponse(uiResponse, this.wsClients, ws.data.clientId);
+          respond(handled);
+          break;
+        }
+
         case "connect": {
           // Validate token in connect params if auth is enabled
           const authMode = this.config.gateway.auth.mode;
@@ -1665,11 +2221,13 @@ export class Gateway {
           const text = (params?.text as string) ?? "";
           const role = (params?.role as string) ?? undefined;
           const sessionKey = (params?.sessionKey as string) ?? "agent:main:webchat:default";
+          const images = Array.isArray(params?.images) ? params.images as ImageContent[] : undefined;
 
           await this.dispatch({
             source: { channel: "webchat", chatType: "dm", chatId: "default", senderId: ws.data.clientId },
             sessionKey,
             text,
+            images,
             respond: async (reply) => {
               ws.send(JSON.stringify({ type: "event", event: "chat.reply", payload: { text: reply, sessionKey } }));
             },
@@ -1787,6 +2345,25 @@ export class Gateway {
           this.sessionMessageModeOverrides.delete(dKey);
           this.sessions.delete(dKey);
           respond(true, { ok: true });
+          break;
+        }
+
+        case "session.listRoles": {
+          respond(true, { roles: this.listAvailableRoles() });
+          break;
+        }
+
+        case "session.setRole": {
+          const srSessionKey = (params?.sessionKey as string);
+          const srRole = (params?.role as string);
+          if (!srSessionKey) { respond(false, undefined, "sessionKey required"); break; }
+          if (!srRole) { respond(false, undefined, "role required"); break; }
+          try {
+            const changed = await this.setSessionRole(srSessionKey, srRole);
+            respond(true, { changed, role: srRole });
+          } catch (err: any) {
+            respond(false, undefined, err?.message ?? "Failed to set role");
+          }
           break;
         }
 
@@ -2010,6 +2587,186 @@ export class Gateway {
         if (rpc) {
           await rpc.abort();
         }
+      },
+
+      async forwardCommand(sessionKey: SessionKey, command: string, args: string) {
+        const rpc = self.pool.getForSession(sessionKey);
+        if (!rpc) {
+          throw new Error(`No RPC process for session ${sessionKey}`);
+        }
+        self.log.info(`[forwardCommand] ${sessionKey}: ${command} ${args}`);
+        
+        // Map slash commands to RPC methods
+        switch (command) {
+          case "/compact":
+            await rpc.compact(args || undefined);
+            break;
+          case "/stop":
+            await rpc.abort();
+            break;
+          case "/think": {
+            const level = args || "medium";
+            await rpc.setThinkingLevel(level);
+            break;
+          }
+          case "/model": {
+            if (!args || !args.includes("/")) {
+              throw new Error("Usage: /model provider/modelId");
+            }
+            const slash = args.indexOf("/");
+            const provider = args.slice(0, slash);
+            const modelId = args.slice(slash + 1);
+            await rpc.setModel(provider, modelId);
+            break;
+          }
+          default:
+            // For unknown commands, send as prompt
+            const fullCommand = args ? `${command} ${args}` : command;
+            await rpc.prompt(fullCommand);
+        }
+      },
+
+      async getPiCommands(_sessionKey: SessionKey): Promise<{ name: string; description?: string }[]> {
+        // KeenUnion's approach: pi commands are global, use any idle RPC
+        // Find first idle client without acquiring (lightweight, no session binding)
+        const pool = self.pool as any;
+        let rpc: RpcClient | null = null;
+        if (pool.clients) {
+          for (const client of pool.clients.values()) {
+            if (client.isIdle && client.isAlive) {
+              rpc = client;
+              break;
+            }
+          }
+        }
+        if (!rpc) {
+          self.log.debug(`[getPiCommands] no idle RPC available`);
+          return [];
+        }
+        try {
+          const commands = await rpc.getCommands();
+          self.log.info(`[getPiCommands] got ${commands.length} commands from ${rpc.id}`);
+          return commands;
+        } catch (err) {
+          self.log.warn(`[getPiCommands] failed to get commands: ${err}`);
+          return [];
+        }
+      },
+    };
+  }
+
+  // ==========================================================================
+  // Built-in Commands
+  // ==========================================================================
+
+  /**
+   * Register built-in slash commands.
+   */
+  private registerBuiltinCommands(): void {
+    // /role <name> — Switch session role
+    this.registry.commands.set("role", {
+      pluginId: "builtin",
+      handler: async ({ sessionKey, args, respond }) => {
+        const roleName = args.trim();
+        if (!roleName) {
+          const availableRoles = this.listAvailableRoles();
+          await respond(`Usage: /role <name>\nAvailable roles: ${availableRoles.join(", ")}`);
+          return;
+        }
+
+        const availableRoles = this.listAvailableRoles();
+        if (!availableRoles.includes(roleName)) {
+          await respond(`Unknown role: ${roleName}\nAvailable: ${availableRoles.join(", ")}`);
+          return;
+        }
+
+        try {
+          const changed = await this.setSessionRole(sessionKey, roleName);
+          if (changed) {
+            await respond(`Role switched to: ${roleName}`);
+          } else {
+            await respond(`Already using role: ${roleName}`);
+          }
+        } catch (err: any) {
+          await respond(`Failed to switch role: ${err?.message ?? String(err)}`);
+        }
+      },
+    });
+
+    this.log.info("Registered built-in command: /role");
+  }
+
+  // ==========================================================================
+  // Role Management
+  // ==========================================================================
+
+  /**
+   * Get all available roles from config (workspaceDirs + capabilities keys).
+   */
+  private listAvailableRoles(): string[] {
+    const workspaceRoles = Object.keys(this.config.roles.workspaceDirs ?? {});
+    const capabilityRoles = Object.keys(this.config.roles.capabilities ?? {});
+    const allRoles = new Set([...workspaceRoles, ...capabilityRoles, "default"]);
+    return Array.from(allRoles).sort();
+  }
+
+  /**
+   * Set role for a session and respawn RPC process.
+   * Returns true if successful, false if role not changed.
+   */
+  private async setSessionRole(sessionKey: SessionKey, newRole: string): Promise<boolean> {
+    const session = this.sessions.get(sessionKey);
+    if (!session) {
+      throw new Error(`Session not found: ${sessionKey}`);
+    }
+
+    const currentRole = session.role ?? "default";
+    if (currentRole === newRole) {
+      return false; // No change needed
+    }
+
+    // Release current RPC process
+    this.pool.release(sessionKey);
+
+    // Update session role
+    session.role = newRole;
+    session.lastActivity = Date.now();
+    this.sessions.touch(sessionKey);
+
+    // Pre-warm new RPC process with new role (optional, for faster response)
+    try {
+      const profile = this.buildSessionProfile(sessionKey, newRole);
+      await this.pool.acquire(sessionKey, profile);
+    } catch (err) {
+      this.log.warn(`Failed to pre-warm RPC for role ${newRole}: ${err}`);
+      // Non-fatal: process will be acquired on next message
+    }
+
+    this.log.info(`Role changed for ${sessionKey}: ${currentRole} -> ${newRole}`);
+    return true;
+  }
+
+  // ==========================================================================
+  // Metrics Data Source
+  // ==========================================================================
+
+  private createMetricsDataSource(): MetricsDataSource {
+    const self = this;
+    return {
+      getPoolStats() {
+        return self.pool.getStats();
+      },
+      getQueueStats() {
+        return self.queue.getStats();
+      },
+      getActiveSessionCount() {
+        return self.sessions.size;
+      },
+      getRpcPids() {
+        return self.pool
+          .getAllClients()
+          .map((c) => c.pid)
+          .filter((pid): pid is number => pid !== null);
       },
     };
   }

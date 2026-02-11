@@ -119,6 +119,8 @@ export interface MessageSource {
   senderId: string;
   senderName?: string;
   guildId?: string;
+  /** Target agent ID for routing (cron/delegation). */
+  agentId?: string;
 }
 
 /** Inbound message dispatched to the agent */
@@ -135,6 +137,8 @@ export interface InboundMessage {
   onStreamDelta?: (accumulated: string, delta: string) => void;
   /** Optional: called when tool execution starts (for live UI/tool hint rendering) */
   onToolStart?: (toolName: string, args?: Record<string, unknown>, toolCallId?: string) => void;
+  /** Optional: called on thinking content delta (for live thinking display) */
+  onThinkingDelta?: (accumulated: string, delta: string) => void;
 }
 
 /** Attachment in outbound message */

@@ -35,7 +35,28 @@
       "dmPolicy": "allowlist",
       "allowFrom": [YOUR_TELEGRAM_USER_ID],
       "mediaMaxMb": 10,
-      "streamMode": "partial"
+      "streamMode": "partial",
+      // Streaming edit throttle (ms). Lower = faster updates, higher = fewer 429s.
+      // Adaptive backoff on 429: reads Telegram retry_after, recovers gradually.
+      "editThrottleMs": 500
+    },
+    "discord": {
+      "enabled": false,
+      "token": "${DISCORD_BOT_TOKEN}",
+      "dmPolicy": "pairing",
+      // "dm": { "allowFrom": ["USER_ID_1"] },
+      // Per-guild config: requireMention (default true), role binding
+      // "guilds": {
+      //   "GUILD_ID": { "requireMention": true, "role": "default" }
+      // },
+      "streaming": {
+        "enabled": true,
+        // Edit throttle (ms). Discord is more lenient than Telegram.
+        "editThrottleMs": 500,
+        // Stop editing after this many chars; send full reply on completion.
+        "editCutoffChars": 1800,
+        "placeholder": "⏳ Processing..."
+      }
     }
   },
 
@@ -55,5 +76,87 @@
   "cron": {
     "enabled": false,
     "jobs": []
+  },
+
+  // Message queue & backpressure (all values are defaults, override as needed)
+  "queue": {
+    "maxPerSession": 15,
+    "globalMaxPending": 100,
+    "collectDebounceMs": 1500,
+    "poolWaitTtlMs": 30000,
+    "mode": "collect",
+    "dropPolicy": "summarize",
+    "dedup": {
+      "enabled": true,
+      "cacheSize": 1000,
+      "ttlMs": 60000
+    },
+    "priority": {
+      "dm": 10,
+      "group": 5,
+      "webhook": 3,
+      "allowlistBonus": 2
+    }
+  },
+
+  // Multi-agent configuration (v3)
+  // Define multiple specialized agents and their delegation constraints
+  "agents": {
+    // Default agent when no binding matches
+    "default": "main",
+    // Available agents list
+    "list": [
+      {
+        "id": "main",
+        "workspace": "~/workspace/main",
+        "model": "claude-sonnet-4",
+        "role": "coding"
+      },
+      {
+        "id": "docs",
+        "workspace": "~/workspace/docs",
+        "model": "claude-haiku-4",
+        "role": "documentation",
+        // Delegation constraints: which agents can delegate to this agent
+        "delegation": {
+          "allowAgents": ["main", "code"],
+          "maxConcurrent": 2,
+          "maxDepth": 1
+        }
+      },
+      {
+        "id": "code",
+        "workspace": "~/workspace/code",
+        "model": "claude-sonnet-4",
+        "role": "coding",
+        "extensions": ["~/.pi/agent/extensions/code-review.ts"],
+        "skills": ["~/.pi/agent/skills/ast-grep"],
+        "delegation": {
+          "allowAgents": ["main", "docs"],
+          "maxConcurrent": 3,
+          "maxDepth": 1
+        }
+      }
+    ],
+    // Static routing bindings (optional)
+    "bindings": [
+      {
+        "agentId": "code",
+        "match": {
+          "channel": "telegram",
+          "peer": {
+            "kind": "group",
+            "id": "-1001234567890"
+          }
+        }
+      },
+      {
+        "agentId": "docs",
+        "match": {
+          "channel": "discord",
+          "guildId": "1234567890"
+        }
+      }
+    ]
   }
 }

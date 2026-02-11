@@ -16,6 +16,15 @@ import { createLogger, type Logger, type SessionKey } from "./types.ts";
 import { getSessionDir } from "./session-store.ts";
 import { getCwdForRole } from "./session-router.ts";
 import { buildCapabilityProfile, type CapabilityProfile } from "./capability-profile.ts";
+import type { MetricsCollector } from "./metrics.ts";
+import { PoolWaitingList } from "./pool-waiting-list.ts";
+
+/** Check if `superset` contains all elements of `subset`. */
+function isSuperset(superset: string[], subset: string[]): boolean {
+  if (subset.length === 0) return true;
+  const set = new Set(superset);
+  return subset.every(s => set.has(s));
+}
 
 // ============================================================================
 // Types
@@ -35,11 +44,15 @@ export interface RpcPoolStats {
 export class RpcPool {
   private clients = new Map<string, RpcClient>();
   private sessionBindings = new Map<SessionKey, string>();  // sessionKey -> clientId
+  private waitingList = new PoolWaitingList();
   private nextId = 0;
   private maintenanceTimer: ReturnType<typeof setInterval> | null = null;
   private log: Logger;
 
-  constructor(private config: Config) {
+  constructor(
+    private config: Config,
+    private metrics?: MetricsCollector,
+  ) {
     this.log = createLogger("rpc-pool");
   }
 
@@ -82,6 +95,9 @@ export class RpcPool {
       this.maintenanceTimer = null;
     }
 
+    // Cancel all waiting entries before stopping processes
+    this.waitingList.cancelAll("Pool shutting down");
+
     const stops = Array.from(this.clients.values()).map((c) => c.stop());
     await Promise.allSettled(stops);
 
@@ -98,7 +114,7 @@ export class RpcPool {
    * Acquire an RPC client for a session.
    * Returns an existing bound client, or assigns an idle one, or spawns a new one.
    */
-  async acquire(sessionKey: SessionKey, profile: CapabilityProfile): Promise<RpcClient> {
+  async acquire(sessionKey: SessionKey, profile: CapabilityProfile, priority?: number): Promise<RpcClient> {
     const targetCwd = profile.cwd;
 
     // Already bound?
@@ -126,23 +142,42 @@ export class RpcPool {
     }
 
     // Find an idle process with matching profile (cwd + capability signature)
+    // Find an idle process: prefer exact match, fall back to hard match with soft superset
+    let hardCandidate: RpcClient | null = null;
     for (const client of this.clients.values()) {
-      if (client.isIdle && client.isAlive && this.matchesProfile(client, profile)) {
+      if (!client.isIdle || !client.isAlive) continue;
+      if (this.matchesProfile(client, profile)) {
+        // Exact match — best case
         client.sessionKey = sessionKey;
         client.lastActivity = Date.now();
         this.sessionBindings.set(sessionKey, client.id);
-        this.log.debug(`Reusing idle process ${client.id} for ${sessionKey}`);
-
-        // New session for the reused process
+        this.log.debug(`Reusing idle process ${client.id} for ${sessionKey} (exact match)`);
         try {
           await client.newSession();
           await this.initializeRpcState(client);
         } catch (err) {
           this.log.warn(`Failed to reset session on reuse: ${err}`);
         }
-
         return client;
       }
+      if (!hardCandidate && this.matchesHardProfile(client, profile)) {
+        hardCandidate = client;
+      }
+    }
+
+    // Hard match with soft superset — acceptable reuse
+    if (hardCandidate) {
+      hardCandidate.sessionKey = sessionKey;
+      hardCandidate.lastActivity = Date.now();
+      this.sessionBindings.set(sessionKey, hardCandidate.id);
+      this.log.debug(`Reusing idle process ${hardCandidate.id} for ${sessionKey} (hard match, soft superset)`);
+      try {
+        await hardCandidate.newSession();
+        await this.initializeRpcState(hardCandidate);
+      } catch (err) {
+        this.log.warn(`Failed to reset session on reuse: ${err}`);
+      }
+      return hardCandidate;
     }
 
     // At capacity?
@@ -150,7 +185,21 @@ export class RpcPool {
       // Evict the least recently used idle process
       const evicted = this.evictLeastRecentIdle();
       if (!evicted) {
-        throw new Error(`RPC pool at capacity (${this.poolConfig.max}). No idle processes to evict.`);
+        // Instead of throwing, enqueue to waiting list with backpressure
+        this.log.info(`Pool at capacity (${this.poolConfig.max}), enqueuing ${sessionKey} to waiting list (priority=${priority ?? 5})`);
+        const client = await this.waitingList.enqueue(sessionKey, priority ?? 5);
+        // Waiting entry resolved — set up the client for this session
+        client.clearEventListeners();
+        client.sessionKey = sessionKey;
+        client.lastActivity = Date.now();
+        this.sessionBindings.set(sessionKey, client.id);
+        try {
+          await client.newSession();
+          await this.initializeRpcState(client);
+        } catch (err) {
+          this.log.warn(`Failed to initialize waited client for ${sessionKey}: ${err}`);
+        }
+        return client;
       }
     }
 
@@ -174,6 +223,16 @@ export class RpcPool {
     if (client) {
       client.sessionKey = null;
       client.lastActivity = Date.now();
+
+      // Drain waiting list: if someone is waiting for a process, hand it over
+      if (client.isAlive && this.waitingList.size > 0) {
+        const drained = this.waitingList.drain(client);
+        if (drained) {
+          this.log.debug(`Released ${sessionKey} → drained to waiting entry`);
+          this.sessionBindings.delete(sessionKey);
+          return;
+        }
+      }
     }
     this.sessionBindings.delete(sessionKey);
     this.log.debug(`Released ${sessionKey} from process ${clientId}`);
@@ -192,7 +251,7 @@ export class RpcPool {
   // Stats
   // ==========================================================================
 
-  getStats(): RpcPoolStats {
+  getStats(): RpcPoolStats & { waitingList: { waiting: number; totalEnqueued: number; totalDrained: number; totalExpired: number } } {
     let active = 0;
     let idle = 0;
     for (const client of this.clients.values()) {
@@ -206,6 +265,7 @@ export class RpcPool {
       active,
       idle,
       maxCapacity: this.poolConfig.max,
+      waitingList: this.waitingList.stats,
     };
   }
 
@@ -238,8 +298,43 @@ export class RpcPool {
     }
   }
 
+  /**
+   * Exact match: hard signature + full signature must both match.
+   * Used for session-bound process validation.
+   */
   private matchesProfile(client: RpcClient, profile: CapabilityProfile): boolean {
     return (client.cwd ?? "") === profile.cwd && (client.signature ?? "") === profile.signature;
+  }
+
+  /**
+   * Hard-only match: role+cwd+tools+env match, soft resources are superset.
+   * Used for flexible pool reuse when exact match unavailable.
+   */
+  private matchesHardProfile(client: RpcClient, profile: CapabilityProfile): boolean {
+    if ((client.cwd ?? "") !== profile.cwd) return false;
+    if ((client.hardSignature ?? "") !== profile.hardSignature) return false;
+    // Soft: client must have superset of requested resources
+    const clientSoft = client.softResources;
+    if (!clientSoft) return false;
+    const needed = profile.softResources;
+    return isSuperset(clientSoft.skills, needed.skills)
+      && isSuperset(clientSoft.extensions, needed.extensions)
+      && isSuperset(clientSoft.promptTemplates, needed.promptTemplates);
+  }
+
+  /**
+   * Find the best idle process for a profile.
+   * Priority: exact match > hard match with soft superset > null (spawn new).
+   * Used by delegate_to_agent routing.
+   */
+  findBestMatch(profile: CapabilityProfile): RpcClient | null {
+    let hardMatch: RpcClient | null = null;
+    for (const client of this.clients.values()) {
+      if (!client.isIdle || !client.isAlive) continue;
+      if (this.matchesProfile(client, profile)) return client; // exact — best
+      if (!hardMatch && this.matchesHardProfile(client, profile)) hardMatch = client;
+    }
+    return hardMatch;
   }
 
   /**
@@ -277,6 +372,8 @@ export class RpcPool {
       piCliPath: this.config.agent.piCliPath,
       cwd: profile.cwd,
       signature: profile.signature,
+      hardSignature: profile.hardSignature,
+      softResources: profile.softResources,
       env: profile.env,
       args: extraArgs.length > 0 ? extraArgs : undefined,
     };
@@ -286,6 +383,7 @@ export class RpcPool {
 
     try {
       await client.start();
+      this.metrics?.incProcessSpawn();
     } catch (err) {
       this.clients.delete(id);
       throw err;
@@ -309,6 +407,7 @@ export class RpcPool {
     this.log.debug(`Evicting idle process ${oldest.id}`);
     this.clients.delete(oldest.id);
     oldest.stop().catch(() => {});
+    this.metrics?.incProcessKill();
     return true;
   }
 
@@ -325,6 +424,7 @@ export class RpcPool {
           this.sessionBindings.delete(client.sessionKey);
         }
         this.clients.delete(id);
+        this.metrics?.incProcessCrash();
         continue;
       }
 
@@ -337,6 +437,7 @@ export class RpcPool {
         this.log.debug(`Reclaiming idle process ${id} (idle ${Math.round((now - client.lastActivity) / 1000)}s)`);
         this.clients.delete(id);
         client.stop().catch(() => {});
+        this.metrics?.incProcessKill();
       }
     }
 

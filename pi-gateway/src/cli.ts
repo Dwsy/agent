@@ -126,6 +126,12 @@ function createCliOnlyPluginApi(
     async setSessionMessageMode(): Promise<void> {},
     async compactSession(_sessionKey: SessionKey, _instructions?: string): Promise<void> {},
     async abortSession(_sessionKey: SessionKey): Promise<void> {},
+    async forwardCommand(_sessionKey: SessionKey, _command: string, _args: string): Promise<void> {
+      throw new Error("forwardCommand is not available in CLI-only plugin context");
+    },
+    async getPiCommands(_sessionKey: SessionKey): Promise<{ name: string; description?: string }[]> {
+      return [];
+    },
   };
 }
 
@@ -181,9 +187,10 @@ async function runPluginCliIfMatched(): Promise<boolean> {
 async function runGateway(): Promise<void> {
   const port = getArg("port") ? parseInt(getArg("port")!, 10) : undefined;
   const verbose = getFlag("verbose");
+  const noGui = getFlag("no-gui");
   const configPath = getArg("config");
 
-  const gateway = new Gateway({ port, verbose, configPath });
+  const gateway = new Gateway({ port, verbose, noGui, configPath });
 
   // Graceful shutdown
   const shutdown = async () => {
@@ -436,7 +443,7 @@ function showHelp(): void {
 pi-gateway — Local AI Gateway for pi agent
 
 Usage:
-  pi-gw gateway [--port N] [--verbose] [--config path]   Start the gateway
+  pi-gw gateway [--port N] [--verbose] [--no-gui] [--config path]   Start the gateway
   pi-gw doctor [--config path]                            Health check
   pi-gw send --to <target> --message <text>               Send a message (telegram:<chatId> or telegram:<accountId>:<chatId>[:topic:<tid>])
   pi-gw config show                                       Show configuration

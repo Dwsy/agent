@@ -34,6 +34,48 @@ export interface AgentPoolConfig {
   min: number;
   max: number;
   idleTimeoutMs: number;
+  /** Per-message timeout in ms. Default: 120000 (2 min). Moved from agent.timeoutMs. */
+  messageTimeoutMs?: number;
+}
+
+export interface DelegationConfig {
+  /** Timeout for sync delegate_to_agent calls in ms. Default: 120000 */
+  timeoutMs: number;
+  /** Max allowed timeout (cap for per-call overrides). Default: 600000 (10 min) */
+  maxTimeoutMs: number;
+  /** Behavior when delegation times out. Default: "abort" */
+  onTimeout: "abort" | "return-partial";
+  /** Max chain depth for nested delegations (A→B→C). Default: 1 */
+  maxDepth: number;
+  /** Max concurrent delegations per agent. Default: 2 */
+  maxConcurrent: number;
+  /** Whitelist of agent IDs allowed as delegation targets. Empty = all allowed. */
+  allowAgents?: string[];
+}
+
+export interface HeartbeatConfig {
+  /** Enable heartbeat. Default: false */
+  enabled: boolean;
+  /** Interval between heartbeats. Format: "30m", "1h", "5m". Default: "30m" */
+  every: string;
+  /** Active hours window. Heartbeat skipped outside this range. */
+  activeHours?: {
+    start: string; // "HH:MM" format, e.g. "08:00"
+    end: string; // "HH:MM" format, e.g. "23:00"
+    timezone: string; // IANA timezone, e.g. "Asia/Shanghai"
+  };
+  /** Prompt sent to agent. Default: see DEFAULT_HEARTBEAT_PROMPT */
+  prompt: string;
+  /** Max chars of remaining text after stripping HEARTBEAT_OK to still suppress. Default: 300 */
+  ackMaxChars: number;
+  /** Skip heartbeat when session has pending messages. Default: true */
+  skipWhenBusy: boolean;
+  /** Max retry attempts when no idle RPC available. Default: 2 */
+  maxRetries: number;
+  /** Delay between retries in ms. Default: 5000 */
+  retryDelayMs: number;
+  /** Per-message timeout in ms. Default: 60000 */
+  messageTimeoutMs?: number;
 }
 
 export interface ToolPolicyConfig {
@@ -53,6 +95,60 @@ export interface AgentRuntimeConfig {
   agentDir?: string;
   /** Optional isolated package dir (mapped to PI_PACKAGE_DIR). */
   packageDir?: string;
+}
+
+// ============================================================================
+// Multi-Agent Configuration (v3)
+// ============================================================================
+
+export interface DelegationConstraints {
+  /** List of agent IDs this agent can delegate to. */
+  allowAgents: string[];
+  /** Maximum concurrent delegations from this agent. */
+  maxConcurrent: number;
+  /** Maximum delegation depth (prevent A→B→C chains). */
+  maxDepth: number;
+}
+
+export interface AgentDefinition {
+  /** Unique agent ID (e.g., 'code', 'docs', 'ops'). */
+  id: string;
+  /** Working directory for this agent. */
+  workspace: string;
+  /** Model for this agent (optional, uses global default if not set). */
+  model?: string;
+  /** Role for this agent (optional, uses agentId if not set). */
+  role?: string;
+  /** Extensions specific to this agent. */
+  extensions?: string[];
+  /** Skills specific to this agent. */
+  skills?: string[];
+  /** Delegation constraints for this agent. */
+  delegation?: DelegationConstraints;
+}
+
+export interface AgentBinding {
+  /** Target agent ID. */
+  agentId: string;
+  /** Match criteria for routing. */
+  match: {
+    channel?: string;
+    accountId?: string;
+    guildId?: string;  // Discord specific
+    peer?: {
+      kind?: "dm" | "group";
+      id?: string;
+    };
+  };
+}
+
+export interface AgentsConfig {
+  /** List of available agents. */
+  list: AgentDefinition[];
+  /** Default agent ID when no binding matches. */
+  default: string;
+  /** Static routing bindings. */
+  bindings?: AgentBinding[];
 }
 
 export interface AgentConfig {
@@ -85,6 +181,8 @@ export interface AgentConfig {
   sandbox?: SandboxConfig;
   /** Per-message timeout in milliseconds. Default: 120000 (2 min) */
   timeoutMs?: number;
+  /** Message handling mode when agent is already running. Default: "steer" */
+  messageMode?: "steer" | "follow-up" | "interrupt";
 }
 
 export interface SessionConfig {
@@ -143,6 +241,14 @@ export interface TelegramAccountConfig {
   role?: string;
   groups?: Record<string, TelegramGroupConfig>;
   mediaMaxMb?: number;
+  /** Audio STT configuration */
+  audio?: {
+    provider?: "groq" | "openai";
+    model?: string;
+    apiKey?: string;
+    language?: string;
+    timeoutSeconds?: number;
+  };
   streamMode?: "off" | "partial" | "block";
   replyToMode?: "off" | "first" | "all";
   proxy?: string;
@@ -224,6 +330,16 @@ export interface CronJob {
   sessionKey?: string;
   payload: { text: string };
   enabled?: boolean;
+  /** Target agent ID. Default: config.agents.default */
+  agentId?: string;
+  /** Execution mode. "isolated" = independent session, "main" = inject into main session. Default: "isolated" */
+  mode?: "isolated" | "main";
+  /** Result delivery. "announce" = send to bound channel, "silent" = log only. Default: "silent" */
+  delivery?: "announce" | "silent";
+  /** Per-job timeout in ms. Default: config.delegation.timeoutMs */
+  timeoutMs?: number;
+  /** If true, remove job after first execution (for "at" jobs). Default: false */
+  deleteAfterRun?: boolean;
 }
 
 export interface CronConfig {
@@ -237,6 +353,34 @@ export interface LoggingConfig {
   retentionDays: number;
 }
 
+export interface QueueConfig {
+  /** Max items per session queue. Default: 15 */
+  maxPerSession: number;
+  /** Max total pending items across all sessions. Default: 100 */
+  globalMaxPending: number;
+  /** Debounce window for collect mode in ms. Default: 1500 */
+  collectDebounceMs: number;
+  /** TTL for pool waiting list entries in ms. Default: 30000 */
+  poolWaitTtlMs: number;
+  /** Queue processing mode. Default: "collect" */
+  mode: "collect" | "individual";
+  /** Drop policy when queue is full. Default: "summarize" */
+  dropPolicy: "summarize" | "old" | "new";
+  /** Dedup configuration */
+  dedup: {
+    enabled: boolean;
+    cacheSize: number;
+    ttlMs: number;
+  };
+  /** Priority values by message source */
+  priority: {
+    dm: number;
+    group: number;
+    webhook: number;
+    allowlistBonus: number;
+  };
+}
+
 export interface Config {
   gateway: GatewayConfig;
   agent: AgentConfig;
@@ -247,6 +391,13 @@ export interface Config {
   hooks: HooksConfig;
   cron: CronConfig;
   logging: LoggingConfig;
+  queue: QueueConfig;
+  /** Delegation configuration for delegate_to_agent (v3). */
+  delegation: DelegationConfig;
+  /** Multi-agent configuration (v3). */
+  agents?: AgentsConfig;
+  /** Heartbeat configuration (v3.1). */
+  heartbeat?: HeartbeatConfig;
 }
 
 // ============================================================================
@@ -271,6 +422,7 @@ export const DEFAULT_CONFIG: Config = {
     },
     tools: { profile: "coding" },
     sandbox: { mode: "off", scope: "session" },
+    messageMode: "steer",
   },
   session: {
     dmScope: "main",
@@ -291,6 +443,10 @@ export const DEFAULT_CONFIG: Config = {
     enabled: false,
     path: "/hooks",
   },
+  agents: {
+    list: [],
+    default: "main",
+  },
   cron: {
     enabled: false,
     jobs: [],
@@ -299,6 +455,42 @@ export const DEFAULT_CONFIG: Config = {
     file: false,
     level: "info",
     retentionDays: 7,
+  },
+  queue: {
+    maxPerSession: 15,
+    globalMaxPending: 100,
+    collectDebounceMs: 1500,
+    poolWaitTtlMs: 30000,
+    mode: "collect",
+    dropPolicy: "summarize",
+    dedup: {
+      enabled: true,
+      cacheSize: 1000,
+      ttlMs: 60000,
+    },
+    priority: {
+      dm: 10,
+      group: 5,
+      webhook: 3,
+      allowlistBonus: 2,
+    },
+  },
+  delegation: {
+    timeoutMs: 120_000,
+    maxTimeoutMs: 600_000,
+    onTimeout: "abort",
+    maxDepth: 1,
+    maxConcurrent: 2,
+  },
+  heartbeat: {
+    enabled: false,
+    every: "30m",
+    prompt: "Read HEARTBEAT.md if it exists. Follow it strictly — do not infer or repeat tasks from prior conversations. If nothing needs attention, reply HEARTBEAT_OK.",
+    ackMaxChars: 300,
+    skipWhenBusy: true,
+    maxRetries: 2,
+    retryDelayMs: 5000,
+    messageTimeoutMs: 60000,
   },
 };
 
