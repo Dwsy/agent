@@ -1,8 +1,8 @@
-import type { ChannelPlugin, GatewayPluginApi } from "../../types.ts";
+import type { ChannelPlugin, GatewayPluginApi, MediaSendOptions, MediaSendResult } from "../../types.ts";
 import type { TelegramChannelConfig } from "../../../core/config.ts";
 import { resolveDefaultAccountId, resolveTelegramAccounts } from "./accounts.ts";
 import { createAccountRuntime, startAccountRuntime, stopAccountRuntime } from "./bot.ts";
-import { sendOutboundViaAccount } from "./handlers.ts";
+import { sendOutboundViaAccount, sendMediaViaAccount } from "./handlers.ts";
 import type { TelegramPluginRuntime } from "./types.ts";
 
 let runtime: TelegramPluginRuntime | null = null;
@@ -34,6 +34,16 @@ const telegramPlugin: ChannelPlugin = {
         defaultAccountId,
         target,
         text,
+      });
+    },
+    async sendMedia(target: string, filePath: string, opts?: MediaSendOptions): Promise<MediaSendResult> {
+      const rt = getRuntime();
+      return sendMediaViaAccount({
+        runtime: rt,
+        defaultAccountId,
+        target,
+        filePath,
+        opts,
       });
     },
   },
