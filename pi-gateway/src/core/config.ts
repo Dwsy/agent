@@ -158,6 +158,14 @@ export interface GatewayPromptsConfig {
   cron?: boolean;
   /** Override media prompt injection. Default: auto (true when any channel enabled). */
   media?: boolean;
+  /** Inject gateway identity prompt (Layer 1). Default: true. */
+  identity?: boolean;
+  /** Inject channel-specific formatting hints. Default: auto (true when channel active). */
+  channel?: boolean;
+  /** Inject delegation protocol prompt. Default: auto (true when agents > 1). */
+  delegation?: boolean;
+  /** Include heartbeat protocol even when heartbeat.enabled=false. Default: false. */
+  alwaysHeartbeat?: boolean;
 }
 
 export interface AgentConfig {

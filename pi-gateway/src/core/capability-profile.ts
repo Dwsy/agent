@@ -49,7 +49,10 @@ export function buildCapabilityProfile(input: CapabilityProfileInput): Capabilit
   const softArgs: string[] = [];
   appendModelArgs(softArgs, config);
 
+  // Auto-inject gateway-tools extension for send_media tool
+  const gatewayToolsExt = resolve(import.meta.dir, "../../extensions/gateway-tools/index.ts");
   const extensions = dedupePaths([
+    gatewayToolsExt,
     ...(roleCaps.extensions ?? []),
     ...(config.agent.extensions ?? []),
   ]);
@@ -73,6 +76,14 @@ export function buildCapabilityProfile(input: CapabilityProfileInput): Capabilit
   }
   if (runtimePackageDir) {
     env.PI_PACKAGE_DIR = normalizePath(runtimePackageDir);
+  }
+
+  // Gateway tools: inject URL + internal token so extensions can call back
+  const port = config.gateway.port ?? 18789;
+  const bind = config.gateway.bind ?? "loopback";
+  const host = bind === "loopback" ? "127.0.0.1" : "0.0.0.0";
+  env.PI_GATEWAY_URL = `http://${host}:${port}`;
+  env.PI_GATEWAY_INTERNAL_TOKEN = getGatewayInternalToken(config);
   }
 
   const piCliPath = config.agent.piCliPath ?? "pi";

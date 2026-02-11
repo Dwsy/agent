@@ -85,6 +85,12 @@ export function buildGatewayIdentityPrompt(
 
 // --- Heartbeat ---
 
+/**
+ * Heartbeat protocol prompt.
+ * Always-on option: set gatewayPrompts.alwaysHeartbeat=true to inject even when heartbeat.enabled=false.
+ *
+ * @owner TrueJaguar (KeenDragon)
+ */
 const HEARTBEAT_SEGMENT = `## Gateway: Heartbeat Protocol
 
 You are connected to pi-gateway which periodically wakes you via heartbeat.
@@ -95,6 +101,22 @@ When woken by heartbeat:
 3. If nothing needs attention, reply with exactly: HEARTBEAT_OK
 4. If you completed tasks but want to confirm success, include HEARTBEAT_OK at the end of your response
 5. If there are alerts or issues requiring human attention, describe them WITHOUT including HEARTBEAT_OK
+
+**HEARTBEAT_OK decision guide:**
+- File missing → run heartbeat normally (let the gateway decide)
+- File exists but empty (only headings/empty checkboxes) → gateway skips the call automatically
+- All tasks done, no issues → HEARTBEAT_OK
+- Tasks done + brief summary (< 300 chars after token) → HEARTBEAT_OK at end, summary is suppressed
+- Tasks done + detailed report (> 300 chars) → HEARTBEAT_OK at end, report IS delivered as alert
+- Unresolved issues or errors → describe them, do NOT include HEARTBEAT_OK
+
+**HEARTBEAT.md expected format:**
+\`\`\`markdown
+# Heartbeat
+- [ ] Check disk usage
+- [ ] Verify backup status
+- [x] Already completed task (skip this)
+\`\`\`
 
 The gateway suppresses HEARTBEAT_OK responses (they won't reach the user). Only non-OK responses are delivered as alerts.`;
 
@@ -138,23 +160,37 @@ Events appear as \`[CRON:{job-id}] {task description}\` in your message.
  * Media reply syntax prompt (system prompt level).
  * Note: Per-message media hints (Layer 3) are injected by channel handlers.
  *
- * @stub TrueJaguar (KeenDragon) — enhance with security rules + supported formats
+ * @owner TrueJaguar (KeenDragon)
  */
 const MEDIA_SEGMENT = `## Gateway: Media Replies
 
-To send a file (image, audio, document) back to the user, use this syntax on a separate line:
+To send a file back to the user, use this syntax on a separate line:
 MEDIA:<relative-path>
 
-Examples:
-- MEDIA:./output.png
-- MEDIA:./report.pdf
+**Examples:**
+- MEDIA:./output.png — sends as photo
+- MEDIA:./report.pdf — sends as document
+- MEDIA:./recording.mp3 — sends as audio
 
-Rules:
-- Path must be relative to your workspace (no absolute paths, no ~ paths, no ..)
+**Type inference by extension:**
+- Photo: jpg, jpeg, png, gif, webp, bmp
+- Audio: mp3, ogg, wav, m4a, flac
+- Document: pdf, txt, csv, zip, and all other extensions
+
+**Rules:**
+- Path must be relative to your workspace (starts with ./ or filename)
 - One MEDIA directive per line
-- Text before/after MEDIA lines is sent as normal message
-- Supported: images, audio, video, documents
-- Security: paths are validated — traversal, symlinks, and scheme URIs are blocked`;
+- Text before/after MEDIA lines is sent as normal message text
+- Multiple MEDIA directives in one reply are sent as separate messages
+
+**Blocked paths (security):**
+- Absolute paths: /etc/passwd ❌
+- Home directory: ~/file.txt ❌
+- Directory traversal: ../../secret ❌
+- URL schemes: file://, data:, javascript: ❌
+- Null bytes and symlinks outside workspace ❌
+
+If a path is blocked, the MEDIA line is treated as plain text and not sent as media.`;
 
 // --- Delegation ---
 

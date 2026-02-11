@@ -1509,6 +1509,15 @@ export class Gateway {
       return this.handleMediaServe(url);
     }
 
+    // Media send API (v3.3: tool-based media sending)
+    if (url.pathname === "/api/media/send" && req.method === "POST") {
+      return await handleMediaSendRequest(req, {
+        config: this.config,
+        pool: this.pool,
+        log: this.log,
+      });
+    }
+
     // Static files for Web UI
     if (url.pathname === "/" || url.pathname.startsWith("/web/")) {
       return this.serveStaticFile(url.pathname);
