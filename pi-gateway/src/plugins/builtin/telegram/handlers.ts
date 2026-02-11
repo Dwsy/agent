@@ -1,10 +1,11 @@
-import { resolveSessionKey } from "../../../core/session-router.ts";
+import { resolveSessionKey, resolveAgentId } from "../../../core/session-router.ts";
 import type { ImageContent, MessageSource } from "../../../core/types.ts";
 import { isSenderAllowed, type DmPolicy } from "../../../security/allowlist.ts";
 import { createPairingRequest } from "../../../security/pairing.ts";
 import { splitMessage } from "../../../core/utils.ts";
+import { refreshPiCommands } from "./commands.ts";
 import { resolveStreamCompat } from "./config-compat.ts";
-import { markdownToTelegramHtml, splitTelegramText } from "./format.ts";
+import { escapeHtml, markdownToTelegramHtml, splitTelegramText } from "./format.ts";
 import { downloadTelegramFile } from "./media-download.ts";
 import { parseOutboundMediaDirectives, sendTelegramMedia, sendTelegramTextAndMedia } from "./media-send.ts";
 import { migrateTelegramGroupConfig } from "./group-migration.ts";
@@ -103,8 +104,9 @@ export function parseTelegramTarget(target: string, defaultAccountId: string): {
   return { accountId: defaultAccountId, chatId: clean };
 }
 
-async function resolveImagesFromMessage(account: TelegramAccountRuntime, msg: TelegramMessage): Promise<ImageContent[]> {
+async function resolveImagesFromMessage(account: TelegramAccountRuntime, msg: TelegramMessage): Promise<{ images: ImageContent[]; documentContext?: string }> {
   const images: ImageContent[] = [];
+  let documentContext: string | undefined;
   const maxMb = Math.max(1, account.cfg.mediaMaxMb ?? 10);
   const maxBytes = maxMb * 1024 * 1024;
 
@@ -128,12 +130,31 @@ async function resolveImagesFromMessage(account: TelegramAccountRuntime, msg: Te
       fileId: msg.document.file_id,
       maxBytes,
     });
-    if (downloaded && downloaded.mimeType.startsWith("image/")) {
-      images.push({ type: "image", data: downloaded.data, mimeType: downloaded.mimeType });
+    if (downloaded) {
+      if (downloaded.mimeType.startsWith("image/")) {
+        images.push({ type: "image", data: downloaded.data, mimeType: downloaded.mimeType });
+      }
+      // Non-image documents: store metadata for text context
+      if (!downloaded.mimeType.startsWith("image/")) {
+        const fileName = msg.document.file_name ?? "unknown";
+        const mimeType = msg.document.mime_type ?? downloaded.mimeType;
+        // For text-based documents, decode content and attach as context
+        if (mimeType.startsWith("text/") || mimeType === "application/json" || mimeType === "application/xml") {
+          try {
+            const textContent = Buffer.from(downloaded.data, "base64").toString("utf-8");
+            const truncated = textContent.length > 10000 ? textContent.slice(0, 10000) + "\n...(truncated)" : textContent;
+            documentContext = `[Document: ${fileName} (${mimeType})]\n\`\`\`\n${truncated}\n\`\`\``;
+          } catch {
+            documentContext = `[Document: ${fileName} (${mimeType}, ${downloaded.data.length} bytes base64)]`;
+          }
+        } else {
+          documentContext = `[Document: ${fileName} (${mimeType}, binary file — content not readable)]`;
+        }
+      }
     }
   }
 
-  return images;
+  return { images, documentContext };
 }
 
 function shouldAllowGroupMessage(account: TelegramAccountRuntime, ctx: TelegramContext, text: string): { allowed: boolean; text: string } {
@@ -169,6 +190,11 @@ function shouldAllowGroupMessage(account: TelegramAccountRuntime, ctx: TelegramC
   return { allowed: true, text: finalText };
 }
 
+// Per-account lazy command registration flag
+const commandsRegistered = new Map<string, boolean>();
+const commandsRetryCount = new Map<string, number>();
+const MAX_COMMAND_RETRIES = 3;
+
 async function dispatchAgentTurn(params: {
   runtime: TelegramPluginRuntime;
   account: TelegramAccountRuntime;
@@ -180,6 +206,22 @@ async function dispatchAgentTurn(params: {
   inboundMessageId?: number;
 }): Promise<void> {
   const { runtime, account, ctx, source, sessionKey, text, images } = params;
+
+  // Lazy: refresh pi commands on first real message per account (retry up to 3 times on failure)
+  if (!commandsRegistered.get(account.accountId)) {
+    const retries = commandsRetryCount.get(account.accountId) ?? 0;
+    if (retries < MAX_COMMAND_RETRIES) {
+      commandsRetryCount.set(account.accountId, retries + 1);
+      refreshPiCommands(account, runtime.api.config).then(count => {
+        if (count !== null) {
+          commandsRegistered.set(account.accountId, true);
+          runtime.api.logger.info(`[telegram:${account.accountId}] Lazy-registered ${count} pi commands`);
+        } else {
+          runtime.api.logger.warn(`[telegram:${account.accountId}] refreshPiCommands failed (attempt ${retries + 1}/${MAX_COMMAND_RETRIES})`);
+        }
+      }).catch(() => {});
+    }
+  }
   const streamCfg = resolveStreamCompat(account.cfg as any);
   const botClient = account.bot;
   const chatId = String(ctx.chat?.id ?? "");
@@ -206,11 +248,11 @@ async function dispatchAgentTurn(params: {
   let lastEditAt = 0;
   let editInFlight = false;
   let lastTypingAt = 0;
-  const maxToolLines = 12;
-  let latestAccumulated = "";
-  const toolLines: string[] = [];
-  const seenToolCalls = new Set<string>();
   const typingMinIntervalMs = 3000;
+
+  // 按顺序存储所有内容（工具调用、思考、文本等）
+  const contentSequence: { type: 'tool' | 'thinking' | 'text'; content: string }[] = [];
+  const seenToolCalls = new Set<string>();
 
   const sendChatAction = () => {
     const now = Date.now();
@@ -222,9 +264,10 @@ async function dispatchAgentTurn(params: {
   const ensureReplyMessage = (textForFirstMessage?: string) => {
     if (replyMsgId || creatingReplyMsg) return;
     creatingReplyMsg = true;
-    const firstText = textForFirstMessage?.trim() ? textForFirstMessage : streamCfg.placeholder;
+    const firstText = textForFirstMessage?.trim() ? markdownToTelegramHtml(textForFirstMessage) : streamCfg.placeholder;
     const replyToMessageId = maybeReplyTo();
     botClient.api.sendMessage(chatId, firstText, {
+      parse_mode: "HTML",
       ...(threadId ? { message_thread_id: threadId } : {}),
       ...(replyToMessageId ? { reply_to_message_id: replyToMessageId } : {}),
     }).then((sent) => {
@@ -233,7 +276,7 @@ async function dispatchAgentTurn(params: {
       recordSentMessage(chatId, sent.message_id);
       lastEditAt = 0;
       creatingReplyMsg = false;
-      if (latestAccumulated || toolLines.length > 0) {
+      if (contentSequence.length > 0) {
         pushLiveUpdate();
       }
     }).catch(() => {
@@ -241,14 +284,57 @@ async function dispatchAgentTurn(params: {
     });
   };
 
-  const buildLiveText = (): string => {
-    const toolPart = toolLines.join("\n");
-    const textPart = latestAccumulated
-      ? (latestAccumulated.length > 4000 ? `${latestAccumulated.slice(0, 4000)}\n...` : `${latestAccumulated} ...`)
-      : "";
-    if (toolPart && textPart) return `${toolPart}\n\n${textPart}`;
-    return toolPart || textPart;
+  // 动画帧序列
+  const spinnerFrames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+  let spinnerIndex = 0;
+  let spinnerInterval: ReturnType<typeof setInterval> | null = null;
+
+  const startSpinner = () => {
+    if (spinnerInterval) return;
+    spinnerInterval = setInterval(() => {
+      spinnerIndex = (spinnerIndex + 1) % spinnerFrames.length;
+      pushLiveUpdate();
+    }, 200);
   };
+
+  const stopSpinner = () => {
+    if (spinnerInterval) {
+      clearInterval(spinnerInterval);
+      spinnerInterval = null;
+    }
+  };
+
+  const buildLiveText = (): string => {
+    const spinner = spinnerFrames[spinnerIndex]!;
+
+    // 按顺序构建显示内容
+    const parts: string[] = [];
+    for (const item of contentSequence) {
+      if (item.type === 'tool') {
+        // tool 内容已含 backtick 格式，markdownToTelegramHtml 会转为 <code>
+        parts.push(item.content);
+      } else if (item.type === 'thinking') {
+        // Truncate long thinking for display
+        const truncated = item.content.length > 300 ? item.content.slice(-300) + '...' : item.content;
+        parts.push(`<blockquote>💭 ${escapeHtml(truncated)}</blockquote>`);
+      } else if (item.type === 'text') {
+        parts.push(item.content);
+      }
+    }
+
+    // 如果没有内容，显示 spinner
+    if (parts.length === 0) {
+      return `${spinner} 思考中...`;
+    }
+
+    let result = parts.join("\n\n");
+    // 添加 spinner 到末尾表示还在处理
+    result = result.length > 4000 ? `${result.slice(0, 4000)}\n... ${spinner}` : `${result} ${spinner}`;
+
+    return result;
+  };
+
+  let throttleBackoff = 0; // extra ms added on 429
 
   const pushLiveUpdate = () => {
     if (streamCfg.streamMode === "off") return;
@@ -262,22 +348,30 @@ async function dispatchAgentTurn(params: {
       return;
     }
 
-    if (editInFlight || now - lastEditAt < streamCfg.editThrottleMs) return;
+    const effectiveThrottle = streamCfg.editThrottleMs + throttleBackoff;
+    if (editInFlight || now - lastEditAt < effectiveThrottle) return;
     editInFlight = true;
 
     const editTimeout = setTimeout(() => {
       editInFlight = false;
     }, 5000);
 
-    botClient.api.editMessageText(chatId, replyMsgId, rendered)
+    botClient.api.editMessageText(chatId, replyMsgId, markdownToTelegramHtml(rendered), { parse_mode: "HTML" })
       .then(() => {
         lastEditAt = Date.now();
         editInFlight = false;
+        throttleBackoff = Math.max(0, throttleBackoff - 100); // recover gradually
         clearTimeout(editTimeout);
       })
-      .catch(() => {
+      .catch((err: any) => {
         editInFlight = false;
         clearTimeout(editTimeout);
+        // 429 rate limit: back off
+        if (err?.error_code === 429 || err?.statusCode === 429) {
+          const retryAfter = (err?.parameters?.retry_after ?? 1) * 1000;
+          throttleBackoff = Math.max(throttleBackoff, retryAfter);
+          lastEditAt = Date.now(); // prevent immediate retry
+        }
       });
   };
 
@@ -290,15 +384,50 @@ async function dispatchAgentTurn(params: {
     ensureReplyMessage();
   }
 
+  // 启动等待动画
+  startSpinner();
+
+  // 标记是否已收到过内容（用于判断是否需要显示初始 spinner）
+  let hasReceivedContent = false;
+
   await runtime.api.dispatch({
     source,
     sessionKey,
     text,
     images: images.length > 0 ? images : undefined,
-    onStreamDelta: (accumulated: string) => {
+    onThinkingDelta: (accumulated: string, _delta: string) => {
       sendChatAction();
-      latestAccumulated = accumulated;
-      if (!replyMsgId && toolLines.length === 0 && accumulated.length < streamCfg.streamStartChars) return;
+      if (!hasReceivedContent) {
+        stopSpinner();
+        hasReceivedContent = true;
+      }
+      // Update thinking in contentSequence
+      const thinkIdx = contentSequence.findIndex(c => c.type === 'thinking');
+      if (thinkIdx >= 0) {
+        contentSequence[thinkIdx].content = accumulated;
+      } else {
+        contentSequence.push({ type: 'thinking', content: accumulated });
+      }
+      pushLiveUpdate();
+    },
+    onStreamDelta: (accumulated: string, delta?: string) => {
+      sendChatAction();
+      if (!hasReceivedContent && accumulated) {
+        stopSpinner();
+        hasReceivedContent = true;
+      }
+
+      // Text started — keep thinking in contentSequence (shown as blockquote in final reply)
+
+      // Update or add text entry
+      const lastTextIndex = contentSequence.findLastIndex(c => c.type === 'text');
+      if (lastTextIndex >= 0) {
+        contentSequence[lastTextIndex].content = accumulated;
+      } else {
+        contentSequence.push({ type: 'text', content: accumulated });
+      }
+
+      if (!replyMsgId && contentSequence.length === 0 && accumulated.length < streamCfg.streamStartChars) return;
       pushLiveUpdate();
     },
     onToolStart: (toolName: string, args?: Record<string, unknown>, toolCallId?: string) => {
@@ -308,15 +437,49 @@ async function dispatchAgentTurn(params: {
         seenToolCalls.add(toolCallId);
       }
       const line = `→ ${formatToolStartLine(toolName, args)}`;
-      toolLines.push(line);
-      if (toolLines.length > maxToolLines) toolLines.shift();
+      // 按顺序添加工具调用
+      contentSequence.push({ type: 'tool', content: line });
       pushLiveUpdate();
     },
     respond: async (reply: string) => {
       clearInterval(typingInterval);
-      const finalReply = toolLines.length > 0 ? `${toolLines.join("\n")}\n\n${reply}` : reply;
+      stopSpinner();
+
+      // 用最终回复替换 contentSequence 中的文本内容（避免重复）
+      if (reply && reply.trim()) {
+        const lastTextIndex = contentSequence.findLastIndex(c => c.type === 'text');
+        if (lastTextIndex >= 0) {
+          contentSequence[lastTextIndex].content = reply.trim();
+        } else {
+          contentSequence.push({ type: 'text', content: reply.trim() });
+        }
+      }
+
+      // 按顺序构建最终回复（thinking 保留为 blockquote）
+      const parts: string[] = [];
+      for (const item of contentSequence) {
+        if (item.type === 'tool') {
+          parts.push(item.content);
+        } else if (item.type === 'thinking') {
+          const truncated = item.content.length > 200 ? item.content.slice(0, 200) + "…" : item.content;
+          parts.push(`<blockquote>💭 ${escapeHtml(truncated)}</blockquote>`);
+        } else if (item.type === 'text') {
+          parts.push(item.content);
+        }
+      }
+      const finalReply = parts.join("\n\n");
+
       const parsedFinal = parseOutboundMediaDirectives(finalReply);
       const finalText = parsedFinal.text;
+
+      // If aborted with no content, clean up the spinner message
+      if (!finalText.trim() && replyMsgId) {
+        try {
+          await botClient.api.editMessageText(chatId, replyMsgId, "⏹ (interrupted)", {});
+        } catch {}
+        return;
+      }
+
       const chunks = splitTelegramText(finalText, 4096);
 
       if (replyMsgId && chunks.length > 0) {
@@ -495,19 +658,23 @@ async function dispatchInbound(params: {
   const flush = (chatId: string, entry: TelegramDebouncedEntry) => {
     const combinedText = entry.texts.join("\n\n");
     if (!combinedText && entry.images.length === 0) return;
-    const sessionKey = resolveSessionKey(entry.source, runtime.api.config);
+
+    // v3.0 routing: resolve agent via binding/prefix/default
+    const { agentId, text: routedText } = resolveAgentId(entry.source, combinedText, runtime.api.config);
+    const sessionKey = resolveSessionKey(entry.source, runtime.api.config, agentId);
+
     void dispatchAgentTurn({
       runtime,
       account,
       ctx: entry.ctx,
       source: entry.source,
       sessionKey,
-      text: combinedText || "(image)",
+      text: routedText || "(image)",
       images: entry.images,
       inboundMessageId: entry.ctx.message?.message_id,
     });
     params.runtime.api.logger.info(
-      `[telegram:${account.accountId}] inbound chat=${chatId} sender=${entry.source.senderId} type=${entry.source.chatType} textLen=${combinedText.length} images=${entry.images.length}`,
+      `[telegram:${account.accountId}] inbound chat=${chatId} sender=${entry.source.senderId} type=${entry.source.chatType} agentId=${agentId} textLen=${routedText.length} images=${entry.images.length}`,
     );
   };
 
@@ -575,12 +742,44 @@ async function handleMessageCommon(runtime: TelegramPluginRuntime, account: Tele
     return;
   }
 
-  const images = await resolveImagesFromMessage(account, msg);
+  const { images, documentContext } = await resolveImagesFromMessage(account, msg);
   let text = (msg.text ?? msg.caption ?? "").trim();
+
+  // Media note injection — tell agent what media is attached
+  if (images.length > 0) {
+    const mediaNote = images.length === 1
+      ? `[media attached: 1 image]`
+      : `[media attached: ${images.length} images]`;
+    const replyHint = `[When you want to send a file back, use MEDIA:<path> on a separate line (e.g., MEDIA:./output.png or MEDIA:https://example.com/image.jpg). Avoid absolute paths and ~ paths.]`;
+    text = text ? `${mediaNote}\n${replyHint}\n${text}` : `${mediaNote}\n${replyHint}`;
+  }
+
+  // Document context (non-image files)
+  if (documentContext) {
+    text = text ? `${text}\n\n${documentContext}` : documentContext;
+  }
+
+  // Forward context
+  const fwd = (msg as any).forward_origin ?? (msg as any).forward_from ?? (msg as any).forward_from_chat;
+  if (fwd) {
+    const fwdName = fwd.sender_user?.first_name
+      ?? fwd.sender_user_name
+      ?? fwd.chat?.title
+      ?? (msg as any).forward_from?.first_name
+      ?? (msg as any).forward_from_chat?.title
+      ?? "unknown";
+    text = `[Forwarded from ${fwdName}]\n${text}`;
+  }
+
+  // Reply context
   const replied = (msg.reply_to_message?.text ?? msg.reply_to_message?.caption ?? "").trim();
   if (replied) {
-    const quoted = replied.length > 300 ? `${replied.slice(0, 300)}...` : replied;
-    text = text ? `[Reply to] ${quoted}\n\n${text}` : `[Reply to] ${quoted}`;
+    const repliedIsBot = msg.reply_to_message?.from?.is_bot && msg.reply_to_message?.from?.id === account.bot.botInfo?.id;
+    if (!repliedIsBot) {
+      const quoted = replied.length > 300 ? `${replied.slice(0, 300)}...` : replied;
+      text = text ? `[Reply to] ${quoted}\n\n${text}` : `[Reply to] ${quoted}`;
+    }
+    // Skip quoting bot's own messages — agent already has that context
   }
 
   if (!text && images.length > 0) {
@@ -588,8 +787,42 @@ async function handleMessageCommon(runtime: TelegramPluginRuntime, account: Tele
   }
 
   if (msg.voice) {
-    const duration = msg.voice.duration ?? 0;
-    text = `[Voice message received, ${duration}s duration. Voice transcription is not yet supported. Please ask user to send text.]`;
+    const audioCfg = account.cfg.audio;
+    if (!audioCfg?.apiKey) {
+      await ctx.reply("语音消息暂不支持，请发送文字。");
+      return;
+    }
+    // Download voice and transcribe
+    try {
+      const downloaded = await downloadTelegramFile({
+        token: account.token,
+        fileId: msg.voice.file_id,
+        maxBytes: (account.cfg.mediaMaxMb ?? 10) * 1024 * 1024,
+      });
+      if (!downloaded) {
+        await ctx.reply("语音下载失败，请重试。");
+        return;
+      }
+      const buffer = Buffer.from(downloaded.data, "base64");
+      const { transcribeAudio } = await import("./audio-transcribe.ts");
+      const transcript = await transcribeAudio(buffer, downloaded.mimeType || "audio/ogg", {
+        provider: audioCfg.provider ?? "groq",
+        model: audioCfg.model ?? "whisper-large-v3-turbo",
+        apiKey: audioCfg.apiKey,
+        language: audioCfg.language,
+        timeoutMs: (audioCfg.timeoutSeconds ?? 30) * 1000,
+      });
+      if (transcript) {
+        text = text ? `${text}\n\n[Voice message] ${transcript}` : `[Voice message] ${transcript}`;
+      } else {
+        await ctx.reply("语音转录失败，请重试或发送文字。");
+        return;
+      }
+    } catch (err: any) {
+      runtime.api.logger.warn(`[telegram] Voice transcription failed: ${err?.message ?? String(err)}`);
+      await ctx.reply("语音转录失败，请重试或发送文字。");
+      return;
+    }
   }
 
   if (!text && images.length === 0) return;
@@ -678,6 +911,9 @@ async function handleMigration(runtime: TelegramPluginRuntime, account: Telegram
 export async function setupTelegramHandlers(runtime: TelegramPluginRuntime, account: TelegramAccountRuntime): Promise<void> {
   const bot = account.bot;
 
+  // 本地命令列表（由 bot.command() 处理）
+  const localCommands = new Set(["new", "status", "queue", "help", "media", "photo", "audio", "model", "refresh", "skills"]);
+
   bot.on("message", async (ctx: any) => {
     const updateId = Number((ctx.update as any)?.update_id ?? -1);
     if (updateId >= 0) {
@@ -691,6 +927,21 @@ export async function setupTelegramHandlers(runtime: TelegramPluginRuntime, acco
 
     const msg = (ctx as TelegramContext).message;
     if (!msg) return;
+
+    const text = msg.text ?? msg.caption ?? "";
+    
+    // 检查是否是本地命令（由 bot.command() 处理）
+    if (text.trim().startsWith("/")) {
+      const cmdMatch = text.trim().match(/^\/([a-zA-Z0-9_]+)/);
+      if (cmdMatch) {
+        const cmdName = cmdMatch[1].toLowerCase();
+        if (localCommands.has(cmdName)) {
+          // 本地命令，由 bot.command() 处理，跳过
+          return;
+        }
+      }
+      // 非本地命令（可能是 pi 命令），继续处理
+    }
 
     await handleMigration(runtime, account, ctx as TelegramContext);
     await handleMessageCommon(runtime, account, ctx as TelegramContext, msg);

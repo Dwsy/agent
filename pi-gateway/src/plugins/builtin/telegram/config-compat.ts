@@ -9,7 +9,7 @@ export interface TelegramStreamCompat {
 }
 
 const DEFAULT_DEBOUNCE_MS = 0;
-const DEFAULT_EDIT_THROTTLE_MS = 250;
+const DEFAULT_EDIT_THROTTLE_MS = 500;
 const DEFAULT_STREAM_START_CHARS = 1;
 const DEFAULT_STREAM_PLACEHOLDER = "…";
 

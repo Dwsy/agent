@@ -121,7 +121,12 @@ export class PluginLoader {
 
     const builtins = ["telegram", "discord", "webchat"];
     for (const name of builtins) {
-      const path = join(builtinDir, `${name}.ts`);
+      // Support both single-file (name.ts) and modular (name/index.ts) layouts
+      let path = join(builtinDir, `${name}.ts`);
+      const dirIndex = join(builtinDir, name, "index.ts");
+      if (!existsSync(path) && existsSync(dirIndex)) {
+        path = dirIndex;
+      }
       if (!existsSync(path)) continue;
       if (this.loaded.has(name)) continue;
       if (this.config.plugins.disabled?.includes(name)) continue;
