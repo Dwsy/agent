@@ -76,6 +76,8 @@ function createApiFactory(config: Config, registry: PluginRegistryState) {
     async setSessionMessageMode(): Promise<void> {},
     async compactSession(): Promise<void> {},
     async abortSession(): Promise<void> {},
+    async forwardCommand(): Promise<void> {},
+    async getPiCommands(): Promise<{ name: string; description?: string }[]> { return []; },
   });
 }
 

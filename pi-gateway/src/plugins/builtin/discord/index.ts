@@ -1,0 +1,102 @@
+import { Client, GatewayIntentBits, Partials } from "discord.js";
+import type { ChannelPlugin, GatewayPluginApi } from "../../types.ts";
+import type { DiscordChannelConfig, DiscordPluginRuntime } from "./types.ts";
+import { handleMessage, handleInteraction, sendOutbound } from "./handlers.ts";
+import { registerGuildCommands } from "./commands.ts";
+import { splitDiscordText } from "./format.ts";
+
+let runtime: DiscordPluginRuntime | null = null;
+
+const discordPlugin: ChannelPlugin = {
+  id: "discord",
+  meta: {
+    label: "Discord",
+    blurb: "Discord bot via discord.js (streaming, slash commands, OpenClaw-aligned)",
+  },
+  capabilities: {
+    direct: true,
+    group: true,
+    thread: true,
+    media: true,
+  },
+  outbound: {
+    maxLength: 2000,
+    async sendText(target: string, text: string) {
+      if (!runtime) return;
+      await sendOutbound(runtime, target, text);
+    },
+  },
+
+  async init(api: GatewayPluginApi) {
+    const cfg = api.config.channels.discord as DiscordChannelConfig | undefined;
+    if (!cfg?.enabled || !cfg?.token) {
+      api.logger.info("Discord: not configured, skipping");
+      return;
+    }
+
+    const client = new Client({
+      intents: [
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.MessageContent,
+        GatewayIntentBits.DirectMessages,
+      ],
+      partials: [Partials.Channel],
+    });
+
+    // Defer runtime creation until we have clientId from ready event
+    client.once("ready", async () => {
+      const clientId = client.user!.id;
+      api.logger.info(`Discord: logged in as ${client.user!.tag} (${clientId})`);
+
+      runtime = { api, channelCfg: cfg, client, clientId };
+
+      // Register slash commands to all guilds
+      await registerGuildCommands(runtime);
+    });
+
+    client.on("messageCreate", async (message) => {
+      if (!runtime) return;
+      try {
+        await handleMessage(runtime, message);
+      } catch (err) {
+        api.logger.error(`Discord: message handler error: ${err}`);
+      }
+    });
+
+    client.on("interactionCreate", async (interaction) => {
+      if (!runtime) return;
+      try {
+        await handleInteraction(runtime, interaction);
+      } catch (err) {
+        api.logger.error(`Discord: interaction handler error: ${err}`);
+      }
+    });
+
+    // Store client for start/stop lifecycle
+    (discordPlugin as any)._client = client;
+    (discordPlugin as any)._cfg = cfg;
+
+    api.logger.info("Discord: initialized");
+  },
+
+  async start() {
+    const client = (discordPlugin as any)._client as Client | undefined;
+    const cfg = (discordPlugin as any)._cfg as DiscordChannelConfig | undefined;
+    if (!client || !cfg?.token) return;
+    await client.login(cfg.token);
+  },
+
+  async stop() {
+    const client = (discordPlugin as any)._client as Client | undefined;
+    if (client) {
+      client.destroy();
+      (discordPlugin as any)._client = null;
+    }
+    runtime = null;
+  },
+};
+
+export default function register(api: GatewayPluginApi) {
+  api.registerChannel(discordPlugin);
+}

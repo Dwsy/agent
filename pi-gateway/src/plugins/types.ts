@@ -282,6 +282,12 @@ export interface GatewayPluginApi {
 
   /** Abort current agent run (calls RPC abort) */
   abortSession(sessionKey: SessionKey): Promise<void>;
+
+  /** Forward a slash command to the RPC agent */
+  forwardCommand(sessionKey: SessionKey, command: string, args: string): Promise<void>;
+
+  /** Get available pi slash commands from RPC */
+  getPiCommands(sessionKey: SessionKey): Promise<{ name: string; description?: string }[]>;
 }
 
 // ============================================================================

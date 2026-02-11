@@ -1,6 +1,6 @@
-import { resolveSessionKey } from "../../../core/session-router.ts";
+import { resolveSessionKey, resolveAgentId } from "../../../core/session-router.ts";
 import type { MessageSource } from "../../../core/types.ts";
-import { markdownToTelegramHtml } from "./format.ts";
+import { escapeHtml, markdownToTelegramHtml } from "./format.ts";
 import {
   buildModelsKeyboard,
   buildProviderKeyboard,
@@ -11,6 +11,41 @@ import { parseMediaCommandArgs, sendTelegramMedia } from "./media-send.ts";
 import type { TelegramAccountRuntime, TelegramContext, TelegramPluginRuntime } from "./types.ts";
 
 type SessionMessageMode = "steer" | "follow-up" | "interrupt";
+
+// Gateway 本地命令列表
+const LOCAL_COMMANDS = [
+  { command: "help", description: "显示帮助" },
+  { command: "new", description: "重置会话" },
+  { command: "model", description: "查看/切换模型" },
+  { command: "status", description: "查看会话状态" },
+  { command: "queue", description: "会话并发策略" },
+  { command: "role", description: "切换/查看角色" },
+  { command: "skills", description: "查看/调用技能" },
+  { command: "media", description: "媒体发送说明" },
+  { command: "photo", description: "发送图片" },
+  { command: "audio", description: "发送音频" },
+  { command: "refresh", description: "刷新命令列表" },
+];
+
+// Prefixes to collapse into grouped commands (not registered individually)
+const GROUPED_PREFIXES = ["skill:"];
+
+// 缓存 pi 原生命令
+let cachedPiCommands: { name: string; description?: string }[] = [];
+
+/** 刷新 pi 命令并重新注册到 Telegram */
+export async function refreshPiCommands(account: TelegramAccountRuntime, config?: { agents?: { list: { id: string }[] } }): Promise<number | null> {
+  const tempSessionKey = `telegram:${account.accountId}:__init__`;
+  const piCommands = await account.api.getPiCommands(tempSessionKey).catch((err) => {
+    account.api.logger.error(`[telegram:${account.accountId}] getPiCommands failed: ${String(err)}`);
+    return null;
+  });
+  if (piCommands === null) return null; // distinguish "failed" from "no commands"
+  cachedPiCommands = piCommands;
+  const agentIds = (config?.agents?.list ?? []).map(a => a.id).filter(id => id !== "main");
+  await registerNativeCommands(account, piCommands, agentIds.length > 0 ? agentIds : undefined);
+  return piCommands.length;
+}
 
 function toChatType(chatType?: string): "dm" | "group" {
   return chatType === "private" ? "dm" : "group";
@@ -79,25 +114,47 @@ async function sendHelp(ctx: TelegramContext, page = 1): Promise<void> {
   });
 }
 
-async function registerNativeCommands(account: TelegramAccountRuntime): Promise<void> {
+async function registerNativeCommands(
+  account: TelegramAccountRuntime,
+  piCommands: { name: string; description?: string }[],
+  agentIds?: string[],
+): Promise<void> {
   const cfg = account.cfg.commands;
   if (cfg?.native === false) return;
 
-  await account.bot.api.setMyCommands([
-    { command: "help", description: "显示帮助" },
-    { command: "new", description: "重置会话" },
-    { command: "status", description: "查看会话状态" },
-    { command: "model", description: "切换模型" },
-    { command: "think", description: "设置思考等级" },
-    { command: "compact", description: "压缩上下文" },
-    { command: "stop", description: "停止当前会话" },
-    { command: "queue", description: "会话并发策略" },
-    { command: "media", description: "媒体发送说明" },
-    { command: "photo", description: "发送图片" },
-    { command: "audio", description: "发送音频" },
-  ]).catch((err) => {
+  // 合并本地命令和 pi 原生命令（pi 命令加 pi_ 前缀区分）
+  const localNames = new Set(LOCAL_COMMANDS.map(c => c.command));
+  const allCommands = [
+    ...LOCAL_COMMANDS,
+    // Agent prefix commands (/{agentId} for multi-agent routing)
+    ...(agentIds ?? []).map(id => ({
+      command: id.toLowerCase().replace(/[^a-z0-9_]/g, "_").slice(0, 32),
+      description: `Switch to agent: ${id}`,
+    })),
+    ...piCommands
+      .filter(cmd => !localNames.has(cmd.name.replace(/^\//, ""))) // skip if local already handles it
+      .filter(cmd => !GROUPED_PREFIXES.some(p => cmd.name.replace(/^\//, "").startsWith(p))) // skip grouped commands (shown via inline keyboard)
+      .map(cmd => ({
+        command: `pi_${cmd.name.replace(/^\//, "")}`, // pi_compact, pi_model, etc.
+        description: cmd.description ?? `pi: ${cmd.name}`,
+      })),
+  ];
+
+  // Telegram 命令名只支持小写字母、数字和下划线，最多 32 字符
+  const validCommands = allCommands
+    .map(cmd => ({
+      command: cmd.command.toLowerCase().replace(/[^a-z0-9_]/g, "_").slice(0, 32),
+      description: cmd.description.slice(0, 256),
+    }))
+    .filter((cmd, idx, arr) => arr.findIndex(c => c.command === cmd.command) === idx) // 去重
+    .slice(0, 50); // Telegram setMyCommands 上限 100 条，先用 50 测试
+
+  await account.bot.api.setMyCommands(validCommands).catch((err) => {
     account.api.logger.warn(`[telegram:${account.accountId}] setMyCommands failed: ${String(err)}`);
   });
+
+  const truncated = allCommands.length > 100 ? ` (truncated from ${allCommands.length})` : "";
+  account.api.logger.info(`[telegram:${account.accountId}] Registered ${validCommands.length} commands (${LOCAL_COMMANDS.length} local + ${piCommands.length} pi)${truncated}`);
 }
 
 function normalizeSessionMessageMode(value: string): SessionMessageMode | null {
@@ -168,6 +225,7 @@ async function renderProviderModels(params: {
 export async function setupTelegramCommands(runtime: TelegramPluginRuntime, account: TelegramAccountRuntime): Promise<void> {
   const bot = account.bot;
 
+  // === 本地命令 ===
   bot.command("new", async (ctx: any) => {
     const source = toSource(account.accountId, ctx as TelegramContext);
     const sessionKey = resolveSessionKey(source, runtime.api.config);
@@ -233,53 +291,28 @@ export async function setupTelegramCommands(runtime: TelegramPluginRuntime, acco
     );
   });
 
-  bot.command("compact", async (ctx: any) => {
-    const source = toSource(account.accountId, ctx as TelegramContext);
-    const sessionKey = resolveSessionKey(source, runtime.api.config);
-    await ctx.reply("Compacting context...");
-    await runtime.api.compactSession(sessionKey);
-    await ctx.reply("Context compacted.");
+  bot.command("refresh", async (ctx: any) => {
+    const count = await refreshPiCommands(account, runtime.api.config);
+    await ctx.reply(`Commands refreshed. ${LOCAL_COMMANDS.length} local + ${count} pi commands registered.`);
   });
 
-  bot.command("stop", async (ctx: any) => {
-    const source = toSource(account.accountId, ctx as TelegramContext);
-    const sessionKey = resolveSessionKey(source, runtime.api.config);
-    await runtime.api.abortSession(sessionKey);
-    await ctx.reply("Stopped.");
-  });
-
-  bot.command("think", async (ctx: any) => {
-    const source = toSource(account.accountId, ctx as TelegramContext);
-    const sessionKey = resolveSessionKey(source, runtime.api.config);
-    const level = String(ctx.match ?? "").trim() || "medium";
-    const valid = ["off", "minimal", "low", "medium", "high", "xhigh"];
-    if (!valid.includes(level)) {
-      await ctx.reply(`Invalid level. Use: ${valid.join(", ")}`);
+  bot.command("skills", async (ctx: any) => {
+    const skillCommands = cachedPiCommands.filter(cmd =>
+      GROUPED_PREFIXES.some(p => cmd.name.replace(/^\//, "").startsWith(p))
+    );
+    if (skillCommands.length === 0) {
+      await ctx.reply("No skills available.");
       return;
     }
-    await runtime.api.setThinkingLevel(sessionKey, level);
-    await ctx.reply(`Thinking: <b>${level}</b>`, { parse_mode: "HTML" });
-  });
-
-  bot.command("model", async (ctx: any) => {
-    const source = toSource(account.accountId, ctx as TelegramContext);
-    const sessionKey = resolveSessionKey(source, runtime.api.config);
-    const modelStr = String(ctx.match ?? "").trim();
-    if (!modelStr) {
-      await renderModelProviders(account, sessionKey, ctx as TelegramContext);
-      return;
-    }
-
-    if (!modelStr.includes("/")) {
-      await ctx.reply("Usage: /model provider/modelId");
-      return;
-    }
-
-    const slash = modelStr.indexOf("/");
-    const provider = modelStr.slice(0, slash);
-    const modelId = modelStr.slice(slash + 1);
-    await runtime.api.setModel(sessionKey, provider, modelId);
-    await ctx.reply(`Model: <b>${provider}/${modelId}</b>`, { parse_mode: "HTML" });
+    const buttons = skillCommands.map(cmd => {
+      const name = cmd.name.replace(/^\//, "");
+      const label = name.replace(/^skill:/, "");
+      return [{ text: `📦 ${label}`, callback_data: `skill_run:${name}` }];
+    });
+    await ctx.reply("<b>Available Skills</b>\n\nSelect a skill to run:", {
+      parse_mode: "HTML",
+      reply_markup: { inline_keyboard: buttons },
+    });
   });
 
   bot.command("help", async (ctx: any) => {
@@ -330,6 +363,42 @@ export async function setupTelegramCommands(runtime: TelegramPluginRuntime, acco
     });
   });
 
+  bot.command("model", async (ctx: any) => {
+    const args = String(ctx.match ?? "").trim();
+    const source = toSource(account.accountId, ctx as TelegramContext);
+    const sessionKey = resolveSessionKey(source, runtime.api.config);
+
+    if (args && args.includes("/")) {
+      // Direct switch: /model provider/modelId
+      const slash = args.indexOf("/");
+      const provider = args.slice(0, slash);
+      const modelId = args.slice(slash + 1);
+      try {
+        await runtime.api.setModel(sessionKey, provider, modelId);
+        await ctx.reply(`Model: <b>${escapeHtml(provider)}/${escapeHtml(modelId)}</b>`, { parse_mode: "HTML" });
+      } catch (err: any) {
+        await ctx.reply(`Failed: ${err?.message ?? String(err)}`);
+      }
+      return;
+    }
+
+    // No args: show provider keyboard
+    try {
+      const models = await runtime.api.getAvailableModels(sessionKey);
+      const grouped = groupModelsByProvider(models);
+      const providers = Object.keys(grouped).sort((a, b) => a.localeCompare(b));
+      if (providers.length === 0) {
+        await ctx.reply("没有可用模型。");
+        return;
+      }
+      await ctx.reply("选择 Provider：", {
+        reply_markup: { inline_keyboard: buildProviderKeyboard(providers) },
+      });
+    } catch (err: any) {
+      await ctx.reply(`Failed to list models: ${err?.message ?? String(err)}`);
+    }
+  });
+
   bot.on("callback_query:data", async (ctx: any) => {
     const callbackQuery = (ctx as TelegramContext).callbackQuery;
     const callbackId = callbackQuery?.id;
@@ -356,6 +425,31 @@ export async function setupTelegramCommands(runtime: TelegramPluginRuntime, acco
         reply_markup: view.keyboard,
       }).catch(async () => {
         await ctx.reply(view.text, { parse_mode: "HTML", reply_markup: view.keyboard });
+      });
+      return;
+    }
+
+    if (data.startsWith("skill_run:")) {
+      const skillName = data.slice("skill_run:".length);
+      await ctx.answerCallbackQuery?.({ text: `Running /${skillName}...` });
+      const source = toSource(account.accountId, ctx as TelegramContext);
+      const { agentId, text: routedText } = resolveAgentId(source, `/${skillName}`, runtime.api.config);
+      const sessionKey = resolveSessionKey(source, runtime.api.config, agentId);
+      const chatId = String(callbackQuery?.message?.chat?.id ?? "");
+      await runtime.api.dispatch({
+        source,
+        sessionKey,
+        text: routedText || `/${skillName}`,
+        respond: async (text: string) => {
+          if (text?.trim()) {
+            await bot.api.sendMessage(chatId, markdownToTelegramHtml(text), { parse_mode: "HTML" }).catch(() => {
+              bot.api.sendMessage(chatId, text).catch(() => {});
+            });
+          }
+        },
+        setTyping: async () => {
+          await bot.api.sendChatAction(chatId, "typing").catch(() => {});
+        },
       });
       return;
     }
@@ -406,5 +500,7 @@ export async function setupTelegramCommands(runtime: TelegramPluginRuntime, acco
     }
   });
 
-  await registerNativeCommands(account);
+  // 初始化时尝试获取 pi 命令，如果 RPC 还没连接则只注册本地命令
+  // 用户可以稍后用 /refresh 手动刷新
+  await refreshPiCommands(account, runtime.api.config);
 }

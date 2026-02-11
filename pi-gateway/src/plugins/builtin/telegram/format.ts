@@ -1,6 +1,6 @@
 import { splitMessage } from "../../../core/utils.ts";
 
-function escapeHtml(text: string): string {
+export function escapeHtml(text: string): string {
   return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
@@ -8,17 +8,35 @@ function escapeHtml(text: string): string {
 export function markdownToTelegramHtml(md: string): string {
   let html = md;
 
+  // Phase 1: Extract code blocks and inline code to protect from further processing
+  const placeholders: string[] = [];
+  const ph = (content: string) => {
+    const idx = placeholders.length;
+    placeholders.push(content);
+    return `\x00PH${idx}\x00`;
+  };
+
+  // Fenced code blocks
   html = html.replace(/```[\w]*\n([\s\S]*?)```/g, (_m, code) => {
-    return `<pre><code>${escapeHtml(code.trimEnd())}</code></pre>`;
+    return ph(`<pre><code>${escapeHtml(code.trimEnd())}</code></pre>`);
   });
 
-  html = html.replace(/`([^`\n]+)`/g, (_m, code) => `<code>${escapeHtml(code)}</code>`);
+  // Inline code
+  html = html.replace(/`([^`\n]+)`/g, (_m, code) => ph(`<code>${escapeHtml(code)}</code>`));
+
+  // Preserve existing HTML tags (blockquote etc.) from handlers.ts
+  html = html.replace(/<(blockquote|\/blockquote|pre|\/pre|code|\/code)>/g, (_m) => ph(_m));
+
+  // Phase 2: Markdown formatting (safe — code already extracted)
   html = html.replace(/\*\*(.+?)\*\*/g, "<b>$1</b>");
   html = html.replace(/__(.+?)__/g, "<b>$1</b>");
   html = html.replace(/(?<!\w)\*([^*\n]+)\*(?!\w)/g, "<i>$1</i>");
   html = html.replace(/(?<!\w)_([^_\n]+)_(?!\w)/g, "<i>$1</i>");
   html = html.replace(/~~(.+?)~~/g, "<s>$1</s>");
   html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>');
+
+  // Phase 3: Restore placeholders
+  html = html.replace(/\x00PH(\d+)\x00/g, (_m, idx) => placeholders[parseInt(idx)]!);
 
   return html;
 }
