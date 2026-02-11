@@ -11,11 +11,15 @@ import type { Server, ServerWebSocket } from "bun";
 import { join } from "node:path";
 import { existsSync, renameSync } from "node:fs";
 
-import { safeTokenCompare, redactConfig } from "./core/auth.ts";
+import { safeTokenCompare } from "./core/auth.ts";
 import { serveStaticFile } from "./core/static-server.ts";
 import { handleWebhookWake, handleWebhookEvent } from "./api/webhook-api.ts";
 import { handleOpenAiChat } from "./api/openai-compat.ts";
 import type { GatewayContext, TelegramMessageMode, WsClientData } from "./gateway/types.ts";
+import { tryHandleCommand, registerBuiltinCommands, isTuiCommand } from "./gateway/command-handler.ts";
+import { listAvailableRoles, setSessionRole } from "./gateway/role-manager.ts";
+import { executeRegisteredTool, handleToolsList, handleToolCall } from "./gateway/tool-executor.ts";
+import { handleSessionReset, handleSessionThink, handleSessionModel, handleModelsList, handleSessionUsage, handleSessionsList, handleSessionDetail } from "./api/session-api.ts";
 import { loadConfig, ensureDataDir, type Config, type CronJob, resolveConfigPath, watchConfig } from "./core/config.ts";
 import { RpcPool } from "./core/rpc-pool.ts";
 import type { RpcClient } from "./core/rpc-client.ts";
@@ -30,15 +34,15 @@ import { TranscriptLogger } from "./core/transcript-logger.ts";
 import { searchMemory, getMemoryStats, getRoleInfo, listRoles } from "./core/memory-access.ts";
 import { buildCapabilityProfile } from "./core/capability-profile.ts";
 import { ExtensionUIForwarder } from "./core/extension-ui-forwarder.ts";
-import type { ExtensionUIResponse } from "./core/extension-ui-types.ts";
+
 import { DeduplicationCache } from "./core/dedup-cache.ts";
 import { MetricsCollector, type MetricsDataSource } from "./core/metrics.ts";
 import { DelegateExecutor } from "./core/delegate-executor.ts";
 import { HeartbeatExecutor } from "./core/heartbeat-executor.ts";
 import { SystemEventsQueue } from "./core/system-events.ts";
-import { handleMediaServe, processWebChatMediaDirectives } from "./api/media-routes.ts";
+import { handleMediaServe } from "./api/media-routes.ts";
+import { createWsRouter, dispatchWsFrame } from "./ws/ws-router.ts";
 import { handleMediaSendRequest } from "./api/media-send.ts";
-import { DELEGATE_TO_AGENT_TOOL_NAME, validateDelegateParams } from "./tools/delegate-to-agent.ts";
 import {
   createPluginRegistry,
   PluginLoader,
@@ -91,6 +95,7 @@ export class Gateway {
   private heartbeatExecutor: HeartbeatExecutor | null = null;
   private systemEvents = new SystemEventsQueue();
   private noGui: boolean;
+  private wsRouter: Map<string, import("./ws/ws-router.ts").WsMethodFn> | null = null;
   /** 缓存每个 channel 注册时的 api 引用，供 init 调用 */
   private _channelApis = new Map<string, GatewayPluginApi>();
 
@@ -199,7 +204,7 @@ export class Gateway {
     }
 
     // Register built-in commands
-    this.registerBuiltinCommands();
+    registerBuiltinCommands(this.ctx);
 
     // Start background services
     for (const service of this.registry.services) {
@@ -612,13 +617,6 @@ export class Gateway {
     }
   }
 
-  // Commands that use ctx.ui.custom() TUI and will hang in RPC mode
-  private static readonly TUI_BLOCKED_COMMANDS = new Set([
-    "/role info", "/role create", "/role map", "/role list",
-    "/memories", "/memory-fix", "/memory-tidy", "/memory-tidy-llm",
-    "/plan",
-  ]);
-
   private buildSessionProfile(sessionKey: SessionKey, role: string) {
     const cwd = getCwdForRole(role, this.config);
     return buildCapabilityProfile({
@@ -629,226 +627,10 @@ export class Gateway {
     });
   }
 
-  private parseSlashCommand(text: string): { name: string; args: string } | null {
-    const trimmed = text.trim();
-    const match = trimmed.match(/^\/([a-zA-Z0-9._-]+)(?:\s+([\s\S]*))?$/);
-    if (!match) return null;
-    return {
-      name: match[1].toLowerCase(),
-      args: (match[2] ?? "").trim(),
-    };
-  }
-
   private normalizeOutgoingText(value: unknown, fallback: string): string {
     if (typeof value === "string") return value;
     if (value === null || value === undefined) return fallback;
     return String(value);
-  }
-
-  private async tryHandleRegisteredCommand(msg: InboundMessage, startedAt: number, rpc?: RpcClient): Promise<boolean> {
-    const parsed = this.parseSlashCommand(msg.text);
-    if (!parsed) {
-      this.log.debug(`[SLASH-CMD] ${msg.sessionKey} not a slash command: ${msg.text.slice(0, 50)}`);
-      return false;
-    }
-
-    this.log.info(`[SLASH-CMD] ${msg.sessionKey} parsed: name=${parsed.name}, args=${parsed.args}, hasRPC=${!!rpc}`);
-
-    const registered = this.registry.commands.get(parsed.name);
-    this.log.info(`[SLASH-CMD] ${msg.sessionKey} local command found: ${!!registered}, registry size=${this.registry.commands.size}`);
-    
-    // Gateway 本地命令优先
-    if (registered) {
-      this.log.info(`[SLASH-CMD] ${msg.sessionKey} executing local command /${parsed.name}`);
-      const sendCommandReply = async (rawText: string) => {
-        const outbound = {
-          channel: msg.source.channel,
-          target: msg.source.chatId,
-          text: this.normalizeOutgoingText(rawText, ""),
-        };
-
-        await this.registry.hooks.dispatch("message_sending", { message: outbound });
-        outbound.text = this.normalizeOutgoingText(outbound.text, "");
-        await msg.respond(outbound.text);
-        await this.registry.hooks.dispatch("message_sent", { message: outbound });
-        this.transcripts.logResponse(msg.sessionKey, outbound.text, Date.now() - startedAt);
-      };
-
-      try {
-        await registered.handler({
-          sessionKey: msg.sessionKey,
-          senderId: msg.source.senderId,
-          channel: msg.source.channel,
-          args: parsed.args,
-          respond: sendCommandReply,
-        });
-        this.log.info(`[SLASH-CMD] ${msg.sessionKey} local command /${parsed.name} executed successfully`);
-      } catch (err: any) {
-        const errMsg = err?.message ?? String(err);
-        this.log.error(`[SLASH-CMD] ${msg.sessionKey} local command /${parsed.name} failed: ${errMsg}`);
-        await sendCommandReply(`Command /${parsed.name} failed: ${errMsg}`);
-      }
-      return true;
-    }
-
-    // 如果没有本地命令，但有 RPC 客户端，将斜杠命令发送给 pi 处理
-    if (rpc) {
-      // Strip pi_ prefix for RPC forwarding (Telegram registers as /pi_compact, pi expects /compact)
-      const rpcCmdName = parsed.name.startsWith("pi_") ? parsed.name.slice(3) : parsed.name;
-      const rpcText = `/${rpcCmdName}${parsed.args ? " " + parsed.args : ""}`;
-      this.log.info(`[SLASH-CMD] ${msg.sessionKey} forwarding /${parsed.name} → ${rpcText} to pi RPC`);
-      try {
-        // 设置临时事件监听器来捕获命令响应
-        let cmdResponse = "";
-        let cmdEventCount = 0;
-        const cmdUnsub = rpc.onEvent((event) => {
-          if (rpc.sessionKey !== msg.sessionKey) return;
-          cmdEventCount++;
-          this.log.debug(`[SLASH-CMD-EVENT] ${msg.sessionKey} type=${(event as any).type} count=${cmdEventCount}`);
-          
-          // 收集文本响应
-          if ((event as any).type === "message_update") {
-            const ame = (event as any).assistantMessageEvent ?? (event as any).assistant_message_event;
-            if (ame?.type === "text_delta" && ame.delta) {
-              cmdResponse += ame.delta;
-            }
-          }
-          // 命令结束
-          if ((event as any).type === "agent_end" || (event as any).type === "message_end") {
-            this.log.info(`[SLASH-CMD] ${msg.sessionKey} command completed, events=${cmdEventCount}, response=${cmdResponse.length} chars`);
-          }
-        });
-        
-        await rpc.prompt(rpcText);
-        this.log.info(`[SLASH-CMD] ${msg.sessionKey} forwarded ${rpcText}, waiting for completion...`);
-        
-        // 等待命令完成（最多 30 秒）
-        await rpc.waitForIdle(30000);
-        
-        // 清理监听器
-        cmdUnsub();
-        
-        // 发送响应
-        if (cmdResponse.trim()) {
-          await msg.respond(cmdResponse.trim());
-        } else {
-          await msg.respond(`Command /${parsed.name} executed.`);
-        }
-        this.log.info(`[SLASH-CMD] ${msg.sessionKey} completed with ${cmdResponse.length} chars response`);
-      } catch (err: any) {
-        this.log.error(`[SLASH-CMD] ${msg.sessionKey} failed to execute /${parsed.name}: ${err?.message ?? String(err)}`);
-        await msg.respond(`Failed to execute command: ${err?.message ?? String(err)}`);
-      }
-      return true;
-    }
-
-    this.log.warn(`[SLASH-CMD] ${msg.sessionKey} no RPC available for /${parsed.name}`);
-    return false;
-  }
-
-  private getRegisteredToolSpecs() {
-    return Array.from(this.registry.tools.values()).map((tool) => ({
-      plugin: tool.name,
-      description: tool.description,
-      tools: tool.tools.map((def) => ({
-        name: def.name,
-        description: def.description,
-        parameters: def.parameters ?? {},
-        optional: def.optional ?? false,
-      })),
-    }));
-  }
-
-  private resolveToolPlugin(toolName: string): ToolPlugin | null {
-    for (const plugin of this.registry.tools.values()) {
-      if (plugin.tools.some((def) => def.name === toolName)) {
-        return plugin;
-      }
-    }
-    return null;
-  }
-
-  private async executeRegisteredTool(
-    toolName: string,
-    params: Record<string, unknown>,
-    sessionKey: SessionKey,
-  ) {
-    // v3: Intercept delegate_to_agent tool call
-    if (toolName === DELEGATE_TO_AGENT_TOOL_NAME && this.delegateExecutor) {
-      const validation = validateDelegateParams(params);
-      if (!validation.valid) {
-        return {
-          content: [{ type: "text", text: `Invalid delegation: ${validation.error}` }],
-          isError: true,
-        };
-      }
-
-      const result = await this.delegateExecutor.executeDelegation(sessionKey, validation.data);
-
-      // Format result as tool response
-      if (result.status === "completed") {
-        return {
-          content: [{ type: "text", text: result.response ?? "Task completed" }],
-        };
-      } else {
-        return {
-          content: [{ type: "text", text: result.error ?? `Delegation ${result.status}` }],
-          isError: true,
-        };
-      }
-    }
-
-    const plugin = this.resolveToolPlugin(toolName);
-    if (!plugin) {
-      throw new Error(`Tool not found: ${toolName}`);
-    }
-
-    const beforePayload = {
-      sessionKey,
-      toolName,
-      args: { ...params },
-    };
-    await this.registry.hooks.dispatch("before_tool_call", beforePayload);
-
-    const toolLogger = this.config.logging.file
-      ? createFileLogger(`tool:${toolName}`)
-      : createConsoleLogger(`tool:${toolName}`);
-
-    try {
-      const result = await plugin.execute(toolName, beforePayload.args, {
-        sessionKey,
-        logger: toolLogger,
-      });
-
-      const afterPayload = {
-        sessionKey,
-        toolName,
-        result,
-        isError: Boolean(result?.isError),
-      };
-      await this.registry.hooks.dispatch("after_tool_call", afterPayload);
-
-      const persistPayload = {
-        sessionKey,
-        toolName,
-        result: afterPayload.result,
-      };
-      await this.registry.hooks.dispatch("tool_result_persist", persistPayload);
-
-      return persistPayload.result;
-    } catch (err: any) {
-      const errorResult = {
-        content: [{ type: "text", text: `Tool error: ${err?.message ?? String(err)}` }],
-        isError: true,
-      };
-      await this.registry.hooks.dispatch("after_tool_call", {
-        sessionKey,
-        toolName,
-        result: errorResult,
-        isError: true,
-      });
-      throw err;
-    }
   }
 
   private async compactSessionWithHooks(sessionKey: SessionKey, instructions?: string): Promise<void> {
@@ -879,14 +661,13 @@ export class Gateway {
     });
 
     // Guard: intercept pi extension commands that use TUI (would hang in RPC mode)
-    const trimmedCmd = text.trim().toLowerCase();
-    for (const blocked of Gateway.TUI_BLOCKED_COMMANDS) {
-      if (trimmedCmd === blocked || trimmedCmd.startsWith(blocked + " ")) {
-        const reply = `Command "${text.trim()}" requires interactive TUI and is not available in gateway mode. Use the pi CLI directly for this command.`;
-        this.transcripts.logResponse(sessionKey, reply, Date.now() - startTime);
-        await respond(reply);
-        return;
-      }
+    // Defensive: also checked inside tryHandleCommand, but we catch it early here
+    // to log transcript + respond before RPC acquisition
+    if (isTuiCommand(text)) {
+      const reply = `Command "${text.trim()}" requires interactive TUI and is not available in gateway mode. Use the pi CLI directly for this command.`;
+      this.transcripts.logResponse(sessionKey, reply, Date.now() - startTime);
+      await respond(reply);
+      return;
     }
 
     // Hook: session_start (if new session)
@@ -938,7 +719,7 @@ export class Gateway {
     await setTyping(true);
 
     // Plugin slash commands bypass LLM (forward to pi RPC if not handled locally)
-    if (await this.tryHandleRegisteredCommand(msg, startTime, rpc)) {
+    if (await tryHandleCommand(msg, this.ctx, startTime, rpc)) {
       return;
     }
 
@@ -1204,6 +985,9 @@ export class Gateway {
   private startServer(): void {
     const self = this;
 
+    // Initialize WS method router (ctx is fully ready at this point)
+    this.wsRouter = createWsRouter(this.ctx);
+
     this.server = Bun.serve<WsClientData>({
       port: this.config.gateway.port,
       hostname: this.config.gateway.bind === "loopback" ? "127.0.0.1" : "0.0.0.0",
@@ -1266,7 +1050,7 @@ export class Gateway {
         async message(ws, raw) {
           try {
             const frame = JSON.parse(typeof raw === "string" ? raw : new TextDecoder().decode(raw)) as WsFrame;
-            await self.handleWsFrame(ws, frame);
+            await dispatchWsFrame(self.wsRouter!, frame, self.ctx, ws);
           } catch (err: any) {
             ws.send(JSON.stringify({ type: "res", id: "?", ok: false, error: err?.message }));
           }
@@ -1322,15 +1106,12 @@ export class Gateway {
 
     // Sessions list
     if (url.pathname === "/api/sessions" && req.method === "GET") {
-      return Response.json(this.sessions.toArray());
+      return await handleSessionsList(req, url, this.ctx);
     }
 
     // Single session detail (GET /api/sessions/agent:main:main:main)
     if (url.pathname.startsWith("/api/sessions/") && req.method === "GET") {
-      const key = decodeURIComponent(url.pathname.slice("/api/sessions/".length));
-      const session = this.sessions.get(key);
-      if (!session) return Response.json({ error: "Session not found" }, { status: 404 });
-      return Response.json(session);
+      return await handleSessionDetail(req, url, this.ctx);
     }
 
     // Session transcript (GET /api/transcript/agent:main:main:main?last=100)
@@ -1349,27 +1130,27 @@ export class Gateway {
 
     // Reset session
     if (url.pathname === "/api/session/reset" && req.method === "POST") {
-      return await this.handleApiSessionReset(req);
+      return await handleSessionReset(req, url, this.ctx);
     }
 
     // Set thinking level
     if (url.pathname === "/api/session/think" && req.method === "POST") {
-      return await this.handleApiSessionThink(req);
+      return await handleSessionThink(req, url, this.ctx);
     }
 
     // Set model
     if (url.pathname === "/api/session/model" && req.method === "POST") {
-      return await this.handleApiSessionModel(req);
+      return await handleSessionModel(req, url, this.ctx);
     }
 
     // Models list
     if (url.pathname === "/api/models" && req.method === "GET") {
-      return await this.handleApiModels(url);
+      return await handleModelsList(req, url, this.ctx);
     }
 
     // Session usage/stats
     if (url.pathname === "/api/session/usage" && req.method === "GET") {
-      return await this.handleApiUsage(url);
+      return await handleSessionUsage(req, url, this.ctx);
     }
 
     // ---- Cron API ----
@@ -1437,12 +1218,12 @@ export class Gateway {
 
     // Registered gateway tools
     if (url.pathname === "/api/tools" && req.method === "GET") {
-      return Response.json({ tools: this.getRegisteredToolSpecs() });
+      return await handleToolsList(req, url, this.ctx);
     }
 
     // Invoke registered gateway tool
     if (url.pathname === "/api/tools/call" && req.method === "POST") {
-      return await this.handleApiToolCall(req);
+      return await handleToolCall(req, url, this.ctx);
     }
 
     // Webhook endpoints (aligned with OpenClaw POST /hooks/*)
@@ -1501,29 +1282,6 @@ export class Gateway {
       return Response.json({ ok: true });
     } catch (err: any) {
       return Response.json({ error: err?.message ?? "Send failed" }, { status: 500 });
-    }
-  }
-
-  private async handleApiToolCall(req: Request): Promise<Response> {
-    try {
-      const body = await req.json() as {
-        tool?: string;
-        toolName?: string;
-        params?: Record<string, unknown>;
-        sessionKey?: string;
-      };
-
-      const toolName = (body.toolName ?? body.tool ?? "").trim();
-      if (!toolName) {
-        return Response.json({ error: "toolName is required" }, { status: 400 });
-      }
-
-      const sessionKey = body.sessionKey ?? "agent:main:main:main";
-      const params = body.params && typeof body.params === "object" ? body.params : {};
-      const result = await this.executeRegisteredTool(toolName, params, sessionKey);
-      return Response.json({ ok: true, toolName, sessionKey, result });
-    } catch (err: any) {
-      return Response.json({ error: err?.message ?? "Tool call failed" }, { status: 500 });
     }
   }
 
@@ -1738,481 +1496,9 @@ export class Gateway {
     });
   }
 
-  /**
-   * POST /api/session/reset — Reset a session.
-   */
-  private async handleApiSessionReset(req: Request): Promise<Response> {
-    try {
-      const body = await req.json() as { sessionKey?: string };
-      const sessionKey = body.sessionKey ?? "agent:main:main:main";
-
-      const rpc = this.pool.getForSession(sessionKey);
-      if (rpc) {
-        await rpc.newSession();
-      }
-
-      const session = this.sessions.get(sessionKey);
-      if (session) {
-        session.messageCount = 0;
-        session.lastActivity = Date.now();
-        this.sessions.touch(sessionKey);
-      }
-
-      return Response.json({ ok: true, sessionKey });
-    } catch (err: any) {
-      return Response.json({ error: err?.message ?? "Reset failed" }, { status: 500 });
-    }
-  }
-
-  /**
-   * POST /api/session/think — Set thinking level for a session.
-   * Aligned with OpenClaw /think command.
-   */
-  private async handleApiSessionThink(req: Request): Promise<Response> {
-    try {
-      const body = await req.json() as { sessionKey?: string; level?: string };
-      const sessionKey = body.sessionKey ?? "agent:main:main:main";
-      const level = body.level ?? "medium";
-
-      const validLevels = ["off", "minimal", "low", "medium", "high", "xhigh"];
-      if (!validLevels.includes(level)) {
-        return Response.json({ error: `Invalid level. Use: ${validLevels.join(", ")}` }, { status: 400 });
-      }
-
-      const rpc = this.pool.getForSession(sessionKey);
-      if (!rpc) {
-        return Response.json({ error: "No active RPC process for this session" }, { status: 404 });
-      }
-
-      await rpc.setThinkingLevel(level);
-      return Response.json({ ok: true, sessionKey, level });
-    } catch (err: any) {
-      return Response.json({ error: err?.message ?? "Failed" }, { status: 500 });
-    }
-  }
-
-  /**
-   * POST /api/session/model — Set model for a session.
-   * Aligned with OpenClaw /model command.
-   */
-  private async handleApiSessionModel(req: Request): Promise<Response> {
-    try {
-      const body = await req.json() as { sessionKey?: string; provider?: string; modelId?: string; model?: string };
-      const sessionKey = body.sessionKey ?? "agent:main:main:main";
-
-      let provider = body.provider;
-      let modelId = body.modelId;
-
-      // Support "provider/modelId" shorthand
-      if (body.model && body.model.includes("/")) {
-        const idx = body.model.indexOf("/");
-        provider = body.model.slice(0, idx);
-        modelId = body.model.slice(idx + 1);
-      }
-
-      if (!provider || !modelId) {
-        return Response.json({ error: "Provide 'model' as 'provider/modelId' or separate 'provider' + 'modelId'" }, { status: 400 });
-      }
-
-      const rpc = this.pool.getForSession(sessionKey);
-      if (!rpc) {
-        return Response.json({ error: "No active RPC process for this session" }, { status: 404 });
-      }
-
-      await rpc.setModel(provider, modelId);
-      return Response.json({ ok: true, sessionKey, provider, modelId });
-    } catch (err: any) {
-      return Response.json({ error: err?.message ?? "Failed" }, { status: 500 });
-    }
-  }
-
-  /** GET /api/models — list available models from RPC */
-  private async handleApiModels(url: URL): Promise<Response> {
-    const sessionKey = url.searchParams.get("sessionKey") ?? "agent:main:main:main";
-    const rpc = this.pool.getForSession(sessionKey);
-    if (!rpc) {
-      return Response.json({ error: "No active session. Send a message first." }, { status: 404 });
-    }
-    try {
-      const models = await rpc.getAvailableModels();
-      return Response.json({ models });
-    } catch (err: any) {
-      return Response.json({ error: err?.message }, { status: 500 });
-    }
-  }
-
-  /** GET /api/session/usage — token usage stats from RPC */
-  private async handleApiUsage(url: URL): Promise<Response> {
-    const sessionKey = url.searchParams.get("sessionKey") ?? "agent:main:main:main";
-    const rpc = this.pool.getForSession(sessionKey);
-    if (!rpc) {
-      return Response.json({ error: "No active session" }, { status: 404 });
-    }
-    try {
-      const stats = await rpc.getSessionStats();
-      return Response.json({ sessionKey, stats });
-    } catch (err: any) {
-      return Response.json({ error: err?.message }, { status: 500 });
-    }
-  }
-
   // ==========================================================================
   // WebSocket Handlers
   // ==========================================================================
-
-  private async handleWsFrame(ws: ServerWebSocket<WsClientData>, frame: WsFrame): Promise<void> {
-    if (frame.type !== "req") return;
-
-    const { id, method, params } = frame;
-    const respond = (ok: boolean, payload?: unknown, error?: string) => {
-      ws.send(JSON.stringify({ type: "res", id, ok, payload, error }));
-    };
-
-    try {
-      // Plugin-registered gateway methods
-      const pluginMethod = this.registry.gatewayMethods.get(method);
-      if (pluginMethod) {
-        const result = await pluginMethod.handler(params ?? {}, { clientId: ws.data.clientId });
-        respond(true, result);
-        return;
-      }
-
-      // Built-in methods (aligned with OpenClaw)
-      switch (method) {
-        case "extension_ui_response": {
-          const uiResponse: ExtensionUIResponse = {
-            type: "extension_ui_response",
-            id: (params?.id as string) ?? "",
-            value: params?.value as string | string[] | undefined,
-            confirmed: params?.confirmed as boolean | undefined,
-            cancelled: params?.cancelled as boolean | undefined,
-            timestamp: Date.now(),
-          };
-          const handled = this.extensionUI.handleResponse(uiResponse, this.wsClients, ws.data.clientId);
-          respond(handled);
-          break;
-        }
-
-        case "connect": {
-          // Validate token in connect params if auth is enabled
-          const authMode = this.config.gateway.auth.mode;
-          if (authMode === "token" && this.config.gateway.auth.token) {
-            const connectToken = (params?.auth as any)?.token ?? params?.token;
-            if (!connectToken || !safeTokenCompare(connectToken, this.config.gateway.auth.token)) {
-              respond(false, undefined, "Invalid auth token");
-              ws.close(4001, "Unauthorized");
-              return;
-            }
-          }
-          respond(true, {
-            protocol: 1,
-            server: { name: "pi-gateway", version: "0.2.0" },
-          });
-          break;
-        }
-
-        case "health":
-          respond(true, {
-            pool: this.pool.getStats(),
-            queue: this.queue.getStats(),
-            sessions: this.sessions.size,
-          });
-          break;
-
-        case "chat.send": {
-          const text = (params?.text as string) ?? "";
-          const role = (params?.role as string) ?? undefined;
-          const sessionKey = (params?.sessionKey as string) ?? "agent:main:webchat:default";
-          const images = Array.isArray(params?.images) ? params.images as ImageContent[] : undefined;
-
-          await this.dispatch({
-            source: { channel: "webchat", chatType: "dm", chatId: "default", senderId: ws.data.clientId },
-            sessionKey,
-            text,
-            images,
-            respond: async (reply) => {
-              const processed = processWebChatMediaDirectives(reply, sessionKey, this.config);
-              ws.send(JSON.stringify({ type: "event", event: "chat.reply", payload: { text: processed.text, images: processed.images, sessionKey } }));
-            },
-            setTyping: async (typing) => {
-              ws.send(JSON.stringify({ type: "event", event: "chat.typing", payload: { typing, sessionKey } }));
-            },
-          });
-
-          respond(true);
-          break;
-        }
-
-        case "chat.abort": {
-          const sessionKey = (params?.sessionKey as string) ?? "agent:main:webchat:default";
-          const rpc = this.pool.getForSession(sessionKey);
-          if (rpc) await rpc.abort();
-          respond(true);
-          break;
-        }
-
-        case "chat.history": {
-          const hSessionKey = (params?.sessionKey as string) ?? "agent:main:webchat:default";
-          const hRpc = this.pool.getForSession(hSessionKey);
-          if (hRpc) {
-            try {
-              const messages = await hRpc.getMessages();
-              respond(true, { messages });
-            } catch (err: any) {
-              respond(false, undefined, err?.message);
-            }
-          } else {
-            respond(true, { messages: [] });
-          }
-          break;
-        }
-
-        case "sessions.list":
-          respond(true, this.sessions.toArray());
-          break;
-
-        case "sessions.get": {
-          const sKey = params?.sessionKey as string;
-          if (!sKey) {
-            respond(false, undefined, "sessionKey is required");
-            break;
-          }
-          const state = this.sessions.get(sKey);
-          respond(state ? true : false, state ?? undefined, state ? undefined : "Session not found");
-          break;
-        }
-
-        case "config.get":
-          respond(true, redactConfig(this.config));
-          break;
-
-        case "config.reload": {
-          try {
-            this.config = loadConfig();
-            respond(true, { ok: true });
-          } catch (err: any) {
-            respond(false, undefined, err?.message);
-          }
-          break;
-        }
-
-        case "models.list": {
-          const mSessionKey = (params?.sessionKey as string) ?? "agent:main:main:main";
-          const mRpc = this.pool.getForSession(mSessionKey);
-          if (mRpc) {
-            try {
-              const models = await mRpc.getAvailableModels();
-              respond(true, { models });
-            } catch (err: any) {
-              respond(false, undefined, err?.message);
-            }
-          } else {
-            respond(false, undefined, "No active session");
-          }
-          break;
-        }
-
-        case "usage.status": {
-          const uSessionKey = (params?.sessionKey as string) ?? "agent:main:main:main";
-          const uRpc = this.pool.getForSession(uSessionKey);
-          if (uRpc) {
-            try {
-              const stats = await uRpc.getSessionStats();
-              respond(true, { sessionKey: uSessionKey, stats });
-            } catch (err: any) {
-              respond(false, undefined, err?.message);
-            }
-          } else {
-            respond(false, undefined, "No active session");
-          }
-          break;
-        }
-
-        case "sessions.compact": {
-          const cKey = (params?.sessionKey as string);
-          if (!cKey) { respond(false, undefined, "sessionKey required"); break; }
-          try {
-            await this.compactSessionWithHooks(cKey, params?.instructions as string);
-            respond(true, { ok: true });
-          } catch (err: any) {
-            respond(false, undefined, err?.message ?? "Compaction failed");
-          }
-          break;
-        }
-
-        case "sessions.delete": {
-          const dKey = (params?.sessionKey as string);
-          if (!dKey) { respond(false, undefined, "sessionKey required"); break; }
-          await this.registry.hooks.dispatch("session_end", { sessionKey: dKey });
-          this.pool.release(dKey);
-          this.sessionMessageModeOverrides.delete(dKey);
-          this.sessions.delete(dKey);
-          respond(true, { ok: true });
-          break;
-        }
-
-        case "session.listRoles": {
-          respond(true, { roles: this.listAvailableRoles() });
-          break;
-        }
-
-        case "session.setRole": {
-          const srSessionKey = (params?.sessionKey as string);
-          const srRole = (params?.role as string);
-          if (!srSessionKey) { respond(false, undefined, "sessionKey required"); break; }
-          if (!srRole) { respond(false, undefined, "role required"); break; }
-          try {
-            const changed = await this.setSessionRole(srSessionKey, srRole);
-            respond(true, { changed, role: srRole });
-          } catch (err: any) {
-            respond(false, undefined, err?.message ?? "Failed to set role");
-          }
-          break;
-        }
-
-        case "memory.search": {
-          const mRole = (params?.role as string) ?? "default";
-          const mQuery = (params?.query as string) ?? "";
-          const mMax = (params?.maxResults as number) ?? 20;
-          if (!mQuery) { respond(false, undefined, "query is required"); break; }
-          respond(true, { role: mRole, results: searchMemory(mRole, mQuery, { maxResults: mMax }) });
-          break;
-        }
-
-        case "memory.stats": {
-          const sRole = (params?.role as string) ?? "default";
-          const sStats = getMemoryStats(sRole);
-          if (sStats) {
-            respond(true, sStats);
-          } else {
-            respond(false, undefined, "Role not found");
-          }
-          break;
-        }
-
-        case "memory.roles":
-          respond(true, { roles: listRoles().map((r) => getRoleInfo(r)).filter(Boolean) });
-          break;
-
-        // ---- Cron WS methods ----
-
-        case "cron.list": {
-          const jobs = this.cron!.listJobs().map((j) => ({
-            ...j,
-            status: j.paused ? "paused" : j.enabled === false ? "disabled" : "active",
-            lastRun: this.cron!.getRunHistory(j.id, 1)[0] ?? null,
-          }));
-          respond(true, { jobs });
-          break;
-        }
-
-        case "cron.add": {
-          const cId = params?.id as string;
-          const cSchedule = params?.schedule as CronJob["schedule"];
-          const cTask = params?.task as string;
-          if (!cId || !cSchedule || !cTask) {
-            respond(false, undefined, "id, schedule, and task required");
-            break;
-          }
-          const existing = this.cron!.listJobs().find((j) => j.id === cId);
-          if (existing) { respond(false, undefined, `job "${cId}" already exists`); break; }
-          const newJob: CronJob = {
-            id: cId,
-            schedule: cSchedule,
-            payload: { text: cTask },
-            agentId: params?.agentId as string | undefined,
-            mode: (params?.mode as "isolated" | "main") ?? undefined,
-            delivery: (params?.delivery as "announce" | "silent") ?? undefined,
-            deleteAfterRun: params?.deleteAfterRun as boolean | undefined,
-          };
-          this.cron!.addJob(newJob);
-          respond(true, { job: newJob });
-          break;
-        }
-
-        case "cron.remove": {
-          const crId = params?.id as string;
-          if (!crId) { respond(false, undefined, "id required"); break; }
-          const removed = this.cron!.removeJob(crId);
-          if (!removed) { respond(false, undefined, "not found"); break; }
-          respond(true, { ok: true });
-          break;
-        }
-
-        case "cron.pause": {
-          const cpId = params?.id as string;
-          if (!cpId) { respond(false, undefined, "id required"); break; }
-          const paused = this.cron!.pauseJob(cpId);
-          if (!paused) { respond(false, undefined, "not found"); break; }
-          respond(true, { status: "paused" });
-          break;
-        }
-
-        case "cron.resume": {
-          const crId = params?.id as string;
-          if (!crId) { respond(false, undefined, "id required"); break; }
-          const resumed = this.cron!.resumeJob(crId);
-          if (!resumed) { respond(false, undefined, "not found or not paused"); break; }
-          respond(true, { status: "active" });
-          break;
-        }
-
-        case "cron.run": {
-          const crId = params?.id as string;
-          if (!crId) { respond(false, undefined, "id required"); break; }
-          const triggered = this.cron!.runJob(crId);
-          if (!triggered) { respond(false, undefined, "not found"); break; }
-          respond(true, { message: "triggered" });
-          break;
-        }
-
-        case "channels.status":
-          respond(true, Array.from(this.registry.channels.entries()).map(([cId, ch]) => ({
-            id: cId,
-            label: ch.meta.label,
-            capabilities: ch.capabilities,
-          })));
-          break;
-
-        case "plugins.list":
-          respond(true, {
-            channels: Array.from(this.registry.channels.keys()),
-            tools: Array.from(this.registry.tools.keys()),
-            commands: Array.from(this.registry.commands.keys()),
-            cliRegistrars: this.registry.cliRegistrars.length,
-          });
-          break;
-
-        case "tools.list":
-          respond(true, { tools: this.getRegisteredToolSpecs() });
-          break;
-
-        case "tools.call": {
-          const toolName = String((params?.toolName ?? params?.tool ?? "")).trim();
-          if (!toolName) {
-            respond(false, undefined, "toolName is required");
-            break;
-          }
-          const tSessionKey = (params?.sessionKey as string) ?? "agent:main:main:main";
-          const tParams = params?.params && typeof params.params === "object"
-            ? (params.params as Record<string, unknown>)
-            : {};
-          try {
-            const result = await this.executeRegisteredTool(toolName, tParams, tSessionKey);
-            respond(true, { toolName, sessionKey: tSessionKey, result });
-          } catch (err: any) {
-            respond(false, undefined, err?.message ?? "Tool call failed");
-          }
-          break;
-        }
-
-        default:
-          respond(false, undefined, `Unknown method: ${method}`);
-      }
-    } catch (err: any) {
-      respond(false, undefined, err?.message ?? "Internal error");
-    }
-  }
 
   private broadcastToWs(event: string, payload: unknown): void {
     const frame = JSON.stringify({ type: "event", event, payload });
@@ -2433,99 +1719,13 @@ export class Gateway {
   }
 
   // ==========================================================================
-  // Built-in Commands
-  // ==========================================================================
-
-  /**
-   * Register built-in slash commands.
-   */
-  private registerBuiltinCommands(): void {
-    // /role <name> — Switch session role
-    this.registry.commands.set("role", {
-      pluginId: "builtin",
-      handler: async ({ sessionKey, args, respond }) => {
-        const roleName = args.trim();
-        if (!roleName) {
-          const availableRoles = this.listAvailableRoles();
-          await respond(`Usage: /role <name>\nAvailable roles: ${availableRoles.join(", ")}`);
-          return;
-        }
-
-        const availableRoles = this.listAvailableRoles();
-        if (!availableRoles.includes(roleName)) {
-          await respond(`Unknown role: ${roleName}\nAvailable: ${availableRoles.join(", ")}`);
-          return;
-        }
-
-        try {
-          const changed = await this.setSessionRole(sessionKey, roleName);
-          if (changed) {
-            await respond(`Role switched to: ${roleName}`);
-          } else {
-            await respond(`Already using role: ${roleName}`);
-          }
-        } catch (err: any) {
-          await respond(`Failed to switch role: ${err?.message ?? String(err)}`);
-        }
-      },
-    });
-
-    this.log.info("Registered built-in command: /role");
-  }
-
-  // ==========================================================================
-  // Role Management
-  // ==========================================================================
-
-  /**
-   * Get all available roles from config (workspaceDirs + capabilities keys).
-   */
-  private listAvailableRoles(): string[] {
-    const workspaceRoles = Object.keys(this.config.roles.workspaceDirs ?? {});
-    const capabilityRoles = Object.keys(this.config.roles.capabilities ?? {});
-    const allRoles = new Set([...workspaceRoles, ...capabilityRoles, "default"]);
-    return Array.from(allRoles).sort();
-  }
-
-  /**
-   * Set role for a session and respawn RPC process.
-   * Returns true if successful, false if role not changed.
-   */
-  private async setSessionRole(sessionKey: SessionKey, newRole: string): Promise<boolean> {
-    const session = this.sessions.get(sessionKey);
-    if (!session) {
-      throw new Error(`Session not found: ${sessionKey}`);
-    }
-
-    const currentRole = session.role ?? "default";
-    if (currentRole === newRole) {
-      return false; // No change needed
-    }
-
-    // Release current RPC process
-    this.pool.release(sessionKey);
-
-    // Update session role
-    session.role = newRole;
-    session.lastActivity = Date.now();
-    this.sessions.touch(sessionKey);
-
-    // Pre-warm new RPC process with new role (optional, for faster response)
-    try {
-      const profile = this.buildSessionProfile(sessionKey, newRole);
-      await this.pool.acquire(sessionKey, profile);
-    } catch (err) {
-      this.log.warn(`Failed to pre-warm RPC for role ${newRole}: ${err}`);
-      // Non-fatal: process will be acquired on next message
-    }
-
-    this.log.info(`Role changed for ${sessionKey}: ${currentRole} -> ${newRole}`);
-    return true;
-  }
-
-  // ==========================================================================
   // Gateway Context (for sub-module injection)
   // ==========================================================================
+
+  /** Proxy for extracted tool-executor — preserves public API for tests/plugins */
+  async executeRegisteredTool(toolName: string, params: Record<string, unknown>, sessionKey: SessionKey) {
+    return executeRegisteredTool(toolName, params, sessionKey, this.ctx);
+  }
 
   private get ctx(): GatewayContext {
     return {
@@ -2550,8 +1750,9 @@ export class Gateway {
       buildSessionProfile: (sk, role) => this.buildSessionProfile(sk, role),
       dispatch: (msg) => this.dispatch(msg),
       compactSessionWithHooks: (sk, inst) => this.compactSessionWithHooks(sk, inst),
-      listAvailableRoles: () => this.listAvailableRoles(),
-      setSessionRole: (sk, role) => this.setSessionRole(sk, role),
+      listAvailableRoles: () => listAvailableRoles(this.ctx),
+      setSessionRole: (sk, role) => setSessionRole(this.ctx, sk, role),
+      reloadConfig: () => { this.config = loadConfig(); },
     };
   }
 
