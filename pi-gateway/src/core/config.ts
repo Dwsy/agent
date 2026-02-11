@@ -351,6 +351,8 @@ export interface CronJob {
   timeoutMs?: number;
   /** If true, remove job after first execution (for "at" jobs). Default: false */
   deleteAfterRun?: boolean;
+  /** If true, job is paused (not scheduled). Default: false */
+  paused?: boolean;
 }
 
 export interface CronConfig {

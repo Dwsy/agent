@@ -8,9 +8,9 @@
  */
 
 import type { Server, ServerWebSocket } from "bun";
-import { join } from "node:path";
+import { join, resolve as pathResolve } from "node:path";
 import { timingSafeEqual } from "node:crypto";
-import { existsSync, renameSync } from "node:fs";
+import { existsSync, renameSync, statSync } from "node:fs";
 
 // Web asset embedding: populated at build time, empty in dev (falls back to filesystem)
 import { WEB_ASSETS } from "./_web-assets.ts";
@@ -24,7 +24,7 @@ const CONTENT_TYPES: Record<string, string> = {
   png: "image/png",
   ico: "image/x-icon",
 };
-import { loadConfig, ensureDataDir, type Config, resolveConfigPath, watchConfig } from "./core/config.ts";
+import { loadConfig, ensureDataDir, type Config, type CronJob, resolveConfigPath, watchConfig } from "./core/config.ts";
 import { RpcPool } from "./core/rpc-pool.ts";
 import type { RpcClient } from "./core/rpc-client.ts";
 import { MessageQueueManager, type PrioritizedWork } from "./core/message-queue.ts";
@@ -33,6 +33,7 @@ import { createLogger as createConsoleLogger, type Logger, type InboundMessage, 
 import { SessionStore, encodeSessionDir, getSessionDir } from "./core/session-store.ts";
 import { initFileLogger, createFileLogger } from "./core/logger-file.ts";
 import { CronEngine } from "./core/cron.ts";
+import { handleCronApi } from "./core/cron-api.ts";
 import { TranscriptLogger } from "./core/transcript-logger.ts";
 import { searchMemory, getMemoryStats, getRoleInfo, listRoles } from "./core/memory-access.ts";
 import { buildCapabilityProfile } from "./core/capability-profile.ts";
@@ -43,6 +44,8 @@ import { MetricsCollector, type MetricsDataSource } from "./core/metrics.ts";
 import { DelegateExecutor } from "./core/delegate-executor.ts";
 import { HeartbeatExecutor } from "./core/heartbeat-executor.ts";
 import { SystemEventsQueue } from "./core/system-events.ts";
+import { getMediaSecret, verifyMediaToken, signMediaUrl } from "./core/media-token.ts";
+import { validateMediaPath } from "./core/media-security.ts";
 import { DELEGATE_TO_AGENT_TOOL_NAME, validateDelegateParams } from "./tools/delegate-to-agent.ts";
 import {
   createPluginRegistry,
@@ -1419,6 +1422,14 @@ export class Gateway {
       return await this.handleApiUsage(url);
     }
 
+    // ---- Cron API ----
+
+    if (url.pathname.startsWith("/api/cron/")) {
+      const cronResponse = handleCronApi(req, url, this.cron!, this.config);
+      if (cronResponse instanceof Promise) return await cronResponse;
+      if (cronResponse) return cronResponse;
+    }
+
     // ---- Memory APIs ----
 
     if (url.pathname === "/api/memory/search" && req.method === "GET") {
@@ -1493,12 +1504,121 @@ export class Gateway {
       return await this.handleWebhookEvent(req);
     }
 
+    // Media serving via signed token (F3: WebChat images)
+    if (url.pathname.startsWith("/api/media/") && req.method === "GET") {
+      return this.handleMediaServe(url);
+    }
+
     // Static files for Web UI
     if (url.pathname === "/" || url.pathname.startsWith("/web/")) {
       return this.serveStaticFile(url.pathname);
     }
 
     return new Response("Not Found", { status: 404 });
+  }
+
+  /**
+   * Parse MEDIA: directives in agent response and convert to signed URLs.
+   * Returns processed text (directives removed) and extracted image URLs.
+   */
+  private processWebChatMediaDirectives(text: string, sessionKey: string): { text: string; images: string[] } {
+    const images: string[] = [];
+    const secret = getMediaSecret((this.config as any).channels?.webchat?.mediaSecret);
+    const ttlMs = (this.config as any).channels?.webchat?.mediaTokenTtlMs ?? 3600_000;
+
+    // Match MEDIA:./path patterns (on their own line or inline)
+    const processed = text.replace(/MEDIA:(\S+)/g, (_match, rawPath: string) => {
+      const agentId = sessionKey.split(":")[1] || "main";
+      const agentDef = this.config.agents?.list.find((a) => a.id === agentId);
+      const workspace = agentDef?.workspace ?? process.cwd();
+
+      if (!validateMediaPath(rawPath, workspace)) {
+        return `[blocked: ${rawPath}]`;
+      }
+
+      const url = signMediaUrl(sessionKey, rawPath, secret, ttlMs);
+      const ext = rawPath.split(".").pop()?.toLowerCase() || "";
+      const imageExts = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp"]);
+
+      if (imageExts.has(ext)) {
+        images.push(url);
+        return ""; // Remove directive from text, image shown separately
+      }
+      return `[📎 ${rawPath.split("/").pop()}](${url})`; // Non-image as download link
+    });
+
+    return { text: processed.trim(), images };
+  }
+
+  private handleMediaServe(url: URL): Response {
+    // URL: /api/media/{token}/{filename}?sk={sessionKey}&path={filePath}&exp={expiry}
+    const parts = url.pathname.slice("/api/media/".length).split("/");
+    const token = parts[0];
+    if (!token) return new Response("Bad Request", { status: 400 });
+
+    const sk = url.searchParams.get("sk") || "";
+    const filePath = url.searchParams.get("path") || "";
+    const exp = url.searchParams.get("exp") || "";
+
+    if (!sk || !filePath || !exp) {
+      return new Response("Missing parameters", { status: 400 });
+    }
+
+    const secret = getMediaSecret((this.config as any).channels?.webchat?.mediaSecret);
+    const verified = verifyMediaToken(token, sk, filePath, exp, secret);
+    if (!verified) {
+      return new Response("Forbidden", { status: 403 });
+    }
+
+    // Resolve workspace for the session's agent
+    const agentId = sk.split(":")[1] || "main";
+    const agentDef = this.config.agents?.list.find((a) => a.id === agentId);
+    const workspace = agentDef?.workspace ?? process.cwd();
+
+    // Validate path security
+    if (!validateMediaPath(filePath, workspace)) {
+      return new Response("Forbidden", { status: 403 });
+    }
+
+    // Resolve and serve file
+    const fullPath = pathResolve(workspace, filePath);
+
+    if (!existsSync(fullPath)) {
+      return new Response("Not Found", { status: 404 });
+    }
+
+    const stat = statSync(fullPath);
+    const maxMb = (this.config as any).channels?.webchat?.mediaMaxMb ?? 10;
+    if (stat.size > maxMb * 1024 * 1024) {
+      return new Response("File too large", { status: 413 });
+    }
+
+    // Infer MIME type
+    const ext = fullPath.split(".").pop()?.toLowerCase() || "";
+    const mimeMap: Record<string, string> = {
+      png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg",
+      gif: "image/gif", webp: "image/webp", svg: "image/svg+xml",
+      bmp: "image/bmp", ico: "image/x-icon",
+    };
+    const mime = mimeMap[ext] || "application/octet-stream";
+
+    // Stream via Bun.file() to avoid blocking event loop on large files
+    const file = Bun.file(fullPath);
+    const headers: Record<string, string> = {
+      "Content-Type": mime,
+      "Content-Length": String(stat.size),
+      "Cache-Control": "private, max-age=3600",
+      "X-Content-Type-Options": "nosniff",
+    };
+
+    // SVG can contain scripts — force download to prevent XSS
+    if (ext === "svg") {
+      const filename = filePath.split("/").pop() || "image.svg";
+      headers["Content-Disposition"] = `attachment; filename="${filename}"`;
+      headers["Content-Security-Policy"] = "sandbox";
+    }
+
+    return new Response(file, { status: 200, headers });
   }
 
   private async handleWebhookWake(req: Request): Promise<Response> {
@@ -2229,7 +2349,8 @@ export class Gateway {
             text,
             images,
             respond: async (reply) => {
-              ws.send(JSON.stringify({ type: "event", event: "chat.reply", payload: { text: reply, sessionKey } }));
+              const processed = this.processWebChatMediaDirectives(reply, sessionKey);
+              ws.send(JSON.stringify({ type: "event", event: "chat.reply", payload: { text: processed.text, images: processed.images, sessionKey } }));
             },
             setTyping: async (typing) => {
               ws.send(JSON.stringify({ type: "event", event: "chat.typing", payload: { typing, sessionKey } }));
@@ -2390,6 +2511,78 @@ export class Gateway {
         case "memory.roles":
           respond(true, { roles: listRoles().map((r) => getRoleInfo(r)).filter(Boolean) });
           break;
+
+        // ---- Cron WS methods ----
+
+        case "cron.list": {
+          const jobs = this.cron!.listJobs().map((j) => ({
+            ...j,
+            status: j.paused ? "paused" : j.enabled === false ? "disabled" : "active",
+            lastRun: this.cron!.getRunHistory(j.id, 1)[0] ?? null,
+          }));
+          respond(true, { jobs });
+          break;
+        }
+
+        case "cron.add": {
+          const cId = params?.id as string;
+          const cSchedule = params?.schedule as CronJob["schedule"];
+          const cTask = params?.task as string;
+          if (!cId || !cSchedule || !cTask) {
+            respond(false, undefined, "id, schedule, and task required");
+            break;
+          }
+          const existing = this.cron!.listJobs().find((j) => j.id === cId);
+          if (existing) { respond(false, undefined, `job "${cId}" already exists`); break; }
+          const newJob: CronJob = {
+            id: cId,
+            schedule: cSchedule,
+            payload: { text: cTask },
+            agentId: params?.agentId as string | undefined,
+            mode: (params?.mode as "isolated" | "main") ?? undefined,
+            delivery: (params?.delivery as "announce" | "silent") ?? undefined,
+            deleteAfterRun: params?.deleteAfterRun as boolean | undefined,
+          };
+          this.cron!.addJob(newJob);
+          respond(true, { job: newJob });
+          break;
+        }
+
+        case "cron.remove": {
+          const crId = params?.id as string;
+          if (!crId) { respond(false, undefined, "id required"); break; }
+          const removed = this.cron!.removeJob(crId);
+          if (!removed) { respond(false, undefined, "not found"); break; }
+          respond(true, { ok: true });
+          break;
+        }
+
+        case "cron.pause": {
+          const cpId = params?.id as string;
+          if (!cpId) { respond(false, undefined, "id required"); break; }
+          const paused = this.cron!.pauseJob(cpId);
+          if (!paused) { respond(false, undefined, "not found"); break; }
+          respond(true, { status: "paused" });
+          break;
+        }
+
+        case "cron.resume": {
+          const crId = params?.id as string;
+          if (!crId) { respond(false, undefined, "id required"); break; }
+          const resumed = this.cron!.resumeJob(crId);
+          if (!resumed) { respond(false, undefined, "not found or not paused"); break; }
+          respond(true, { status: "active" });
+          break;
+        }
+
+        case "cron.run": {
+          const crId = params?.id as string;
+          if (!crId) { respond(false, undefined, "id required"); break; }
+          const triggered = this.cron!.runJob(crId);
+          if (!triggered) { respond(false, undefined, "not found"); break; }
+          respond(true, { message: "triggered" });
+          break;
+        }
 
         case "channels.status":
           respond(true, Array.from(this.registry.channels.entries()).map(([cId, ch]) => ({
@@ -2652,6 +2845,8 @@ export class Gateway {
           return [];
         }
       },
+
+      cronEngine: self.cron ?? undefined,
     };
   }
 

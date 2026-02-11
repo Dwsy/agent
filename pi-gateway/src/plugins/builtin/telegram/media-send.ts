@@ -3,6 +3,7 @@ import { basename } from "node:path";
 import { Bot, InputFile } from "grammy";
 import type { TelegramMediaDirective, TelegramParsedOutbound } from "./types.ts";
 import { clipCaption, markdownToTelegramHtml, splitCaption, splitTelegramText } from "./format.ts";
+import { validateMediaPath } from "../../../core/media-security.ts";
 
 export interface TelegramSendOptions {
   messageThreadId?: number;
@@ -60,8 +61,8 @@ export function parseOutboundMediaDirectives(text: string): TelegramParsedOutbou
     const mediaMatch = line.match(mediaRe);
     if (mediaMatch) {
       const path = mediaMatch[1].trim();
-      // Security: block absolute paths, ~ paths, and directory traversal
-      if (path.startsWith("/") || path.startsWith("~") || path.includes("..")) {
+      // Security: validate path via centralized checker
+      if (!isHttpUrl(path) && !validateMediaPath(path)) {
         remain.push(line); // treat as normal text
         continue;
       }
@@ -86,9 +87,9 @@ export function parseOutboundMediaDirectives(text: string): TelegramParsedOutbou
 async function sendLocalFileByKind(bot: Bot, chatId: string, item: TelegramMediaDirective, opts?: TelegramSendOptions): Promise<void> {
   const localPath = normalizePath(item.url);
 
-  // Security: final guard — block absolute paths outside CWD and traversal
-  if (localPath.includes("..")) {
-    throw new Error(`Path traversal blocked: ${item.url}`);
+  // Security: final guard via centralized validator
+  if (!validateMediaPath(item.url)) {
+    throw new Error(`Blocked unsafe media path: ${item.url}`);
   }
 
   if (!existsSync(localPath)) {

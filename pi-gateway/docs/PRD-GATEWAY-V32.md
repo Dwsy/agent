@@ -77,6 +77,17 @@ Expose cron job management via:
 | `remove` | `{ id }` | Stop croner instance, remove from jobs.json |
 | `pause` | `{ id }` | Stop croner instance, set `paused: true` in jobs.json |
 | `resume` | `{ id }` | Re-register with croner, set `paused: false` |
+| `run` | `{ id }` | Manually trigger job execution immediately (for debugging) |
+
+#### HTTP API
+
+| Method | Path | Operation |
+|---|---|---|
+| `GET` | `/api/cron/jobs` | List all jobs |
+| `POST` | `/api/cron/jobs` | Add new job |
+| `DELETE` | `/api/cron/jobs/:id` | Remove job |
+| `PATCH` | `/api/cron/jobs/:id` | Pause/resume (`{ action: "pause" \| "resume" }`) |
+| `POST` | `/api/cron/jobs/:id/run` | Manual trigger |
 
 #### Schedule Formats
 
@@ -117,6 +128,7 @@ Already supported by cron.ts:
 | CR-8 | `cron resume` paused job | Croner re-registered, paused cleared |
 | CR-9 | `cron add` with `deleteAfterRun` | Job self-removes after first execution |
 | CR-10 | `cron list` shows run history | Last run time and status visible |
+| CR-11 | `cron run <id>` manual trigger | Job executes immediately, result returned |
 
 #### Acceptance Criteria
 
@@ -146,9 +158,10 @@ WebChat frontend has inbound image support (base64 upload via `chat.send.images`
 
 1. Parse `MEDIA:<path>` directives in agent responses
 2. Resolve relative paths against agent workspace
-3. Serve images via gateway HTTP: `GET /api/media/:sessionKey/:filename`
+3. Serve images via signed URL: `GET /api/media/:token/:filename` where token = `HMAC(sessionKey + filename + expiry)` — avoids exposing session keys in browser history/Referer/logs
 4. Render `<img>` elements in chat message bubbles
 5. Support click-to-expand (lightbox)
+6. Token expiry: 1 hour default, configurable via `channels.webchat.mediaTokenTtlMs`
 
 ##### Inbound Image Display
 
@@ -214,6 +227,7 @@ WebChat frontend has inbound image support (base64 upload via `chat.send.images`
    - Symlink resolution (`fs.realpathSync`) before workspace check
    - Block `..` segments after normalization
    - Block null bytes in path
+   - Block URL schemes (`://`) — prevents `file:///`, `data:`, etc. (relative paths never contain schemes)
 3. **Extract** path validation to reusable `validateMediaPath(path, workspaceRoot): boolean`
 4. **Reuse** in WebChat media serving (F3)
 
@@ -235,12 +249,14 @@ WebChat frontend has inbound image support (base64 upload via `chat.send.images`
 | MS-4 | `MEDIA:../../etc/passwd` (traversal) | Blocked |
 | MS-5 | `MEDIA:./link` where link → /etc/passwd (symlink) | Blocked |
 | MS-6 | `MEDIA:./file\x00.png` (null byte) | Blocked |
+| MS-7 | `MEDIA:file:///etc/passwd` (file scheme) | Blocked |
+| MS-8 | `MEDIA:data:text/html,<script>` (data scheme) | Blocked |
 
 #### Acceptance Criteria
 
 - [ ] `validateMediaPath()` extracted and reusable
-- [ ] All 6 attack vectors blocked
-- [ ] MS-1 ~ MS-6 pass
+- [ ] All 8 attack vectors blocked
+- [ ] MS-1 ~ MS-8 pass
 
 ---
 

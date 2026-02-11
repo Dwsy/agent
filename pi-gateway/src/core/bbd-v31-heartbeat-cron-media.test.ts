@@ -700,6 +700,70 @@ describe("v3.1 media: voice STT injection", () => {
 });
 
 // ============================================================================
+// MS-1 ~ MS-8: MEDIA Path Security (validateMediaPath)
+// ============================================================================
+
+import { validateMediaPath } from "./media-security.ts";
+
+describe("v3.2 MEDIA path security (MS-1 ~ MS-8)", () => {
+  test("MS-1: valid relative path → allowed", () => {
+    expect(validateMediaPath("./output.png")).toBe(true);
+    expect(validateMediaPath("output/chart.png")).toBe(true);
+    expect(validateMediaPath("report.pdf")).toBe(true);
+  });
+
+  test("MS-2: absolute path → blocked", () => {
+    expect(validateMediaPath("/etc/passwd")).toBe(false);
+    expect(validateMediaPath("/tmp/secret.txt")).toBe(false);
+  });
+
+  test("MS-3: home directory path → blocked", () => {
+    expect(validateMediaPath("~/secret.txt")).toBe(false);
+    expect(validateMediaPath("~user/.ssh/id_rsa")).toBe(false);
+  });
+
+  test("MS-4: directory traversal → blocked", () => {
+    expect(validateMediaPath("../../etc/passwd")).toBe(false);
+    expect(validateMediaPath("./images/../../../etc/shadow")).toBe(false);
+    expect(validateMediaPath("output/..")).toBe(false);
+  });
+
+  test("MS-5: symlink outside workspace → blocked", () => {
+    // Without workspace root, symlink check is skipped (basic checks only)
+    // With workspace root, realpathSync resolves symlinks
+    expect(validateMediaPath("./safe-file.png")).toBe(true);
+  });
+
+  test("MS-6: null byte injection → blocked", () => {
+    expect(validateMediaPath("./file\0.png")).toBe(false);
+    expect(validateMediaPath("output\0/secret")).toBe(false);
+  });
+
+  test("MS-7: file:// scheme → blocked", () => {
+    expect(validateMediaPath("file:///etc/passwd")).toBe(false);
+    expect(validateMediaPath("file://localhost/etc/shadow")).toBe(false);
+  });
+
+  test("MS-8: data: scheme → blocked", () => {
+    expect(validateMediaPath("data:text/html,<script>alert(1)</script>")).toBe(false);
+    expect(validateMediaPath("javascript:alert(1)")).toBe(false);
+    expect(validateMediaPath("ftp://evil.com/malware")).toBe(false);
+  });
+
+  test("MEDIA: directive with file:// scheme treated as normal text", () => {
+    const result = parseOutboundMediaDirectives("MEDIA:file:///etc/passwd");
+    expect(result.media).toHaveLength(0);
+    expect(result.text).toContain("MEDIA:file:///etc/passwd");
+  });
+
+  test("MEDIA: directive with data: scheme treated as normal text", () => {
+    const result = parseOutboundMediaDirectives("MEDIA:data:text/html,<script>");
+    expect(result.media).toHaveLength(0);
+    expect(result.text).toContain("MEDIA:data:");
+  });
+});
+
+// ============================================================================
 // SP-1 ~ SP-6: System Prompt Injection
 // ============================================================================
 

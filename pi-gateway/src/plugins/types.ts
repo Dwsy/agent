@@ -288,6 +288,9 @@ export interface GatewayPluginApi {
 
   /** Get available pi slash commands from RPC */
   getPiCommands(sessionKey: SessionKey): Promise<{ name: string; description?: string }[]>;
+
+  /** Access the cron engine for job management */
+  readonly cronEngine?: import("../core/cron.ts").CronEngine;
 }
 
 // ============================================================================

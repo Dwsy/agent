@@ -999,6 +999,65 @@ class GwChat extends LitElement {
       max-height: 200px;
       border-radius: var(--radius);
       object-fit: contain;
+      cursor: pointer;
+      transition: opacity var(--transition);
+    }
+    .msg-image:hover { opacity: 0.85; }
+
+    /* Media images from agent MEDIA: directives */
+    .media-images {
+      display: flex;
+      gap: 8px;
+      margin-top: 8px;
+      flex-wrap: wrap;
+    }
+    .media-img {
+      max-width: 400px;
+      max-height: 300px;
+      border-radius: var(--radius);
+      object-fit: contain;
+      cursor: pointer;
+      border: 1px solid var(--border-subtle);
+      transition: opacity var(--transition);
+    }
+    .media-img:hover { opacity: 0.85; }
+    .media-download {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 6px 10px;
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: var(--accent);
+      font-size: 12px;
+      text-decoration: none;
+      margin-top: 6px;
+    }
+    .media-download:hover { background: var(--bg-hover); }
+
+    /* Lightbox overlay */
+    .lightbox {
+      position: fixed;
+      inset: 0;
+      z-index: 1000;
+      background: rgba(0,0,0,.85);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: zoom-out;
+      animation: fadeIn 0.15s ease;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    .lightbox img {
+      max-width: 90vw;
+      max-height: 90vh;
+      object-fit: contain;
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
     }
 
     /* Attach button */
@@ -1144,6 +1203,7 @@ class GwChat extends LitElement {
     this._thinkingText = "";
     this._isThinking = false;
     this._pendingImages = [];
+    this._lightboxSrc = null; // Lightbox image URL
   }
 
   connectedCallback() {
@@ -1169,8 +1229,20 @@ class GwChat extends LitElement {
       gw.on("chat.reply", (p) => {
         // Skip if we already displayed this via streaming events
         if (!this._gotStreamingDelta) {
-          this.messages = [...this.messages, { role: "assistant", text: p.text }];
+          const msg = { role: "assistant", text: p.text };
+          if (p.images?.length) msg.mediaImages = p.images; // Signed URLs from backend
+          this.messages = [...this.messages, msg];
           this._scrollBottom();
+        } else {
+          // Streaming already displayed text — but check for images from MEDIA directives
+          if (p.images?.length) {
+            const last = this.messages[this.messages.length - 1];
+            if (last && (last.role === "assistant" || last.role === "streaming")) {
+              last.role = "assistant";
+              last.mediaImages = p.images;
+              this.messages = [...this.messages];
+            }
+          }
         }
         this._gotStreamingDelta = false;
         this.isStreaming = false;
@@ -1291,6 +1363,7 @@ class GwChat extends LitElement {
       this.messages = (history?.messages || []).map((m) => ({
         role: m.role,
         text: m.content,
+        mediaImages: m.mediaImages || undefined,
       }));
       this._scrollBottom();
     } catch (err) {
@@ -1394,6 +1467,16 @@ class GwChat extends LitElement {
     if (diff < 3600_000) return `${Math.floor(diff / 60_000)}m ago`;
     if (diff < 86400_000) return `${Math.floor(diff / 3600_000)}h ago`;
     return d.toLocaleDateString();
+  }
+
+  _openLightbox(src) {
+    this._lightboxSrc = src;
+    this.requestUpdate();
+  }
+
+  _closeLightbox() {
+    this._lightboxSrc = null;
+    this.requestUpdate();
   }
 
   async _send(e) {
@@ -1689,10 +1772,15 @@ class GwChat extends LitElement {
                   <div class="msg ${m.role === "streaming" ? "assistant" : m.role}">
                     ${m.images?.length ? html`
                       <div class="msg-images">
-                        ${m.images.map((img) => html`<img src=${img.preview || `data:${img.mimeType};base64,${img.data}`} class="msg-image" />`)}
+                        ${m.images.map((img) => html`<img src=${img.preview || `data:${img.mimeType};base64,${img.data}`} class="msg-image" @click=${() => this._openLightbox(img.preview || `data:${img.mimeType};base64,${img.data}`)} />`)}
                       </div>
                     ` : ""}
                     ${renderMessageContent(m.text)}
+                    ${m.mediaImages?.length ? html`
+                      <div class="media-images">
+                        ${m.mediaImages.map((url) => html`<img src=${url} class="media-img" @click=${() => this._openLightbox(url)} loading="lazy" />`)}
+                      </div>
+                    ` : ""}
                   </div>
                 `;
               })}
@@ -1737,6 +1825,11 @@ class GwChat extends LitElement {
           </form>
         </div>
       </div>
+      ${this._lightboxSrc ? html`
+        <div class="lightbox" @click=${() => this._closeLightbox()}>
+          <img src=${this._lightboxSrc} />
+        </div>
+      ` : ""}
     `;
   }
 }

@@ -20,6 +20,7 @@ const LOCAL_COMMANDS = [
   { command: "status", description: "查看会话状态" },
   { command: "queue", description: "会话并发策略" },
   { command: "role", description: "切换/查看角色" },
+  { command: "cron", description: "定时任务管理" },
   { command: "skills", description: "查看/调用技能" },
   { command: "media", description: "媒体发送说明" },
   { command: "photo", description: "发送图片" },
@@ -361,6 +362,70 @@ export async function setupTelegramCommands(runtime: TelegramPluginRuntime, acco
     }, {
       messageThreadId: (ctx.message as any)?.message_thread_id,
     });
+  });
+
+  bot.command("cron", async (ctx: any) => {
+    const args = String(ctx.match ?? "").trim();
+    const sub = args.split(/\s+/)[0]?.toLowerCase() ?? "";
+    const rest = args.slice(sub.length).trim();
+
+    if (!sub || sub === "list") {
+      const jobs = runtime.api.cronEngine?.listJobs() ?? [];
+      if (jobs.length === 0) {
+        await ctx.reply("No cron jobs.");
+        return;
+      }
+      const lines = jobs.map((j: any) => {
+        const status = j.paused ? "⏸" : j.enabled === false ? "⛔" : "▶";
+        const sched = j.schedule.kind === "cron" ? j.schedule.expr
+          : j.schedule.kind === "every" ? `every ${j.schedule.expr}`
+          : `at ${j.schedule.expr}`;
+        return `${status} <code>${escapeHtml(j.id)}</code> — ${escapeHtml(sched)}\n   ${escapeHtml(j.payload.text.slice(0, 80))}`;
+      });
+      await ctx.reply(`<b>Cron Jobs (${jobs.length})</b>\n\n${lines.join("\n\n")}`, { parse_mode: "HTML" });
+      return;
+    }
+
+    if (sub === "pause") {
+      if (!rest) { await ctx.reply("Usage: /cron pause <id>"); return; }
+      const ok = runtime.api.cronEngine?.pauseJob(rest);
+      await ctx.reply(ok ? `⏸ Paused: ${rest}` : `Not found: ${rest}`);
+      return;
+    }
+
+    if (sub === "resume") {
+      if (!rest) { await ctx.reply("Usage: /cron resume <id>"); return; }
+      const ok = runtime.api.cronEngine?.resumeJob(rest);
+      await ctx.reply(ok ? `▶ Resumed: ${rest}` : `Not found or not paused: ${rest}`);
+      return;
+    }
+
+    if (sub === "remove") {
+      if (!rest) { await ctx.reply("Usage: /cron remove <id>"); return; }
+      const ok = runtime.api.cronEngine?.removeJob(rest);
+      await ctx.reply(ok ? `🗑 Removed: ${rest}` : `Not found: ${rest}`);
+      return;
+    }
+
+    if (sub === "run") {
+      if (!rest) { await ctx.reply("Usage: /cron run <id>"); return; }
+      const ok = runtime.api.cronEngine?.runJob(rest);
+      await ctx.reply(ok ? `🚀 Triggered: ${rest}` : `Not found: ${rest}`);
+      return;
+    }
+
+    await ctx.reply(
+      [
+        "<b>Cron Commands</b>",
+        "",
+        "/cron list — 查看所有任务",
+        "/cron pause &lt;id&gt; — 暂停任务",
+        "/cron resume &lt;id&gt; — 恢复任务",
+        "/cron remove &lt;id&gt; — 删除任务",
+        "/cron run &lt;id&gt; — 手动触发",
+      ].join("\n"),
+      { parse_mode: "HTML" },
+    );
   });
 
   bot.command("model", async (ctx: any) => {

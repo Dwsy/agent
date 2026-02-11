@@ -21,6 +21,15 @@ const STATIC_COMMANDS: SharedSlashCommand[] = [
     .addStringOption((o) =>
       o.setName("id").setDescription("provider/modelId").setRequired(false)
     ),
+  new SlashCommandBuilder()
+    .setName("cron")
+    .setDescription("Manage cron jobs")
+    .addStringOption((o) =>
+      o.setName("action").setDescription("list/pause/resume/remove/run").setRequired(false)
+    )
+    .addStringOption((o) =>
+      o.setName("id").setDescription("Job ID (for pause/resume/remove/run)").setRequired(false)
+    ),
 ];
 
 /** Reserved names that cannot be used as agent prefix commands */
@@ -88,6 +97,7 @@ export function helpText(rt?: DiscordPluginRuntime): string {
     "/compact — Compact context",
     "/think `<level>` — Set thinking level (off/minimal/low/medium/high/xhigh)",
     "/model `[provider/modelId]` — View or switch model",
+    "/cron `[action]` `[id]` — Manage cron jobs (list/pause/resume/remove/run)",
     "/stop — Abort current run",
     "/help — This message",
   ];

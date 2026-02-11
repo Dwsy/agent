@@ -317,6 +317,52 @@ export async function handleInteraction(rt: DiscordPluginRuntime, interaction: I
       return;
     }
 
+    case "cron": {
+      const action = (interaction.options.getString("action") ?? "list").toLowerCase();
+      const jobId = interaction.options.getString("id") ?? "";
+      const cronEngine = rt.api.cronEngine;
+
+      if (!cronEngine) {
+        await interaction.reply("Cron engine not available.");
+        return;
+      }
+
+      if (action === "list") {
+        const jobs = cronEngine.listJobs();
+        if (jobs.length === 0) {
+          await interaction.reply("No cron jobs.");
+          return;
+        }
+        const lines = jobs.map((j: any) => {
+          const status = j.paused ? "⏸" : j.enabled === false ? "⛔" : "▶";
+          const sched = j.schedule.kind === "cron" ? j.schedule.expr
+            : j.schedule.kind === "every" ? `every ${j.schedule.expr}`
+            : `at ${j.schedule.expr}`;
+          return `${status} \`${j.id}\` — ${sched}\n   ${j.payload.text.slice(0, 80)}`;
+        });
+        await interaction.reply(`**Cron Jobs (${jobs.length})**\n\n${lines.join("\n\n")}`);
+        return;
+      }
+
+      if (!jobId) {
+        await interaction.reply(`Usage: \`/cron ${action} <id>\``);
+        return;
+      }
+
+      if (action === "pause") {
+        await interaction.reply(cronEngine.pauseJob(jobId) ? `⏸ Paused: ${jobId}` : `Not found: ${jobId}`);
+      } else if (action === "resume") {
+        await interaction.reply(cronEngine.resumeJob(jobId) ? `▶ Resumed: ${jobId}` : `Not found or not paused: ${jobId}`);
+      } else if (action === "remove") {
+        await interaction.reply(cronEngine.removeJob(jobId) ? `🗑 Removed: ${jobId}` : `Not found: ${jobId}`);
+      } else if (action === "run") {
+        await interaction.reply(cronEngine.runJob(jobId) ? `🚀 Triggered: ${jobId}` : `Not found: ${jobId}`);
+      } else {
+        await interaction.reply("Actions: list, pause, resume, remove, run");
+      }
+      return;
+    }
+
     default: {
       // Check if this is an agent prefix command (e.g., /code, /docs)
       const agents = rt.api.config.agents;
