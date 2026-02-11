@@ -77,6 +77,18 @@
     // 记忆去重相似度阈值（0-1，Jaccard 系数）
     "dedupeThreshold": 0.9,
 
+    // 按需搜索：第一条消息时根据内容自动搜索相关记忆
+    "onDemandSearch": {
+      // 是否启用（默认 true）
+      "enabled": true,
+      // 最大返回结果数
+      "maxResults": 5,
+      // 最小匹配分数（0-1）
+      "minScore": 0.2,
+      // 始终加载 High Priority 记忆（作为基础上下文）
+      "alwaysLoadHighPriority": true
+    },
+
     // 搜索默认参数
     "searchDefaults": {
       "maxResults": 20,

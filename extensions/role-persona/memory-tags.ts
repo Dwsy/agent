@@ -84,7 +84,7 @@ async function resolveTagModel(
   ctx: ExtensionContext,
   requested?: string
 ): Promise<{ provider: string; modelId: string; apiKey: string } | null> {
-  const needle = (requested || TAG_MODEL).trim().toLowerCase();
+  const needle = (requested || TAG_MODEL || "").trim().toLowerCase();
   
   if (!needle && ctx.model) {
     const apiKey = await ctx.modelRegistry.getApiKey(ctx.model);

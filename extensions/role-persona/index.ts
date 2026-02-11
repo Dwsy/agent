@@ -41,6 +41,8 @@ import {
   consolidateRoleMemory,
   ensureRoleMemoryFiles,
   listRoleMemory,
+  loadHighPriorityMemories,
+  loadMemoryOnDemand,
   readMemoryPromptBlocks,
   readRoleMemory,
   reinforceRoleLearning,
@@ -80,6 +82,10 @@ const SHUTDOWN_FLUSH_TIMEOUT = config.advanced.shutdownFlushTimeoutMs;
 const EVOLUTION_REMINDER_TURNS = config.advanced.evolutionReminderTurns;
 const SPINNER_INTERVAL = config.ui.spinnerIntervalMs;
 const SPINNER_FRAMES = config.ui.spinnerFrames;
+const ON_DEMAND_SEARCH_ENABLED = config.memory.onDemandSearch.enabled;
+const ON_DEMAND_SEARCH_MAX_RESULTS = config.memory.onDemandSearch.maxResults;
+const ON_DEMAND_SEARCH_MIN_SCORE = config.memory.onDemandSearch.minScore;
+const ON_DEMAND_LOAD_HIGH_PRIORITY = config.memory.onDemandSearch.alwaysLoadHighPriority;
 
 // Default prompt templates moved to role-template.ts
 
@@ -98,6 +104,7 @@ export default function rolePersonaExtension(pi: ExtensionAPI) {
   let autoMemoryLastFlushLen = 0;  // 上次 flush 时的消息数组长度
   let memoryCheckpointSpinner: ReturnType<typeof setInterval> | null = null;
   let memoryCheckpointFrame = 0;
+  let isFirstUserMessage = true;  // 标记是否是第一条用户消息
 
   const normalizePath = (path: string) => path.replace(/\/$/, "");
 
@@ -407,6 +414,9 @@ export default function rolePersonaExtension(pi: ExtensionAPI) {
   // 1. Session start - auto-load role based on cwd mapping
   pi.on("session_start", async (_event, ctx) => {
     ensureRolesDir();
+    
+    // Reset first message flag for on-demand memory search
+    isFirstUserMessage = true;
 
     const config = loadRoleConfig();
     const cwd = ctx.cwd;
@@ -489,11 +499,56 @@ ${buildMemoryEditInstruction(currentRolePath)}`;
     // Normal operation: inject role prompts
     const rolePrompt = await loadRolePrompts(currentRolePath);
 
-    // Load memories
-    const memories = await loadMemoryFiles(currentRolePath);
-    const memoryPrompt = memories.length > 0
-      ? `\n\n## Your Memory\n\n${memories.join("\n\n---\n\n")}`
-      : "";
+    // Memory loading strategy: on-demand search for first message, full load otherwise
+    let memoryPrompt = "";
+    
+    if (ON_DEMAND_SEARCH_ENABLED && isFirstUserMessage) {
+      // First message: use on-demand search based on user query + recent daily memories
+      // Extract query from the last user message in the conversation
+      const messages = (event as any).messages || [];
+      const lastUserMessage = [...messages].reverse().find((m: any) => m.role === "user");
+      const userQuery = lastUserMessage?.content?.[0]?.text || "";
+      
+      const memoryBlocks: string[] = [];
+      
+      // 1. Load on-demand searched memories
+      if (userQuery) {
+        const onDemand = loadMemoryOnDemand(currentRolePath, currentRole, userQuery, {
+          maxResults: ON_DEMAND_SEARCH_MAX_RESULTS,
+          minScore: ON_DEMAND_SEARCH_MIN_SCORE,
+          includeHighPriority: ON_DEMAND_LOAD_HIGH_PRIORITY,
+        });
+        
+        if (onDemand.content) {
+          memoryBlocks.push(onDemand.content);
+          log("memory-on-demand", `First message: loaded ${onDemand.matchCount} relevant memories + high priority`);
+        }
+      } else {
+        // Fallback: load high priority only
+        const highPriority = loadHighPriorityMemories(currentRolePath, currentRole);
+        if (highPriority) {
+          memoryBlocks.push(highPriority);
+        }
+      }
+      
+      // 2. Always load recent daily memories (default behavior)
+      const dailyMemories = await loadMemoryFiles(currentRolePath);
+      if (dailyMemories.length > 0) {
+        memoryBlocks.push(...dailyMemories);
+      }
+      
+      if (memoryBlocks.length > 0) {
+        memoryPrompt = `\n\n## Your Memory\n\n${memoryBlocks.join("\n\n---\n\n")}`;
+      }
+      
+      isFirstUserMessage = false; // Mark as processed
+    } else {
+      // Subsequent messages or on-demand disabled: load recent daily memories only
+      const memories = await loadMemoryFiles(currentRolePath);
+      if (memories.length > 0) {
+        memoryPrompt = `\n\n## Your Memory\n\n${memories.join("\n\n---\n\n")}`;
+      }
+    }
 
     return {
       systemPrompt: `${event.systemPrompt}\n\n${fileLocationInstruction}\n\n${rolePrompt}${memoryPrompt}`
@@ -547,7 +602,7 @@ ${buildMemoryEditInstruction(currentRolePath)}`;
       id: Type.Optional(Type.String({ description: "Memory id" })),
       model: Type.Optional(Type.String({ description: "Optional model override, e.g. openai/gpt-4.1-mini" })),
     }),
-    async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
+    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       if (!currentRole || !currentRolePath) {
         return { content: [{ type: "text", text: "No active role mapped in current directory." }], details: { error: true } };
       }
@@ -680,7 +735,7 @@ ${buildMemoryEditInstruction(currentRolePath)}`;
 
         case "llm_tidy": {
           log("memory-tool", `llm_tidy start model=${params.model || "(session)"}`);
-          const llm = await runLlmMemoryTidy(currentRolePath, currentRole, _ctx, params.model);
+          const llm = await runLlmMemoryTidy(currentRolePath, currentRole, ctx, params.model);
           if ("error" in llm) {
             log("memory-tool", `llm_tidy failed: ${llm.error}`);
             return { content: [{ type: "text", text: `LLM tidy failed: ${llm.error}` }], details: { error: true } };

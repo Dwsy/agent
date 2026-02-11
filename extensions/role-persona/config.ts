@@ -37,6 +37,12 @@ export interface MemoryConfig {
   defaultCategories: string[];
   dailyPathTemplate: string;
   dedupeThreshold: number;
+  onDemandSearch: {
+    enabled: boolean;
+    maxResults: number;
+    minScore: number;
+    alwaysLoadHighPriority: boolean;
+  };
   searchDefaults: {
     maxResults: number;
     minScore: number;
@@ -90,6 +96,12 @@ const DEFAULT_CONFIG: RolePersonaConfig = {
     defaultCategories: ["Communication", "Code", "Tools", "Workflow", "General"],
     dailyPathTemplate: "{rolePath}/memory/{date}.md",
     dedupeThreshold: 0.9,
+    onDemandSearch: {
+      enabled: true,
+      maxResults: 5,
+      minScore: 0.2,
+      alwaysLoadHighPriority: true,
+    },
     searchDefaults: {
       maxResults: 20,
       minScore: 0.1,
