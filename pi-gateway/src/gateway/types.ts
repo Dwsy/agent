@@ -1,0 +1,85 @@
+/**
+ * Shared context object for all gateway sub-modules.
+ * Injected by Gateway class after construction — avoids circular imports.
+ *
+ * Sub-modules import this type only, never server.ts directly.
+ */
+
+import type { ServerWebSocket } from "bun";
+import type { Config, CronJob } from "../core/config.ts";
+import type { RpcPool } from "../core/rpc-pool.ts";
+import type { RpcClient } from "../core/rpc-client.ts";
+import type { MessageQueueManager, PrioritizedWork } from "../core/message-queue.ts";
+import type { PluginRegistryState } from "../plugins/loader.ts";
+import type { SessionStore } from "../core/session-store.ts";
+import type { TranscriptLogger } from "../core/transcript-logger.ts";
+import type { MetricsCollector } from "../core/metrics.ts";
+import type { ExtensionUIForwarder } from "../core/extension-ui-forwarder.ts";
+import type { SystemEventsQueue } from "../core/system-events.ts";
+import type { CronEngine } from "../core/cron.ts";
+import type { HeartbeatExecutor } from "../core/heartbeat-executor.ts";
+import type { DelegateExecutor } from "../core/delegate-executor.ts";
+import type { DeduplicationCache } from "../core/dedup-cache.ts";
+import type { Logger, SessionKey, InboundMessage } from "../core/types.ts";
+import type { buildCapabilityProfile } from "../core/capability-profile.ts";
+
+export type TelegramMessageMode = "steer" | "follow-up" | "interrupt";
+
+export interface WsClientData {
+  clientId: string;
+}
+
+export interface GatewayContext {
+  // Core config
+  config: Config;
+
+  // RPC process management
+  pool: RpcPool;
+
+  // Message queue
+  queue: MessageQueueManager;
+
+  // Plugin registry
+  registry: PluginRegistryState;
+
+  // Session persistence
+  sessions: SessionStore;
+
+  // Transcript logging
+  transcripts: TranscriptLogger;
+
+  // Metrics collection
+  metrics: MetricsCollector;
+
+  // Extension UI forwarding (pi TUI → WebSocket)
+  extensionUI: ExtensionUIForwarder;
+
+  // System events queue (cron → heartbeat)
+  systemEvents: SystemEventsQueue;
+
+  // Deduplication cache
+  dedup: DeduplicationCache;
+
+  // Optional subsystems
+  cron: CronEngine | null;
+  heartbeat: HeartbeatExecutor | null;
+  delegateExecutor: DelegateExecutor | null;
+
+  // Logging
+  log: Logger;
+
+  // WebSocket client tracking
+  wsClients: Map<string, ServerWebSocket<WsClientData>>;
+
+  // State
+  noGui: boolean;
+  sessionMessageModeOverrides: Map<SessionKey, TelegramMessageMode>;
+
+  // Methods (bound from Gateway)
+  broadcastToWs: (event: string, payload: unknown) => void;
+  buildSessionProfile: (sessionKey: SessionKey, role: string) => ReturnType<typeof buildCapabilityProfile>;
+  dispatch: (msg: InboundMessage) => Promise<void>;
+  compactSessionWithHooks: (sessionKey: SessionKey, instructions?: string) => Promise<void>;
+  listAvailableRoles: () => string[];
+  setSessionRole: (sessionKey: SessionKey, newRole: string) => Promise<boolean>;
+}
