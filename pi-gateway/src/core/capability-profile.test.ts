@@ -79,11 +79,16 @@ describe("capability profile", () => {
       sessionKey: "agent:main:main:main",
     });
 
-    expect(getFlagValues(profile.args, "--extension")).toEqual([
+    const exts = getFlagValues(profile.args, "--extension");
+    // Role extensions first, then global, then optional gateway-tools at tail
+    expect(exts.slice(0, 3)).toEqual([
       resolve("./ext/role"),
       resolve("./ext/shared"),
       resolve("./ext/global"),
     ]);
+    if (exts.length > 3) {
+      expect(exts[exts.length - 1]).toContain("gateway-tools");
+    }
     expect(getFlagValues(profile.args, "--prompt-template")).toEqual([
       resolve("./prompt/role"),
       resolve("./prompt/shared"),
