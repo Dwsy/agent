@@ -1,5 +1,56 @@
 # Changelog
 
+## [Unreleased] - v3.3 - 2026-02-11
+
+**BBD Test Results:** 361/361 pass, 0 fail ✅ (v3.2: 305, v3.3: +56)
+
+### Added (F1: System Prompt 3-Layer Architecture — v3.3)
+- Three-layer prompt system: Layer 1 Gateway Identity (static), Layer 2 Capability Prompts (conditional), Layer 3 Per-Message Context (channel handlers) (architecture by NiceViper)
+- `buildGatewayIdentityPrompt()`: runtime line (agent/host/os/capabilities), gateway rules, always injected unless `identity=false` (by DarkUnion)
+- Enhanced heartbeat segment: HEARTBEAT_OK decision guide, HEARTBEAT.md format example, `alwaysHeartbeat` config option (by TrueJaguar)
+- Enhanced cron segment: /cron command reference, schedule formats, execution modes, event processing rules (by JadeHawk)
+- Enhanced media segment: type inference table, blocked path examples, multi-MEDIA rules (by TrueJaguar)
+- `buildDelegationSegment()`: agent list, constraints (timeout/depth/concurrent), delegation guidelines (by JadeHawk)
+- `buildChannelSegment()`: Telegram (4096 char, HTML), Discord (2000 char, Markdown), WebChat (lightbox, sessions) formatting hints (by MintHawk)
+- `GatewayPromptsConfig` extended: `identity`, `channel`, `delegation`, `alwaysHeartbeat` toggles (by NiceViper)
+- Tests SP-10 ~ SP-30 (21 scenarios) (by HappyNova)
+
+### Added (F2: send_media Tool — v3.3)
+- `POST /api/media/send` endpoint in `src/api/media-send.ts`: dual auth (sessionKey + internalToken), path security via `validateMediaPath`, media type auto-inference (photo/audio/video/document), caption support (by NiceViper)
+- `extensions/gateway-tools/index.ts`: `send_media` tool registration when `PI_GATEWAY_URL` present, calls `/api/media/send`, returns `MEDIA:` directive for channel delivery (by NiceViper)
+- `getGatewayInternalToken()`: HMAC-derived per-process token for pi→gateway auth (by NiceViper)
+- `capability-profile.ts`: injects `PI_GATEWAY_URL` + `PI_GATEWAY_INTERNAL_TOKEN` env vars into spawned pi processes (by NiceViper)
+- Tests MS-10 ~ MS-30 (21 scenarios) (by HappyNova)
+
+### Added (F3: S1 MEDIA Security Hardening — v3.3)
+- `validateMediaPath` hardened: URL scheme regex (`/^[a-zA-Z][a-zA-Z0-9+.-]*:/`), `data:` URI blocking, whitespace/null byte guard (by TrueJaguar)
+- `parseOutboundMediaDirectives` now validates `[photo]`/`[audio]` directive paths via `validateMediaPath`, blocking absolute/traversal/scheme paths (by TrueJaguar)
+- `sendTelegramMedia` entry-point guard: validates all local paths before dispatch, covering `/photo`/`/audio` command paths (by TrueJaguar)
+- `normalizePath` dead code cleanup: removed `file://` expansion (blocked by validateMediaPath, contradicted system prompt rules) (by TrueJaguar)
+- Tests S1-1 ~ S1-14 in `bbd-v33-media-security.test.ts` (by TrueJaguar)
+
+### Added (F4: Telegram outbound.sendMedia — v3.3)
+- `sendMediaViaAccount()` in `handlers.ts`: multi-account + topic routing via `parseTelegramTarget`, delegates to `sendTelegramMedia` with full path validation (by TrueJaguar)
+- Telegram `ChannelPlugin.outbound.sendMedia` wired in `index.ts` — enables direct media delivery via `POST /api/media/send` without directive fallback (by TrueJaguar)
+
+### Changed (Q1-Q3: Code Quality — v3.3)
+- **P0 server.ts modularization** (by DarkUnion):
+  - `src/api/http-router.ts`: HTTP route dispatch
+  - `src/api/openai-compat.ts`: OpenAI-compatible API endpoints
+  - `src/api/webhook-api.ts`: webhook wake endpoint
+  - `src/api/session-api.ts`: session CRUD + model/think/reset APIs
+- **P1 server.ts modularization** (by MintHawk, JadeHawk, NiceViper):
+  - `src/gateway/command-handler.ts`: slash command parsing + TUI guard + registry dispatch + RPC fallback
+  - `src/gateway/role-manager.ts`: role listing + session role switching
+  - `src/gateway/tool-executor.ts`: tool registry, execution, delegate_to_agent interception
+  - `src/gateway/types.ts`: GatewayContext interface for dependency injection
+- server.ts reduced from 2881 → 1790 lines (38% reduction, 11 modules extracted)
+- Media routes extracted from `server.ts` to `src/api/media-send.ts` (by NiceViper)
+- `system-prompts.ts` rewritten from 3 conditional segments to full 3-layer architecture with typed builders (by NiceViper + all contributors)
+- Server.ts modularization refactor spec: P2 (message-pipeline, plugin-api-factory) planned
+
+---
+
 ## [v3.2] - 2026-02-11
 
 **BBD Test Results:** 305/305 pass, 0 fail ✅
