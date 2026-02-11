@@ -18,7 +18,7 @@
  */
 
 import type { GatewayContext } from "./types.ts";
-import type { InboundMessage, SessionKey } from "../core/types.ts";
+import type { InboundMessage } from "../core/types.ts";
 import type { RpcClient } from "../core/rpc-client.ts";
 
 // TUI-dependent commands that hang in RPC mode
