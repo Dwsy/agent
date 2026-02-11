@@ -694,7 +694,32 @@ export default function (pi: ExtensionAPI) {
       try {
         ctx.ui.setWorkingMessage("导出记忆...");
         
-        const rolePath = path.join(os.homedir(), ".pi/agent/roles/zero");
+        // 从 role-persona 配置中读取当前角色
+        const roleConfigPath = path.join(os.homedir(), ".pi/agent/roles/.config.json");
+        let currentRole = "zero";
+        if (fs.existsSync(roleConfigPath)) {
+          try {
+            const config = JSON.parse(fs.readFileSync(roleConfigPath, "utf-8"));
+            // 尝试获取当前工作目录对应的角色映射
+            const cwd = process.cwd();
+            if (config.mappings) {
+              for (const [mappedPath, role] of Object.entries(config.mappings)) {
+                if (cwd.startsWith(mappedPath)) {
+                  currentRole = role as string;
+                  break;
+                }
+              }
+            }
+            // 如果没有映射，使用默认角色
+            if (currentRole === "zero" && config.defaultRole) {
+              currentRole = config.defaultRole;
+            }
+          } catch {
+            // 解析失败时使用默认 zero
+          }
+        }
+        
+        const rolePath = path.join(os.homedir(), ".pi/agent/roles", currentRole);
         const items: MemoryItem[] = [];
         
         if (fs.existsSync(path.join(rolePath, "MEMORY.md"))) {
@@ -713,10 +738,10 @@ export default function (pi: ExtensionAPI) {
         const tree = buildTree(items);
         const html = generateHtml(tree, items);
         
-        const outputPath = path.join(os.tmpdir(), `memories-${Date.now()}.html`);
+        const outputPath = path.join(os.tmpdir(), `memories-${currentRole}-${Date.now()}.html`);
         fs.writeFileSync(outputPath, html);
         
-        ctx.ui.notify(`✓ 导出 ${items.length} 条记忆`, "success");
+        ctx.ui.notify(`✓ 导出角色 [${currentRole}] 的 ${items.length} 条记忆`, "success");
         
         if (shouldOpen || await ctx.ui.confirm("打开文件?", outputPath)) {
           const cmd = process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open";
