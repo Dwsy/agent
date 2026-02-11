@@ -1,7 +1,7 @@
 import { Client, GatewayIntentBits, Partials } from "discord.js";
-import type { ChannelPlugin, GatewayPluginApi } from "../../types.ts";
+import type { ChannelPlugin, GatewayPluginApi, MediaSendResult, MediaSendOptions } from "../../types.ts";
 import type { DiscordChannelConfig, DiscordPluginRuntime } from "./types.ts";
-import { handleMessage, handleInteraction, sendOutbound } from "./handlers.ts";
+import { handleMessage, handleInteraction, sendOutbound, sendMediaOutbound } from "./handlers.ts";
 import { registerGuildCommands } from "./commands.ts";
 import { splitDiscordText } from "./format.ts";
 
@@ -24,6 +24,10 @@ const discordPlugin: ChannelPlugin = {
     async sendText(target: string, text: string) {
       if (!runtime) return;
       await sendOutbound(runtime, target, text);
+    },
+    async sendMedia(target: string, filePath: string, opts?: MediaSendOptions): Promise<MediaSendResult> {
+      if (!runtime) return { ok: false, error: "Discord not initialized" };
+      return sendMediaOutbound(runtime, target, filePath, opts);
     },
   },
 
