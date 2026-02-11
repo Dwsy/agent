@@ -12,10 +12,6 @@ export interface TelegramSendOptions {
 
 
 function normalizePath(pathRaw: string): string {
-  if (pathRaw.startsWith("file://")) {
-    return decodeURIComponent(pathRaw.slice("file://".length));
-  }
-  // Don't expand ~ — system prompt tells agents to avoid ~ paths
   return pathRaw;
 }
 
@@ -50,9 +46,15 @@ export function parseOutboundMediaDirectives(text: string): TelegramParsedOutbou
   for (const line of lines) {
     const match = line.match(directiveRe);
     if (match) {
+      const url = match[2].trim();
+      // Security: validate local paths via centralized checker
+      if (!isHttpUrl(url) && !validateMediaPath(url)) {
+        remain.push(line);
+        continue;
+      }
       media.push({
         kind: match[1].toLowerCase() as "photo" | "audio",
-        url: match[2].trim(),
+        url,
         caption: match[3]?.trim() || undefined,
       });
       continue;
@@ -171,6 +173,10 @@ export async function sendTelegramMedia(bot: Bot, chatId: string, item: Telegram
   if (isHttpUrl(item.url)) {
     await sendRemoteByKind(bot, chatId, item, opts);
     return;
+  }
+  // Security: validate all local paths before sending
+  if (!validateMediaPath(item.url)) {
+    throw new Error(`Blocked unsafe media path: ${item.url}`);
   }
   await sendLocalFileByKind(bot, chatId, item, opts);
 }
