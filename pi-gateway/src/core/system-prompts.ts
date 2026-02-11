@@ -1,4 +1,89 @@
+/**
+ * Three-Layer Gateway System Prompt Architecture
+ *
+ * Layer 1: Gateway Identity (static, always injected)
+ *   - Tells the agent it's running inside pi-gateway
+ *   - Runtime context (agent, channel, capabilities)
+ *   - Gateway-specific behavior rules
+ *
+ * Layer 2: Capability Prompts (conditional, per-feature)
+ *   - Heartbeat protocol
+ *   - Cron protocol + management commands
+ *   - Media reply syntax
+ *   - Delegation protocol
+ *   - Channel-specific formatting hints
+ *
+ * Layer 3: Per-Message Context (injected into message body by channel handlers)
+ *   - Media notes ([media attached: ...])
+ *   - Media reply hints (only when media present)
+ *   - Cron event prefix ([CRON:{id}] ...)
+ *   - NOT handled here — handled by channel plugins at dispatch time
+ */
+
 import type { Config } from "./config.ts";
+import { hostname as getHostname } from "node:os";
+
+// ============================================================================
+// Layer 1: Gateway Identity
+// ============================================================================
+
+export interface GatewayIdentityContext {
+  agentId?: string;
+  hostname?: string;
+}
+
+/**
+ * Build the gateway identity prompt (Layer 1).
+ * Always injected — tells the agent what environment it's running in.
+ * Only includes static, process-level info. Channel is session-level → Layer 3.
+ */
+export function buildGatewayIdentityPrompt(
+  config: Config,
+  context?: GatewayIdentityContext,
+): string {
+  const agentId = context?.agentId ?? config.agents?.default ?? "main";
+  const hostname = context?.hostname ?? getHostname();
+  const os = `${process.platform} (${process.arch})`;
+  const agentCount = config.agents?.list?.length ?? 1;
+
+  const runtimeParts = [
+    `agent=${agentId}`,
+    `host=${hostname}`,
+    `os=${os}`,
+    `gateway=pi-gateway`,
+    `agents=${agentCount}`,
+  ];
+
+  // Add enabled capabilities summary
+  const caps: string[] = [];
+  if (config.heartbeat?.enabled) caps.push("heartbeat");
+  if (config.cron?.enabled) caps.push("cron");
+  if (hasAnyChannel(config)) caps.push("media");
+  if (agentCount > 1) caps.push("delegation");
+  if (caps.length > 0) runtimeParts.push(`capabilities=${caps.join(",")}`);
+
+  const lines = [
+    "## Gateway Environment",
+    "",
+    "You are running inside pi-gateway, a multi-agent gateway that routes messages from messaging channels (Telegram, Discord, WebChat) to isolated pi agent processes via RPC.",
+    "",
+    `Runtime: ${runtimeParts.join(" | ")}`,
+    "",
+    "Gateway rules:",
+    "- Your replies are delivered to messaging channels — format for messaging context: prefer structured, scannable responses over long prose",
+    "- Do not reference local file paths in replies unless the user is technical",
+    "- The gateway handles message routing, streaming, chunking, and delivery",
+    "- Each channel has its own formatting rules (see Channel Formatting section if present)",
+  ];
+
+  return lines.join("\n");
+}
+
+// ============================================================================
+// Layer 2: Capability Prompts
+// ============================================================================
+
+// --- Heartbeat ---
 
 const HEARTBEAT_SEGMENT = `## Gateway: Heartbeat Protocol
 
@@ -13,17 +98,48 @@ When woken by heartbeat:
 
 The gateway suppresses HEARTBEAT_OK responses (they won't reach the user). Only non-OK responses are delivered as alerts.`;
 
-const CRON_SEGMENT = `## Gateway: Scheduled Task Events
+// --- Cron ---
 
-The gateway may inject scheduled task events in the format:
-- [CRON:{job-id}] {task description}
+/**
+ * Build the cron capability prompt.
+ *
+ * @owner JadeHawk (SwiftQuartz)
+ */
+const CRON_SEGMENT = `## Gateway: Scheduled Tasks
 
-When you see these events:
+The gateway runs a cron engine for scheduled task execution.
+
+**Managing jobs (slash commands):**
+- /cron list — view all jobs with status (active/paused)
+- /cron pause <id> — pause a running job
+- /cron resume <id> — resume a paused job
+- /cron remove <id> — delete a job permanently
+- /cron run <id> — manually trigger a job now (for debugging)
+
+**Schedule formats:**
+- Cron expression: "0 */6 * * *" (standard cron, supports timezone)
+- Interval: "30m", "2h", "1d" (fixed interval)
+- One-shot: ISO 8601 datetime (fires once, auto-removes)
+
+**Execution modes:**
+- Isolated (default): job runs in its own session, results optionally announced
+- Main: job is injected into your session as a system event, processed during heartbeat
+
+**When the gateway injects cron events:**
+Events appear as \`[CRON:{job-id}] {task description}\` in your message.
 1. Process each task according to its description
 2. Report results for each task
 3. If ALL tasks completed successfully, include HEARTBEAT_OK at the end
 4. If any task failed, describe the failure WITHOUT HEARTBEAT_OK`;
 
+// --- Media ---
+
+/**
+ * Media reply syntax prompt (system prompt level).
+ * Note: Per-message media hints (Layer 3) are injected by channel handlers.
+ *
+ * @stub TrueJaguar (KeenDragon) — enhance with security rules + supported formats
+ */
 const MEDIA_SEGMENT = `## Gateway: Media Replies
 
 To send a file (image, audio, document) back to the user, use this syntax on a separate line:
@@ -34,30 +150,164 @@ Examples:
 - MEDIA:./report.pdf
 
 Rules:
-- Path must be relative (no absolute paths, no ~ paths)
+- Path must be relative to your workspace (no absolute paths, no ~ paths, no ..)
 - One MEDIA directive per line
 - Text before/after MEDIA lines is sent as normal message
-- Supported: images, audio, video, documents`;
+- Supported: images, audio, video, documents
+- Security: paths are validated — traversal, symlinks, and scheme URIs are blocked`;
+
+// --- Delegation ---
 
 /**
- * Build gateway-injected system prompt based on enabled features.
- * Returns null when no features need injection (saves tokens).
+ * Build the delegation protocol prompt.
+ *
+ * @owner JadeHawk (SwiftQuartz)
  */
-export function buildGatewaySystemPrompt(config: Config): string | null {
+export function buildDelegationSegment(config: Config): string | null {
+  const agents = config.agents?.list ?? [];
+  if (agents.length <= 1) return null;
+
+  const agentLines = agents.map((a) => {
+    const desc = (a as any).description ? ` — ${(a as any).description}` : "";
+    return `  - ${a.id}${desc}`;
+  }).join("\n");
+  const timeout = config.delegation.timeoutMs;
+  const maxDepth = config.delegation.maxDepth;
+  const maxConcurrent = config.delegation.maxConcurrent;
+  const onTimeout = config.delegation.onTimeout;
+
+  return `## Gateway: Agent Delegation
+
+You can delegate tasks to other agents via the delegate_to_agent tool.
+
+**Available agents:**
+${agentLines}
+
+**Constraints:**
+- Timeout: ${Math.round(timeout / 1000)}s per delegation (max ${Math.round(config.delegation.maxTimeoutMs / 1000)}s)
+- Max chain depth: ${maxDepth} (nested A→B→C delegations)
+- Max concurrent: ${maxConcurrent} per agent
+- On timeout: ${onTimeout === "return-partial" ? "returns partial results" : "aborts the call"}
+
+**When to delegate:**
+- Task requires a different workspace or specialized skill set
+- You want to run independent subtasks in parallel
+- Task is better suited to a specific agent's configuration
+
+**Guidelines:**
+- Keep delegation tasks focused and self-contained
+- Include enough context for the target agent to work independently
+- Delegation is synchronous — you wait for the result before continuing`;
+}
+
+// --- Channel-specific ---
+
+/**
+ * Build channel-specific formatting hints.
+ *
+ * Lists all enabled channels so the agent knows formatting rules and limits.
+ * Since RPC processes are pool-level (not session-level), we include all active channels.
+ *
+ * @owner MintHawk (KeenUnion)
+ */
+export function buildChannelSegment(config: Config): string | null {
+  const hints: string[] = [];
+
+  if ((config.channels as any)?.telegram && (config.channels as any).telegram.enabled !== false) {
+    hints.push(`### Telegram
+- Max message length: 4096 characters (auto-chunked if exceeded)
+- Formatting: HTML tags (bold, italic, code, pre, blockquote) — avoid nested markdown
+- Streaming: replies are edited in-place with ~1s throttle
+- Media: images/documents sent via MEDIA: directive; voice messages are transcribed before delivery
+- Slash commands: /new, /status, /compact, /model, /role, /cron, /help`);
+  }
+
+  if ((config.channels as any)?.discord && (config.channels as any).discord.enabled !== false) {
+    hints.push(`### Discord
+- Max message length: 2000 characters (auto-chunked if exceeded)
+- Formatting: standard Markdown (bold, italic, code blocks, blockquotes)
+- Streaming: replies edited with 500ms throttle, truncated at ~1800 chars during streaming
+- Threads: supported — replies stay in the originating thread
+- Slash commands: /new, /status, /compact, /model, /think, /stop, /help`);
+  }
+
+  // WebChat is always available when gateway is running
+  hints.push(`### WebChat
+- No hard message length limit
+- Formatting: full Markdown with syntax-highlighted code blocks
+- Media: images rendered inline with click-to-expand lightbox; non-images shown as download links
+- Sessions: users can create, switch, and delete sessions via sidebar`);
+
+  return `## Gateway: Channel Formatting
+
+Your replies are delivered to messaging channels. Each has different formatting rules and limits.
+
+${hints.join("\n\n")}
+
+General guidelines:
+- Keep replies concise — messaging UIs have limited space
+- Prefer structured output (lists, code blocks) over long paragraphs
+- Do not reference local file paths unless the user is technical`;
+}
+
+// ============================================================================
+// Main Builder
+// ============================================================================
+
+/**
+ * Build the complete gateway system prompt by assembling all layers.
+ * Returns null when no features need injection (saves tokens).
+ *
+ * @owner NiceViper (DarkFalcon) — integration + config resolution
+ */
+export function buildGatewaySystemPrompt(
+  config: Config,
+  context?: GatewayIdentityContext,
+): string | null {
   const overrides = config.agent.gatewayPrompts;
   const segments: string[] = [];
 
-  const heartbeatEnabled = overrides?.heartbeat ?? config.heartbeat?.enabled ?? false;
+  // --- Layer 1: Identity ---
+  const identityEnabled = overrides?.identity !== false; // default: true
+  if (identityEnabled) {
+    segments.push(buildGatewayIdentityPrompt(config, context));
+  }
+
+  // --- Layer 2: Capabilities ---
+
+  // Heartbeat
+  const heartbeatEnabled =
+    overrides?.heartbeat ?? overrides?.alwaysHeartbeat ?? config.heartbeat?.enabled ?? false;
   if (heartbeatEnabled) segments.push(HEARTBEAT_SEGMENT);
 
+  // Cron
   const cronEnabled = overrides?.cron ?? config.cron?.enabled ?? false;
   if (cronEnabled) segments.push(CRON_SEGMENT);
 
+  // Media
   const mediaEnabled = overrides?.media ?? hasAnyChannel(config);
   if (mediaEnabled) segments.push(MEDIA_SEGMENT);
 
+  // Delegation
+  const delegationEnabled = overrides?.delegation ?? (config.agents?.list?.length ?? 0) > 1;
+  if (delegationEnabled) {
+    const delegationSegment = buildDelegationSegment(config);
+    if (delegationSegment) segments.push(delegationSegment);
+  }
+
+  // Channel-specific hints
+  const channelEnabled = overrides?.channel ?? hasAnyChannel(config);
+  if (channelEnabled) {
+    const channelSegment = buildChannelSegment(config);
+    if (channelSegment) segments.push(channelSegment);
+  }
+
   return segments.length > 0 ? segments.join("\n\n") : null;
 }
+
+// ============================================================================
+// Helpers
+// ============================================================================
 
 function hasAnyChannel(config: Config): boolean {
   const channels = config.channels;
@@ -66,3 +316,22 @@ function hasAnyChannel(config: Config): boolean {
   if ((channels as any).discord?.enabled !== false && (channels as any).discord) return true;
   return false;
 }
+
+function resolveActiveChannel(config: Config): string | undefined {
+  const channels: string[] = [];
+  if ((config.channels as any)?.telegram?.enabled !== false && (config.channels as any)?.telegram)
+    channels.push("telegram");
+  if ((config.channels as any)?.discord?.enabled !== false && (config.channels as any)?.discord)
+    channels.push("discord");
+  if (channels.length === 0) return undefined;
+  if (channels.length === 1) return channels[0];
+  return channels.join("+");
+}
+
+// ============================================================================
+// Backward-compat exports (used by existing tests)
+// ============================================================================
+
+export const HEARTBEAT_PROMPT = HEARTBEAT_SEGMENT;
+export const CRON_PROMPT = CRON_SEGMENT;
+export const MEDIA_PROMPT = MEDIA_SEGMENT;

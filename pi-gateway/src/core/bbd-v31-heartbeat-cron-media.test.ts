@@ -835,9 +835,13 @@ describe("System Prompt Injection (SP-1 ~ SP-6)", () => {
     expect(prompt).toContain("Media Replies");
   });
 
-  test("SP-4: nothing enabled → returns null", () => {
+  test("SP-4: nothing enabled → identity prompt only (no capability segments)", () => {
     const prompt = buildGatewaySystemPrompt(makeConfig({}));
-    expect(prompt).toBeNull();
+    expect(prompt).not.toBeNull();
+    expect(prompt).toContain("Gateway Environment");
+    expect(prompt).not.toContain("Heartbeat Protocol");
+    expect(prompt).not.toContain("Scheduled Task");
+    expect(prompt).not.toContain("Media Replies");
   });
 
   test("SP-5: user appendSystemPrompt + gateway prompts combine", () => {
