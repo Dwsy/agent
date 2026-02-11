@@ -151,6 +151,15 @@ export interface AgentsConfig {
   bindings?: AgentBinding[];
 }
 
+export interface GatewayPromptsConfig {
+  /** Override heartbeat prompt injection. Default: auto (true when heartbeat.enabled). */
+  heartbeat?: boolean;
+  /** Override cron prompt injection. Default: auto (true when cron.enabled). */
+  cron?: boolean;
+  /** Override media prompt injection. Default: auto (true when any channel enabled). */
+  media?: boolean;
+}
+
 export interface AgentConfig {
   model?: string;
   thinkingLevel?: ThinkingLevel;
@@ -160,6 +169,8 @@ export interface AgentConfig {
   systemPrompt?: string;
   /** Append extra system prompt instructions (text or file path). */
   appendSystemPrompt?: string;
+  /** Control gateway-injected protocol prompts. */
+  gatewayPrompts?: GatewayPromptsConfig;
   /** Layered base skills (legacy/original pi skills). */
   skillsBase?: string[];
   /** Layered gateway-specific skills (higher priority than base). */

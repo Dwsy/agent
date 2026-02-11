@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 import type { Config, RoleCapabilityConfig } from "./config.ts";
+import { buildGatewaySystemPrompt } from "./system-prompts.ts";
 import type { SessionKey } from "./types.ts";
 
 export interface CapabilityProfileInput {
@@ -135,8 +136,12 @@ function appendRuntimePromptArgs(args: string[], config: Config): void {
   if (config.agent.systemPrompt?.trim()) {
     args.push("--system-prompt", expandHome(config.agent.systemPrompt.trim()));
   }
-  if (config.agent.appendSystemPrompt?.trim()) {
-    args.push("--append-system-prompt", expandHome(config.agent.appendSystemPrompt.trim()));
+
+  const userAppend = config.agent.appendSystemPrompt?.trim() ?? "";
+  const gatewayAppend = buildGatewaySystemPrompt(config);
+  const combined = [userAppend, gatewayAppend].filter(Boolean).join("\n\n");
+  if (combined) {
+    args.push("--append-system-prompt", combined);
   }
 }
 

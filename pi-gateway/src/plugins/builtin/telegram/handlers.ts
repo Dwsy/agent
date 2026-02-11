@@ -750,8 +750,7 @@ async function handleMessageCommon(runtime: TelegramPluginRuntime, account: Tele
     const mediaNote = images.length === 1
       ? `[media attached: 1 image]`
       : `[media attached: ${images.length} images]`;
-    const replyHint = `[When you want to send a file back, use MEDIA:<path> on a separate line (e.g., MEDIA:./output.png or MEDIA:https://example.com/image.jpg). Avoid absolute paths and ~ paths.]`;
-    text = text ? `${mediaNote}\n${replyHint}\n${text}` : `${mediaNote}\n${replyHint}`;
+    text = text ? `${mediaNote}\n${text}` : mediaNote;
   }
 
   // Document context (non-image files)
