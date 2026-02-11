@@ -1,6 +1,38 @@
 # Changelog
 
-## [Unreleased] - v3.1 - 2026-02-11
+## [v3.2] - 2026-02-11
+
+**BBD Test Results:** 305/305 pass, 0 fail ✅
+
+### Added (F1: System Prompt Injection — v3.2)
+- `buildGatewaySystemPrompt(config)` conditionally injects heartbeat/cron/media protocol docs into agent system prompt (by GoldJaguar, reviewed by KeenDragon)
+- `src/core/system-prompts.ts`: capability-aware prompt builder (by GoldJaguar)
+- Tests SP-1 ~ SP-6 (by MintTiger)
+
+### Added (F2: Cron CLI Management — v3.2)
+- Cron CRUD: `addJob()`, `removeJob()`, `pauseJob()`, `resumeJob()`, `listJobs()`, `runJob()` in `src/core/cron.ts` (by SwiftQuartz, reviewed by GoldJaguar)
+- HTTP API: `GET/POST/DELETE /api/cron/jobs`, `PATCH /api/cron/jobs/:id`, `POST /api/cron/jobs/:id/run` in `src/core/cron-api.ts` (by SwiftQuartz)
+- WS methods: `cron.list`, `cron.add`, `cron.remove`, `cron.pause`, `cron.resume`, `cron.run` (by SwiftQuartz)
+- Telegram/Discord `/cron` slash command (by SwiftQuartz)
+- Validation: schedule parsing, id uniqueness, agentId existence check (by SwiftQuartz)
+- Tests CR-1 ~ CR-11 (by MintTiger)
+
+### Added (F3: WebChat Image Send/Receive — v3.2)
+- `src/core/media-token.ts`: HMAC-SHA256 signed URL generation/verification, config secret with random fallback, 1h default TTL (by KeenUnion, reviewed by DarkFalcon)
+- `GET /api/media/:token/:filename`: signed token verification → path validation → `Bun.file()` streaming response, MIME inference, 10MB default limit (by KeenUnion)
+- `processWebChatMediaDirectives()`: parses `MEDIA:./path` in agent replies, images → signed URLs, non-images → download links (by KeenUnion)
+- Frontend: media image rendering with lazy loading, click-to-expand lightbox overlay, history persistence of mediaImages (by KeenUnion)
+- SVG XSS protection: `Content-Disposition: attachment` + `Content-Security-Policy: sandbox` (by KeenUnion, review fix from DarkFalcon)
+- Tests WI-1 ~ WI-5 (by MintTiger)
+
+### Added (F4: MEDIA Path Security Hardening — v3.2)
+- `src/core/media-security.ts`: `validateMediaPath()` — blocks null bytes, URL schemes (`://`, `data:`, `file:`), absolute paths, `~`, `..` traversal, symlink escape via `realpathSync` (by KeenDragon, tested by MintTiger)
+- Reused by both Telegram `media-send.ts` and WebChat `/api/media` endpoint (by KeenDragon + KeenUnion)
+- Tests MS-1 ~ MS-8 (by MintTiger)
+
+---
+
+## [v3.1] - 2026-02-11
 
 **BBD Test Results:** 240/240 pass, 0 fail, 8 skip — **首次全绿** (v3.0: 151, v3.1: 55, extensions: 9, telegram: 25)
 

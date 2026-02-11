@@ -77,7 +77,7 @@ export class CronEngine {
     this.log.info(`Starting cron engine with ${jobs.length} job(s)`);
 
     for (const job of jobs) {
-      if (job.enabled === false) continue;
+      if (job.enabled === false || job.paused) continue;
       this.scheduleJob(job);
     }
   }
@@ -145,6 +145,52 @@ export class CronEngine {
 
   listJobs(): CronJob[] {
     return this.loadJobs();
+  }
+
+  pauseJob(id: string): boolean {
+    const jobs = this.loadJobs();
+    const job = jobs.find((j) => j.id === id);
+    if (!job) return false;
+
+    job.paused = true;
+    this.saveJobs(jobs);
+
+    // Stop active schedule
+    const existing = this.active.get(id);
+    if (existing) {
+      if (existing.cron) existing.cron.stop();
+      if (existing.timer) clearTimeout(existing.timer);
+      this.active.delete(id);
+    }
+
+    this.log.info(`Job paused: ${id}`);
+    return true;
+  }
+
+  resumeJob(id: string): boolean {
+    const jobs = this.loadJobs();
+    const job = jobs.find((j) => j.id === id);
+    if (!job || !job.paused) return false;
+
+    job.paused = false;
+    this.saveJobs(jobs);
+
+    if (job.enabled !== false) {
+      this.scheduleJob(job);
+    }
+
+    this.log.info(`Job resumed: ${id}`);
+    return true;
+  }
+
+  runJob(id: string): boolean {
+    const jobs = this.loadJobs();
+    const job = jobs.find((j) => j.id === id);
+    if (!job) return false;
+
+    this.log.info(`Manual trigger: ${id}`);
+    this.triggerJob(job);
+    return true;
   }
 
   // ==========================================================================
