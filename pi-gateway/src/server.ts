@@ -678,6 +678,8 @@ export class Gateway {
       lastActivity: Date.now(),
       messageCount: 0,
       rpcProcessId: null,
+      lastChatId: source.chatId,
+      lastChannel: source.channel,
     });
     if (isNew) {
       this.transcripts.logMeta(sessionKey, "session_created", { role: session.role });
@@ -685,6 +687,9 @@ export class Gateway {
     }
     session.lastActivity = Date.now();
     session.messageCount++;
+    // Update chat routing info on every message (chatId may change in group contexts)
+    if (source.chatId) session.lastChatId = source.chatId;
+    if (source.channel) session.lastChannel = source.channel;
 
     // Resolve role → capability profile for RPC process
     const role = session.role ?? "default";
@@ -1240,11 +1245,13 @@ export class Gateway {
       return handleMediaServe(url, this.config);
     }
 
-    // Media send API (v3.3: tool-based media sending)
+    // Media send API (v3.3: direct delivery via channel plugins)
     if (url.pathname === "/api/media/send" && req.method === "POST") {
       return await handleMediaSendRequest(req, {
         config: this.config,
         pool: this.pool,
+        registry: this.registry,
+        sessions: this.sessions,
         log: this.log,
       });
     }

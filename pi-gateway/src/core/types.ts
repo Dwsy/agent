@@ -101,6 +101,10 @@ export interface SessionState {
   lastActivity: number;
   messageCount: number;
   rpcProcessId: string | null;
+  /** Last known chat ID for this session (for direct media delivery) */
+  lastChatId?: string;
+  /** Channel name extracted from session key or message source */
+  lastChannel?: string;
 }
 
 // ============================================================================
