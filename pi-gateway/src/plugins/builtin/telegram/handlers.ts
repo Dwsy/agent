@@ -11,6 +11,7 @@ import { parseOutboundMediaDirectives, sendTelegramMedia, sendTelegramTextAndMed
 import { migrateTelegramGroupConfig } from "./group-migration.ts";
 import { buildReactionText } from "./reaction-level.ts";
 import { recordSentMessage, wasRecentlySent } from "./sent-message-cache.ts";
+import type { MediaSendOptions, MediaSendResult } from "../../types.ts";
 import type {
   TelegramAccountRuntime,
   TelegramContext,
@@ -1002,4 +1003,51 @@ export async function sendOutboundViaAccount(params: {
   params.runtime.api.logger.info(
     `[telegram:${account.accountId}] outbound to=${params.target} textLen=${params.text.length}`,
   );
+}
+
+/**
+ * Send a media file via Telegram channel plugin outbound interface.
+ * Used by POST /api/media/send (send_media tool).
+ */
+export async function sendMediaViaAccount(params: {
+  runtime: TelegramPluginRuntime;
+  defaultAccountId: string;
+  target: string;
+  filePath: string;
+  opts?: MediaSendOptions;
+}): Promise<MediaSendResult> {
+  const parsed = parseTelegramTarget(params.target, params.defaultAccountId);
+  const account = params.runtime.accounts.get(parsed.accountId)
+    ?? params.runtime.accounts.get(params.defaultAccountId)
+    ?? Array.from(params.runtime.accounts.values())[0];
+  if (!account) {
+    return { ok: false, error: "Telegram account not started" };
+  }
+
+  const threadId = parsed.topicId ? Number.parseInt(parsed.topicId, 10) : undefined;
+
+  // Map MediaSendOptions.type to media-send.ts kind
+  const ext = params.filePath.split(".").pop()?.toLowerCase() ?? "";
+  const imageExts = new Set(["jpg", "jpeg", "png", "gif", "webp", "bmp"]);
+  const audioExts = new Set(["mp3", "ogg", "wav", "m4a", "flac"]);
+  const kind = params.opts?.type
+    ?? (imageExts.has(ext) ? "photo" : audioExts.has(ext) ? "audio" : "document");
+
+  try {
+    await sendTelegramMedia(account.bot, parsed.chatId, {
+      kind: kind as "photo" | "audio" | "document",
+      url: params.filePath,
+      caption: params.opts?.caption,
+    }, threadId ? { messageThreadId: threadId } : undefined);
+
+    params.runtime.api.logger.info(
+      `[telegram:${account.accountId}] sendMedia to=${params.target} path=${params.filePath} kind=${kind}`,
+    );
+    return { ok: true };
+  } catch (err: any) {
+    params.runtime.api.logger.error(
+      `[telegram:${account.accountId}] sendMedia failed: ${err?.message}`,
+    );
+    return { ok: false, error: err?.message ?? "Send failed" };
+  }
 }
