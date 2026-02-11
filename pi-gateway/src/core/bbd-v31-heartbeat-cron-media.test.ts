@@ -698,3 +698,108 @@ describe("v3.1 media: voice STT injection", () => {
     expect(mediaNote).toContain("[Image attached:");
   });
 });
+
+// ============================================================================
+// SP-1 ~ SP-6: System Prompt Injection
+// ============================================================================
+
+import {
+  buildGatewaySystemPrompt,
+  HEARTBEAT_PROMPT,
+  CRON_PROMPT,
+  MEDIA_PROMPT,
+} from "./system-prompts.ts";
+import { DEFAULT_CONFIG } from "./config.ts";
+import type { Config } from "./config.ts";
+
+function makeConfig(overrides: Partial<{
+  heartbeatEnabled: boolean;
+  cronEnabled: boolean;
+  telegramAccounts: number;
+  gatewayPrompts: { heartbeat?: boolean; cron?: boolean; media?: boolean };
+  appendSystemPrompt: string;
+}>): Config {
+  const cfg = structuredClone(DEFAULT_CONFIG);
+  if (overrides.heartbeatEnabled !== undefined) {
+    cfg.heartbeat = { ...(cfg.heartbeat ?? {}), enabled: overrides.heartbeatEnabled };
+  }
+  cfg.cron.enabled = overrides.cronEnabled ?? false;
+  if (overrides.telegramAccounts) {
+    cfg.channels.telegram = {
+      accounts: Array.from({ length: overrides.telegramAccounts }, (_, i) => ({
+        botToken: `fake-token-${i}`,
+        allowFrom: [],
+      })),
+    };
+  }
+  if (overrides.gatewayPrompts) {
+    cfg.agent.gatewayPrompts = overrides.gatewayPrompts;
+  }
+  if (overrides.appendSystemPrompt) {
+    cfg.agent.appendSystemPrompt = overrides.appendSystemPrompt;
+  }
+  return cfg;
+}
+
+describe("System Prompt Injection (SP-1 ~ SP-6)", () => {
+  test("SP-1: heartbeat only → heartbeat section only", () => {
+    const prompt = buildGatewaySystemPrompt(makeConfig({ heartbeatEnabled: true }));
+    expect(prompt).not.toBeNull();
+    expect(prompt).toContain("Heartbeat Protocol");
+    expect(prompt).not.toContain("Scheduled Task");
+    expect(prompt).not.toContain("Media Replies");
+  });
+
+  test("SP-2: heartbeat + cron → both sections", () => {
+    const prompt = buildGatewaySystemPrompt(makeConfig({
+      heartbeatEnabled: true,
+      cronEnabled: true,
+    }));
+    expect(prompt).toContain("Heartbeat Protocol");
+    expect(prompt).toContain("Scheduled Task");
+    expect(prompt).not.toContain("Media Replies");
+  });
+
+  test("SP-3: all features enabled → all 3 sections", () => {
+    const prompt = buildGatewaySystemPrompt(makeConfig({
+      heartbeatEnabled: true,
+      cronEnabled: true,
+      telegramAccounts: 1,
+    }));
+    expect(prompt).toContain("Heartbeat Protocol");
+    expect(prompt).toContain("Scheduled Task");
+    expect(prompt).toContain("Media Replies");
+  });
+
+  test("SP-4: nothing enabled → returns null", () => {
+    const prompt = buildGatewaySystemPrompt(makeConfig({}));
+    expect(prompt).toBeNull();
+  });
+
+  test("SP-5: user appendSystemPrompt + gateway prompts combine", () => {
+    const cfg = makeConfig({
+      heartbeatEnabled: true,
+      appendSystemPrompt: "You are a helpful assistant.",
+    });
+    const gatewayPrompt = buildGatewaySystemPrompt(cfg);
+    expect(gatewayPrompt).toContain("Heartbeat Protocol");
+
+    // Simulate the combination logic from capability-profile.ts
+    const userAppend = cfg.agent.appendSystemPrompt?.trim() ?? "";
+    const combined = [userAppend, gatewayPrompt].filter(Boolean).join("\n\n");
+    expect(combined).toContain("You are a helpful assistant.");
+    expect(combined).toContain("Heartbeat Protocol");
+    expect(combined.indexOf("helpful assistant")).toBeLessThan(combined.indexOf("Heartbeat"));
+  });
+
+  test("SP-6: gatewayPrompts.heartbeat=false overrides heartbeat.enabled=true", () => {
+    const prompt = buildGatewaySystemPrompt(makeConfig({
+      heartbeatEnabled: true,
+      cronEnabled: true,
+      gatewayPrompts: { heartbeat: false },
+    }));
+    expect(prompt).not.toBeNull();
+    expect(prompt).not.toContain("Heartbeat Protocol");
+    expect(prompt).toContain("Scheduled Task");
+  });
+});
