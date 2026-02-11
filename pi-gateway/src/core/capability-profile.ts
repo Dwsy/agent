@@ -16,7 +16,16 @@ export interface CapabilityProfile {
   cwd: string;
   args: string[];
   env: Record<string, string>;
+  /** Full signature (hard + soft). Used for exact match. */
   signature: string;
+  /** Hard signature (role, cwd, model, tools, env). Must match exactly for reuse. */
+  hardSignature: string;
+  /** Soft resources. A process with superset of these can be reused. */
+  softResources: {
+    skills: string[];
+    extensions: string[];
+    promptTemplates: string[];
+  };
   resourceCounts: {
     skills: number;
     extensions: number;
@@ -29,12 +38,15 @@ export function buildCapabilityProfile(input: CapabilityProfileInput): Capabilit
   const cwd = normalizePath(input.cwd);
   const roleCaps = config.roles.capabilities?.[role] ?? {};
 
-  const args: string[] = [];
-  const env: Record<string, string> = {};
+  // Hard args: tools, runtime prompts, discovery flags (model excluded — can change at runtime via /model, /think)
+  const hardArgs: string[] = [];
+  appendToolArgs(hardArgs, config);
+  appendRuntimePromptArgs(hardArgs, config);
+  appendDiscoveryFlags(hardArgs, config);
 
-  appendModelArgs(args, config);
-  appendRuntimePromptArgs(args, config);
-  appendDiscoveryFlags(args, config);
+  // Soft args: model (switchable at runtime), extensions, skills, promptTemplates
+  const softArgs: string[] = [];
+  appendModelArgs(softArgs, config);
 
   const extensions = dedupePaths([
     ...(roleCaps.extensions ?? []),
@@ -46,10 +58,13 @@ export function buildCapabilityProfile(input: CapabilityProfileInput): Capabilit
     ...(config.agent.promptTemplates ?? []),
   ]);
 
+  // Full args = hard args + soft args + soft resource args
+  const args: string[] = [...hardArgs, ...softArgs];
   appendRepeatedArg(args, "--extension", extensions);
   appendRepeatedArg(args, "--skill", skills);
   appendRepeatedArg(args, "--prompt-template", promptTemplates);
 
+  const env: Record<string, string> = {};
   const runtimeAgentDir = config.agent.runtime?.agentDir?.trim();
   const runtimePackageDir = config.agent.runtime?.packageDir?.trim();
   if (runtimeAgentDir) {
@@ -59,14 +74,17 @@ export function buildCapabilityProfile(input: CapabilityProfileInput): Capabilit
     env.PI_PACKAGE_DIR = normalizePath(runtimePackageDir);
   }
 
-  // Session key is intentionally not included in signature so compatible sessions can reuse pool processes.
+  const piCliPath = config.agent.piCliPath ?? "pi";
+  const mergeMode = config.roles.mergeMode ?? "append";
+
+  // Full signature (backward compat — exact match)
   const signature = createProfileSignature({
-    role,
-    cwd,
-    args,
-    env,
-    piCliPath: config.agent.piCliPath ?? "pi",
-    mergeMode: config.roles.mergeMode ?? "append",
+    role, cwd, args, env, piCliPath, mergeMode,
+  });
+
+  // Hard signature: role + cwd + tools + prompts + discovery flags + env (immutable at runtime)
+  const hardSignature = createProfileSignature({
+    role, cwd, args: hardArgs, env, piCliPath, mergeMode,
   });
 
   return {
@@ -75,6 +93,8 @@ export function buildCapabilityProfile(input: CapabilityProfileInput): Capabilit
     args,
     env,
     signature,
+    hardSignature,
+    softResources: { skills, extensions, promptTemplates },
     resourceCounts: {
       skills: skills.length,
       extensions: extensions.length,
@@ -92,6 +112,22 @@ function appendModelArgs(args: string[], config: Config): void {
   }
   if (config.agent.thinkingLevel && config.agent.thinkingLevel !== "off") {
     args.push("--thinking", config.agent.thinkingLevel);
+  }
+}
+
+function appendToolArgs(args: string[], config: Config): void {
+  const tools = config.agent.tools;
+  if (!tools) return;
+
+  // If allow list is specified, only enable those tools
+  if (tools.allow && tools.allow.length > 0) {
+    args.push("--tools", tools.allow.join(","));
+  }
+  // If deny list is specified without allow, enable all except denied
+  else if (tools.deny && tools.deny.length > 0) {
+    const allTools = ["read", "bash", "edit", "write", "grep", "find", "ls"];
+    const allowed = allTools.filter(t => !tools.deny!.includes(t));
+    args.push("--tools", allowed.join(","));
   }
 }
 

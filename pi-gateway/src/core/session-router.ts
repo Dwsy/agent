@@ -19,7 +19,8 @@
 import type { Config } from "./config.ts";
 import type { MessageSource, SessionKey } from "./types.ts";
 
-const AGENT_ID = "main";
+const DEFAULT_AGENT_ID = "main";
+const AGENT_ID = "main"; // Legacy fallback, will be removed after v3 migration
 
 // ============================================================================
 // Session Key Resolution
@@ -27,17 +28,19 @@ const AGENT_ID = "main";
 
 /**
  * Resolve a session key from an inbound message source.
+ * @param agentId - Optional agent ID (defaults to legacy AGENT_ID for backward compatibility)
  */
-export function resolveSessionKey(source: MessageSource, config: Config): SessionKey {
+export function resolveSessionKey(source: MessageSource, config: Config, agentId?: string): SessionKey {
   const { channel, accountId, chatType, chatId, threadId, topicId } = source;
+  const resolvedAgentId = agentId ?? AGENT_ID;
 
   // DM routing
   if (chatType === "dm") {
-    return resolveDmSessionKey(source, config);
+    return resolveDmSessionKey(source, config, resolvedAgentId);
   }
 
   // Group / channel / thread routing
-  let key = `agent:${AGENT_ID}:${channel}`;
+  let key = `agent:${resolvedAgentId}:${channel}`;
   if (channel === "telegram") {
     key += `:account:${accountId ?? "default"}`;
   }
@@ -61,8 +64,9 @@ export function resolveSessionKey(source: MessageSource, config: Config): Sessio
 
 /**
  * Resolve DM session key based on dmScope config.
+ * @param agentId - Agent ID for the session key
  */
-function resolveDmSessionKey(source: MessageSource, config: Config): SessionKey {
+function resolveDmSessionKey(source: MessageSource, config: Config, agentId: string = AGENT_ID): SessionKey {
   const { dmScope } = config.session;
   const { channel, accountId, senderId } = source;
   const accountPart = channel === "telegram" ? `:account:${accountId ?? "default"}` : "";
@@ -71,21 +75,21 @@ function resolveDmSessionKey(source: MessageSource, config: Config): SessionKey 
     case "main":
       // All DMs collapse to the main session (OpenClaw default)
       return channel === "telegram"
-        ? `agent:${AGENT_ID}:${channel}${accountPart}:main`
-        : `agent:${AGENT_ID}:main:main`;
+        ? `agent:${agentId}:${channel}${accountPart}:main`
+        : `agent:${agentId}:main:main`;
 
     case "per-peer":
       return channel === "telegram"
-        ? `agent:${AGENT_ID}:${channel}${accountPart}:dm:${senderId}`
-        : `agent:${AGENT_ID}:dm:${senderId}`;
+        ? `agent:${agentId}:${channel}${accountPart}:dm:${senderId}`
+        : `agent:${agentId}:dm:${senderId}`;
 
     case "per-channel-peer":
-      return `agent:${AGENT_ID}:${channel}${accountPart}:dm:${senderId}`;
+      return `agent:${agentId}:${channel}${accountPart}:dm:${senderId}`;
 
     default:
       return channel === "telegram"
-        ? `agent:${AGENT_ID}:${channel}${accountPart}:main`
-        : `agent:${AGENT_ID}:main:main`;
+        ? `agent:${agentId}:${channel}${accountPart}:main`
+        : `agent:${agentId}:main:main`;
   }
 }
 
@@ -143,6 +147,92 @@ export function resolveRoleForSession(source: MessageSource, config: Config): st
   }
 
   return null;
+}
+
+// ============================================================================
+// Agent Resolution (v3 Multi-Agent Routing)
+// ============================================================================
+
+/**
+ * Resolve which agent should handle this message.
+ * Three-layer routing (first match wins):
+ *   Layer 1: Static binding — config.agents.bindings[] match
+ *   Layer 2: Prefix command — /{agentId} strips prefix
+ *   Layer 3: Default agent
+ */
+export function resolveAgentId(
+  source: MessageSource,
+  text: string,
+  config: Config,
+): { agentId: string; text: string } {
+  const agents = config.agents;
+  if (!agents?.list?.length) {
+    return { agentId: DEFAULT_AGENT_ID, text };
+  }
+
+  const agentIds = new Set(agents.list.map((a) => a.id));
+
+  // Layer 1: Static binding
+  if (agents.bindings?.length) {
+    const bound = matchBinding(source, agents.bindings);
+    if (bound && agentIds.has(bound)) {
+      return { agentId: bound, text };
+    }
+  }
+
+  // Layer 2: Prefix command — /{agentId} <rest>
+  const prefixMatch = text.match(/^\/(\S+)(?:\s+(.*))?$/s);
+  if (prefixMatch) {
+    const prefix = prefixMatch[1]!;
+    if (agentIds.has(prefix)) {
+      return { agentId: prefix, text: prefixMatch[2]?.trim() || "" };
+    }
+  }
+
+  // Layer 3: Default
+  return { agentId: agents.default || DEFAULT_AGENT_ID, text };
+}
+
+/**
+ * Static binding matcher. Score-based: peer(8) > guild(4) > account(2) > channel(1).
+ */
+function matchBinding(
+  source: MessageSource,
+  bindings: NonNullable<Config["agents"]>["bindings"],
+): string | null {
+  if (!bindings) return null;
+  let bestMatch: string | null = null;
+  let bestScore = -1;
+
+  for (const binding of bindings) {
+    const m = binding.match;
+    let score = 0;
+    let matched = true;
+
+    if (m.channel) {
+      if (m.channel !== source.channel) { matched = false; continue; }
+      score += 1;
+    }
+    if (m.accountId) {
+      if (m.accountId !== source.accountId) { matched = false; continue; }
+      score += 2;
+    }
+    if (m.guildId) {
+      if (m.guildId !== source.guildId) { matched = false; continue; }
+      score += 4;
+    }
+    if (m.peer) {
+      if (m.peer.kind && m.peer.kind !== source.chatType) { matched = false; continue; }
+      if (m.peer.id && m.peer.id !== source.chatId && m.peer.id !== source.senderId) { matched = false; continue; }
+      score += 8;
+    }
+
+    if (matched && score > bestScore) {
+      bestScore = score;
+      bestMatch = binding.agentId;
+    }
+  }
+  return bestMatch;
 }
 
 // ============================================================================
@@ -216,4 +306,16 @@ function ensureDir(dir: string): void {
   if (!existsSync(dir)) {
     mkdirSync(dir, { recursive: true });
   }
+}
+
+// ============================================================================
+// Main Session Key Resolution (shared with cron.ts and heartbeat)
+// ============================================================================
+
+/**
+ * Resolve the main session key for an agent.
+ * Aligned with SwiftQuartz's cron.ts for consistent session naming.
+ */
+export function resolveMainSessionKey(agentId: string): string {
+  return `agent:${agentId}:main`;
 }

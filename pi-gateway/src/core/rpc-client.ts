@@ -32,6 +32,10 @@ export interface RpcClientOptions {
   cwd?: string;
   /** Capability signature used for pool reuse isolation. */
   signature?: string;
+  /** Hard constraint signature (role+cwd+tools+env). Must match exactly for reuse. */
+  hardSignature?: string;
+  /** Soft resources loaded into this process. Superset check for flexible reuse. */
+  softResources?: { skills: string[]; extensions: string[]; promptTemplates: string[] };
   /** Environment variables to pass */
   env?: Record<string, string>;
   /** Additional CLI arguments */
@@ -61,6 +65,13 @@ export class RpcClient {
   /** Current bound session key (null = idle) */
   sessionKey: string | null = null;
   lastActivity = Date.now();
+
+  /**
+   * Optional external handler for extension UI requests.
+   * Return true if handled (forwarded to WS client), false to fall back to auto-cancel.
+   * Set by server.ts when ExtensionUIForwarder is available.
+   */
+  extensionUIHandler: ((data: Record<string, unknown>, writeToRpc: (msg: string) => void) => boolean) | null = null;
 
   constructor(
     id: string,
@@ -151,6 +162,18 @@ export class RpcClient {
     return this.options.signature;
   }
 
+  get hardSignature(): string | undefined {
+    return this.options.hardSignature;
+  }
+
+  get softResources(): { skills: string[]; extensions: string[]; promptTemplates: string[] } | undefined {
+    return this.options.softResources;
+  }
+
+  get pid(): number | null {
+    return this.proc?.pid ?? null;
+  }
+
   getStderr(): string {
     return this.stderr;
   }
@@ -165,6 +188,11 @@ export class RpcClient {
       const idx = this.eventListeners.indexOf(listener);
       if (idx !== -1) this.eventListeners.splice(idx, 1);
     };
+  }
+
+  /** Clear all event listeners. Used when recycling a process to a new session. */
+  clearEventListeners(): void {
+    this.eventListeners.length = 0;
   }
 
   // ==========================================================================
@@ -236,6 +264,11 @@ export class RpcClient {
   async getAvailableModels(): Promise<unknown> {
     const res = await this.send({ type: "get_available_models" });
     return (res.data as { models: unknown[] })?.models ?? [];
+  }
+
+  async getCommands(): Promise<{ name: string; description?: string }[]> {
+    const res = await this.send({ type: "get_commands" });
+    return (res.data as { commands: { name: string; description?: string }[] })?.commands ?? [];
   }
 
   async cycleModel(): Promise<unknown> {
@@ -400,6 +433,13 @@ export class RpcClient {
 
     if (!id || !method) return;
 
+    // Try external handler first (WS forwarding to WebChat frontend)
+    if (this.extensionUIHandler && this.proc) {
+      const writeToRpc = (msg: string) => { this.proc?.stdin.write(msg + "\n"); };
+      if (this.extensionUIHandler(data, writeToRpc)) return;
+    }
+
+    // Fallback: auto-respond in headless mode
     let response: Record<string, unknown> | null = null;
 
     switch (method) {
