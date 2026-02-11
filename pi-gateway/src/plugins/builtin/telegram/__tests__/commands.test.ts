@@ -67,6 +67,7 @@ function buildRuntime(overrides?: {
       },
       async compactSession() {},
       async abortSession() {},
+      async getPiCommands() { return []; },
     } as any,
     channelCfg: {
       enabled: true,

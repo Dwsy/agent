@@ -47,18 +47,37 @@ export function parseOutboundMediaDirectives(text: string): TelegramParsedOutbou
   const media: TelegramMediaDirective[] = [];
   const remain: string[] = [];
   const directiveRe = /^\s*\[(photo|audio)\]\s+(.+?)(?:\s*\|\s*(.+))?\s*$/i;
+  const mediaRe = /^\s*MEDIA:(.+)$/;
 
   for (const line of lines) {
     const match = line.match(directiveRe);
-    if (!match) {
-      remain.push(line);
+    if (match) {
+      media.push({
+        kind: match[1].toLowerCase() as "photo" | "audio",
+        url: match[2].trim(),
+        caption: match[3]?.trim() || undefined,
+      });
       continue;
     }
-    media.push({
-      kind: match[1].toLowerCase() as "photo" | "audio",
-      url: match[2].trim(),
-      caption: match[3]?.trim() || undefined,
-    });
+
+    const mediaMatch = line.match(mediaRe);
+    if (mediaMatch) {
+      const path = mediaMatch[1].trim();
+      // Security: block absolute paths and ~ paths
+      if (path.startsWith("/") || path.startsWith("~")) {
+        remain.push(line); // treat as normal text
+        continue;
+      }
+      // Infer kind from extension
+      const ext = path.split(".").pop()?.toLowerCase() ?? "";
+      const imageExts = new Set(["jpg", "jpeg", "png", "gif", "webp", "bmp"]);
+      const audioExts = new Set(["mp3", "ogg", "wav", "m4a", "flac"]);
+      const kind = imageExts.has(ext) ? "photo" : audioExts.has(ext) ? "audio" : "document";
+      media.push({ kind: kind as any, url: path });
+      continue;
+    }
+
+    remain.push(line);
   }
 
   return {
