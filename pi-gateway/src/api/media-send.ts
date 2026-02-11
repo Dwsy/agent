@@ -1,20 +1,22 @@
 /**
- * POST /api/media/send — Tool-based media sending (v3.3)
+ * POST /api/media/send — Direct media delivery via channel plugins (v3.3)
  *
  * Called by the gateway-tools extension's send_media tool.
- * Validates the request, checks path security, resolves media type,
- * and returns a MEDIA: directive for the channel handler to deliver.
+ * Validates the request, resolves the channel plugin, and delivers
+ * the media file directly — no MEDIA: directive round-trip.
  *
- * Auth: sessionKey must be a valid active session in the RPC pool,
- * OR request must carry a valid PI_GATEWAY_INTERNAL_TOKEN.
+ * Auth: internalToken (HMAC-SHA256, per-process) OR active sessionKey.
  */
 
 import { existsSync } from "node:fs";
 import { resolve as pathResolve } from "node:path";
 import type { Config } from "../core/config.ts";
+import type { SessionKey } from "../core/types.ts";
 import { validateMediaPath } from "../core/media-security.ts";
 import type { RpcPool } from "../core/rpc-pool.ts";
-import type { Logger, SessionKey } from "../core/types.ts";
+import type { Logger } from "../core/types.ts";
+import type { PluginRegistryState } from "../plugins/loader.ts";
+import type { SessionStore } from "../core/session-store.ts";
 
 const PHOTO_EXTS = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp"]);
 const AUDIO_EXTS = new Set(["mp3", "ogg", "wav", "m4a", "flac"]);
@@ -23,6 +25,8 @@ const VIDEO_EXTS = new Set(["mp4", "webm", "mov", "avi"]);
 export interface MediaSendContext {
   config: Config;
   pool: RpcPool;
+  registry: PluginRegistryState;
+  sessions: SessionStore;
   log: Logger;
 }
 
@@ -82,19 +86,59 @@ export async function handleMediaSendRequest(
     mediaType ||
     (PHOTO_EXTS.has(ext) ? "photo" : AUDIO_EXTS.has(ext) ? "audio" : VIDEO_EXTS.has(ext) ? "video" : "document");
 
-  // Parse channel from session key (format: agent:{agentId}:{channel}:{scope}:{id})
-  const channel = sessionKey ? (sessionKey.split(":")[2] || "unknown") : "unknown";
+  // Resolve channel + chatId from session
+  const session = sessionKey ? ctx.sessions.get(sessionKey as SessionKey) : undefined;
+  const channel = session?.lastChannel || (sessionKey ? sessionKey.split(":")[2] : undefined);
+  const chatId = session?.lastChatId;
 
-  ctx.log.info(`[media-send] session=${sessionKey || "token-auth"} path=${filePath} type=${resolvedType} channel=${channel}`);
+  if (!channel) {
+    return Response.json({ error: "Cannot resolve channel from session" }, { status: 400 });
+  }
 
-  return Response.json({
-    ok: true,
-    path: filePath,
-    type: resolvedType,
-    caption: caption || null,
-    channel,
-    directive: `MEDIA:${filePath}`,
-  });
+  // Find channel plugin
+  const channelPlugin = ctx.registry.channels.get(channel);
+  if (!channelPlugin) {
+    return Response.json({ error: `Channel plugin not found: ${channel}` }, { status: 404 });
+  }
+
+  if (!channelPlugin.outbound.sendMedia) {
+    // Fallback: return directive for channels without sendMedia support
+    ctx.log.info(`[media-send] channel=${channel} lacks sendMedia, returning directive fallback`);
+    return Response.json({
+      ok: true,
+      delivered: false,
+      directive: `MEDIA:${filePath}`,
+      path: filePath,
+      type: resolvedType,
+      channel,
+    });
+  }
+
+  if (!chatId) {
+    return Response.json({ error: "Cannot resolve chatId — no messages received in this session yet" }, { status: 400 });
+  }
+
+  ctx.log.info(`[media-send] direct delivery: channel=${channel} chatId=${chatId} path=${filePath} type=${resolvedType}`);
+
+  try {
+    const result = await channelPlugin.outbound.sendMedia(chatId, fullPath, {
+      type: resolvedType as "photo" | "audio" | "document" | "video",
+      caption,
+    });
+
+    return Response.json({
+      ok: result.ok,
+      delivered: true,
+      messageId: result.messageId,
+      path: filePath,
+      type: resolvedType,
+      channel,
+      error: result.error,
+    });
+  } catch (err: any) {
+    ctx.log.error(`[media-send] delivery failed: ${err?.message}`);
+    return Response.json({ error: err?.message ?? "Media delivery failed" }, { status: 500 });
+  }
 }
 
 // ============================================================================
@@ -112,7 +156,6 @@ let cachedToken: string | null = null;
 export function getGatewayInternalToken(config: Config): string {
   if (cachedToken) return cachedToken;
   const { createHash } = require("node:crypto");
-  // Derive from port + bind + auth config — stable across restarts with same config
   const seed = JSON.stringify({
     port: config.gateway.port,
     bind: config.gateway.bind,

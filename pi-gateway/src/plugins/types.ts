@@ -90,6 +90,19 @@ export interface SendOptions {
   parseMode?: "Markdown" | "HTML" | "plain";
 }
 
+export interface MediaSendOptions extends SendOptions {
+  /** Media type hint (auto-detected from extension if omitted) */
+  type?: "photo" | "audio" | "document" | "video";
+  /** Caption text */
+  caption?: string;
+}
+
+export interface MediaSendResult {
+  ok: boolean;
+  messageId?: string;
+  error?: string;
+}
+
 export interface ChannelPlugin {
   /** Unique channel identifier, e.g. "telegram", "discord", "webchat" */
   id: string;
@@ -99,6 +112,8 @@ export interface ChannelPlugin {
   outbound: {
     /** Send text to a target in this channel */
     sendText(target: string, text: string, opts?: SendOptions): Promise<void>;
+    /** Send a media file to a target in this channel (optional — not all channels support media) */
+    sendMedia?(target: string, filePath: string, opts?: MediaSendOptions): Promise<MediaSendResult>;
     /** Max message length for this channel (for chunking) */
     maxLength?: number;
   };

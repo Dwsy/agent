@@ -27,6 +27,7 @@ export default function gatewayTools(pi: ExtensionAPI) {
     label: "Send Media",
     description:
       "Send a file (image, audio, document, video) to the current chat via pi-gateway. " +
+      "The file is delivered directly to the channel (Telegram/Discord/WebChat). " +
       "Path must be relative to your workspace (e.g., ./output.png). " +
       "Type is auto-detected from extension if omitted.",
     parameters: Type.Object({
@@ -53,7 +54,6 @@ export default function gatewayTools(pi: ExtensionAPI) {
         type?: string;
       };
 
-      // Session key may be set dynamically when the RPC pool binds a session
       const sessionKey = process.env.PI_GATEWAY_SESSION_KEY || "";
 
       try {
@@ -83,13 +83,28 @@ export default function gatewayTools(pi: ExtensionAPI) {
           };
         }
 
-        // Return the MEDIA: directive so the gateway's response parser
-        // picks it up and routes to the appropriate channel
-        const directiveText = caption ? `${caption}\n${data.directive}` : String(data.directive);
+        // Direct delivery succeeded — or fallback directive returned
+        if (data.delivered === false) {
+          // Channel doesn't support sendMedia, return directive for legacy parsing
+          const directiveText = caption
+            ? `${caption}\n${data.directive}`
+            : String(data.directive);
+          return {
+            content: [{ type: "text" as const, text: directiveText }],
+            details: { path: data.path, type: data.type, channel: data.channel, delivered: false },
+          };
+        }
+
+        // Direct delivery success
+        const summary = data.messageId
+          ? `Media sent (${data.type}, messageId: ${data.messageId})`
+          : `Media sent (${data.type})`;
 
         return {
-          content: [{ type: "text" as const, text: directiveText }],
+          content: [{ type: "text" as const, text: summary }],
           details: {
+            ok: true,
+            messageId: data.messageId,
             path: data.path,
             type: data.type,
             channel: data.channel,
