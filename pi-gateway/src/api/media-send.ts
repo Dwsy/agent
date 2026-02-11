@@ -28,6 +28,7 @@ export interface MediaSendContext {
   registry: PluginRegistryState;
   sessions: SessionStore;
   log: Logger;
+  broadcastToWs?: (event: string, payload: unknown) => void;
 }
 
 export async function handleMediaSendRequest(
@@ -102,7 +103,28 @@ export async function handleMediaSendRequest(
   }
 
   if (!channelPlugin.outbound.sendMedia) {
-    // Fallback: return directive for channels without sendMedia support
+    // WebChat: push signed URL via WS instead of returning a directive
+    if (channel === "webchat" && ctx.broadcastToWs) {
+      const { sendWebChatMedia } = await import("./media-routes.ts");
+      const result = sendWebChatMedia(sessionKey, filePath, ctx.config, ctx.broadcastToWs, {
+        caption,
+        type: resolvedType as "photo" | "audio" | "video" | "document",
+      });
+      if (result.ok) {
+        ctx.log.info(`[media-send] webchat push: sessionKey=${sessionKey} path=${filePath}`);
+        return Response.json({
+          ok: true,
+          delivered: true,
+          url: result.url,
+          path: filePath,
+          type: resolvedType,
+          channel,
+        });
+      }
+      return Response.json({ error: "Media path blocked or file not found" }, { status: 403 });
+    }
+
+    // Other channels: return directive fallback
     ctx.log.info(`[media-send] channel=${channel} lacks sendMedia, returning directive fallback`);
     return Response.json({
       ok: true,

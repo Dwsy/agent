@@ -120,3 +120,56 @@ export function handleMediaServe(url: URL, config: Config): Response {
 
   return new Response(file, { status: 200, headers });
 }
+
+// ============================================================================
+// WebChat Media Push
+// ============================================================================
+
+export interface WebChatMediaOptions {
+  caption?: string;
+  type?: "photo" | "audio" | "video" | "document";
+}
+
+/**
+ * Push a signed media URL to WebChat clients via WS `media_event`.
+ *
+ * Used by `/api/media/send` when the target session is a WebChat session.
+ * Signs the file path into a URL, then broadcasts to all WS clients.
+ * Frontend filters by sessionKey.
+ */
+export function sendWebChatMedia(
+  sessionKey: string,
+  filePath: string,
+  config: Config,
+  broadcastToWs: (event: string, payload: unknown) => void,
+  opts?: WebChatMediaOptions,
+): { ok: boolean; url: string } {
+  const workspace = resolveAgentWorkspace(config, sessionKey);
+
+  if (!validateMediaPath(filePath, workspace)) {
+    return { ok: false, url: "" };
+  }
+
+  const fullPath = pathResolve(workspace, filePath);
+  if (!existsSync(fullPath)) {
+    return { ok: false, url: "" };
+  }
+
+  const secret = getMediaSecret((config as any).channels?.webchat?.mediaSecret);
+  const ttlMs = (config as any).channels?.webchat?.mediaTokenTtlMs ?? 3600_000;
+  const url = signMediaUrl(sessionKey, filePath, secret, ttlMs);
+
+  const ext = filePath.split(".").pop()?.toLowerCase() || "";
+  const imageExts = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp"]);
+  const type = opts?.type ?? (imageExts.has(ext) ? "photo" : "document");
+
+  broadcastToWs("media_event", {
+    sessionKey,
+    url,
+    type,
+    caption: opts?.caption,
+    filename: filePath.split("/").pop() || "file",
+  });
+
+  return { ok: true, url };
+}
