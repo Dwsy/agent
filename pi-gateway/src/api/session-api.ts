@@ -191,7 +191,7 @@ export async function handleSessionsList(
   _url: URL,
   ctx: GatewayContext,
 ): Promise<Response> {
-  return Response.json({ sessions: ctx.sessions.list() });
+  return Response.json({ sessions: ctx.sessions.toArray() });
 }
 
 export async function handleSessionDetail(
