@@ -1405,7 +1405,7 @@ export class Gateway {
 
     // OpenAI compatible API
     if (url.pathname === "/v1/chat/completions" && req.method === "POST") {
-      return await this.handleOpenAiChat(req);
+      return await handleOpenAiChat(req, this.ctx);
     }
 
     // ---- Pool API ----
@@ -1448,10 +1448,10 @@ export class Gateway {
     // Webhook endpoints (aligned with OpenClaw POST /hooks/*)
     const hooksBase = this.config.hooks.path ?? "/hooks";
     if (url.pathname === `${hooksBase}/wake` && req.method === "POST") {
-      return await this.handleWebhookWake(req);
+      return await handleWebhookWake(req, this.ctx);
     }
     if (url.pathname === `${hooksBase}/event` && req.method === "POST") {
-      return await this.handleWebhookEvent(req);
+      return await handleWebhookEvent(req, this.ctx);
     }
 
     // Media serving via signed token (F3: WebChat images)
@@ -1470,83 +1470,10 @@ export class Gateway {
 
     // Static files for Web UI
     if (url.pathname === "/" || url.pathname.startsWith("/web/")) {
-      return this.serveStaticFile(url.pathname);
+      return serveStaticFile(url.pathname, this.noGui);
     }
 
     return new Response("Not Found", { status: 404 });
-  }
-
-  private async handleWebhookWake(req: Request): Promise<Response> {
-    if (!this.config.hooks.enabled) {
-      return new Response("Webhooks disabled", { status: 403 });
-    }
-
-    // Token auth
-    if (this.config.hooks.token) {
-      const auth = req.headers.get("authorization")?.replace("Bearer ", "");
-      if (!auth || !safeTokenCompare(auth, this.config.hooks.token)) {
-        return new Response("Unauthorized", { status: 401 });
-      }
-    }
-
-    try {
-      const body = await req.json() as { text?: string; sessionKey?: string; mode?: "now" | "next-heartbeat" };
-      if (!body.text) {
-        return Response.json({ error: "text is required" }, { status: 400 });
-      }
-
-      const sessionKey = body.sessionKey ?? "agent:main:main:main";
-      const webhookItem: PrioritizedWork = {
-        work: async () => {
-          const role = this.sessions.get(sessionKey)?.role ?? "default";
-          const profile = this.buildSessionProfile(sessionKey, role);
-          const rpc = await this.pool.acquire(sessionKey, profile);
-          await rpc.prompt(`[WEBHOOK] ${body.text}`);
-          await rpc.waitForIdle();
-        },
-        priority: this.config.queue.priority.webhook,
-        enqueuedAt: Date.now(),
-        ttl: 30000,
-        text: body.text,
-        summaryLine: `[WEBHOOK] ${body.text.slice(0, 120)}`,
-      };
-      const enqueued = this.queue.enqueue(sessionKey, webhookItem);
-
-      if (!enqueued) {
-        return Response.json({ error: "Queue full", sessionKey }, { status: 429 });
-      }
-
-      return Response.json({ ok: true, sessionKey });
-    } catch {
-      return Response.json({ error: "Invalid request body" }, { status: 400 });
-    }
-  }
-
-  private async handleWebhookEvent(req: Request): Promise<Response> {
-    if (!this.config.hooks.enabled) {
-      return new Response("Webhooks disabled", { status: 403 });
-    }
-
-    if (this.config.hooks.token) {
-      const auth = req.headers.get("authorization")?.replace("Bearer ", "");
-      if (!auth || !safeTokenCompare(auth, this.config.hooks.token)) {
-        return new Response("Unauthorized", { status: 401 });
-      }
-    }
-
-    try {
-      const body = await req.json() as { event: string; payload?: unknown };
-      if (!body.event) {
-        return Response.json({ error: "event is required" }, { status: 400 });
-      }
-
-      // Broadcast to all WS clients as a custom event
-      this.broadcastToWs(`hook:${body.event}`, body.payload ?? {});
-
-      return Response.json({ ok: true, event: body.event });
-    } catch {
-      return Response.json({ error: "Invalid request body" }, { status: 400 });
-    }
   }
 
   private async handleApiSend(req: Request): Promise<Response> {
@@ -1927,206 +1854,6 @@ export class Gateway {
     } catch (err: any) {
       return Response.json({ error: err?.message }, { status: 500 });
     }
-  }
-
-  /**
-   * POST /v1/chat/completions — OpenAI compatible API.
-   * Lets any OpenAI SDK client (Python openai, curl, ChatBox, etc.) connect directly.
-   */
-  private async handleOpenAiChat(req: Request): Promise<Response> {
-    try {
-      const body = await req.json() as {
-        model?: string;
-        messages?: Array<{ role: string; content: string }>;
-        stream?: boolean;
-      };
-
-      if (!body.messages || body.messages.length === 0) {
-        return Response.json({ error: { message: "messages is required", type: "invalid_request_error" } }, { status: 400 });
-      }
-
-      // Extract the last user message as the prompt
-      const lastUser = [...body.messages].reverse().find((m) => m.role === "user");
-      const prompt = lastUser?.content ?? "";
-      if (!prompt) {
-        return Response.json({ error: { message: "No user message found", type: "invalid_request_error" } }, { status: 400 });
-      }
-
-      const sessionKey = "agent:main:main:main";
-      const role = this.sessions.get(sessionKey)?.role ?? "default";
-      const profile = this.buildSessionProfile(sessionKey, role);
-
-      if (!this.sessions.has(sessionKey)) {
-        this.sessions.getOrCreate(sessionKey, {
-          role: null, isStreaming: false, lastActivity: Date.now(), messageCount: 0, rpcProcessId: null,
-        });
-      }
-
-      const session = this.sessions.get(sessionKey)!;
-      session.lastActivity = Date.now();
-      session.messageCount++;
-
-      const rpc = await this.pool.acquire(sessionKey, profile);
-      session.rpcProcessId = rpc.id;
-
-      const modelName = body.model ?? this.config.agent.model ?? "pi-gateway";
-      const requestId = `chatcmpl-${Date.now()}`;
-
-      if (body.stream) {
-        // SSE streaming in OpenAI format
-        session.isStreaming = true;
-        const self = this;
-
-        const stream = new ReadableStream({
-          async start(controller) {
-            const send = (data: unknown) => {
-              controller.enqueue(`data: ${JSON.stringify(data)}\n\n`);
-            };
-
-            let fullText = "";
-            const unsub = rpc.onEvent((event) => {
-              // Ignore events if this RPC process has been rebound to a different session
-              if (rpc.sessionKey !== sessionKey) return;
-
-              if (event.type === "message_update") {
-                const ame = (event as any).assistantMessageEvent ?? (event as any).assistant_message_event;
-                if (ame?.type === "text_delta" && ame.delta) {
-                  fullText += ame.delta;
-                  send({
-                    id: requestId,
-                    object: "chat.completion.chunk",
-                    created: Math.floor(Date.now() / 1000),
-                    model: modelName,
-                    choices: [{ index: 0, delta: { content: ame.delta }, finish_reason: null }],
-                  });
-                }
-                // Handle thinking events
-                if (ame?.type === "thinking_start") {
-                  send({
-                    id: requestId,
-                    object: "chat.completion.chunk",
-                    created: Math.floor(Date.now() / 1000),
-                    model: modelName,
-                    choices: [{ index: 0, delta: { content: "\n<think>\n" }, finish_reason: null }],
-                  });
-                }
-                if (ame?.type === "thinking_delta" && ame.delta) {
-                  send({
-                    id: requestId,
-                    object: "chat.completion.chunk",
-                    created: Math.floor(Date.now() / 1000),
-                    model: modelName,
-                    choices: [{ index: 0, delta: { content: ame.delta }, finish_reason: null }],
-                  });
-                }
-                if (ame?.type === "thinking_end") {
-                  send({
-                    id: requestId,
-                    object: "chat.completion.chunk",
-                    created: Math.floor(Date.now() / 1000),
-                    model: modelName,
-                    choices: [{ index: 0, delta: { content: "\n</think>\n" }, finish_reason: null }],
-                  });
-                }
-              }
-            });
-
-            try {
-              await rpc.prompt(prompt);
-              await rpc.waitForIdle(self.config.agent.timeoutMs ?? 120_000);
-            } catch {}
-
-            unsub();
-            session.isStreaming = false;
-
-            send({
-              id: requestId,
-              object: "chat.completion.chunk",
-              created: Math.floor(Date.now() / 1000),
-              model: modelName,
-              choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
-            });
-            controller.enqueue("data: [DONE]\n\n");
-            controller.close();
-          },
-        });
-
-        return new Response(stream, {
-          headers: { "content-type": "text/event-stream; charset=utf-8", "cache-control": "no-cache" },
-        });
-      }
-
-      // Non-streaming: wait for full reply
-      session.isStreaming = true;
-      let fullText = "";
-      const startTime = Date.now();
-      const unsub = rpc.onEvent((event) => {
-        if (event.type === "message_update") {
-          const ame = (event as any).assistantMessageEvent ?? (event as any).assistant_message_event;
-          if (ame?.type === "text_delta" && ame.delta) fullText += ame.delta;
-        }
-      });
-
-      try {
-        await rpc.prompt(prompt);
-        await rpc.waitForIdle(this.config.agent.timeoutMs ?? 120_000);
-      } catch {} finally {
-        unsub();
-        session.isStreaming = false;
-      }
-
-      return Response.json({
-        id: requestId,
-        object: "chat.completion",
-        created: Math.floor(startTime / 1000),
-        model: modelName,
-        choices: [{
-          index: 0,
-          message: { role: "assistant", content: fullText },
-          finish_reason: "stop",
-        }],
-        usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
-      });
-    } catch (err: any) {
-      return Response.json({ error: { message: err?.message ?? "Internal error", type: "server_error" } }, { status: 500 });
-    }
-  }
-
-  private serveStaticFile(pathname: string): Response {
-    if (this.noGui) {
-      return Response.json({ error: "Web UI disabled (--no-gui mode)" }, { status: 404 });
-    }
-
-    let filename: string;
-    if (pathname === "/" || pathname === "/index.html") {
-      filename = "index.html";
-    } else if (pathname.startsWith("/web/")) {
-      filename = pathname.slice(5);
-    } else {
-      return new Response("Not Found", { status: 404 });
-    }
-
-    const ext = filename.split(".").pop() ?? "";
-    const contentType = CONTENT_TYPES[ext] ?? "application/octet-stream";
-
-    // Compiled binary: serve from embedded assets
-    const embedded = WEB_ASSETS[filename];
-    if (embedded) {
-      return new Response(embedded, {
-        headers: { "content-type": contentType, "cache-control": "no-cache" },
-      });
-    }
-
-    // Dev mode fallback: serve from filesystem
-    const webDir = new URL("./web", import.meta.url).pathname;
-    const file = Bun.file(`${webDir}/${filename}`);
-    if (!file.size) {
-      return new Response("Not Found", { status: 404 });
-    }
-
-    return new Response(file, {
-      headers: { "content-type": contentType, "cache-control": "no-cache" },
-    });
   }
 
   // ==========================================================================
@@ -2797,6 +2524,38 @@ export class Gateway {
   }
 
   // ==========================================================================
+  // Gateway Context (for sub-module injection)
+  // ==========================================================================
+
+  private get ctx(): GatewayContext {
+    return {
+      config: this.config,
+      pool: this.pool,
+      queue: this.queue,
+      registry: this.registry,
+      sessions: this.sessions,
+      transcripts: this.transcripts,
+      metrics: this.metrics,
+      extensionUI: this.extensionUI,
+      systemEvents: this.systemEvents,
+      dedup: this.dedup,
+      cron: this.cron,
+      heartbeat: this.heartbeatExecutor,
+      delegateExecutor: this.delegateExecutor,
+      log: this.log,
+      wsClients: this.wsClients,
+      noGui: this.noGui,
+      sessionMessageModeOverrides: this.sessionMessageModeOverrides,
+      broadcastToWs: (event, payload) => this.broadcastToWs(event, payload),
+      buildSessionProfile: (sk, role) => this.buildSessionProfile(sk, role),
+      dispatch: (msg) => this.dispatch(msg),
+      compactSessionWithHooks: (sk, inst) => this.compactSessionWithHooks(sk, inst),
+      listAvailableRoles: () => this.listAvailableRoles(),
+      setSessionRole: (sk, role) => this.setSessionRole(sk, role),
+    };
+  }
+
+  // ==========================================================================
   // Metrics Data Source
   // ==========================================================================
 
@@ -2820,12 +2579,4 @@ export class Gateway {
       },
     };
   }
-}
-
-// ============================================================================
-// Types
-// ============================================================================
-
-interface WsClientData {
-  clientId: string;
 }
