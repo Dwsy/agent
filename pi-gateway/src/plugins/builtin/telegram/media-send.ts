@@ -1,6 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
 import { basename } from "node:path";
-import { homedir } from "node:os";
 import { Bot, InputFile } from "grammy";
 import type { TelegramMediaDirective, TelegramParsedOutbound } from "./types.ts";
 import { clipCaption, markdownToTelegramHtml, splitCaption, splitTelegramText } from "./format.ts";
@@ -15,9 +14,7 @@ function normalizePath(pathRaw: string): string {
   if (pathRaw.startsWith("file://")) {
     return decodeURIComponent(pathRaw.slice("file://".length));
   }
-  if (pathRaw.startsWith("~")) {
-    return pathRaw.replace(/^~/, homedir());
-  }
+  // Don't expand ~ — system prompt tells agents to avoid ~ paths
   return pathRaw;
 }
 
@@ -63,8 +60,8 @@ export function parseOutboundMediaDirectives(text: string): TelegramParsedOutbou
     const mediaMatch = line.match(mediaRe);
     if (mediaMatch) {
       const path = mediaMatch[1].trim();
-      // Security: block absolute paths and ~ paths
-      if (path.startsWith("/") || path.startsWith("~")) {
+      // Security: block absolute paths, ~ paths, and directory traversal
+      if (path.startsWith("/") || path.startsWith("~") || path.includes("..")) {
         remain.push(line); // treat as normal text
         continue;
       }
@@ -88,6 +85,12 @@ export function parseOutboundMediaDirectives(text: string): TelegramParsedOutbou
 
 async function sendLocalFileByKind(bot: Bot, chatId: string, item: TelegramMediaDirective, opts?: TelegramSendOptions): Promise<void> {
   const localPath = normalizePath(item.url);
+
+  // Security: final guard — block absolute paths outside CWD and traversal
+  if (localPath.includes("..")) {
+    throw new Error(`Path traversal blocked: ${item.url}`);
+  }
+
   if (!existsSync(localPath)) {
     throw new Error(`Local file not found: ${localPath}`);
   }
