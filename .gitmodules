@@ -19,3 +19,6 @@
 [submodule "extensions/pi-subagents"]
 	path = extensions/pi-subagents
 	url = https://github.com/nicobailon/pi-subagents.git
+[submodule "skills/pi-extensions"]
+	path = skills/pi-extensions
+	url = https://github.com/dwsy/pi-extensions-skill.git
