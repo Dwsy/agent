@@ -82,4 +82,5 @@ export interface GatewayContext {
   compactSessionWithHooks: (sessionKey: SessionKey, instructions?: string) => Promise<void>;
   listAvailableRoles: () => string[];
   setSessionRole: (sessionKey: SessionKey, newRole: string) => Promise<boolean>;
+  reloadConfig?: () => void;
 }
