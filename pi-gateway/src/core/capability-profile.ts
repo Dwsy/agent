@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { resolve } from "node:path";
 import type { Config, RoleCapabilityConfig } from "./config.ts";
 import { buildGatewaySystemPrompt } from "./system-prompts.ts";
+import { getGatewayInternalToken } from "../api/media-send.ts";
 import type { SessionKey } from "./types.ts";
 
 export interface CapabilityProfileInput {

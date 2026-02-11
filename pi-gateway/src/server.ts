@@ -8,22 +8,14 @@
  */
 
 import type { Server, ServerWebSocket } from "bun";
-import { join, resolve as pathResolve } from "node:path";
-import { timingSafeEqual } from "node:crypto";
-import { existsSync, renameSync, statSync } from "node:fs";
+import { join } from "node:path";
+import { existsSync, renameSync } from "node:fs";
 
-// Web asset embedding: populated at build time, empty in dev (falls back to filesystem)
-import { WEB_ASSETS } from "./_web-assets.ts";
-
-const CONTENT_TYPES: Record<string, string> = {
-  html: "text/html; charset=utf-8",
-  css: "text/css; charset=utf-8",
-  js: "application/javascript; charset=utf-8",
-  json: "application/json",
-  svg: "image/svg+xml",
-  png: "image/png",
-  ico: "image/x-icon",
-};
+import { safeTokenCompare, redactConfig } from "./core/auth.ts";
+import { serveStaticFile } from "./core/static-server.ts";
+import { handleWebhookWake, handleWebhookEvent } from "./api/webhook-api.ts";
+import { handleOpenAiChat } from "./api/openai-compat.ts";
+import type { GatewayContext, TelegramMessageMode, WsClientData } from "./gateway/types.ts";
 import { loadConfig, ensureDataDir, type Config, type CronJob, resolveConfigPath, watchConfig } from "./core/config.ts";
 import { RpcPool } from "./core/rpc-pool.ts";
 import type { RpcClient } from "./core/rpc-client.ts";
@@ -44,8 +36,8 @@ import { MetricsCollector, type MetricsDataSource } from "./core/metrics.ts";
 import { DelegateExecutor } from "./core/delegate-executor.ts";
 import { HeartbeatExecutor } from "./core/heartbeat-executor.ts";
 import { SystemEventsQueue } from "./core/system-events.ts";
-import { getMediaSecret, verifyMediaToken, signMediaUrl } from "./core/media-token.ts";
-import { validateMediaPath } from "./core/media-security.ts";
+import { handleMediaServe, processWebChatMediaDirectives } from "./api/media-routes.ts";
+import { handleMediaSendRequest } from "./api/media-send.ts";
 import { DELEGATE_TO_AGENT_TOOL_NAME, validateDelegateParams } from "./tools/delegate-to-agent.ts";
 import {
   createPluginRegistry,
@@ -1506,7 +1498,7 @@ export class Gateway {
 
     // Media serving via signed token (F3: WebChat images)
     if (url.pathname.startsWith("/api/media/") && req.method === "GET") {
-      return this.handleMediaServe(url);
+      return handleMediaServe(url, this.config);
     }
 
     // Media send API (v3.3: tool-based media sending)
@@ -1524,110 +1516,6 @@ export class Gateway {
     }
 
     return new Response("Not Found", { status: 404 });
-  }
-
-  /**
-   * Parse MEDIA: directives in agent response and convert to signed URLs.
-   * Returns processed text (directives removed) and extracted image URLs.
-   */
-  private processWebChatMediaDirectives(text: string, sessionKey: string): { text: string; images: string[] } {
-    const images: string[] = [];
-    const secret = getMediaSecret((this.config as any).channels?.webchat?.mediaSecret);
-    const ttlMs = (this.config as any).channels?.webchat?.mediaTokenTtlMs ?? 3600_000;
-
-    // Match MEDIA:./path patterns (on their own line or inline)
-    const processed = text.replace(/MEDIA:(\S+)/g, (_match, rawPath: string) => {
-      const agentId = sessionKey.split(":")[1] || "main";
-      const agentDef = this.config.agents?.list.find((a) => a.id === agentId);
-      const workspace = agentDef?.workspace ?? process.cwd();
-
-      if (!validateMediaPath(rawPath, workspace)) {
-        return `[blocked: ${rawPath}]`;
-      }
-
-      const url = signMediaUrl(sessionKey, rawPath, secret, ttlMs);
-      const ext = rawPath.split(".").pop()?.toLowerCase() || "";
-      const imageExts = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp"]);
-
-      if (imageExts.has(ext)) {
-        images.push(url);
-        return ""; // Remove directive from text, image shown separately
-      }
-      return `[📎 ${rawPath.split("/").pop()}](${url})`; // Non-image as download link
-    });
-
-    return { text: processed.trim(), images };
-  }
-
-  private handleMediaServe(url: URL): Response {
-    // URL: /api/media/{token}/{filename}?sk={sessionKey}&path={filePath}&exp={expiry}
-    const parts = url.pathname.slice("/api/media/".length).split("/");
-    const token = parts[0];
-    if (!token) return new Response("Bad Request", { status: 400 });
-
-    const sk = url.searchParams.get("sk") || "";
-    const filePath = url.searchParams.get("path") || "";
-    const exp = url.searchParams.get("exp") || "";
-
-    if (!sk || !filePath || !exp) {
-      return new Response("Missing parameters", { status: 400 });
-    }
-
-    const secret = getMediaSecret((this.config as any).channels?.webchat?.mediaSecret);
-    const verified = verifyMediaToken(token, sk, filePath, exp, secret);
-    if (!verified) {
-      return new Response("Forbidden", { status: 403 });
-    }
-
-    // Resolve workspace for the session's agent
-    const agentId = sk.split(":")[1] || "main";
-    const agentDef = this.config.agents?.list.find((a) => a.id === agentId);
-    const workspace = agentDef?.workspace ?? process.cwd();
-
-    // Validate path security
-    if (!validateMediaPath(filePath, workspace)) {
-      return new Response("Forbidden", { status: 403 });
-    }
-
-    // Resolve and serve file
-    const fullPath = pathResolve(workspace, filePath);
-
-    if (!existsSync(fullPath)) {
-      return new Response("Not Found", { status: 404 });
-    }
-
-    const stat = statSync(fullPath);
-    const maxMb = (this.config as any).channels?.webchat?.mediaMaxMb ?? 10;
-    if (stat.size > maxMb * 1024 * 1024) {
-      return new Response("File too large", { status: 413 });
-    }
-
-    // Infer MIME type
-    const ext = fullPath.split(".").pop()?.toLowerCase() || "";
-    const mimeMap: Record<string, string> = {
-      png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg",
-      gif: "image/gif", webp: "image/webp", svg: "image/svg+xml",
-      bmp: "image/bmp", ico: "image/x-icon",
-    };
-    const mime = mimeMap[ext] || "application/octet-stream";
-
-    // Stream via Bun.file() to avoid blocking event loop on large files
-    const file = Bun.file(fullPath);
-    const headers: Record<string, string> = {
-      "Content-Type": mime,
-      "Content-Length": String(stat.size),
-      "Cache-Control": "private, max-age=3600",
-      "X-Content-Type-Options": "nosniff",
-    };
-
-    // SVG can contain scripts — force download to prevent XSS
-    if (ext === "svg") {
-      const filename = filePath.split("/").pop() || "image.svg";
-      headers["Content-Disposition"] = `attachment; filename="${filename}"`;
-      headers["Content-Security-Policy"] = "sandbox";
-    }
-
-    return new Response(file, { status: 200, headers });
   }
 
   private async handleWebhookWake(req: Request): Promise<Response> {
@@ -2358,7 +2246,7 @@ export class Gateway {
             text,
             images,
             respond: async (reply) => {
-              const processed = this.processWebChatMediaDirectives(reply, sessionKey);
+              const processed = processWebChatMediaDirectives(reply, sessionKey, this.config);
               ws.send(JSON.stringify({ type: "event", event: "chat.reply", payload: { text: processed.text, images: processed.images, sessionKey } }));
             },
             setTyping: async (typing) => {

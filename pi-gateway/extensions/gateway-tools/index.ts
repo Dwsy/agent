@@ -6,7 +6,8 @@
  *
  * Environment variables (set by gateway when spawning pi processes):
  * - PI_GATEWAY_URL: Gateway HTTP base URL (e.g., http://127.0.0.1:18789)
- * - PI_GATEWAY_SESSION_KEY: Current session key for auth
+ * - PI_GATEWAY_INTERNAL_TOKEN: Shared secret for authenticating back to gateway
+ * - PI_GATEWAY_SESSION_KEY: Current session key (set dynamically by RPC pool)
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
@@ -14,9 +15,9 @@ import { Type } from "@sinclair/typebox";
 
 export default function gatewayTools(pi: ExtensionAPI) {
   const gatewayUrl = process.env.PI_GATEWAY_URL;
-  const sessionKey = process.env.PI_GATEWAY_SESSION_KEY;
+  const internalToken = process.env.PI_GATEWAY_INTERNAL_TOKEN;
 
-  if (!gatewayUrl || !sessionKey) {
+  if (!gatewayUrl || !internalToken) {
     // Not running under pi-gateway — skip tool registration
     return;
   }
@@ -34,12 +35,15 @@ export default function gatewayTools(pi: ExtensionAPI) {
         Type.String({ description: "Optional caption text sent with the media" }),
       ),
       type: Type.Optional(
-        Type.Union([
-          Type.Literal("photo"),
-          Type.Literal("audio"),
-          Type.Literal("document"),
-          Type.Literal("video"),
-        ], { description: "Media type. Auto-detected from file extension if omitted." }),
+        Type.Union(
+          [
+            Type.Literal("photo"),
+            Type.Literal("audio"),
+            Type.Literal("document"),
+            Type.Literal("video"),
+          ],
+          { description: "Media type. Auto-detected from file extension if omitted." },
+        ),
       ),
     }),
     async execute(_toolCallId, params) {
@@ -49,11 +53,20 @@ export default function gatewayTools(pi: ExtensionAPI) {
         type?: string;
       };
 
+      // Session key may be set dynamically when the RPC pool binds a session
+      const sessionKey = process.env.PI_GATEWAY_SESSION_KEY || "";
+
       try {
         const res = await fetch(`${gatewayUrl}/api/media/send`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ sessionKey, path, caption, type }),
+          body: JSON.stringify({
+            token: internalToken,
+            sessionKey: sessionKey || undefined,
+            path,
+            caption,
+            type,
+          }),
         });
 
         const data = (await res.json()) as Record<string, unknown>;
@@ -72,9 +85,7 @@ export default function gatewayTools(pi: ExtensionAPI) {
 
         // Return the MEDIA: directive so the gateway's response parser
         // picks it up and routes to the appropriate channel
-        const directiveText = caption
-          ? `${caption}\n${data.directive}`
-          : String(data.directive);
+        const directiveText = caption ? `${caption}\n${data.directive}` : String(data.directive);
 
         return {
           content: [{ type: "text" as const, text: directiveText }],
