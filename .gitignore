@@ -175,3 +175,12 @@ extensions/undo-redo/undo-redo-config.json
 
 # Generated insights reports
 insights-reports/
+
+# Pi messenger runtime data
+messenger/
+
+# Git mirror cache
+git/
+
+# Deploy CLI history
+.deploy-cli-history
