@@ -418,3 +418,33 @@ export async function sendOutbound(rt: DiscordPluginRuntime, target: string, tex
     await (channel as any).send(chunk);
   }
 }
+
+// ── Outbound Media (for gateway.sendMedia) ──────────────────────────
+
+import { basename } from "node:path";
+import type { MediaSendOptions, MediaSendResult } from "../../types.ts";
+import { AttachmentBuilder } from "discord.js";
+
+export async function sendMediaOutbound(
+  rt: DiscordPluginRuntime,
+  target: string,
+  filePath: string,
+  opts?: MediaSendOptions,
+): Promise<MediaSendResult> {
+  try {
+    const channel = await rt.client.channels.fetch(target);
+    if (!channel?.isTextBased() || !("send" in channel)) {
+      return { ok: false, error: "Channel not found or not text-based" };
+    }
+
+    const attachment = new AttachmentBuilder(filePath, { name: basename(filePath) });
+    const msg = await (channel as any).send({
+      content: opts?.caption || undefined,
+      files: [attachment],
+    });
+
+    return { ok: true, messageId: msg.id };
+  } catch (err: any) {
+    return { ok: false, error: err?.message ?? String(err) };
+  }
+}
