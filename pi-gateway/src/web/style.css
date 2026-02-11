@@ -57,6 +57,56 @@ body {
 /* Utility */
 .mono { font-family: var(--font-mono); font-size: 12px; }
 
+/* Thinking panel */
+.thinking-panel {
+  margin: 8px 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.thinking-panel summary {
+  padding: 6px 12px;
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: 13px;
+  background: var(--bg-tertiary);
+  user-select: none;
+}
+.thinking-panel summary:hover { background: var(--bg-hover); }
+.thinking-panel .thinking-content {
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  border-top: 1px solid var(--border-subtle);
+}
+
+/* Tool call panel */
+.tool-call {
+  margin: 4px 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+.tool-call summary {
+  padding: 4px 8px;
+  cursor: pointer;
+  color: var(--accent);
+  background: var(--bg-secondary);
+  user-select: none;
+}
+.tool-call summary:hover { background: var(--bg-tertiary); }
+.tool-call pre {
+  margin: 0;
+  padding: 8px;
+  font-size: 11px;
+  overflow-x: auto;
+  border-top: 1px solid var(--border-subtle);
+}
+
+/* Highlight.js overrides */
+.hljs { background: var(--bg-secondary) !important; }
+
 /* Mobile safe area support */
 @supports (padding: env(safe-area-inset-top)) {
   body {

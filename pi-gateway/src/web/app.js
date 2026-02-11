@@ -14,47 +14,74 @@
 
 import { LitElement, html, css } from "lit";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
+import { marked } from "marked";
+import hljs from "highlight.js";
+
+// Configure marked with highlight.js
+marked.setOptions({
+  highlight(code, lang) {
+    if (lang && hljs.getLanguage(lang)) {
+      return hljs.highlight(code, { language: lang }).value;
+    }
+    return hljs.highlightAuto(code).value;
+  },
+  breaks: true,
+  gfm: true,
+});
 
 // ============================================================================
-// Markdown / HTML Renderer (aligned with Telegram Bot)
+// Markdown / HTML Renderer
 // ============================================================================
 
 /**
- * Convert markdown-like text to HTML (safe subset aligned with Telegram HTML mode)
- * Supports: **bold**, *italic*, `code`, ```code blocks```, [links](url)
+ * Convert markdown text to HTML using marked + highlight.js.
+ * Handles thinking blocks (<think>) as collapsible panels.
  */
 function renderMarkdown(text) {
   if (!text) return "";
 
-  // Escape HTML first
-  let html = text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-
-  // Code blocks (```...```)
-  html = html.replace(
-    /```(\w*)\n?([\s\S]*?)```/g,
-    (match, lang, code) => `<pre><code class="language-${lang || "text"}">${code.trim()}</code></pre>`
+  // Extract and render <think> blocks as collapsible details
+  let processed = text.replace(
+    /<think>([\s\S]*?)<\/think>/g,
+    (_m, content) => {
+      const trimmed = content.trim();
+      if (!trimmed) return "";
+      return `<details class="thinking-panel"><summary>💭 Thinking</summary><div class="thinking-content">${marked.parse(trimmed)}</div></details>`;
+    }
   );
 
-  // Inline code (`...`)
-  html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
+  // Render remaining markdown
+  return marked.parse(processed);
+}
 
-  // Bold (**...**)
-  html = html.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
-
-  // Italic (*...* or _..._)
-  html = html.replace(/(^|[^*])\*([^*]+)\*([^*]|$)/g, "$1<em>$2</em>$3");
-  html = html.replace(/(^|[^_])_([^_]+)_([^_]|$)/g, "$1<em>$2</em>$3");
-
-  // Links [text](url)
-  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
-
-  // Line breaks
-  html = html.replace(/\n/g, "<br>");
-
-  return html;
+/**
+ * Format tool call for display — collapsible details panel.
+ */
+function renderToolCall(name, args) {
+  let summary = name;
+  if (args) {
+    switch (name) {
+      case "read":
+        summary = `read ${args.path || args.filePath || args.file || ""}`;
+        break;
+      case "write":
+        summary = `write ${args.path || args.filePath || args.file || ""}`;
+        break;
+      case "edit":
+      case "multi_edit":
+        summary = `${name} ${args.path || args.filePath || args.file || ""}`;
+        break;
+      case "bash":
+        summary = `bash ${(args.command || args.cmd || "").slice(0, 120)}`;
+        break;
+      default: {
+        const payload = JSON.stringify(args);
+        summary = payload.length > 120 ? `${name} ${payload.slice(0, 120)}...` : `${name} ${payload}`;
+      }
+    }
+  }
+  const argsHtml = args ? `<pre><code>${JSON.stringify(args, null, 2)}</code></pre>` : "";
+  return `<details class="tool-call"><summary>→ ${summary}</summary>${argsHtml}</details>`;
 }
 
 /**
@@ -413,11 +440,7 @@ class GwApp extends LitElement {
   }
 
   _handleSessionSelect(session) {
-    // Switch to chat tab and pass session info
     this.switchTab("chat");
-    // Store selected session for gw-chat to pick up
-    this.selectedSession = session;
-    // Notify gw-chat to load session history
     const chat = this.renderRoot.querySelector("gw-chat");
     if (chat && chat.loadSession) {
       chat.loadSession(session.sessionKey);
@@ -459,7 +482,7 @@ class GwApp extends LitElement {
           <div class="nav-footer">v0.1.0</div>
         </nav>
         <main>
-          ${this.activeTab === "chat" ? html`<gw-chat .connection=${gw} .sessionKey=${this.selectedSession?.sessionKey}></gw-chat>` : ""}
+          ${this.activeTab === "chat" ? html`<gw-chat .connection=${gw}></gw-chat>` : ""}
           ${this.activeTab === "sessions" ? html`<gw-sessions .connection=${gw} .onSessionSelect=${(s) => this._handleSessionSelect(s)}></gw-sessions>` : ""}
           ${this.activeTab === "plugins" ? html`<gw-plugins .connection=${gw}></gw-plugins>` : ""}
           ${this.activeTab === "health" ? html`<gw-health .connection=${gw}></gw-health>` : ""}
@@ -483,13 +506,224 @@ class GwChat extends LitElement {
     isTyping: { type: Boolean },
     wsConnected: { type: Boolean },
     sessionKey: { type: String },
+    _sidebarOpen: { type: Boolean, state: true },
+    _sessions: { type: Array, state: true },
+    _currentAgent: { type: String, state: true },
+    _availableRoles: { type: Array, state: true },
+    _currentRole: { type: String, state: true },
   };
 
   static styles = css`
     :host {
       display: flex;
-      flex-direction: column;
       height: 100%;
+    }
+
+    /* ---- Session Sidebar ---- */
+    .sidebar {
+      width: 260px;
+      min-width: 260px;
+      background: var(--bg-secondary);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      transition: margin-left 0.2s ease;
+      overflow: hidden;
+    }
+    .sidebar.collapsed {
+      margin-left: -260px;
+    }
+    .sidebar-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+    .sidebar-header h3 {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+    .new-session-btn {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: var(--radius-sm);
+      padding: 4px 10px;
+      font-size: 12px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      transition: background var(--transition);
+    }
+    .new-session-btn:hover { background: var(--accent-hover); }
+
+    .session-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 6px 0;
+    }
+    .session-item {
+      display: flex;
+      flex-direction: column;
+      padding: 10px 14px;
+      cursor: pointer;
+      border-left: 2px solid transparent;
+      transition: all var(--transition);
+    }
+    .session-item:hover { background: var(--bg-hover); }
+    .session-item.active {
+      background: var(--accent-muted);
+      border-left-color: var(--accent);
+    }
+    .session-item-title {
+      font-size: 13px;
+      color: var(--text-primary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .session-item-meta {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 3px;
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+    .session-item-meta .badge {
+      font-size: 10px;
+      padding: 1px 5px;
+      border-radius: 3px;
+      background: var(--bg-tertiary);
+      color: var(--text-secondary);
+    }
+    .session-item-meta .badge.streaming {
+      background: rgba(63,185,80,.15);
+      color: var(--success);
+    }
+    .session-item-actions {
+      display: flex;
+      gap: 4px;
+      margin-top: 4px;
+      opacity: 0;
+      transition: opacity var(--transition);
+    }
+    .session-item:hover .session-item-actions { opacity: 1; }
+    .session-item-actions button {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text-secondary);
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 3px;
+      cursor: pointer;
+    }
+    .session-item-actions button:hover { background: var(--bg-hover); color: var(--text-primary); }
+    .session-item-actions button.danger { color: var(--danger); border-color: var(--danger); }
+    .session-item-actions button.danger:hover { background: rgba(248,81,73,.1); }
+
+    .sidebar-empty {
+      padding: 20px 14px;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 12px;
+    }
+
+    /* ---- Chat Main ---- */
+    .chat-main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+    }
+
+    /* ---- Chat Header ---- */
+    .chat-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--border-subtle);
+      background: var(--bg-secondary);
+      min-height: 44px;
+    }
+    .toggle-sidebar {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text-secondary);
+      width: 30px;
+      height: 30px;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      flex-shrink: 0;
+      transition: all var(--transition);
+    }
+    .toggle-sidebar:hover { background: var(--bg-hover); color: var(--text-primary); }
+    .chat-title {
+      flex: 1;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-primary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .agent-badge {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 10px;
+      background: var(--accent-muted);
+      color: var(--accent);
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .role-select {
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border);
+      color: var(--text-secondary);
+      font-size: 11px;
+      padding: 3px 6px;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      outline: none;
+    }
+    .role-select:hover { border-color: var(--accent); }
+
+    /* ---- Mobile sidebar overlay ---- */
+    .sidebar-overlay {
+      display: none;
+    }
+    @media (max-width: 768px) {
+      .sidebar {
+        position: fixed;
+        top: 56px;
+        left: 0;
+        bottom: 60px;
+        z-index: 200;
+        width: 280px;
+        min-width: 280px;
+        transition: transform 0.2s ease;
+        transform: translateX(0);
+      }
+      .sidebar.collapsed {
+        margin-left: 0;
+        transform: translateX(-100%);
+      }
+      .sidebar-overlay {
+        display: block;
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,.5);
+        z-index: 199;
+      }
+      .sidebar-overlay.hidden { display: none; }
     }
 
     .messages {
@@ -539,6 +773,34 @@ class GwChat extends LitElement {
       color: var(--danger);
     }
 
+    /* Thinking collapsible panel (streaming) */
+    details.msg.thinking {
+      max-width: 80%;
+      align-self: flex-start;
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 0;
+      font-size: 13px;
+    }
+    details.msg.thinking summary {
+      padding: 8px 12px;
+      cursor: pointer;
+      user-select: none;
+      list-style: none;
+    }
+    details.msg.thinking summary::-webkit-details-marker { display: none; }
+    .thinking-indicator { color: var(--text-secondary); font-size: 12px; }
+    .thinking-content {
+      padding: 0 12px 10px;
+      color: var(--text-secondary);
+      font-size: 12px;
+      line-height: 1.5;
+      max-height: 200px;
+      overflow-y: auto;
+      border-top: 1px solid var(--border);
+    }
+
     .msg code {
       font-family: var(--font-mono);
       font-size: 12px;
@@ -583,6 +845,173 @@ class GwChat extends LitElement {
       0%, 80%, 100% { opacity: 0; }
       40% { opacity: 1; }
     }
+
+    /* Extension UI prompt */
+    .ext-ui {
+      margin: 0 20px;
+      padding: 14px;
+      background: var(--bg-secondary);
+      border: 1px solid var(--accent);
+      border-radius: var(--radius);
+      animation: slideUp 0.2s ease;
+    }
+    @keyframes slideUp {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .ext-ui-title {
+      font-weight: 500;
+      font-size: 13px;
+      margin-bottom: 10px;
+      color: var(--accent);
+    }
+    .ext-ui-message {
+      font-size: 13px;
+      color: var(--text-secondary);
+      margin-bottom: 10px;
+    }
+    .ext-ui-options {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-bottom: 10px;
+    }
+    .ext-ui-option {
+      background: var(--bg-primary);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 8px 12px;
+      color: var(--text-primary);
+      font-size: 13px;
+      cursor: pointer;
+      text-align: left;
+      transition: border-color 0.15s;
+    }
+    .ext-ui-option:hover {
+      border-color: var(--accent);
+    }
+    .ext-ui-hint {
+      display: block;
+      font-size: 11px;
+      color: var(--text-secondary);
+      margin-top: 2px;
+    }
+    .ext-ui-input {
+      width: 100%;
+      background: var(--bg-primary);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text-primary);
+      font-family: var(--font-mono, monospace);
+      font-size: 13px;
+      padding: 8px 10px;
+      resize: vertical;
+      min-height: 60px;
+      margin-bottom: 10px;
+      outline: none;
+      box-sizing: border-box;
+    }
+    .ext-ui-input:focus { border-color: var(--accent); }
+    .ext-ui-actions {
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+    }
+    .ext-ui-submit {
+      background: var(--accent);
+      color: white;
+      border: none;
+      border-radius: var(--radius);
+      padding: 6px 16px;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    .ext-ui-cancel {
+      background: transparent;
+      color: var(--text-secondary);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 6px 16px;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    .ext-ui-progress {
+      height: 4px;
+      background: var(--border);
+      border-radius: 2px;
+      overflow: hidden;
+      margin-bottom: 6px;
+    }
+    .ext-ui-progress-bar {
+      height: 100%;
+      background: var(--accent);
+      transition: width 0.3s ease;
+    }
+    .ext-ui-progress-text {
+      font-size: 12px;
+      color: var(--text-secondary);
+    }
+
+    /* Image preview bar */
+    .image-preview-bar {
+      display: flex;
+      gap: 8px;
+      padding: 8px 20px 0;
+      overflow-x: auto;
+    }
+    .image-preview {
+      position: relative;
+      flex-shrink: 0;
+    }
+    .image-preview img {
+      height: 60px;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      object-fit: cover;
+    }
+    .image-remove {
+      position: absolute;
+      top: -4px;
+      right: -4px;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: var(--danger, #f85149);
+      color: white;
+      border: none;
+      font-size: 11px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      line-height: 1;
+    }
+
+    /* Message images */
+    .msg-images {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 8px;
+      flex-wrap: wrap;
+    }
+    .msg-image {
+      max-width: 300px;
+      max-height: 200px;
+      border-radius: var(--radius);
+      object-fit: contain;
+    }
+
+    /* Attach button */
+    .attach-btn {
+      background: transparent;
+      border: none;
+      font-size: 18px;
+      cursor: pointer;
+      padding: 4px;
+      opacity: 0.6;
+      transition: opacity 0.15s;
+    }
+    .attach-btn:hover { opacity: 1; }
 
     .input-area {
       padding: 12px 20px 16px;
@@ -702,20 +1131,40 @@ class GwChat extends LitElement {
     this.isStreaming = false;
     this.isTyping = false;
     this.wsConnected = false;
+    this.sessionKey = "";
+    this._sidebarOpen = false;
+    this._sessions = [];
+    this._currentAgent = "";
+    this._availableRoles = [];
+    this._currentRole = "";
     this._unsubs = [];
     this._connPoll = null;
     this._gotStreamingDelta = false;
+    this._pendingUI = null;
+    this._thinkingText = "";
+    this._isThinking = false;
+    this._pendingImages = [];
   }
 
   connectedCallback() {
     super.connectedCallback();
-    // Poll gw.connected to update reactive state
     this.wsConnected = gw.connected;
     this._connPoll = setInterval(() => {
       if (this.wsConnected !== gw.connected) {
         this.wsConnected = gw.connected;
+        if (gw.connected) this._loadSessions();
       }
     }, 500);
+    // Load sessions and roles once connected
+    if (gw.connected) {
+      this._loadSessions();
+      this._loadRoles();
+    }
+    const origOnStatus = gw.onStatusChange;
+    gw.onStatusChange = (c) => {
+      origOnStatus(c);
+      if (c) { this._loadSessions(); this._loadRoles(); }
+    };
     this._unsubs.push(
       gw.on("chat.reply", (p) => {
         // Skip if we already displayed this via streaming events
@@ -731,18 +1180,63 @@ class GwChat extends LitElement {
         this.isTyping = p.typing;
       }),
       gw.on("agent", (p) => {
-        // Handle streaming text_delta for real-time display
-        if (p.type === "message_update" && p.assistantMessageEvent?.type === "text_delta") {
-          this._gotStreamingDelta = true;
-          const last = this.messages[this.messages.length - 1];
-          if (last?.role === "streaming") {
-            last.text += p.assistantMessageEvent.delta;
-            this.messages = [...this.messages];
-          } else {
-            this.messages = [...this.messages, { role: "streaming", text: p.assistantMessageEvent.delta }];
+        // Handle streaming text_delta and thinking events for real-time display
+        const ame = p.assistantMessageEvent;
+        if (p.type === "message_update" && ame) {
+          const isTextDelta = ame.type === "text_delta" && ame.delta;
+          const isThinkingStart = ame.type === "thinking_start";
+          const isThinkingDelta = ame.type === "thinking_delta" && ame.delta;
+          const isThinkingEnd = ame.type === "thinking_end";
+          const isToolStart = ame.type === "tool_use" && ame.name;
+
+          // Tool call: render as collapsible panel
+          if (isToolStart) {
+            const toolHtml = renderToolCall(ame.name, ame.input);
+            const last = this.messages[this.messages.length - 1];
+            if (last?.role === "streaming") {
+              last.text += "\n" + toolHtml;
+              this.messages = [...this.messages];
+            } else {
+              this.messages = [...this.messages, { role: "streaming", text: toolHtml }];
+            }
+            this._scrollBottom();
+            return;
           }
-          this.isTyping = false;
-          this._scrollBottom();
+
+          // Thinking: track separately, render as collapsible panel
+          if (isThinkingStart) {
+            this._isThinking = true;
+            this._thinkingText = "";
+            this._updateThinkingMessage();
+            this._scrollBottom();
+            return;
+          }
+          if (isThinkingDelta) {
+            this._thinkingText += ame.delta;
+            this._updateThinkingMessage();
+            this._scrollBottom();
+            return;
+          }
+          if (isThinkingEnd) {
+            this._isThinking = false;
+            this._updateThinkingMessage();
+            return;
+          }
+
+          // Text delta: append to streaming message
+          if (isTextDelta) {
+            this._gotStreamingDelta = true;
+            const last = this.messages[this.messages.length - 1];
+
+            if (last?.role === "streaming") {
+              last.text += ame.delta;
+              this.messages = [...this.messages];
+            } else {
+              this.messages = [...this.messages, { role: "streaming", text: ame.delta }];
+            }
+            this.isTyping = false;
+            this._scrollBottom();
+          }
         }
         if (p.type === "agent_end") {
           // Convert streaming message to final assistant message
@@ -751,8 +1245,24 @@ class GwChat extends LitElement {
             last.role = "assistant";
             this.messages = [...this.messages];
           }
+          // Finalize thinking panel
+          this._isThinking = false;
+          this._thinkingText = "";
           this.isStreaming = false;
           this.isTyping = false;
+        }
+      }),
+      // Extension UI: prompt forwarded from agent
+      gw.on("extension_ui_request", (p) => {
+        this._pendingUI = p;
+        this.requestUpdate();
+        this._scrollBottom();
+      }),
+      // Extension UI: prompt resolved by another client
+      gw.on("extension_ui_dismissed", (p) => {
+        if (this._pendingUI?.id === p.id) {
+          this._pendingUI = null;
+          this.requestUpdate();
         }
       }),
     );
@@ -764,15 +1274,18 @@ class GwChat extends LitElement {
     if (this._connPoll) clearInterval(this._connPoll);
   }
 
-  async updated(changed) {
-    if (changed.has("sessionKey") && this.sessionKey) {
-      await this.loadSession(this.sessionKey);
-    }
-  }
-
   async loadSession(sessionKey) {
     if (!sessionKey) return;
     this.sessionKey = sessionKey;
+    // Parse agent from session key (agent:{agentId}:{channel}:{scope}:{id})
+    const parts = sessionKey.split(":");
+    this._currentAgent = parts.length >= 2 ? parts[1] : "";
+    this._currentRole = "";
+    // Try to get role from session state
+    try {
+      const state = await gw.request("sessions.get", { sessionKey });
+      if (state?.role) this._currentRole = state.role;
+    } catch {}
     try {
       const history = await gw.request("chat.history", { sessionKey });
       this.messages = (history?.messages || []).map((m) => ({
@@ -785,19 +1298,129 @@ class GwChat extends LitElement {
     }
   }
 
+  async _loadSessions() {
+    try {
+      const list = await gw.request("sessions.list");
+      this._sessions = (list || []).sort((a, b) => (b.lastActivity || 0) - (a.lastActivity || 0));
+    } catch {
+      this._sessions = [];
+    }
+  }
+
+  async _loadRoles() {
+    try {
+      const res = await gw.request("session.listRoles");
+      this._availableRoles = res?.roles || [];
+    } catch {
+      this._availableRoles = [];
+    }
+  }
+
+  _newSession() {
+    // Generate a new webchat session key
+    const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    const agentId = this._currentAgent || "main";
+    const newKey = `agent:${agentId}:webchat:dm:${id}`;
+    this.sessionKey = newKey;
+    this.messages = [];
+    this._currentRole = "";
+    this._thinkingText = "";
+    this._isThinking = false;
+    this._gotStreamingDelta = false;
+    this.isStreaming = false;
+    this.isTyping = false;
+    this._sidebarOpen = false;
+    // Refresh session list after a short delay (session created on first message)
+    this.requestUpdate();
+  }
+
+  _selectSession(session) {
+    this.loadSession(session.sessionKey);
+    // Close sidebar on mobile
+    if (window.matchMedia("(max-width: 768px)").matches) {
+      this._sidebarOpen = false;
+    }
+  }
+
+  async _deleteSession(sessionKey, ev) {
+    ev.stopPropagation();
+    try {
+      await gw.request("sessions.delete", { sessionKey });
+      if (this.sessionKey === sessionKey) {
+        this.sessionKey = "";
+        this.messages = [];
+      }
+      this._loadSessions();
+    } catch (err) {
+      console.error("Failed to delete session:", err);
+    }
+  }
+
+  async _changeRole(ev) {
+    const role = ev.target.value;
+    if (!role || !this.sessionKey) return;
+    try {
+      await gw.request("session.setRole", { sessionKey: this.sessionKey, role });
+      this._currentRole = role;
+    } catch (err) {
+      console.error("Failed to set role:", err);
+    }
+  }
+
+  _toggleSidebar() {
+    this._sidebarOpen = !this._sidebarOpen;
+    if (this._sidebarOpen) this._loadSessions();
+  }
+
+  _formatSessionTitle(session) {
+    const key = session.sessionKey || "";
+    // Extract meaningful parts: agent:main:webchat:dm:xxx -> "webchat dm xxx"
+    const parts = key.split(":");
+    if (parts.length >= 5) {
+      const agent = parts[1] === "main" ? "" : parts[1] + " · ";
+      const channel = parts[2];
+      const id = parts.slice(4).join(":");
+      return `${agent}${channel} · ${id.slice(0, 8)}`;
+    }
+    return key.length > 30 ? key.slice(0, 30) + "…" : key;
+  }
+
+  _formatTime(ts) {
+    if (!ts) return "";
+    const d = new Date(ts);
+    const now = new Date();
+    const diff = now - d;
+    if (diff < 60_000) return "just now";
+    if (diff < 3600_000) return `${Math.floor(diff / 60_000)}m ago`;
+    if (diff < 86400_000) return `${Math.floor(diff / 3600_000)}h ago`;
+    return d.toLocaleDateString();
+  }
+
   async _send(e) {
     e.preventDefault();
     const text = this.inputText.trim();
-    if (!text || this.isStreaming) return;
+    const images = this._pendingImages.length > 0 ? [...this._pendingImages] : undefined;
+    if ((!text && !images) || this.isStreaming) return;
 
-    this.messages = [...this.messages, { role: "user", text }];
+    // Show user message with image previews
+    const userMsg = { role: "user", text: text || "(image)", images };
+    this.messages = [...this.messages, userMsg];
     this.inputText = "";
+    this._pendingImages = [];
+    this.requestUpdate();
     this.isStreaming = true;
     this.isTyping = true;
     this._scrollBottom();
 
     try {
-      await gw.request("chat.send", { text });
+      const payload = { text: text || "Describe this image." };
+      if (this.sessionKey) payload.sessionKey = this.sessionKey;
+      if (images) {
+        payload.images = images.map((img) => ({ data: img.data, mimeType: img.mimeType }));
+      }
+      await gw.request("chat.send", payload);
+      // Refresh session list (new session may have been created)
+      setTimeout(() => this._loadSessions(), 500);
     } catch (err) {
       this.messages = [...this.messages, { role: "error", text: err.message }];
       this.isStreaming = false;
@@ -807,10 +1430,25 @@ class GwChat extends LitElement {
 
   async _abort() {
     try {
-      await gw.request("chat.abort", {});
+      await gw.request("chat.abort", { sessionKey: this.sessionKey || undefined });
     } catch {}
     this.isStreaming = false;
     this.isTyping = false;
+  }
+
+  async _respondUI(value, cancelled = false) {
+    if (!this._pendingUI) return;
+    const id = this._pendingUI.id;
+    try {
+      await gw.request("extension_ui_response", {
+        id,
+        ...(cancelled ? { cancelled: true } : { value, confirmed: typeof value === "boolean" ? value : undefined }),
+      });
+    } catch (err) {
+      console.error("Extension UI response failed:", err);
+    }
+    this._pendingUI = null;
+    this.requestUpdate();
   }
 
   _onKeydown(e) {
@@ -827,6 +1465,62 @@ class GwChat extends LitElement {
     e.target.style.height = Math.min(e.target.scrollHeight, 120) + "px";
   }
 
+  _onPaste(e) {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (const item of items) {
+      if (item.type.startsWith("image/")) {
+        e.preventDefault();
+        const file = item.getAsFile();
+        if (file) this._addImageFile(file);
+        return;
+      }
+    }
+  }
+
+  _onFileSelect(e) {
+    const files = e.target.files;
+    if (!files) return;
+    for (const file of files) {
+      if (file.type.startsWith("image/")) {
+        this._addImageFile(file);
+      }
+    }
+    e.target.value = "";
+  }
+
+  _addImageFile(file) {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const base64 = reader.result.split(",")[1];
+      this._pendingImages = [...this._pendingImages, {
+        data: base64,
+        mimeType: file.type,
+        name: file.name,
+        preview: reader.result, // data URL for preview
+      }];
+      this.requestUpdate();
+    };
+    reader.readAsDataURL(file);
+  }
+
+  _removeImage(index) {
+    this._pendingImages = this._pendingImages.filter((_, i) => i !== index);
+    this.requestUpdate();
+  }
+
+  _updateThinkingMessage() {
+    // Insert or update a "thinking" role message in the messages array
+    const last = this.messages[this.messages.length - 1];
+    if (last?.role === "thinking") {
+      last.text = this._thinkingText;
+      last.isThinking = this._isThinking;
+      this.messages = [...this.messages];
+    } else if (this._thinkingText || this._isThinking) {
+      this.messages = [...this.messages, { role: "thinking", text: this._thinkingText, isThinking: this._isThinking }];
+    }
+  }
+
   _scrollBottom() {
     requestAnimationFrame(() => {
       const el = this.renderRoot.querySelector(".messages");
@@ -834,40 +1528,214 @@ class GwChat extends LitElement {
     });
   }
 
+  _renderExtensionUI() {
+    const ui = this._pendingUI;
+    if (!ui) return "";
+    const title = ui.title || "Agent Request";
+
+    switch (ui.method) {
+      case "select":
+      case "multiselect": {
+        const options = ui.options || [];
+        return html`
+          <div class="ext-ui">
+            <div class="ext-ui-title">${title}</div>
+            <div class="ext-ui-options">
+              ${options.map((opt) => {
+                const label = typeof opt === "string" ? opt : opt.label;
+                const value = typeof opt === "string" ? opt : opt.value;
+                const hint = typeof opt === "object" ? opt.hint : null;
+                return html`
+                  <button class="ext-ui-option" @click=${() => this._respondUI(value)}>
+                    ${label}${hint ? html`<span class="ext-ui-hint">${hint}</span>` : ""}
+                  </button>
+                `;
+              })}
+            </div>
+            <button class="ext-ui-cancel" @click=${() => this._respondUI(null, true)}>Cancel</button>
+          </div>
+        `;
+      }
+      case "text":
+      case "editor":
+        return html`
+          <div class="ext-ui">
+            <div class="ext-ui-title">${title}</div>
+            <textarea
+              class="ext-ui-input"
+              placeholder=${ui.placeholder || ""}
+              .value=${ui.defaultValue || ""}
+              @keydown=${(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  this._respondUI(e.target.value);
+                }
+              }}
+            ></textarea>
+            <div class="ext-ui-actions">
+              <button class="ext-ui-submit" @click=${(e) => {
+                const ta = this.renderRoot.querySelector(".ext-ui-input");
+                this._respondUI(ta?.value || "");
+              }}>Submit</button>
+              <button class="ext-ui-cancel" @click=${() => this._respondUI(null, true)}>Cancel</button>
+            </div>
+          </div>
+        `;
+      case "confirm":
+        return html`
+          <div class="ext-ui">
+            <div class="ext-ui-title">${title}</div>
+            ${ui.message ? html`<div class="ext-ui-message">${ui.message}</div>` : ""}
+            <div class="ext-ui-actions">
+              <button class="ext-ui-submit" @click=${() => this._respondUI(true)}>Yes</button>
+              <button class="ext-ui-cancel" @click=${() => this._respondUI(false)}>No</button>
+            </div>
+          </div>
+        `;
+      case "progress":
+        return html`
+          <div class="ext-ui">
+            <div class="ext-ui-title">${ui.label || title}</div>
+            ${ui.total ? html`
+              <div class="ext-ui-progress">
+                <div class="ext-ui-progress-bar" style="width: ${Math.round(((ui.current || 0) / ui.total) * 100)}%"></div>
+              </div>
+              <div class="ext-ui-progress-text">${ui.current || 0} / ${ui.total}</div>
+            ` : html`<div class="ext-ui-progress-text">Processing...</div>`}
+          </div>
+        `;
+      default:
+        return html`
+          <div class="ext-ui">
+            <div class="ext-ui-title">${title}</div>
+            <button class="ext-ui-cancel" @click=${() => this._respondUI(null, true)}>Dismiss</button>
+          </div>
+        `;
+    }
+  }
+
   render() {
+    const sessionTitle = this.sessionKey
+      ? this._formatSessionTitle({ sessionKey: this.sessionKey })
+      : "New Chat";
+
     return html`
-      <div class="messages">
-        ${this.messages.length === 0
-          ? html`<div class="welcome">
-              <h2>pi-gateway WebChat</h2>
-              <p>Type a message to chat with your pi agent.</p>
-            </div>`
-          : this.messages.map((m) => html`
-              <div class="msg ${m.role === "streaming" ? "assistant" : m.role}">
-                ${renderMessageContent(m.text)}
+      <!-- Sidebar overlay (mobile) -->
+      <div class="sidebar-overlay ${this._sidebarOpen ? "" : "hidden"}"
+           @click=${() => { this._sidebarOpen = false; }}></div>
+
+      <!-- Session Sidebar -->
+      <aside class="sidebar ${this._sidebarOpen ? "" : "collapsed"}">
+        <div class="sidebar-header">
+          <h3>Sessions</h3>
+          <button class="new-session-btn" @click=${() => this._newSession()}>+ New</button>
+        </div>
+        <div class="session-list">
+          ${this._sessions.length === 0
+            ? html`<div class="sidebar-empty">No sessions yet</div>`
+            : this._sessions.map((s) => html`
+              <div class="session-item ${s.sessionKey === this.sessionKey ? "active" : ""}"
+                   @click=${() => this._selectSession(s)}>
+                <div class="session-item-title">${this._formatSessionTitle(s)}</div>
+                <div class="session-item-meta">
+                  <span>${s.messageCount ?? 0} msgs</span>
+                  <span>${this._formatTime(s.lastActivity)}</span>
+                  ${s.isStreaming ? html`<span class="badge streaming">live</span>` : ""}
+                  ${s.role ? html`<span class="badge">${s.role}</span>` : ""}
+                </div>
+                <div class="session-item-actions">
+                  <button class="danger" @click=${(e) => this._deleteSession(s.sessionKey, e)}>Delete</button>
+                </div>
               </div>
             `)}
-        ${this.isTyping && !this.messages.some((m) => m.role === "streaming")
-          ? html`<div class="typing">
-              <span class="typing-dots"><span></span><span></span><span></span></span>
-              Thinking...
-            </div>`
-          : ""}
-      </div>
-      <div class="input-area">
-        <form @submit=${this._send}>
-          <textarea
-            .value=${this.inputText}
-            @input=${this._onInput}
-            @keydown=${this._onKeydown}
-            placeholder="Type a message... (Enter to send)"
-            rows="1"
-            ?disabled=${!this.wsConnected}
-          ></textarea>
-          ${this.isStreaming
-            ? html`<button type="button" class="abort" @click=${this._abort} title="Abort">■</button>`
-            : html`<button type="submit" ?disabled=${!this.inputText.trim() || !this.wsConnected} title="Send">➤</button>`}
-        </form>
+        </div>
+      </aside>
+
+      <!-- Chat Main -->
+      <div class="chat-main">
+        <div class="chat-header">
+          <button class="toggle-sidebar" @click=${() => this._toggleSidebar()}
+                  title="Toggle sessions">☰</button>
+          <span class="chat-title">${sessionTitle}</span>
+          ${this._currentAgent && this._currentAgent !== "main"
+            ? html`<span class="agent-badge">🤖 ${this._currentAgent}</span>`
+            : ""}
+          ${this._availableRoles.length > 1
+            ? html`<select class="role-select" .value=${this._currentRole || "default"}
+                           @change=${this._changeRole}>
+                ${this._availableRoles.map((r) => html`<option value=${r} ?selected=${r === (this._currentRole || "default")}>${r}</option>`)}
+              </select>`
+            : ""}
+        </div>
+
+        <div class="messages">
+          ${this.messages.length === 0
+            ? html`<div class="welcome">
+                <h2>pi-gateway WebChat</h2>
+                <p>Type a message to chat with your pi agent.</p>
+              </div>`
+            : this.messages.map((m) => {
+                if (m.role === "thinking") {
+                  return html`
+                    <details class="msg thinking" ?open=${m.isThinking}>
+                      <summary>
+                        ${m.isThinking ? html`<span class="thinking-indicator">💭 Thinking...</span>` : html`<span class="thinking-indicator">💭 Thought process</span>`}
+                      </summary>
+                      <div class="thinking-content">${renderMessageContent(m.text)}</div>
+                    </details>
+                  `;
+                }
+                return html`
+                  <div class="msg ${m.role === "streaming" ? "assistant" : m.role}">
+                    ${m.images?.length ? html`
+                      <div class="msg-images">
+                        ${m.images.map((img) => html`<img src=${img.preview || `data:${img.mimeType};base64,${img.data}`} class="msg-image" />`)}
+                      </div>
+                    ` : ""}
+                    ${renderMessageContent(m.text)}
+                  </div>
+                `;
+              })}
+          ${this.isTyping && !this.messages.some((m) => m.role === "streaming")
+            ? html`<div class="typing">
+                <span class="typing-dots"><span></span><span></span><span></span></span>
+                Thinking...
+              </div>`
+            : ""}
+        </div>
+        ${this._pendingUI ? this._renderExtensionUI() : ""}
+        ${this._pendingImages.length > 0 ? html`
+          <div class="image-preview-bar">
+            ${this._pendingImages.map((img, i) => html`
+              <div class="image-preview">
+                <img src=${img.preview} alt=${img.name} />
+                <button class="image-remove" @click=${() => this._removeImage(i)}>×</button>
+              </div>
+            `)}
+          </div>
+        ` : ""}
+        <div class="input-area">
+          <form @submit=${this._send}>
+            <input type="file" accept="image/*" multiple
+              style="display:none" id="file-input"
+              @change=${this._onFileSelect} />
+            <button type="button" class="attach-btn"
+              @click=${() => this.renderRoot.querySelector("#file-input").click()}
+              title="Attach image">📎</button>
+            <textarea
+              .value=${this.inputText}
+              @input=${this._onInput}
+              @keydown=${this._onKeydown}
+              @paste=${this._onPaste}
+              placeholder="Type a message... (Enter to send)"
+              rows="1"
+              ?disabled=${!this.wsConnected}
+            ></textarea>
+            ${this.isStreaming
+              ? html`<button type="button" class="abort" @click=${this._abort} title="Abort">■</button>`
+              : html`<button type="submit" ?disabled=${!this.inputText.trim() && !this._pendingImages.length || !this.wsConnected} title="Send">➤</button>`}
+          </form>
+        </div>
       </div>
     `;
   }
