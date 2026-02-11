@@ -42,11 +42,13 @@ function createTestGateway(mutator?: (config: Config) => void): AnyGateway {
 
 class FakeRpc {
   id = "rpc-test";
+  sessionKey = "";
   private listener: ((event: any) => void) | null = null;
   lastPrompt = "";
   promptCalls: Array<{ message: string; images?: unknown[]; streamingBehavior?: "steer" | "followUp" }> = [];
   abortCalls = 0;
   compactCalls: string[] = [];
+  extensionUIHandler: any = null;
 
   onEvent(listener: (event: any) => void): () => void {
     this.listener = listener;
@@ -62,7 +64,11 @@ class FakeRpc {
     this.promptCalls.push({ message, images, streamingBehavior });
     this.listener?.({
       type: "message_update",
-      assistantMessageEvent: { type: "text_delta", delta: "hello" },
+      assistantMessageEvent: {
+        type: "text_delta",
+        delta: "hello",
+        partial: { content: [{ type: "text", text: "hello" }] },
+      },
     });
     this.listener?.({
       type: "agent_end",
@@ -95,7 +101,7 @@ describe("gateway extension wiring", () => {
     const fakeRpc = new FakeRpc();
 
     gateway.pool = {
-      acquire: async () => fakeRpc,
+      acquire: async (sk: string) => { fakeRpc.sessionKey = sk; return fakeRpc; },
       release: () => {},
       getForSession: () => fakeRpc,
     };
@@ -120,15 +126,12 @@ describe("gateway extension wiring", () => {
     expect(reply).toBe("hello +out");
   });
 
-  test("registered slash command executes without acquiring RPC", async () => {
+  test("registered slash command executes via local handler", async () => {
     const gateway = createTestGateway();
-    let acquireCalled = false;
+    const fakeRpc = new FakeRpc();
 
     gateway.pool = {
-      acquire: async () => {
-        acquireCalled = true;
-        throw new Error("should not acquire");
-      },
+      acquire: async (sk: string) => { fakeRpc.sessionKey = sk; return fakeRpc; },
       release: () => {},
       getForSession: () => null,
     };
@@ -149,8 +152,10 @@ describe("gateway extension wiring", () => {
       setTyping: async () => {},
     });
 
-    expect(acquireCalled).toBe(false);
+    // Command handler should have run and produced the reply
     expect(reply).toBe("pong now");
+    // Prompt should NOT have been sent to RPC (command was handled locally)
+    expect(fakeRpc.promptCalls).toHaveLength(0);
   });
 
   test("tools.call flow triggers tool hooks and supports result mutation", async () => {
@@ -318,6 +323,7 @@ describe("gateway extension wiring", () => {
     let enqueued = false;
     gateway.queue = {
       enqueue: () => { enqueued = true; return true; },
+      clearCollectBuffer: () => 0,
     };
     gateway.pool = {
       getForSession: () => fakeRpc,
@@ -336,7 +342,7 @@ describe("gateway extension wiring", () => {
     expect(enqueued).toBe(true);
   });
 
-  test("dispatch keeps non-telegram channels on queue path", async () => {
+  test("dispatch steers non-telegram channels when streaming", async () => {
     const gateway = createTestGateway();
     const fakeRpc = new FakeRpc();
     const sessionKey = "agent:main:webchat:default";
@@ -349,10 +355,6 @@ describe("gateway extension wiring", () => {
       rpcProcessId: fakeRpc.id,
     });
 
-    let enqueued = false;
-    gateway.queue = {
-      enqueue: () => { enqueued = true; return true; },
-    };
     gateway.pool = {
       getForSession: () => fakeRpc,
     };
@@ -365,8 +367,9 @@ describe("gateway extension wiring", () => {
       setTyping: async () => {},
     });
 
+    // Default mode is steer → message injected via rpc.prompt with steer behavior
     expect(fakeRpc.abortCalls).toBe(0);
-    expect(fakeRpc.promptCalls).toHaveLength(0);
-    expect(enqueued).toBe(true);
+    expect(fakeRpc.promptCalls).toHaveLength(1);
+    expect(fakeRpc.promptCalls[0].streamingBehavior).toBe("steer");
   });
 });
