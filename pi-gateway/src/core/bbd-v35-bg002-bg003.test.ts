@@ -122,6 +122,20 @@ describe("BG-002: pool eviction session_end", () => {
   });
 });
 
+// ── BG-002: coverage audit conclusion ──────────────────────────────────────
+//
+// All 5 PRD §4.4 paths verified:
+//   ✅ session-reset.ts        — fires session_end → session_reset → session_start
+//   ✅ role-manager.ts         — fires session_end before releasing old role
+//   ✅ rpc-pool.ts             — onSessionEnd callback on evict/dead/idle-reclaim,
+//                                wired to hooks.dispatch("session_end") in server.ts
+//   ⊘  telegram-helpers.ts    — sessions.delete(oldKey) during key migration is NOT
+//                                a session lifecycle event (key rename, not termination).
+//                                Decision: no session_end needed. (PM: HappyCastle)
+//   ⊘  heartbeat-executor.ts  — pool.release() returns process to idle, does not
+//                                terminate session. Eviction covered by rpc-pool.ts.
+//
+
 // ── BG-003: registration conflict detection ───────────────────────────────
 
 describe("BG-003: plugin registration conflict detection", () => {
