@@ -406,7 +406,7 @@ async function dispatchAgentTurn(params: {
   // 追踪 accumulated 长度，用于在 delta 缺失时计算增量
   let lastStreamAccumLen = 0;
 
-  await runtime.api.dispatch({
+  const result = await runtime.api.dispatch({
     source,
     sessionKey,
     text,
@@ -611,6 +611,13 @@ async function dispatchAgentTurn(params: {
       if (!typing) clearInterval(typingInterval);
     },
   });
+
+  // Steer/follow-up: message injected into active turn — no callbacks fired,
+  // no spinner created. Clean up typing and exit early.
+  if (result?.injected) {
+    clearInterval(typingInterval);
+    return;
+  }
 
   clearInterval(typingInterval);
 }
