@@ -4,7 +4,7 @@ import { isSenderAllowed, type DmPolicy } from "../../../security/allowlist.ts";
 import { createPairingRequest } from "../../../security/pairing.ts";
 import type { MessageSource } from "../../../core/types.ts";
 import type { DiscordPluginRuntime } from "./types.ts";
-import type { ChannelStreamingAdapter, MessageSendResult } from "../../types.ts";
+import type { ChannelStreamingAdapter, MessageSendResult, MessageActionResult, ReactionOptions } from "../../types.ts";
 import { formatToolLine, splitDiscordText } from "./format.ts";
 import { helpText } from "./commands.ts";
 
@@ -474,6 +474,78 @@ export function createDiscordStreamingAdapter(
       editCutoffChars: 1800,
     },
   };
+}
+
+// ── Outbound Message Actions (react/edit/delete) ────────────────────
+
+export async function sendReactionOutbound(
+  rt: DiscordPluginRuntime,
+  target: string,
+  messageId: string,
+  emoji: string | string[],
+  opts?: ReactionOptions,
+): Promise<MessageActionResult> {
+  try {
+    const channel = await rt.client.channels.fetch(target);
+    if (!channel?.isTextBased() || !("messages" in channel)) {
+      return { ok: false, error: "Channel not found or not text-based" };
+    }
+    const msg = await (channel as any).messages.fetch(messageId);
+    if (!msg) return { ok: false, error: "Message not found" };
+
+    const emojis = Array.isArray(emoji) ? emoji : [emoji];
+    if (opts?.remove) {
+      for (const e of emojis) {
+        await msg.reactions.resolve(e)?.users.remove(rt.clientId);
+      }
+    } else {
+      for (const e of emojis) {
+        await msg.react(e);
+      }
+    }
+    return { ok: true };
+  } catch (err: any) {
+    return { ok: false, error: err?.message ?? String(err) };
+  }
+}
+
+export async function editMessageOutbound(
+  rt: DiscordPluginRuntime,
+  target: string,
+  messageId: string,
+  text: string,
+): Promise<MessageActionResult> {
+  try {
+    const channel = await rt.client.channels.fetch(target);
+    if (!channel?.isTextBased() || !("messages" in channel)) {
+      return { ok: false, error: "Channel not found or not text-based" };
+    }
+    const msg = await (channel as any).messages.fetch(messageId);
+    if (!msg) return { ok: false, error: "Message not found" };
+    await msg.edit(text.slice(0, 2000));
+    return { ok: true };
+  } catch (err: any) {
+    return { ok: false, error: err?.message ?? String(err) };
+  }
+}
+
+export async function deleteMessageOutbound(
+  rt: DiscordPluginRuntime,
+  target: string,
+  messageId: string,
+): Promise<MessageActionResult> {
+  try {
+    const channel = await rt.client.channels.fetch(target);
+    if (!channel?.isTextBased() || !("messages" in channel)) {
+      return { ok: false, error: "Channel not found or not text-based" };
+    }
+    const msg = await (channel as any).messages.fetch(messageId);
+    if (!msg) return { ok: false, error: "Message not found" };
+    await msg.delete();
+    return { ok: true };
+  } catch (err: any) {
+    return { ok: false, error: err?.message ?? String(err) };
+  }
 }
 
 // ── Outbound Media (for gateway.sendMedia) ──────────────────────────
