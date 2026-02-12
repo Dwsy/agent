@@ -385,12 +385,18 @@ async function dispatchAgentTurn(params: {
   }, 3500);
 
   sendChatAction();
-  if (streamCfg.streamMode !== "off") {
-    ensureReplyMessage();
-  }
 
-  // 启动等待动画
-  startSpinner();
+  // Lazy init: spinner 和 replyMsg 在第一个回调触发时才创建
+  // 修复 steer 模式下 spinner 成为孤儿消息的问题
+  let initialized = false;
+  const lazyInit = () => {
+    if (initialized) return;
+    initialized = true;
+    if (streamCfg.streamMode !== "off") {
+      ensureReplyMessage();
+    }
+    startSpinner();
+  };
 
   // 标记是否已收到过内容（用于判断是否需要显示初始 spinner）
   let hasReceivedContent = false;
@@ -401,6 +407,7 @@ async function dispatchAgentTurn(params: {
     text,
     images: images.length > 0 ? images : undefined,
     onThinkingDelta: (accumulated: string, _delta: string) => {
+      lazyInit();
       sendChatAction();
       if (!hasReceivedContent) {
         stopSpinner();
@@ -416,6 +423,7 @@ async function dispatchAgentTurn(params: {
       pushLiveUpdate();
     },
     onStreamDelta: (accumulated: string, delta?: string) => {
+      lazyInit();
       sendChatAction();
       if (!hasReceivedContent && accumulated) {
         stopSpinner();
@@ -436,6 +444,7 @@ async function dispatchAgentTurn(params: {
       pushLiveUpdate();
     },
     onToolStart: (toolName: string, args?: Record<string, unknown>, toolCallId?: string) => {
+      lazyInit();
       sendChatAction();
       if (toolCallId) {
         if (seenToolCalls.has(toolCallId)) return;
@@ -447,6 +456,7 @@ async function dispatchAgentTurn(params: {
       pushLiveUpdate();
     },
     respond: async (reply: string) => {
+      lazyInit(); // 确保有 replyMsgId
       const log = runtime.api.logger;
       log.info(`[telegram:respond] chatId=${chatId} replyLen=${reply?.length ?? 0} replyMsgId=${replyMsgId}`);
       clearInterval(typingInterval);
