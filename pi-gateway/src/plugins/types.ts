@@ -242,7 +242,7 @@ export interface ChannelPlugin {
   meta: ChannelPluginMeta;
   capabilities: ChannelPluginCapabilities;
 
-  /** Outbound messaging (CA-1: named interface, sendText returns MessageSendResult | void) */
+  /** Outbound messaging (CA-1: named interface, sendText returns MessageSendResult) */
   outbound: ChannelOutbound;
 
   /** Initialize with gateway context */
