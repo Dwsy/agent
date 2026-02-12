@@ -169,7 +169,7 @@ export class Gateway {
     }
 
     // BG-003: startup conflict summary
-    const conflicts = ctx.registry.conflicts;
+    const conflicts = this.registry.conflicts;
     if (conflicts.length > 0) {
       this.log.warn(`Plugin registration conflicts (${conflicts.length}):`);
       for (const c of conflicts) {
