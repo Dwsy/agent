@@ -7,6 +7,7 @@ import type { MessageSource } from "../../../core/types.ts";
 import { resolveAgentId, resolveSessionKey } from "../../../core/session-router.ts";
 import type { FeishuChannelConfig, FeishuMessageContext, FeishuPluginRuntime } from "./types.ts";
 import { sendFeishuText, sendFeishuCard, chunkText } from "./send.ts";
+import { resolveInboundMedia } from "./media.ts";
 
 // ── Dedup ──────────────────────────────────────────────────────────────────
 const DEDUP_TTL_MS = 30 * 60 * 1000;
@@ -238,6 +239,25 @@ async function handleFeishuMessage(
 
   log.info(`feishu: ${isGroup ? "group" : "DM"} from ${ctx.senderOpenId} in ${ctx.chatId}: ${ctx.content.slice(0, 80)}`);
 
+  // Download media from message (images → InboundMessage.images)
+  const maxBytes = 10 * 1024 * 1024; // 10MB
+  let images: Array<{ type: "image"; data: string; mimeType: string }> | undefined;
+  try {
+    const media = await resolveInboundMedia({
+      client,
+      messageId: ctx.messageId,
+      messageType: ctx.contentType,
+      content: event.message.content,
+      maxBytes,
+    });
+    if (media.length > 0) {
+      images = media;
+      log.info(`feishu: downloaded ${media.length} image(s) from message`);
+    }
+  } catch (err) {
+    log.info(`feishu: media download failed: ${err}`);
+  }
+
   // Build source + resolve routing
   const source: MessageSource = {
     channel: "feishu",
@@ -254,6 +274,7 @@ async function handleFeishuMessage(
     source,
     sessionKey,
     text: routedText,
+    images,
     respond: async (reply: string) => {
       if (!reply.trim()) return;
       const chunks = chunkText(reply, channelCfg.textChunkLimit ?? 4000);

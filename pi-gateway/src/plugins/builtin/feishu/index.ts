@@ -6,6 +6,7 @@ import type { FeishuChannelConfig, FeishuPluginRuntime } from "./types.ts";
 import { createFeishuClient, createFeishuWSClient, createEventDispatcher, clearClientCache } from "./client.ts";
 import { registerFeishuEvents } from "./bot.ts";
 import { sendFeishuText, sendFeishuCard, chunkText, resolveReceiveIdType } from "./send.ts";
+import { sendFeishuMedia } from "./media.ts";
 import type * as Lark from "@larksuiteoapi/node-sdk";
 
 let runtime: FeishuPluginRuntime | null = null;
@@ -20,7 +21,7 @@ const feishuPlugin: ChannelPlugin = {
   capabilities: {
     direct: true,
     group: true,
-    media: false,  // v2
+    media: true,
   },
   outbound: {
     maxLength: 4000,
@@ -31,9 +32,19 @@ const feishuPlugin: ChannelPlugin = {
         await sendFeishuCard({ client: runtime.client, to: target, text: chunk });
       }
     },
-    async sendMedia(_target: string, _filePath: string) {
-      // v2: media upload + send
-      return { ok: false, error: "Feishu media not implemented yet" };
+    async sendMedia(target: string, filePath: string, opts?) {
+      if (!runtime) return { ok: false, error: "Feishu not initialized" };
+      try {
+        const result = await sendFeishuMedia({
+          client: runtime.client,
+          to: target,
+          filePath,
+          caption: opts?.caption,
+        });
+        return { ok: true, messageId: result.messageId };
+      } catch (err) {
+        return { ok: false, error: String(err) };
+      }
     },
   },
 

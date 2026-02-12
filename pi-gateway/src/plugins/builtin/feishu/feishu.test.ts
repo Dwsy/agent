@@ -12,6 +12,7 @@ import {
   type FeishuMessageEvent,
 } from "./bot.ts";
 import { resolveReceiveIdType, chunkText, buildMarkdownCard } from "./send.ts";
+import { parseMediaKeys, inferMimeType, isImageMime, detectFileType } from "./media.ts";
 import type { FeishuChannelConfig } from "./types.ts";
 
 // ── Dedup ──────────────────────────────────────────────────────────────────
@@ -297,5 +298,68 @@ describe("feishu card", () => {
     expect(card.schema).toBe("2.0");
     expect((card.body as any).elements[0].tag).toBe("markdown");
     expect((card.body as any).elements[0].content).toBe("hello **world**");
+  });
+});
+
+// ── Media parsing ──────────────────────────────────────────────────────────
+
+describe("feishu media", () => {
+  test("parseMediaKeys extracts image_key for image type", () => {
+    const content = JSON.stringify({ image_key: "img_xxx" });
+    const keys = parseMediaKeys(content, "image");
+    expect(keys.imageKey).toBe("img_xxx");
+  });
+
+  test("parseMediaKeys extracts file_key and file_name for file type", () => {
+    const content = JSON.stringify({ file_key: "file_xxx", file_name: "doc.pdf" });
+    const keys = parseMediaKeys(content, "file");
+    expect(keys.fileKey).toBe("file_xxx");
+    expect(keys.fileName).toBe("doc.pdf");
+  });
+
+  test("parseMediaKeys extracts file_key for audio type", () => {
+    const content = JSON.stringify({ file_key: "audio_xxx" });
+    expect(parseMediaKeys(content, "audio").fileKey).toBe("audio_xxx");
+  });
+
+  test("parseMediaKeys extracts both keys for video type", () => {
+    const content = JSON.stringify({ file_key: "video_xxx", image_key: "thumb_xxx" });
+    const keys = parseMediaKeys(content, "video");
+    expect(keys.fileKey).toBe("video_xxx");
+    expect(keys.imageKey).toBe("thumb_xxx");
+  });
+
+  test("parseMediaKeys returns empty for unknown type", () => {
+    const keys = parseMediaKeys("{}", "unknown");
+    expect(keys.imageKey).toBeUndefined();
+    expect(keys.fileKey).toBeUndefined();
+  });
+
+  test("parseMediaKeys handles malformed JSON", () => {
+    const keys = parseMediaKeys("not json", "image");
+    expect(keys.imageKey).toBeUndefined();
+  });
+
+  test("inferMimeType detects common types", () => {
+    expect(inferMimeType("photo.jpg")).toBe("image/jpeg");
+    expect(inferMimeType("doc.pdf")).toBe("application/pdf");
+    expect(inferMimeType("audio.opus")).toBe("audio/opus");
+    expect(inferMimeType("unknown.xyz")).toBe("application/octet-stream");
+    expect(inferMimeType(undefined)).toBe("application/octet-stream");
+  });
+
+  test("isImageMime correctly identifies images", () => {
+    expect(isImageMime("image/jpeg")).toBe(true);
+    expect(isImageMime("image/png")).toBe(true);
+    expect(isImageMime("application/pdf")).toBe(false);
+    expect(isImageMime("audio/ogg")).toBe(false);
+  });
+
+  test("detectFileType maps extensions correctly", () => {
+    expect(detectFileType("doc.pdf")).toBe("pdf");
+    expect(detectFileType("audio.opus")).toBe("opus");
+    expect(detectFileType("video.mp4")).toBe("mp4");
+    expect(detectFileType("sheet.xlsx")).toBe("xls");
+    expect(detectFileType("unknown.bin")).toBe("stream");
   });
 });
