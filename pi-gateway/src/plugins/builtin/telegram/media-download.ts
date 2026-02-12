@@ -15,11 +15,14 @@ const MIME_BY_EXT: Record<string, string> = {
 };
 
 function inferMime(filePath?: string, headerMime?: string | null): string {
-  if (headerMime && headerMime.trim()) {
-    return headerMime.split(";")[0]?.trim() || "application/octet-stream";
+  const cleaned = headerMime?.split(";")[0]?.trim();
+  // If header gives a specific MIME (not generic octet-stream), use it
+  if (cleaned && cleaned !== "application/octet-stream") {
+    return cleaned;
   }
+  // Fallback to extension-based inference
   const ext = filePath?.split(".").pop()?.toLowerCase() ?? "";
-  return MIME_BY_EXT[ext] ?? "application/octet-stream";
+  return MIME_BY_EXT[ext] ?? cleaned ?? "application/octet-stream";
 }
 
 export async function downloadTelegramFile(params: {
@@ -53,7 +56,8 @@ export async function downloadTelegramFile(params: {
     const data = Buffer.from(arrayBuffer).toString("base64");
 
     return { data, mimeType, filePath: info.result.file_path };
-  } catch {
+  } catch (err) {
+    console.error(`[telegram-media] download failed for fileId=${params.fileId}: ${err instanceof Error ? err.message : err}`);
     return null;
   }
 }

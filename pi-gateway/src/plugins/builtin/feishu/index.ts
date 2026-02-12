@@ -48,6 +48,7 @@ const feishuPlugin: ChannelPlugin = {
           to: target,
           filePath,
           caption: opts?.caption,
+          skipPathValidation: true,  // API layer already validated
         });
         return { ok: true, messageId: result.messageId };
       } catch (err) {

@@ -34,8 +34,9 @@ export async function handleMessageSendRequest(
     return Response.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const sessionKey = typeof body.sessionKey === "string" ? body.sessionKey.trim() : "";
+  let sessionKey = typeof body.sessionKey === "string" ? body.sessionKey.trim() : "";
   const internalToken = typeof body.token === "string" ? body.token.trim() : "";
+  const callerPid = typeof body.pid === "number" ? body.pid : 0;
   const text = typeof body.text === "string" ? body.text : "";
   const replyTo = typeof body.replyTo === "string" ? body.replyTo.trim() : undefined;
   const parseMode = typeof body.parseMode === "string" ? body.parseMode as "Markdown" | "HTML" | "plain" : undefined;
@@ -54,6 +55,16 @@ export async function handleMessageSendRequest(
     if (internalToken !== expected) {
       return Response.json({ error: "Invalid token" }, { status: 403 });
     }
+    // Resolve session key from caller PID
+    if (callerPid > 0) {
+      const client = ctx.pool.getByPid(callerPid);
+      if (client?.sessionKey) {
+        sessionKey = client.sessionKey;
+        ctx.log.info(`[message-send] resolved session from PID ${callerPid}: ${sessionKey}`);
+      } else {
+        ctx.log.warn(`[message-send] PID ${callerPid} not found in pool — cannot resolve session`);
+      }
+    }
   } else {
     return Response.json({ error: "Missing sessionKey or token" }, { status: 400 });
   }
@@ -64,6 +75,7 @@ export async function handleMessageSendRequest(
   const chatId = session?.lastChatId;
 
   if (!channel) {
+    ctx.log.warn(`[message-send] no channel: sessionKey=${sessionKey} lastChannel=${session?.lastChannel} sessionExists=${!!session}`);
     return Response.json({ error: "Cannot resolve channel from session" }, { status: 400 });
   }
   if (!chatId) {

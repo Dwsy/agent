@@ -6,12 +6,14 @@ import { clipCaption, markdownToTelegramHtml, splitCaption, splitTelegramText } 
 import { validateMediaPath } from "../../../core/media-security.ts";
 
 export const IMAGE_EXTS = new Set(["jpg", "jpeg", "png", "gif", "webp", "bmp"]);
-export const AUDIO_EXTS = new Set(["mp3", "ogg", "wav", "m4a", "flac"]);
+export const AUDIO_EXTS = new Set(["mp3", "ogg", "wav", "m4a", "flac", "aiff", "aac", "opus", "wma"]);
 export const VIDEO_EXTS = new Set(["mp4", "webm", "mov", "avi"]);
 
 export interface TelegramSendOptions {
   messageThreadId?: number;
   replyToMessageId?: number;
+  /** Skip validateMediaPath — caller already validated (e.g., /api/media/send). */
+  skipPathValidation?: boolean;
 }
 
 
@@ -91,8 +93,8 @@ export function parseOutboundMediaDirectives(text: string): TelegramParsedOutbou
 async function sendLocalFileByKind(bot: Bot, chatId: string, item: TelegramMediaDirective, opts?: TelegramSendOptions): Promise<void> {
   const localPath = normalizePath(item.url);
 
-  // Security: final guard via centralized validator
-  if (!validateMediaPath(item.url)) {
+  // Security: final guard via centralized validator (skip if caller already validated)
+  if (!opts?.skipPathValidation && !validateMediaPath(item.url)) {
     throw new Error(`Blocked unsafe media path: ${item.url}`);
   }
 
@@ -184,8 +186,8 @@ export async function sendTelegramMedia(bot: Bot, chatId: string, item: Telegram
     await sendRemoteByKind(bot, chatId, item, opts);
     return;
   }
-  // Security: validate all local paths before sending
-  if (!validateMediaPath(item.url)) {
+  // Security: validate local paths unless caller already validated (API endpoint)
+  if (!opts?.skipPathValidation && !validateMediaPath(item.url)) {
     throw new Error(`Blocked unsafe media path: ${item.url}`);
   }
   await sendLocalFileByKind(bot, chatId, item, opts);

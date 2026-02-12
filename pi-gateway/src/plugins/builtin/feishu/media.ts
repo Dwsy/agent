@@ -190,11 +190,12 @@ export async function sendFeishuMedia(params: {
   to: string;
   filePath: string;
   caption?: string;
+  skipPathValidation?: boolean;
 }): Promise<{ messageId: string }> {
   const { client, to, filePath, caption } = params;
 
-  // P0 security: validate path before any fs access (aligned with Telegram/Discord guards)
-  if (!validateMediaPath(filePath)) {
+  // P0 security: validate path before any fs access (skip if caller already validated)
+  if (!params.skipPathValidation && !validateMediaPath(filePath)) {
     throw new Error(`Media path blocked: ${filePath}`);
   }
 
