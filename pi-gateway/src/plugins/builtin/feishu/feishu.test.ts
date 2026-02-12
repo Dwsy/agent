@@ -398,3 +398,141 @@ describe("feishu media", () => {
     expect(detectFileType("unknown.bin")).toBe("stream");
   });
 });
+
+// ── CardStream ─────────────────────────────────────────────────────────────
+
+import { FeishuCardStream } from "./card-stream.ts";
+
+function mockClient(overrides?: {
+  createCode?: number;
+  cardId?: string;
+  contentCode?: number;
+  elementCreateCode?: number;
+  settingsCode?: number;
+}) {
+  const calls: Array<{ method: string; args: unknown }> = [];
+  const o = {
+    createCode: 0,
+    cardId: "card_test_123",
+    contentCode: 0,
+    elementCreateCode: 0,
+    settingsCode: 0,
+    ...overrides,
+  };
+
+  return {
+    calls,
+    client: {
+      cardkit: {
+        v1: {
+          card: {
+            create: async (payload: unknown) => {
+              calls.push({ method: "card.create", args: payload });
+              return { code: o.createCode, data: o.createCode === 0 ? { card_id: o.cardId } : undefined };
+            },
+            settings: async (payload: unknown) => {
+              calls.push({ method: "card.settings", args: payload });
+              return { code: o.settingsCode };
+            },
+          },
+          cardElement: {
+            content: async (payload: unknown) => {
+              calls.push({ method: "cardElement.content", args: payload });
+              return { code: o.contentCode };
+            },
+            create: async (payload: unknown) => {
+              calls.push({ method: "cardElement.create", args: payload });
+              return { code: o.elementCreateCode };
+            },
+          },
+        },
+      },
+    } as any,
+  };
+}
+
+describe("feishu card-stream", () => {
+  test("create returns card_id on success", async () => {
+    const { client } = mockClient();
+    const stream = new FeishuCardStream({ client });
+    const cardId = await stream.create();
+    expect(cardId).toBe("card_test_123");
+    expect(stream.isActive).toBe(true);
+    expect(stream.isFailed).toBe(false);
+  });
+
+  test("create returns null and marks failed on API error", async () => {
+    let fallbackCalled = false;
+    const { client } = mockClient({ createCode: 300001 });
+    const stream = new FeishuCardStream({ client, onFallback: () => { fallbackCalled = true; } });
+    const cardId = await stream.create();
+    expect(cardId).toBeNull();
+    expect(stream.isFailed).toBe(true);
+    expect(stream.isActive).toBe(false);
+    expect(fallbackCalled).toBe(true);
+  });
+
+  test("appendText sends content with incrementing sequence", async () => {
+    const { client, calls } = mockClient();
+    const stream = new FeishuCardStream({ client });
+    await stream.create();
+    await stream.appendText("hello");
+    // Wait past throttle window
+    await new Promise((r) => setTimeout(r, 250));
+    await stream.appendText("hello world");
+    const contentCalls = calls.filter((c) => c.method === "cardElement.content");
+    expect(contentCalls.length).toBe(2);
+    const seq1 = (contentCalls[0].args as any).data.sequence;
+    const seq2 = (contentCalls[1].args as any).data.sequence;
+    expect(seq2).toBeGreaterThan(seq1);
+  });
+
+  test("appendText is no-op when failed", async () => {
+    const { client, calls } = mockClient({ createCode: 300001 });
+    const stream = new FeishuCardStream({ client });
+    await stream.create();
+    await stream.appendText("should not send");
+    expect(calls.filter((c) => c.method === "cardElement.content").length).toBe(0);
+  });
+
+  test("addElement inserts before main element", async () => {
+    const { client, calls } = mockClient();
+    const stream = new FeishuCardStream({ client });
+    await stream.create();
+    await stream.addElement("→ read file", "tool_1");
+    const elCalls = calls.filter((c) => c.method === "cardElement.create");
+    expect(elCalls.length).toBe(1);
+    const data = (elCalls[0].args as any).data;
+    expect(data.type).toBe("insert_before");
+    expect(data.target_element_id).toBe("streaming_md");
+  });
+
+  test("finalize turns off streaming mode", async () => {
+    const { client, calls } = mockClient();
+    const stream = new FeishuCardStream({ client });
+    await stream.create();
+    await stream.finalize("final text");
+    const settingsCalls = calls.filter((c) => c.method === "card.settings");
+    expect(settingsCalls.length).toBe(1);
+    const settings = JSON.parse((settingsCalls[0].args as any).data.settings);
+    expect(settings.config.streaming_mode).toBe(false);
+  });
+
+  test("content failure triggers fallback", async () => {
+    let fallbackCalled = false;
+    const { client } = mockClient({ contentCode: 230020 });
+    const stream = new FeishuCardStream({ client, onFallback: () => { fallbackCalled = true; } });
+    await stream.create();
+    await stream.appendText("will fail");
+    expect(stream.isFailed).toBe(true);
+    expect(fallbackCalled).toBe(true);
+  });
+
+  test("finalize is no-op when failed", async () => {
+    const { client, calls } = mockClient({ createCode: 300001 });
+    const stream = new FeishuCardStream({ client });
+    await stream.create();
+    await stream.finalize("text");
+    expect(calls.filter((c) => c.method === "card.settings").length).toBe(0);
+  });
+});
