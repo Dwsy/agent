@@ -239,7 +239,8 @@ async function handleFeishuMessage(
       if (code) {
         await sendFeishuText({ client, to: ctx.chatId, text: `🔑 Pairing code: **${code}**\nSend this to the admin to get access.` });
       } else {
-        await sendFeishuText({ client, to: ctx.chatId, text: "⏳ Too many pending requests. Try again later." });
+        // null means max pending reached (existing code returns the code if sender already has one)
+        await sendFeishuText({ client, to: ctx.chatId, text: "⏳ Too many pending pairing requests for this channel. Please wait or contact the admin." });
       }
       return;
     }
@@ -284,11 +285,12 @@ async function handleFeishuMessage(
 
   // Streaming state
   const streamingEnabled = channelCfg.streamingEnabled ?? true;
-  const throttleMs = channelCfg.streamThrottleMs ?? 1200;
+  const throttleMs = channelCfg.streamThrottleMs ?? 800;
   const startChars = channelCfg.streamStartChars ?? 50;
   let cardMsgId: string | null = null;
   let lastEditAt = 0;
   let editInFlight = false;
+  let streamingFailed = false;
 
   // Dispatch to agent
   await api.dispatch({
@@ -299,7 +301,7 @@ async function handleFeishuMessage(
     respond: async (reply: string) => {
       if (!reply.trim()) return;
       // If streaming was active, do a final card update with complete text
-      if (cardMsgId) {
+      if (cardMsgId && !streamingFailed) {
         try {
           await updateFeishuCard({ client, messageId: cardMsgId, text: reply });
         } catch {
@@ -318,7 +320,7 @@ async function handleFeishuMessage(
     },
     setTyping: async () => {},
     onStreamDelta: streamingEnabled ? (accumulated: string) => {
-      if (accumulated.length < startChars) return;
+      if (streamingFailed || accumulated.length < startChars) return;
       const now = Date.now();
 
       // First card: send initial
@@ -331,7 +333,11 @@ async function handleFeishuMessage(
             lastEditAt = Date.now();
             editInFlight = false;
           })
-          .catch(() => { editInFlight = false; });
+          .catch(() => {
+            editInFlight = false;
+            streamingFailed = true;
+            log.info("feishu: streaming card creation failed, falling back to final respond");
+          });
         return;
       }
 
@@ -343,7 +349,11 @@ async function handleFeishuMessage(
           lastEditAt = Date.now();
           editInFlight = false;
         })
-        .catch(() => { editInFlight = false; });
+        .catch(() => {
+          editInFlight = false;
+          streamingFailed = true;
+          log.info("feishu: streaming card update failed, falling back to final respond");
+        });
     } : undefined,
   });
 }
