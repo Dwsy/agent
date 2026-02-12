@@ -228,6 +228,18 @@ export function createPluginApi(
       }
     },
 
+    async getSessionStats(sessionKey: SessionKey): Promise<unknown> {
+      const rpc = ctx.pool.getForSession(sessionKey);
+      if (!rpc) return null;
+      return rpc.getSessionStats();
+    },
+
+    async getRpcState(sessionKey: SessionKey): Promise<unknown> {
+      const rpc = ctx.pool.getForSession(sessionKey);
+      if (!rpc) return null;
+      return rpc.getState();
+    },
+
     cronEngine: ctx.cron ?? undefined,
   };
 }
