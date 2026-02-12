@@ -101,19 +101,7 @@ export function registerSessionMethods(
     await ctx.compactSessionWithHooks(cKey, params?.instructions as string);
     return { ok: true };
   });
-
-  methods.set("session.listRoles", async () => {
-    return { roles: ctx.listAvailableRoles() };
-  });
-
-  methods.set("session.setRole", async (params) => {
-    const sessionKey = params?.sessionKey as string;
-    const role = params?.role as string;
-    if (!sessionKey) throw new Error("sessionKey required");
-    if (!role) throw new Error("role required");
-    const changed = await ctx.setSessionRole(sessionKey, role);
-    return { changed, role };
-  });
+  // Role management handled by role-persona extension via RPC
 }
 
 // ============================================================================
