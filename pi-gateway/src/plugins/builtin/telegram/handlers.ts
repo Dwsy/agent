@@ -11,7 +11,7 @@ import { parseOutboundMediaDirectives, sendTelegramMedia, sendTelegramTextAndMed
 import { migrateTelegramGroupConfig } from "./group-migration.ts";
 import { buildReactionText } from "./reaction-level.ts";
 import { recordSentMessage, wasRecentlySent } from "./sent-message-cache.ts";
-import type { MediaSendOptions, MediaSendResult, MessageSendResult } from "../../types.ts";
+import type { MediaSendOptions, MediaSendResult, MessageSendResult, MessageActionResult, ReactionOptions } from "../../types.ts";
 import type {
   TelegramAccountRuntime,
   TelegramContext,
@@ -403,6 +403,8 @@ async function dispatchAgentTurn(params: {
 
   // Bug 2 修复：标记工具调用后是否有新文本
   let toolCallSinceLastText = false;
+  // 追踪 accumulated 长度，用于在 delta 缺失时计算增量
+  let lastStreamAccumLen = 0;
 
   await runtime.api.dispatch({
     source,
@@ -435,17 +437,23 @@ async function dispatchAgentTurn(params: {
 
       // Text started — keep thinking in contentSequence (shown as blockquote in final reply)
 
+      // 用 delta（增量）替代 accumulated（全量），避免跨 tool call 的文本段被合并
+      const textDelta = delta ?? accumulated.slice(lastStreamAccumLen);
+      lastStreamAccumLen = accumulated.length;
+
+      if (!textDelta) return;
+
       // Bug 2 修复：工具调用后的新文本创建新的 text entry
       if (toolCallSinceLastText) {
-        contentSequence.push({ type: 'text', content: accumulated });
+        contentSequence.push({ type: 'text', content: textDelta });
         toolCallSinceLastText = false;
       } else {
-        // Update or add text entry
+        // Append delta to existing text entry
         const lastTextIndex = contentSequence.findLastIndex(c => c.type === 'text');
         if (lastTextIndex >= 0) {
-          contentSequence[lastTextIndex].content = accumulated;
+          contentSequence[lastTextIndex].content += textDelta;
         } else {
-          contentSequence.push({ type: 'text', content: accumulated });
+          contentSequence.push({ type: 'text', content: textDelta });
         }
       }
 
@@ -472,14 +480,19 @@ async function dispatchAgentTurn(params: {
       clearInterval(typingInterval);
       stopSpinner();
 
-      // 用最终回复替换 contentSequence 中的文本内容（避免重复）
+      // 用最终回复替换 contentSequence 中的文本内容
+      // 多个 text entry 时保留流式分段，避免全量 reply 覆盖导致重复
       if (reply && reply.trim()) {
-        const lastTextIndex = contentSequence.findLastIndex(c => c.type === 'text');
-        if (lastTextIndex >= 0) {
-          contentSequence[lastTextIndex].content = reply.trim();
-        } else {
-          contentSequence.push({ type: 'text', content: reply.trim() });
+        const textEntryCount = contentSequence.filter(c => c.type === 'text').length;
+        if (textEntryCount <= 1) {
+          const lastTextIndex = contentSequence.findLastIndex(c => c.type === 'text');
+          if (lastTextIndex >= 0) {
+            contentSequence[lastTextIndex].content = reply.trim();
+          } else {
+            contentSequence.push({ type: 'text', content: reply.trim() });
+          }
         }
+        // textEntryCount > 1: 保留流式累积的分段文本，不用全量 reply 覆盖
       }
 
       // 按顺序构建最终回复（thinking 保留为 blockquote）
@@ -1095,5 +1108,85 @@ export async function sendMediaViaAccount(params: {
       `[telegram:${account.accountId}] sendMedia failed: ${err?.message}`,
     );
     return { ok: false, error: err?.message ?? "Send failed" };
+  }
+}
+
+// ============================================================================
+// Message actions: react / edit / delete (v3.6)
+// ============================================================================
+
+function resolveAccount(runtime: TelegramPluginRuntime, target: string, defaultAccountId: string) {
+  const parsed = parseTelegramTarget(target, defaultAccountId);
+  const account = runtime.accounts.get(parsed.accountId)
+    ?? runtime.accounts.get(defaultAccountId)
+    ?? Array.from(runtime.accounts.values())[0];
+  return { account, parsed };
+}
+
+export async function sendReactionViaAccount(params: {
+  runtime: TelegramPluginRuntime;
+  defaultAccountId: string;
+  target: string;
+  messageId: string;
+  emoji: string | string[];
+  opts?: ReactionOptions;
+}): Promise<MessageActionResult> {
+  const { account, parsed } = resolveAccount(params.runtime, params.target, params.defaultAccountId);
+  if (!account) return { ok: false, error: "Telegram account not started" };
+
+  const emojiList = Array.isArray(params.emoji) ? params.emoji : [params.emoji];
+  const reactions = params.opts?.remove
+    ? []
+    : emojiList.map((e) => ({ type: "emoji" as const, emoji: e }));
+
+  try {
+    await account.bot.api.setMessageReaction(
+      parsed.chatId,
+      Number(params.messageId),
+      reactions,
+    );
+    return { ok: true };
+  } catch (err: any) {
+    return { ok: false, error: err?.message ?? "Reaction failed" };
+  }
+}
+
+export async function editMessageViaAccount(params: {
+  runtime: TelegramPluginRuntime;
+  defaultAccountId: string;
+  target: string;
+  messageId: string;
+  text: string;
+}): Promise<MessageActionResult> {
+  const { account, parsed } = resolveAccount(params.runtime, params.target, params.defaultAccountId);
+  if (!account) return { ok: false, error: "Telegram account not started" };
+
+  try {
+    await account.bot.api.editMessageText(
+      parsed.chatId,
+      Number(params.messageId),
+      markdownToTelegramHtml(params.text),
+      { parse_mode: "HTML" },
+    );
+    return { ok: true };
+  } catch (err: any) {
+    return { ok: false, error: err?.message ?? "Edit failed" };
+  }
+}
+
+export async function deleteMessageViaAccount(params: {
+  runtime: TelegramPluginRuntime;
+  defaultAccountId: string;
+  target: string;
+  messageId: string;
+}): Promise<MessageActionResult> {
+  const { account, parsed } = resolveAccount(params.runtime, params.target, params.defaultAccountId);
+  if (!account) return { ok: false, error: "Telegram account not started" };
+
+  try {
+    await account.bot.api.deleteMessage(parsed.chatId, Number(params.messageId));
+    return { ok: true };
+  } catch (err: any) {
+    return { ok: false, error: err?.message ?? "Delete failed" };
   }
 }
