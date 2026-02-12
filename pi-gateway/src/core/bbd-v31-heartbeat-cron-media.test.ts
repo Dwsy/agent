@@ -838,7 +838,7 @@ describe("System Prompt Injection (SP-1 ~ SP-6)", () => {
   });
 
   test("SP-4: nothing enabled → identity prompt only (no capability segments)", () => {
-    const prompt = buildGatewaySystemPrompt(makeConfig({}));
+    const prompt = buildGatewaySystemPrompt(makeConfig({ heartbeatEnabled: false }));
     expect(prompt).not.toBeNull();
     expect(prompt).toContain("Gateway Environment");
     expect(prompt).not.toContain("Heartbeat Protocol");

@@ -510,7 +510,7 @@ export const DEFAULT_CONFIG: Config = {
     maxConcurrent: 2,
   },
   heartbeat: {
-    enabled: false,
+    enabled: true,
     every: "30m",
     prompt: "Read HEARTBEAT.md if it exists. Follow it strictly — do not infer or repeat tasks from prior conversations. If nothing needs attention, reply HEARTBEAT_OK.",
     ackMaxChars: 300,
