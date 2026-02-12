@@ -616,7 +616,72 @@ interface GatewayContext {
 
 ---
 
-## 12. Evolution Timeline
+## 12. OpenClaw Architecture Comparison
+
+> Source: NiceViper (DarkFalcon) deep-dive on `~/Dev/AI/openclaw`
+
+### 12.1 Architectural Paradigm
+
+| Dimension | OpenClaw | pi-gateway |
+|---|---|---|
+| **Paradigm** | Everything embedded (LLM/channel/session same process) | Gateway + RPC pool (LLM in isolated pi processes) |
+| **Scale** | ~50 top-level dirs, enterprise full-featured | ~6 top-level dirs, lightweight gateway |
+| **Channel model** | Monolith (channel code in main repo) | Plugin-first (channels are builtin plugins) |
+| **LLM integration** | In-process provider abstraction | Out-of-process JSON-RPC over stdin/stdout |
+| **Session isolation** | Shared memory | Process-level (each pi instance is independent) |
+
+### 12.2 Message Pipeline Comparison
+
+```mermaid
+graph LR
+    subgraph OC["OpenClaw (4 layers)"]
+        OC1["Channel SDK<br/>(grammy/discord.js)"]
+        OC2["auto-reply/dispatch<br/>→ finalizeInboundContext"]
+        OC3["dispatchReplyFromConfig<br/>dedup → abort → cmd → queue<br/>6 QueueModes"]
+        OC4["getReplyFromConfig<br/>→ LLM provider (in-process)<br/>→ TTS → routeReply<br/>→ outbound/deliver"]
+        OC1 --> OC2 --> OC3 --> OC4
+    end
+
+    subgraph PG["pi-gateway (2 layers)"]
+        PG1["Channel Plugin<br/>(builtin/telegram/etc.)"]
+        PG2["gateway/dispatch<br/>dedup → mode → queue<br/>3 modes"]
+        PG3["gateway/message-pipeline<br/>→ RPC pool acquire<br/>→ pi --rpc (out-of-process)<br/>→ respond callback"]
+        PG1 --> PG2 --> PG3
+    end
+```
+
+| Aspect | OpenClaw | pi-gateway |
+|---|---|---|
+| Queue modes | 6 (steer/followup/collect/steer-backlog/interrupt/queue) | 3 (steer/follow-up/interrupt) |
+| Message context | ~30 fields (Body/RawBody/CommandBody/MediaType/...) | 7 fields (source/sessionKey/text/images/respond/setTyping/callbacks) |
+| Outbound delivery | Unified delivery layer (chunker/format/target resolve) | Channel's own `respond()` callback |
+| Abort detection | Trigger-word detection (stop/esc/abort/wait/exit) | Single RPC abort, no trigger detection |
+
+### 12.3 Plugin API Comparison
+
+| Capability | OpenClaw | pi-gateway | Notes |
+|---|---|---|---|
+| registerChannel | ✅ | ✅ | |
+| registerTool | ✅ (+ ToolFactory) | ✅ | |
+| registerHook | ✅ (14 hooks, priority sort) | ✅ (18 hooks, array order) | pi-gateway has more hooks |
+| registerHttpRoute | ✅ (+ catch-all handler) | ✅ (method+path) | pi-gateway is stricter |
+| registerCommand | ✅ | ✅ | |
+| registerService | ✅ | ✅ | |
+| registerProvider | ✅ | ❌ | RPC model — LLM lives in pi process |
+| dispatch() | ❌ | ✅ | OpenClaw channels go through auto-reply directly |
+| sendToChannel() | ❌ | ✅ | OpenClaw uses outbound delivery layer |
+| Session ops | ❌ (embedded, direct access) | ✅ (reset/think/model/compact/abort) | RPC isolation requires explicit control |
+| getPiCommands | ❌ | ✅ | pi-specific |
+
+### 12.4 Key Takeaway
+
+OpenClaw's embedded architecture gives it richer in-process control (6 queue modes, trigger-word abort, provider abstraction) but couples everything tightly. pi-gateway's RPC isolation is the core differentiator — process-level fault isolation, independent scaling, and the ability to run different pi agent configurations per session. The tradeoff is more explicit session management and a thinner message context.
+
+OpenClaw would need 12-18 months to untangle its embedded runner for multi-process isolation. pi-gateway has it from day one.
+
+---
+
+## 13. Evolution Timeline
 
 ```
 v2.0   ─── Single-file server (2985L)
