@@ -108,6 +108,16 @@ export default function rolePersonaExtension(pi: ExtensionAPI) {
 
   const normalizePath = (path: string) => path.replace(/\/$/, "");
 
+  /** Notify user — falls back to sendMessage in headless (RPC) mode */
+  /** Notify user — falls back to sendMessage in headless (RPC) mode */
+  function notify(ctx: ExtensionContext, message: string, level?: string): void {
+    if (ctx.hasUI) {
+      ctx.ui.notify(message, (level as any) ?? "info");
+    } else {
+      pi.sendMessage({ customType: "role-notify", content: message, display: true }, { triggerTurn: false });
+    }
+  }
+
   function messageText(messages: unknown[]): string {
     const parts: string[] = [];
     for (const msg of messages as Array<any>) {
@@ -355,14 +365,14 @@ export default function rolePersonaExtension(pi: ExtensionAPI) {
     if (roleName === "__create__") {
       const newName = await ctx.ui.input("新角色名称:", "my-assistant");
       if (!newName || newName.trim() === "") {
-        ctx.ui.notify("取消创建，使用默认角色", "warning");
+        notify(ctx, "取消创建，使用默认角色", "warning");
         return setupRole(DEFAULT_ROLE, ctx);
       }
 
       const trimmedName = newName.trim();
       const newPath = createRole(trimmedName);
-      ctx.ui.notify(`[OK] 创建角色: ${trimmedName}`, "success");
-      ctx.ui.notify("BOOTSTRAP.md 将引导初始化过程", "info");
+      notify(ctx, `[OK] 创建角色: ${trimmedName}`, "success");
+      notify(ctx, "BOOTSTRAP.md 将引导初始化过程", "info");
 
       return activateRole(trimmedName, newPath, ctx);
     }
@@ -389,23 +399,21 @@ export default function rolePersonaExtension(pi: ExtensionAPI) {
     ensureRoleMemoryFiles(rolePath, roleName);
     const repair = repairRoleMemory(rolePath, roleName);
 
-    if (!ctx.hasUI) return;
+    if (ctx.hasUI) {
+      const identity = getRoleIdentity(rolePath);
+      const displayName = identity?.name || roleName;
 
-    // Update TUI status
-    const identity = getRoleIdentity(rolePath);
-    const displayName = identity?.name || roleName;
+      ctx.ui.setStatus("role", displayName);
+      ctx.ui.setStatus("memory-checkpoint", undefined);
 
-    ctx.ui.setStatus("role", displayName);
-    ctx.ui.setStatus("memory-checkpoint", undefined);
+      if (repair.repaired) {
+        notify(ctx, `MEMORY.md 已规范化修复 (${repair.issues} issues)`, "info");
+      }
 
-    if (repair.repaired) {
-      ctx.ui.notify(`MEMORY.md 已规范化修复 (${repair.issues} issues)`, "info");
-    }
-
-    // Notify user
-    if (isFirstRun(rolePath)) {
-      ctx.ui.notify(`${displayName} - [FIRST RUN]`, "info");
-      ctx.ui.notify('发送 "hello" 开始人格设定对话', "info");
+      if (isFirstRun(rolePath)) {
+        notify(ctx, `${displayName} - [FIRST RUN]`, "info");
+        notify(ctx, '发送 "hello" 开始人格设定对话', "info");
+      }
     }
   }
 
@@ -434,7 +442,7 @@ export default function rolePersonaExtension(pi: ExtensionAPI) {
       if (existsSync(rolePath)) {
         await activateRole(roleName, rolePath, ctx);
       } else {
-        ctx.ui?.notify(`[WARN] 角色 "${roleName}" 不存在（source: ${resolution.source}）`, "warning");
+        notify(ctx, `[WARN] 角色 "${roleName}" 不存在（source: ${resolution.source}）`, "warning");
         ctx.ui?.setStatus("role", "none");
       }
     } else {
@@ -450,7 +458,7 @@ export default function rolePersonaExtension(pi: ExtensionAPI) {
 
     const repair = repairRoleMemory(currentRolePath, currentRole);
     if (repair.repaired && ctx.hasUI) {
-      ctx.ui.notify(`Memory auto-repair applied (${repair.issues} issues)`, "info");
+      notify(ctx, `Memory auto-repair applied (${repair.issues} issues)`, "info");
     }
 
     // Build file location instruction
@@ -765,7 +773,7 @@ ${buildMemoryEditInstruction(currentRolePath)}`;
     description: "View role memory in a scrollable overlay",
     handler: async (_args, ctx) => {
       if (!currentRole || !currentRolePath) {
-        ctx.ui.notify("当前目录未映射角色", "warning");
+        notify(ctx, "当前目录未映射角色", "warning");
         return;
       }
 
@@ -799,7 +807,7 @@ ${buildMemoryEditInstruction(currentRolePath)}`;
     },
     handler: async (args, ctx) => {
       if (!currentRole || !currentRolePath) {
-        ctx.ui.notify("当前目录未映射角色", "warning");
+        notify(ctx, "当前目录未映射角色", "warning");
         return;
       }
 
@@ -814,7 +822,7 @@ ${buildMemoryEditInstruction(currentRolePath)}`;
         const tmpDir = os.tmpdir();
         const tmpFile = path.join(tmpDir, `${currentRole}-tags.html`);
         fs.writeFileSync(tmpFile, html);
-        ctx.ui.notify(`Tag cloud exported: ${tmpFile}`, "success");
+        notify(ctx, `Tag cloud exported: ${tmpFile}`, "success");
         return;
       }
 
@@ -870,7 +878,7 @@ ${buildMemoryEditInstruction(currentRolePath)}`;
                   "Related memories:",
                   ...meta.memories.slice(0, 5).map((m) => "  - " + m.text.slice(0, 80) + "..."),
                 ].join("\n");
-                ctx.ui.notify(preview, "info");
+                notify(ctx, preview, "info");
               },
             }
           );
@@ -909,14 +917,14 @@ ${buildMemoryEditInstruction(currentRolePath)}`;
     description: "Repair current role MEMORY.md into canonical markdown structure",
     handler: async (_args, ctx) => {
       if (!currentRole || !currentRolePath) {
-        ctx.ui.notify("当前目录未映射角色", "warning");
+        notify(ctx, "当前目录未映射角色", "warning");
         return;
       }
       const result = repairRoleMemory(currentRolePath, currentRole, { force: true });
       if (result.repaired) {
-        ctx.ui.notify(`MEMORY.md 已修复 (${result.issues} issues)`, "success");
+        notify(ctx, `MEMORY.md 已修复 (${result.issues} issues)`, "success");
       } else {
-        ctx.ui.notify("MEMORY.md 无需修复", "info");
+        notify(ctx, "MEMORY.md 无需修复", "info");
       }
     },
   });
@@ -925,7 +933,7 @@ ${buildMemoryEditInstruction(currentRolePath)}`;
     description: "Manual memory maintenance: repair + consolidate + summary",
     handler: async (_args, ctx) => {
       if (!currentRole || !currentRolePath) {
-        ctx.ui.notify("当前目录未映射角色", "warning");
+        notify(ctx, "当前目录未映射角色", "warning");
         return;
       }
 
@@ -940,7 +948,7 @@ ${buildMemoryEditInstruction(currentRolePath)}`;
         `- total: ${summary.learnings} learnings, ${summary.preferences} preferences`,
       ].join("\n");
 
-      ctx.ui.notify("MEMORY.md 已手动整理", "success");
+      notify(ctx, "MEMORY.md 已手动整理", "success");
       pi.sendMessage({ customType: "memory-tidy", content: msg, display: true }, { triggerTurn: false });
     },
   });
@@ -949,16 +957,16 @@ ${buildMemoryEditInstruction(currentRolePath)}`;
     description: "Manual LLM memory maintenance (optional model): /memory-tidy-llm [provider/model]",
     handler: async (args, ctx) => {
       if (!currentRole || !currentRolePath) {
-        ctx.ui.notify("当前目录未映射角色", "warning");
+        notify(ctx, "当前目录未映射角色", "warning");
         return;
       }
 
       const requestedModel = args?.trim() || undefined;
-      ctx.ui.notify(`LLM memory tidy running${requestedModel ? ` (${requestedModel})` : ""}...`, "info");
+      notify(ctx, `LLM memory tidy running${requestedModel ? ` (${requestedModel})` : ""}...`, "info");
 
       const llm = await runLlmMemoryTidy(currentRolePath, currentRole, ctx, requestedModel);
       if ("error" in llm) {
-        ctx.ui.notify(`LLM tidy 失败: ${llm.error}`, "error");
+        notify(ctx, `LLM tidy 失败: ${llm.error}`, "error");
         return;
       }
 
@@ -971,7 +979,7 @@ ${buildMemoryEditInstruction(currentRolePath)}`;
         `- rewritten: ${llm.apply.rewrittenLearnings}L ${llm.apply.rewrittenPreferences}P`,
       ].join("\n");
 
-      ctx.ui.notify("LLM 记忆整理完成", "success");
+      notify(ctx, "LLM 记忆整理完成", "success");
       pi.sendMessage({ customType: "memory-tidy-llm", content: summary, display: true }, { triggerTurn: false });
     },
   });
@@ -1027,28 +1035,35 @@ ${buildMemoryEditInstruction(currentRolePath)}`;
         case "create": {
           let roleName = argv[1];
           if (!roleName) {
+            if (!ctx.hasUI) {
+              notify(ctx, "Usage: /role create <name>", "warning");
+              return;
+            }
             roleName = await selectCreateRoleNameUI(ctx) || "";
             if (!roleName) {
-              ctx.ui.notify("已取消创建角色", "info");
+              notify(ctx, "已取消创建角色", "info");
               return;
             }
           }
 
           if (!roleName) {
-            ctx.ui.notify("未提供角色名", "warning");
+            notify(ctx, "未提供角色名", "warning");
             return;
           }
 
           const rolePath = join(ROLES_DIR, roleName);
           if (existsSync(rolePath)) {
-            ctx.ui.notify(`角色 "${roleName}" 已存在`, "warning");
+            notify(ctx, `角色 "${roleName}" 已存在`, "warning");
             return;
           }
 
           createRole(roleName);
-          ctx.ui.notify(`[OK] 创建角色: ${roleName}`, "success");
+          notify(ctx, `[OK] 创建角色: ${roleName}`, "success");
 
-          const shouldMap = await ctx.ui.confirm("映射", `将当前目录映射到 "${roleName}"?`);
+          // In headless mode, auto-map to current cwd
+          const shouldMap = ctx.hasUI
+            ? await ctx.ui.confirm("映射", `将当前目录映射到 "${roleName}"?`)
+            : true;
           if (shouldMap) {
             const cwdKey = normalizePath(cwd);
             config.mappings[cwdKey] = roleName;
@@ -1056,7 +1071,7 @@ ${buildMemoryEditInstruction(currentRolePath)}`;
 
             saveRoleConfig(config);
             await activateRole(roleName, rolePath, ctx);
-            ctx.ui.notify(`已映射: ${cwdKey} → ${roleName}`, "success");
+            notify(ctx, `已映射: ${cwdKey} → ${roleName}`, "success");
           }
           break;
         }
@@ -1065,23 +1080,28 @@ ${buildMemoryEditInstruction(currentRolePath)}`;
           let roleName = argv[1];
 
           if (!roleName) {
+            if (!ctx.hasUI) {
+              const roles = getRoles();
+              notify(ctx, `Usage: /role map <name>\nAvailable: ${roles.join(", ")}`, "warning");
+              return;
+            }
             const selected = await selectRoleUI(ctx);
             if (!selected) {
-              ctx.ui.notify("已取消映射", "info");
+              notify(ctx, "已取消映射", "info");
               return;
             }
 
             if (selected === "__create__") {
               const created = await selectCreateRoleNameUI(ctx);
               if (!created) {
-                ctx.ui.notify("已取消创建角色", "info");
+                notify(ctx, "已取消创建角色", "info");
                 return;
               }
 
               const rolePath = join(ROLES_DIR, created);
               if (!existsSync(rolePath)) {
                 createRole(created);
-                ctx.ui.notify(`[OK] 创建角色: ${created}`, "success");
+                notify(ctx, `[OK] 创建角色: ${created}`, "success");
               }
               roleName = created;
             } else {
@@ -1090,13 +1110,13 @@ ${buildMemoryEditInstruction(currentRolePath)}`;
           }
 
           if (!roleName) {
-            ctx.ui.notify("未选择角色", "warning");
+            notify(ctx, "未选择角色", "warning");
             return;
           }
 
           const rolePath = join(ROLES_DIR, roleName);
           if (!existsSync(rolePath)) {
-            ctx.ui.notify(`角色 "${roleName}" 不存在`, "error");
+            notify(ctx, `角色 "${roleName}" 不存在`, "error");
             return;
           }
 
@@ -1106,7 +1126,7 @@ ${buildMemoryEditInstruction(currentRolePath)}`;
 
           saveRoleConfig(config);
           await activateRole(roleName, rolePath, ctx);
-          ctx.ui.notify(`已映射: ${cwdKey} → ${roleName}`, "success");
+          notify(ctx, `已映射: ${cwdKey} → ${roleName}`, "success");
           break;
         }
 
@@ -1136,7 +1156,7 @@ ${buildMemoryEditInstruction(currentRolePath)}`;
             ctx.ui.setStatus("memory-checkpoint", undefined);
           }
 
-          ctx.ui.notify(
+          notify(ctx, 
             removedMapping
               ? "已取消当前目录映射，并标记为不使用角色（默认角色也禁用）"
               : "当前目录已标记为不使用角色（默认角色禁用）",
@@ -1188,7 +1208,7 @@ ${buildMemoryEditInstruction(currentRolePath)}`;
         }
 
         default: {
-          ctx.ui.notify(`未知命令: ${cmd}。可用: info, create, map, unmap, list`, "error");
+          notify(ctx, `未知命令: ${cmd}。可用: info, create, map, unmap, list`, "error");
         }
       }
     }

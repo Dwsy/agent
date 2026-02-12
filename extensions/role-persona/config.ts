@@ -116,7 +116,7 @@ const DEFAULT_CONFIG: RolePersonaConfig = {
   advanced: {
     shutdownFlushTimeoutMs: 1500,
     forceKeywords: "结束|总结|退出|收尾|结束会话|final|summary|wrap\\s?up|quit|exit",
-    evolutionReminderTurns: 5,
+    evolutionReminderTurns: 10,
   },
 };
 
