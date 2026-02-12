@@ -25,15 +25,15 @@ Technical solo devs and 2-5 person teams running pi-gateway for Telegram/Discord
 | ID | Feature | Owner | Status |
 |---|---|---|---|
 | V1 | send_media end-to-end Telegram validation (115.191.43.169) | Dwsy + NiceViper | Pending |
-| R1 | P2: message-pipeline extraction (~340 lines) | TBD | Not Started |
-| R2 | P2: plugin-api-factory extraction (~200 lines) | TBD | Not Started |
+| R1 | P2: message-pipeline extraction (~340 lines) | NiceViper | Not Started |
+| R2 | P2: plugin-api-factory extraction (~200 lines) | DarkUnion | Not Started |
 | S1 | Auth fail-closed (default deny, explicit allowlist) | TBD | Not Started |
 
 ### P1 — Should Ship
 
 | ID | Feature | Owner | Status |
 |---|---|---|---|
-| T1 | `send_message` tool (text/react/reply/thread) | TBD | Not Started |
+| T1 | `send_message` tool (text + reply) | NiceViper | Not Started |
 | R3 | P3: server.ts final cleanup (<500 lines) | TBD | Not Started |
 
 ### P2 — Can Ship
