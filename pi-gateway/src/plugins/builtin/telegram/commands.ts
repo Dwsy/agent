@@ -126,7 +126,6 @@ async function registerNativeCommands(
   if (cfg?.native === false) return;
 
   // 合并本地命令和 pi 原生命令（pi 命令加 pi_ 前缀区分）
-  const localNames = new Set(LOCAL_COMMANDS.map(c => c.command));
   const allCommands = [
     ...LOCAL_COMMANDS,
     // Agent prefix commands (/{agentId} for multi-agent routing)
@@ -135,10 +134,9 @@ async function registerNativeCommands(
       description: `Switch to agent: ${id}`,
     })),
     ...piCommands
-      .filter(cmd => !localNames.has(cmd.name.replace(/^\//, ""))) // skip if local already handles it
       .filter(cmd => !GROUPED_PREFIXES.some(p => cmd.name.replace(/^\//, "").startsWith(p))) // skip grouped commands (shown via inline keyboard)
       .map(cmd => ({
-        command: `pi_${cmd.name.replace(/^\//, "")}`, // pi_compact, pi_model, etc.
+        command: `pi_${cmd.name.replace(/^\//, "")}`, // pi_role, pi_compact, etc.
         description: cmd.description ?? `pi: ${cmd.name}`,
       })),
   ];
