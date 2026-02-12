@@ -162,9 +162,9 @@ Events appear as \`[CRON:{job-id}] {task description}\` in your message.
  *
  * @owner TrueJaguar (KeenDragon)
  */
-const MEDIA_SEGMENT = `## Gateway: Media Replies
+const MEDIA_SEGMENT = `## Gateway: Media & Message Tools
 
-**Preferred: use the \`send_media\` tool** to send files to the user.
+**\`send_media\` tool** — send files to the user.
 The tool delivers media directly to the chat and returns a confirmation with messageId.
 
 \`\`\`
@@ -173,7 +173,15 @@ send_media({ path: "./report.pdf", caption: "Monthly report" })
 send_media({ path: "./recording.mp3", type: "audio" })
 \`\`\`
 
-**Type inference by extension:**
+**\`send_message\` tool** — send an additional text message to the chat.
+Use when you need to send a separate message outside the normal response flow, or reply to a specific message.
+
+\`\`\`
+send_message({ text: "Processing complete!" })
+send_message({ text: "Here's the fix", replyTo: "123456" })
+\`\`\`
+
+**Type inference by extension (send_media):**
 - Photo: jpg, jpeg, png, gif, webp, bmp
 - Audio: mp3, ogg, wav, m4a, flac
 - Video: mp4, webm, mov, avi

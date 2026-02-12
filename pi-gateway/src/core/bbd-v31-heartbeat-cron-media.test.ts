@@ -774,7 +774,7 @@ import {
   MEDIA_PROMPT,
 } from "./system-prompts.ts";
 import { DEFAULT_CONFIG } from "./config.ts";
-import type { Config } from "./config.ts";
+import type { Config, HeartbeatConfig } from "./config.ts";
 
 function makeConfig(overrides: Partial<{
   heartbeatEnabled: boolean;
@@ -785,16 +785,18 @@ function makeConfig(overrides: Partial<{
 }>): Config {
   const cfg = structuredClone(DEFAULT_CONFIG);
   if (overrides.heartbeatEnabled !== undefined) {
-    cfg.heartbeat = { ...(cfg.heartbeat ?? {}), enabled: overrides.heartbeatEnabled };
+    cfg.heartbeat = { ...(cfg.heartbeat ?? {}), enabled: overrides.heartbeatEnabled } as HeartbeatConfig;
   }
   cfg.cron.enabled = overrides.cronEnabled ?? false;
   if (overrides.telegramAccounts) {
     cfg.channels.telegram = {
-      accounts: Array.from({ length: overrides.telegramAccounts }, (_, i) => ({
-        botToken: `fake-token-${i}`,
-        allowFrom: [],
-      })),
-    };
+      accounts: Object.fromEntries(
+        Array.from({ length: overrides.telegramAccounts }, (_, i) => [
+          `account-${i}`,
+          { botToken: `fake-token-${i}`, allowFrom: [] },
+        ]),
+      ),
+    } as any;
   }
   if (overrides.gatewayPrompts) {
     cfg.agent.gatewayPrompts = overrides.gatewayPrompts;
@@ -811,7 +813,7 @@ describe("System Prompt Injection (SP-1 ~ SP-6)", () => {
     expect(prompt).not.toBeNull();
     expect(prompt).toContain("Heartbeat Protocol");
     expect(prompt).not.toContain("Scheduled Task");
-    expect(prompt).not.toContain("Media Replies");
+    expect(prompt).not.toContain("Media & Message Tools");
   });
 
   test("SP-2: heartbeat + cron → both sections", () => {
@@ -821,7 +823,7 @@ describe("System Prompt Injection (SP-1 ~ SP-6)", () => {
     }));
     expect(prompt).toContain("Heartbeat Protocol");
     expect(prompt).toContain("Scheduled Task");
-    expect(prompt).not.toContain("Media Replies");
+    expect(prompt).not.toContain("Media & Message Tools");
   });
 
   test("SP-3: all features enabled → all 3 sections", () => {
@@ -832,7 +834,7 @@ describe("System Prompt Injection (SP-1 ~ SP-6)", () => {
     }));
     expect(prompt).toContain("Heartbeat Protocol");
     expect(prompt).toContain("Scheduled Task");
-    expect(prompt).toContain("Media Replies");
+    expect(prompt).toContain("Media & Message Tools");
   });
 
   test("SP-4: nothing enabled → identity prompt only (no capability segments)", () => {
@@ -841,7 +843,7 @@ describe("System Prompt Injection (SP-1 ~ SP-6)", () => {
     expect(prompt).toContain("Gateway Environment");
     expect(prompt).not.toContain("Heartbeat Protocol");
     expect(prompt).not.toContain("Scheduled Task");
-    expect(prompt).not.toContain("Media Replies");
+    expect(prompt).not.toContain("Media & Message Tools");
   });
 
   test("SP-5: user appendSystemPrompt + gateway prompts combine", () => {
