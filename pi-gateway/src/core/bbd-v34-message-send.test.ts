@@ -23,13 +23,13 @@ function makeCtx(overrides: Partial<MessageSendContext> = {}): MessageSendContex
         ["telegram", {
           id: "telegram",
           outbound: {
-            sendText: async (_target: string, _text: string, _opts?: any) => {},
+            sendText: async (_target: string, _text: string, _opts?: any) => ({ ok: true }),
           },
         }],
         ["discord", {
           id: "discord",
           outbound: {
-            sendText: async (_target: string, _text: string, _opts?: any) => {},
+            sendText: async (_target: string, _text: string, _opts?: any) => ({ ok: true }),
           },
         }],
       ]),
@@ -163,6 +163,7 @@ describe("v3.4 T1: POST /api/message/send", () => {
               sendText: async (target: string, text: string) => {
                 sentTarget = target;
                 sentText = text;
+                return { ok: true };
               },
             },
           }],
@@ -191,6 +192,7 @@ describe("v3.4 T1: POST /api/message/send", () => {
             outbound: {
               sendText: async (_target: string, _text: string, opts?: any) => {
                 sentOpts = opts;
+                return { ok: true };
               },
             },
           }],
@@ -221,7 +223,7 @@ describe("v3.4 T1: POST /api/message/send", () => {
           ["discord", {
             id: "discord",
             outbound: {
-              sendText: async (target: string) => { sentTarget = target; },
+              sendText: async (target: string) => { sentTarget = target; return { ok: true }; },
             },
           }],
         ]),
@@ -244,7 +246,7 @@ describe("v3.4 T1: POST /api/message/send", () => {
           ["telegram", {
             id: "telegram",
             outbound: {
-              sendText: async (_t: string, _txt: string, opts?: any) => { sentOpts = opts; },
+              sendText: async (_t: string, _txt: string, opts?: any) => { sentOpts = opts; return { ok: true }; },
             },
           }],
         ]),
