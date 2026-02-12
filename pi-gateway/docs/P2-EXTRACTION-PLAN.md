@@ -1,184 +1,157 @@
-# P2 Extraction Plan — message-pipeline.ts + plugin-api.ts
+# P2 Extraction Plan — Final Status
 
 > Phase 2 of server.ts modularization (ref: SERVER-REFACTOR-SPEC.md §4.3)
-
-## 1. message-pipeline.ts
-
-### Source Range
-- `processMessage()`: lines 870–1203 (~334 lines)
-- `normalizeOutgoingText()`: lines 627–631 (5 lines, pure utility)
-
-### Dependencies (this.xxx → ctx.xxx)
-| Field | Usage |
-|-------|-------|
-| config | timeoutMs, logging |
-| pool | acquire, getForSession |
-| sessions | has, getOrCreate, get |
-| registry | hooks.dispatch (session_start, before_agent_start, agent_end, message_sending, message_sent) |
-| transcripts | logPrompt, logResponse, logError, logEvent, logMeta |
-| metrics | incMessageProcessed, incRpcTimeout, recordLatency |
-| extensionUI | forward (wired to rpc.extensionUIHandler) |
-| wsClients | passed to extensionUI.forward |
-| log | info, debug, warn, error |
-| broadcastToWs | broadcast agent events to WS clients |
-| buildSessionProfile | resolve role → capability profile |
-| ctx | passed to tryHandleCommand |
-
-### Proposed Signature
-```typescript
-export async function processMessage(
-  msg: InboundMessage,
-  ctx: GatewayContext,
-  queueItem?: PrioritizedWork,
-): Promise<void>
-```
-
-### RpcEventCollector — Worth Extracting?
-
-**Yes.** The event handler closure (lines ~895–1005, ~110 lines) manages:
-- `fullText` accumulation (text_delta/start/end with partial extraction)
-- `thinkingText` accumulation (thinking_delta/start/end)
-- `toolLabels` collection (tool_execution_start)
-- `agentEndMessages` / `agentEndStopReason` capture
-- `extractPartialText()` helper (~30 lines)
-- Stream delta callbacks (msg.onStreamDelta, msg.onThinkingDelta, msg.onToolStart)
-- WS broadcast per event
-
-**Proposed class:**
-```typescript
-export class RpcEventCollector {
-  fullText = "";
-  thinkingText = "";
-  toolLabels: string[] = [];
-  agentEndMessages: unknown[] = [];
-  stopReason = "stop";
-  eventCount = 0;
-
-  constructor(
-    private sessionKey: string,
-    private msg: InboundMessage,
-    private ctx: GatewayContext,
-  ) {}
-
-  /** Returns unsubscribe function */
-  subscribe(rpc: RpcClient): () => void { ... }
-}
-```
-
-This reduces processMessage from ~334 to ~220 lines and makes event handling independently testable.
-
-### Extraction Steps
-1. Create `src/core/rpc-event-collector.ts` (~120 lines)
-2. Create `src/core/message-pipeline.ts` (~220 lines)
-3. Move `normalizeOutgoingText` as module-level utility
-4. Replace `this.processMessage(...)` with `processMessage(msg, this.ctx, queueItem)`
-5. Delete original from server.ts
-
-### Risk
-- **Medium**: processMessage is the core message flow. Any missed state mutation = silent regression.
-- **Mitigation**: Event collector has no side effects beyond accumulation; pipeline is linear (acquire → prompt → collect → respond). Existing tests cover webhook/chat/Telegram flows end-to-end.
+> **Status:** R1 ✅ R2 ✅ — P2 complete. R3 candidates listed below.
 
 ---
 
-## 2. plugin-api.ts
+## 1. message-pipeline.ts — ✅ Done (R1, NiceViper)
 
-### Source Range
-- `createPluginApi()`: lines 2227–2440 (~214 lines)
-- `registerBuiltinCommands()`: lines 2441–2530 (~90 lines) — already partially extracted to command-handler.ts by JadeHawk
+- **Commit:** `d394924`
+- **File:** `src/gateway/message-pipeline.ts`
+- **Extracted:** `processMessage()` + `normalizeOutgoingText()` (~340 lines)
+- **GatewayContext additions:** `channelApis`, `resolveTelegramMessageMode`
+- **Impact:** server.ts 1783 → 1447 (-336 lines)
 
-### Dependencies (self.xxx / this.xxx → ctx.xxx)
-| Field | Usage |
-|-------|-------|
-| config | passed as api.config, plugins.config |
-| registry | channels, tools, commands, hooks, gatewayMethods, cliRegistrars, services |
-| pool | acquire (for dispatch) |
-| queue | enqueue (for dispatch) |
-| sessions | getOrCreate (for dispatch) |
-| log | plugin logger creation |
-| broadcastToWs | passed to channel dispatch |
-| buildSessionProfile | for dispatch profile |
-| dispatch | for channel message handling |
-| cron | addJob, removeJob |
-| wsClients | for WS broadcast |
-| dedup | for dedup check |
-| extensionUI | forwarding |
-| heartbeatExecutor | wake |
-| delegateExecutor | delegation |
-| compactSessionWithHooks | session compaction |
-| listAvailableRoles | role listing |
-| setSessionRole | role switching |
-| sessionMessageModeOverrides | Telegram message mode |
-| resolveTelegramMessageMode | Telegram mode resolution |
-| noGui | GUI state |
-| systemEvents | system event injection |
-| metrics | metrics access |
-| transcripts | transcript access |
-| _channelApis | channel API cache |
+## 2. plugin-api-factory.ts — ✅ Done (R2, DarkUnion)
 
-### Proposed Signature
-```typescript
-export function createPluginApi(
-  pluginId: string,
-  manifest: PluginManifest,
-  ctx: GatewayContext,
-): GatewayPluginApi
-```
+- **Commit:** `0322fab`
+- **File:** `src/plugins/plugin-api-factory.ts`
+- **Extracted:** `createPluginApi()` (230 lines)
+- **Impact:** server.ts 1447 → 1228 (-219 lines)
+- **Note:** `self.*` → `ctx.*` mechanical replacement; test updated to call extracted function directly
 
-### Extraction Steps
-1. Create `src/plugins/plugin-api-factory.ts` (~220 lines)
-2. Add `resolveTelegramMessageMode` and `_channelApis` to GatewayContext (currently missing)
-3. Replace `this.createPluginApi(...)` with `createPluginApi(id, manifest, this.ctx)`
-4. Delete original from server.ts
+## 3. GatewayContext Final State
 
-### Risk
-- **High**: createPluginApi is the plugin contract surface. Every register* method touches registry state.
-- **Mitigation**: Plugin API is a factory — it creates an object but doesn't execute logic at creation time. The real risk is in the closures it returns, which capture `self`. Replacing `self` with `ctx` is mechanical but must be exhaustive.
-
----
-
-## 3. GatewayContext Additions Needed
-
-For P2, GatewayContext (src/gateway/types.ts) needs these additional fields:
+All P2 fields are now on GatewayContext:
 
 ```typescript
-// Already present:
+// Core (P0/P1):
 config, pool, queue, registry, sessions, transcripts, metrics,
 extensionUI, systemEvents, dedup, cron, heartbeat, delegateExecutor,
 log, wsClients, noGui, sessionMessageModeOverrides,
 broadcastToWs, buildSessionProfile, dispatch, compactSessionWithHooks,
-listAvailableRoles, setSessionRole
+listAvailableRoles, setSessionRole, reloadConfig
 
-// Need to add for P2:
-resolveTelegramMessageMode: (sessionKey: SessionKey) => TelegramMessageMode;
-_channelApis: Map<string, GatewayPluginApi>;
-normalizeOutgoingText: (value: unknown, fallback: string) => string;
-getRegisteredToolSpecs: () => ToolSpec[];
-executeRegisteredTool: (toolName: string, params: Record<string, unknown>, sessionKey: SessionKey) => Promise<unknown>;
-resolveToolPlugin: (toolName: string) => ToolPlugin | null;
+// Added for P2:
+channelApis: Map<string, GatewayPluginApi>
+resolveTelegramMessageMode: (sessionKey, sourceAccountId?) => TelegramMessageMode
 ```
 
 ---
 
-## 4. Execution Order
+## 4. R3 — server.ts Final Cleanup (MintHawk)
 
-```
-P2-Step1: RpcEventCollector class (independent, no server.ts changes)
-P2-Step2: message-pipeline.ts (depends on Step1 + GatewayContext)
-P2-Step3: plugin-api-factory.ts (depends on GatewayContext additions)
-P2-Step4: Update GatewayContext with new fields
-P2-Step5: Wire server.ts to use new modules, delete originals
+**Current:** 739 lines | **Target:** <500 lines | **Need to cut:** ~240+ lines
+
+### Section Map (as of R2 complete)
+
+| Lines | Size | Section | Extractable? |
+|---|---|---|---|
+| 1-60 | 60 | Imports + types | Keep (shrinks as methods move out) |
+| 61-152 | 92 | Class fields + constructor | Keep (core skeleton) |
+| 153-265 | 113 | `start()` lifecycle | Partially — plugin init loop (~40 lines) |
+| 266-322 | 57 | `stop()` lifecycle | Keep (small, lifecycle) |
+| 323-364 | 42 | `dispatch()` + helpers | Keep (core routing, already thin) |
+| 365-429 | 65 | `startServer()` (Bun.serve) | Keep (server bootstrap) |
+| **430-624** | **195** | **`handleHttp()` route dispatch** | **Primary target** |
+| 625-644 | 20 | Thin proxies (send/chat/stream) | Inline into route table |
+| 645-653 | 9 | `broadcastToWs()` | Keep (tiny) |
+| 654-700 | 47 | `ctx` getter + proxies | Keep (DI wiring) |
+| 701-720 | 20 | `createMetricsDataSource()` | Extract to metrics.ts |
+| 721-739 | 18 | Class close + remaining | Keep |
+
+### Extraction Candidates (priority order)
+
+#### R3-A: `handleHttp()` → declarative route table (~195 → ~40 lines)
+
+The biggest win. Current `handleHttp` is 195 lines of `if (url.pathname === X)` chains. Replace with:
+
+```typescript
+// src/api/http-router.ts
+interface Route {
+  method: string;
+  path: string | ((p: string) => boolean);
+  handler: (req: Request, url: URL, ctx: GatewayContext) => Response | Promise<Response>;
+}
+
+export function createHttpRoutes(ctx: GatewayContext): Route[] { ... }
+export function matchRoute(routes: Route[], method: string, pathname: string): Route | null { ... }
 ```
 
-Each step: full 361 test suite, 0 regression.
+server.ts `handleHttp` becomes:
+```typescript
+private async handleHttp(req: Request, url: URL): Promise<Response> {
+  const route = matchRoute(this.httpRoutes, req.method, url.pathname);
+  if (route) return route.handler(req, url, this.ctx);
+  return serveStaticFile(url.pathname, this.noGui);
+}
+```
+
+**Estimated savings:** ~155 lines (195 → ~40 for route init + match)
+
+Inline handlers that are currently in `handleHttp` but not yet extracted:
+- `/api/pool` stats (15 lines) → `src/api/pool-api.ts` or inline in route
+- `/api/plugins` list (10 lines) → inline in route
+- `/api/memory/*` (20 lines) → already delegates to `memory-access.ts`, just move route entries
+- `/api/transcripts` + `/api/transcript/:key` (15 lines) → route entries
+
+Already-extracted handlers (just need route entries):
+- `/api/chat`, `/api/chat/stream` → `chat-api.ts` ✅
+- `/api/send` → `send-api.ts` ✅
+- `/api/session/*` → `session-api.ts` ✅
+- `/api/tools/*` → `tool-executor.ts` ✅
+- `/api/cron/*` → `cron-api.ts` ✅
+- `/api/media/*` → `media-routes.ts` + `media-send.ts` ✅
+- `/webhook/*` → `webhook-api.ts` ✅
+- `/v1/chat/completions` → `openai-compat.ts` ✅
+
+#### R3-B: Thin proxy elimination (~20 lines)
+
+`handleApiSend`, `handleApiChat`, `handleApiChatStream` are one-line proxies:
+```typescript
+private async handleApiSend(req: Request): Promise<Response> {
+  return handleApiSend(req, this.ctx);
+}
+```
+With a route table, these disappear — routes call the imported functions directly.
+
+#### R3-C: `createMetricsDataSource()` → `metrics.ts` (~20 lines)
+
+Small but clean extraction. Move to `src/core/metrics.ts` as a factory function taking `ctx`.
+
+#### R3-D: `start()` plugin init loop (~40 lines)
+
+The channel init + start loop (lines ~188-218) could move to a `initPlugins(ctx)` helper in `src/plugins/plugin-lifecycle.ts`. Optional — only if needed to hit <500.
+
+### Expected R3 Impact
+
+| Extraction | Lines saved |
+|---|---|
+| R3-A: handleHttp → route table | ~155 |
+| R3-B: Thin proxy elimination | ~20 |
+| R3-C: Metrics data source | ~20 |
+| R3-D: Plugin init loop (optional) | ~40 |
+| **Total** | **~235** |
+| **server.ts after R3** | **~504** (or ~464 with R3-D) |
+
+### R3 Execution Order
+
+1. `http-router.ts` — route table + match function (independent, no server.ts changes yet)
+2. Wire `handleHttp` to use route table, delete if-else chain + thin proxies
+3. Move `createMetricsDataSource` to metrics.ts
+4. (If needed) Extract plugin init loop
+5. Full regression: 482+ tests, 0 fail
 
 ---
 
-## 5. Expected Impact
+## 5. Cumulative Impact
 
-| Metric | Before P2 | After P2 |
-|--------|-----------|----------|
-| server.ts lines | 2582 | ~2030 |
-| New files | — | rpc-event-collector.ts (~120), message-pipeline.ts (~220), plugin-api-factory.ts (~220) |
-| Lines extracted | — | ~550 |
-
-Combined with P0 (-403) and P1 (est. -500), server.ts target of <500 lines requires P3 cleanup of remaining helpers + startServer.
+| Phase | server.ts | Delta | Commit |
+|---|---|---|---|
+| v3.3 baseline | 1783 | — | `v3.3` tag |
+| R1 message-pipeline | 1447 | -336 | `d394924` |
+| R2 plugin-api-factory | 1228 | -219 | `0322fab` |
+| S1+S2+S3+other | 739 | -489 | various |
+| R3 target | <500 | ~-240 | pending |
+| **Total reduction** | **~1300 lines** | **-73%** | — |
