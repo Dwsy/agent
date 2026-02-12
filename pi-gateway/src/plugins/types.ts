@@ -112,6 +112,18 @@ export interface MediaSendResult {
 /** Result from sendText when message ID tracking is needed */
 export type MessageSendResult = MediaSendResult;
 
+/** Result from message actions (react/edit/delete) */
+export interface MessageActionResult {
+  ok: boolean;
+  error?: string;
+}
+
+/** Options for sendReaction */
+export interface ReactionOptions {
+  /** Remove the reaction instead of adding it */
+  remove?: boolean;
+}
+
 // ============================================================================
 // Channel Outbound (CA-1: extracted as named interface)
 // ============================================================================
@@ -121,6 +133,12 @@ export interface ChannelOutbound {
   sendText(target: string, text: string, opts?: SendOptions): Promise<MessageSendResult>;
   /** Send a media file (optional — not all channels support media) */
   sendMedia?(target: string, filePath: string, opts?: MediaSendOptions): Promise<MediaSendResult>;
+  /** React to a message with an emoji (optional — v3.6) */
+  sendReaction?(target: string, messageId: string, emoji: string | string[], opts?: ReactionOptions): Promise<MessageActionResult>;
+  /** Edit an existing message (optional — v3.6) */
+  editMessage?(target: string, messageId: string, text: string): Promise<MessageActionResult>;
+  /** Delete a message (optional — v3.6) */
+  deleteMessage?(target: string, messageId: string): Promise<MessageActionResult>;
   /** Max message length for this channel (for chunking) */
   maxLength?: number;
 }
