@@ -217,11 +217,12 @@ export class Gateway {
 
     // Start cron engine
     if (this.config.cron.enabled) {
+      const cronAnnouncer = this.buildCronAnnouncer();
       this.cron = new CronEngine(
         this.config.session.dataDir.replace(/\/sessions$/, ""),
         this,
         this.config,
-        undefined, // announcer - TODO: implement if needed
+        cronAnnouncer,
         this.systemEvents,
         (agentId) => this.heartbeatExecutor?.requestNow(agentId),
       );
@@ -259,6 +260,57 @@ export class Gateway {
     } else {
       this.log.info(`Web UI: http://localhost:${this.config.gateway.port}`);
     }
+  }
+
+  /**
+   * Build a CronAnnouncer that delivers isolated job results back to the
+   * agent's bound channel (e.g. Telegram chat).
+   *
+   * Strategy: find the agent's most recent session with a lastChannel + lastChatId,
+   * then use that channel plugin's outbound.sendText to deliver the result.
+   */
+  private buildCronAnnouncer(): import("./core/cron.ts").CronAnnouncer {
+    return {
+      announce: async (agentId: string, text: string) => {
+        // Find the agent's active session with a bound channel
+        let targetChannel: string | undefined;
+        let targetChatId: string | undefined;
+        let latestActivity = 0;
+
+        for (const session of this.sessions.values()) {
+          const sk = session.sessionKey ?? "";
+          // Match sessions for this agent (format: agent:{agentId}:{channel}:...)
+          const parts = sk.split(":");
+          if (parts[1] !== agentId) continue;
+          // Skip cron sessions themselves
+          if (sk.startsWith("cron:")) continue;
+          // Pick the most recently active session with channel info
+          if (session.lastChannel && session.lastChatId && (session.lastActivity ?? 0) > latestActivity) {
+            targetChannel = session.lastChannel;
+            targetChatId = session.lastChatId;
+            latestActivity = session.lastActivity ?? 0;
+          }
+        }
+
+        if (!targetChannel || !targetChatId) {
+          this.log.warn(`[cron-announcer] no bound channel for agent ${agentId}, dropping announcement`);
+          return;
+        }
+
+        const plugin = this.registry.channels.get(targetChannel);
+        if (!plugin?.outbound?.sendText) {
+          this.log.warn(`[cron-announcer] channel ${targetChannel} has no sendText, dropping`);
+          return;
+        }
+
+        try {
+          await plugin.outbound.sendText(targetChatId, text);
+          this.log.info(`[cron-announcer] delivered to ${targetChannel}:${targetChatId} (${text.length} chars)`);
+        } catch (err: any) {
+          this.log.error(`[cron-announcer] delivery failed: ${err?.message}`);
+        }
+      },
+    };
   }
 
   async stop(): Promise<void> {

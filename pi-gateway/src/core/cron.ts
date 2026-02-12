@@ -331,7 +331,12 @@ export class CronEngine {
           ),
         ]);
 
-        if (job.delivery === "announce" && responseText && this.announcer) {
+        const delivery = job.delivery ?? "announce";
+        // Skip announce for HEARTBEAT_OK-only responses (OpenClaw pattern:
+        // strip token, check remaining length — short acks are not worth delivering)
+        const stripped = responseText.replace(/HEARTBEAT_OK/gi, "").trim();
+        const isAckOnly = stripped.length < 300;
+        if (delivery === "announce" && responseText && !isAckOnly && this.announcer) {
           await this.announcer.announce(agentId, `[CRON:${job.id}] ${responseText}`);
         }
 
