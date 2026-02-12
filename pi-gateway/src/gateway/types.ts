@@ -92,4 +92,6 @@ export interface GatewayContext {
   listAvailableRoles: () => string[];
   setSessionRole: (sessionKey: SessionKey, newRole: string) => Promise<boolean>;
   reloadConfig?: () => void;
+  /** Track cron sessions that self-delivered messages (skip announce). */
+  onCronDelivered?: (sessionKey: string) => void;
 }

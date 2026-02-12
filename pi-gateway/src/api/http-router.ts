@@ -15,6 +15,7 @@ import { searchMemory, getMemoryStats, getRoleInfo, listRoles } from "../core/me
 import { handleMediaServe } from "./media-routes.ts";
 import { handleMediaSendRequest } from "./media-send.ts";
 import { handleMessageSendRequest } from "./message-send.ts";
+import { handleMessageAction } from "./message-action.ts";
 import { handleApiChat, handleApiChatStream } from "./chat-api.ts";
 import { handleApiSend } from "./send-api.ts";
 
@@ -145,6 +146,7 @@ export async function routeHttp(req: Request, url: URL, ctx: GatewayContext): Pr
     return handleMediaSendRequest(req, {
       config: ctx.config, pool: ctx.pool, registry: ctx.registry,
       sessions: ctx.sessions, log: ctx.log, broadcastToWs: ctx.broadcastToWs,
+      onDelivered: ctx.onCronDelivered,
     });
   }
 
@@ -153,6 +155,15 @@ export async function routeHttp(req: Request, url: URL, ctx: GatewayContext): Pr
     return handleMessageSendRequest(req, {
       config: ctx.config, pool: ctx.pool, registry: ctx.registry,
       sessions: ctx.sessions, log: ctx.log, broadcastToWs: ctx.broadcastToWs,
+      onDelivered: ctx.onCronDelivered,
+    });
+  }
+
+  // Message action API (v3.6: react/edit/delete via channel plugins)
+  if (pathname === "/api/message/action" && method === "POST") {
+    return handleMessageAction(req, {
+      config: ctx.config, pool: ctx.pool, registry: ctx.registry,
+      sessions: ctx.sessions, log: ctx.log,
     });
   }
 
