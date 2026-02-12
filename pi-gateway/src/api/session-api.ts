@@ -24,6 +24,7 @@
 
 import type { GatewayContext } from "../gateway/types.ts";
 import type { SessionKey } from "../core/types.ts";
+import { resetSession } from "../gateway/session-reset.ts";
 
 // ============================================================================
 // POST /api/session/reset
@@ -38,19 +39,8 @@ export async function handleSessionReset(
     const body = (await req.json()) as { sessionKey?: string };
     const sessionKey = (body.sessionKey ?? "agent:main:main:main") as SessionKey;
 
-    const rpc = ctx.pool.getForSession(sessionKey);
-    if (rpc) {
-      await rpc.newSession();
-    }
-
-    const session = ctx.sessions.get(sessionKey);
-    if (session) {
-      session.messageCount = 0;
-      session.lastActivity = Date.now();
-      ctx.sessions.touch(sessionKey);
-    }
-
-    return Response.json({ ok: true, sessionKey });
+    const result = await resetSession(ctx, sessionKey);
+    return Response.json({ ok: true, ...result });
   } catch (err: any) {
     return Response.json({ error: err?.message ?? "Reset failed" }, { status: 500 });
   }
