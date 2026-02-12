@@ -23,6 +23,8 @@ import type { ThinkingLevel } from "./types.ts";
 export interface GatewayConfig {
   port: number;
   bind: "loopback" | "lan" | "auto";
+  /** Log level: "debug" | "info" | "warn" | "error". Default: "info" */
+  logLevel?: "debug" | "info" | "warn" | "error";
   auth: {
     mode: "off" | "token" | "password";
     token?: string;

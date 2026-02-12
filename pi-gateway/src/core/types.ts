@@ -204,12 +204,19 @@ export interface Logger {
   error(msg: string, ...args: unknown[]): void;
 }
 
+const LOG_LEVELS: Record<string, number> = { debug: 0, info: 1, warn: 2, error: 3 };
+let globalLogLevel = 1; // default: info
+
+export function setLogLevel(level: string) {
+  globalLogLevel = LOG_LEVELS[level] ?? 1;
+}
+
 export function createLogger(prefix: string): Logger {
   const ts = () => new Date().toISOString().slice(11, 19);
   return {
-    debug: (msg, ...args) => console.debug(`${ts()} [${prefix}] ${msg}`, ...args),
-    info: (msg, ...args) => console.info(`${ts()} [${prefix}] ${msg}`, ...args),
-    warn: (msg, ...args) => console.warn(`${ts()} [${prefix}] ${msg}`, ...args),
+    debug: (msg, ...args) => { if (globalLogLevel <= 0) console.debug(`${ts()} [${prefix}] ${msg}`, ...args); },
+    info: (msg, ...args) => { if (globalLogLevel <= 1) console.info(`${ts()} [${prefix}] ${msg}`, ...args); },
+    warn: (msg, ...args) => { if (globalLogLevel <= 2) console.warn(`${ts()} [${prefix}] ${msg}`, ...args); },
     error: (msg, ...args) => console.error(`${ts()} [${prefix}] ${msg}`, ...args),
   };
 }
