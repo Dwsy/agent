@@ -40,15 +40,10 @@ export default function gatewayTools(pi: ExtensionAPI) {
         Type.String({ description: "Optional caption text sent with the media" }),
       ),
       type: Type.Optional(
-        Type.Union(
-          [
-            Type.Literal("photo"),
-            Type.Literal("audio"),
-            Type.Literal("document"),
-            Type.Literal("video"),
-          ],
-          { description: "Media type. Auto-detected from file extension if omitted." },
-        ),
+        Type.String({
+          enum: ["photo", "audio", "document", "video"],
+          description: "Media type. Auto-detected from file extension if omitted.",
+        }),
       ),
     }),
     async execute(_toolCallId, params) {
@@ -239,20 +234,20 @@ export default function gatewayTools(pi: ExtensionAPI) {
       '- Wake now: { action: "wake", text: "Check email for urgent items", wakeMode: "now" }\n' +
       '- Wake next: { action: "wake", text: "Review pending PRs" }',
     parameters: Type.Object({
-      action: Type.Union(
-        CRON_ACTIONS.map((a) => Type.Literal(a)),
-        { description: "Action to perform" },
-      ),
+      action: Type.String({
+        enum: ["list", "add", "remove", "pause", "resume", "run", "wake"],
+        description: "Action to perform",
+      }),
       id: Type.Optional(
         Type.String({ description: "Job ID — required for add/remove/pause/resume/run" }),
       ),
       schedule: Type.Optional(
         Type.Object(
           {
-            kind: Type.Union(
-              [Type.Literal("cron"), Type.Literal("every"), Type.Literal("at")],
-              { description: "Schedule type" },
-            ),
+            kind: Type.String({
+              enum: ["cron", "every", "at"],
+              description: "Schedule type",
+            }),
             expr: Type.String({ description: 'Schedule expression (cron: "0 */6 * * *", every: "30m", at: ISO 8601)' }),
             timezone: Type.Optional(Type.String({ description: "Timezone for cron expressions (e.g. Asia/Shanghai)" })),
           },
@@ -263,7 +258,8 @@ export default function gatewayTools(pi: ExtensionAPI) {
         Type.String({ description: "Task description text — required for add" }),
       ),
       mode: Type.Optional(
-        Type.Union([Type.Literal("isolated"), Type.Literal("main")], {
+        Type.String({
+          enum: ["isolated", "main"],
           description: 'Execution mode. Default: "isolated"',
         }),
       ),
@@ -271,7 +267,8 @@ export default function gatewayTools(pi: ExtensionAPI) {
         Type.Boolean({ description: "Remove job after first execution. Default: false" }),
       ),
       wakeMode: Type.Optional(
-        Type.Union([Type.Literal("now"), Type.Literal("next-heartbeat")], {
+        Type.String({
+          enum: ["now", "next-heartbeat"],
           description: 'Wake mode — "now" triggers immediately, "next-heartbeat" (default) queues for next heartbeat. Only for wake action.',
         }),
       ),
