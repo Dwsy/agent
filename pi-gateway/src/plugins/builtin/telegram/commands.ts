@@ -16,6 +16,7 @@ type SessionMessageMode = "steer" | "follow-up" | "interrupt";
 const LOCAL_COMMANDS = [
   { command: "help", description: "显示帮助" },
   { command: "new", description: "重置会话" },
+  { command: "stop", description: "停止当前会话" },
   { command: "model", description: "查看/切换模型" },
   { command: "status", description: "查看会话状态" },
   { command: "queue", description: "会话并发策略" },
@@ -232,6 +233,13 @@ export async function setupTelegramCommands(runtime: TelegramPluginRuntime, acco
     const sessionKey = resolveSessionKey(source, runtime.api.config);
     await runtime.api.resetSession(sessionKey);
     await ctx.reply("Session reset.");
+  });
+
+  bot.command("stop", async (ctx: any) => {
+    const source = toSource(account.accountId, ctx as TelegramContext);
+    const sessionKey = resolveSessionKey(source, runtime.api.config);
+    await runtime.api.abortSession(sessionKey);
+    await ctx.reply("⏹ Stopped.");
   });
 
   bot.command("status", async (ctx: any) => {
