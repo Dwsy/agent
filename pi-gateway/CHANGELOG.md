@@ -1,6 +1,62 @@
 # Changelog
 
-## [Unreleased] - v3.5 - 2026-02-12
+## [v3.6] - 2026-02-12
+
+**BBD Test Results:** 687/687 pass, 0 fail ✅ (v3.5: 568, v3.6: +119)
+**Team:** pi-zero (PM), EpicViper, JadePhoenix, IronIce, PureWolf, VividBear, YoungStorm
+
+### Added (Message Tool)
+- `message` tool with react/edit/delete actions via `POST /api/message/action` (by EpicViper)
+- `ChannelOutbound` +3 optional methods: `sendReaction`, `editMessage`, `deleteMessage` (by EpicViper)
+- Telegram react/edit/delete implementation (by EpicViper)
+- Discord react/edit/delete implementation (by JadePhoenix)
+- Feishu react/edit/delete implementation with reaction_id list→filter→delete flow (by JadePhoenix)
+- 20 endpoint tests MA-01~MA-20 (by YoungStorm)
+- 11 tool-layer tests GT-5 (by EpicViper)
+
+### Added (Cron Enhancements)
+- Cron tool with 7 actions: list/add/remove/pause/resume/run/wake (by EpicViper)
+- Cron announcer: announce/direct/silent delivery modes aligned with OpenClaw (by EpicViper)
+- Cron self-delivery tracking: skip announce when agent already sent via send_message/send_media (by JadePhoenix)
+- One-shot tasks: `schedule.kind:"at"` + `deleteAfterRun:true` (by EpicViper)
+
+### Added (Role RPC)
+- `/role` forwarded to role-persona extension via RPC instead of gateway builtin (by pi-zero)
+- Gateway role-manager removed (80 lines) — role handled entirely by role-persona (by pi-zero)
+
+### Added (Observability)
+- RPC send/receive events persisted to `log/rpc.log` (by pi-zero)
+- `DispatchResult` with `injected`/`enqueued` flags for dispatch observability (by IronIce)
+
+### Fixed (Steer Spinner)
+- Steer mode spinner stuck: `dispatch()` returns `{ injected: true }`, Telegram handler skips spinner on steer (by IronIce + PureWolf)
+
+### Fixed (Message Ordering)
+- `onStreamDelta` uses delta instead of accumulated to preserve tool-call interleaved text segments (by VividBear)
+
+### Fixed (RPC Command Forwarding)
+- `forwardToRpc` captures `message_end` events from extension commands (role-persona etc) (by pi-zero)
+- Extension commands don't trigger `agent_end` — 500ms event wait + fallback `waitForIdle` (by pi-zero)
+- Deduplicate `message_end` content via Set (by pi-zero)
+
+### Fixed (Tool Schema Compatibility)
+- `Type.Union(Literal)` → `Type.String({enum})` for kimi-k2.5 and non-OpenAI model compatibility (by pi-zero)
+
+### Fixed (Media)
+- `send_media` default `workspaceOnly: false` — allow absolute paths outside workspace (by pi-zero)
+- Channel `sendMedia` returning `{ok:false}` now returns HTTP 502 instead of silent 200 (by pi-zero)
+
+### Fixed (Telegram)
+- Thinking display limit increased from 300/200 to 1024 chars (by pi-zero)
+- Pi command name conflict filter removed (by pi-zero)
+
+### Fixed (BG-002: Session Lifecycle)
+- Session_end audit: telegram key migration = rename (no session_end needed), heartbeat release = pool return (no session_end needed). Inline comments + 2 tests added (by VividBear)
+
+### Fixed (BG-003)
+- `ctx.registry` → `this.registry` startup crash fix (by pi-zero)
+
+## [v3.5] - 2026-02-12
 
 **BBD Test Results:** 568/568 pass, 0 fail ✅ (v3.4: 531, v3.5: +37)
 
