@@ -1,8 +1,14 @@
-import type { ChannelPlugin, GatewayPluginApi, MediaSendOptions, MediaSendResult } from "../../types.ts";
+import type {
+  ChannelPlugin, GatewayPluginApi, MediaSendOptions, MediaSendResult,
+  MessageSendResult, ChannelStreamingAdapter, ChannelSecurityAdapter,
+  StreamPlaceholderOpts, StreamEditOpts,
+} from "../../types.ts";
 import type { TelegramChannelConfig } from "../../../core/config.ts";
 import { resolveDefaultAccountId, resolveTelegramAccounts } from "./accounts.ts";
 import { createAccountRuntime, startAccountRuntime, stopAccountRuntime } from "./bot.ts";
-import { sendOutboundViaAccount, sendMediaViaAccount } from "./handlers.ts";
+import { sendOutboundViaAccount, sendMediaViaAccount, parseTelegramTarget } from "./handlers.ts";
+import { markdownToTelegramHtml } from "./format.ts";
+import { recordSentMessage } from "./sent-message-cache.ts";
 import type { TelegramPluginRuntime } from "./types.ts";
 
 let runtime: TelegramPluginRuntime | null = null;
@@ -12,6 +18,75 @@ function getRuntime(): TelegramPluginRuntime {
   if (!runtime) throw new Error("Telegram runtime not initialized");
   return runtime;
 }
+
+function getDefaultBot() {
+  const rt = getRuntime();
+  const account = rt.accounts.get(defaultAccountId) ?? Array.from(rt.accounts.values())[0];
+  if (!account) throw new Error("No Telegram account available");
+  return account.bot;
+}
+
+// ── Streaming Adapter ──────────────────────────────────────────────────────
+
+const streamingAdapter: ChannelStreamingAdapter = {
+  config: {
+    editThrottleMs: 1000,
+    streamStartChars: 800,
+  },
+
+  async createPlaceholder(target: string, opts?: StreamPlaceholderOpts) {
+    const bot = getDefaultBot();
+    const parsed = parseTelegramTarget(target, defaultAccountId);
+    const text = opts?.text ?? "⠋";
+    const sent = await bot.api.sendMessage(parsed.chatId, text, {
+      ...(opts?.parseMode === "HTML" ? { parse_mode: "HTML" } : {}),
+      ...(opts?.threadId ? { message_thread_id: Number(opts.threadId) } : {}),
+      ...(opts?.replyTo ? { reply_to_message_id: Number(opts.replyTo) } : {}),
+    });
+    recordSentMessage(parsed.chatId, sent.message_id);
+    return { messageId: String(sent.message_id) };
+  },
+
+  async editMessage(target: string, messageId: string, text: string, opts?: StreamEditOpts) {
+    const bot = getDefaultBot();
+    const parsed = parseTelegramTarget(target, defaultAccountId);
+    try {
+      await bot.api.editMessageText(
+        parsed.chatId,
+        Number(messageId),
+        opts?.parseMode === "HTML" ? text : markdownToTelegramHtml(text),
+        { parse_mode: "HTML" },
+      );
+      return true;
+    } catch (err: any) {
+      if (err?.error_code === 429 || err?.statusCode === 429) return false;
+      if (err?.description?.includes("message is not modified")) return true;
+      return false;
+    }
+  },
+
+  async setTyping(target: string) {
+    const bot = getDefaultBot();
+    const parsed = parseTelegramTarget(target, defaultAccountId);
+    await bot.api.sendChatAction(parsed.chatId, "typing").catch(() => {});
+  },
+};
+
+// ── Security Adapter ───────────────────────────────────────────────────────
+
+let securityAdapter: ChannelSecurityAdapter | undefined;
+
+function buildSecurityAdapter(cfg: TelegramChannelConfig): ChannelSecurityAdapter {
+  const defaultAccount = cfg.accounts?.[resolveDefaultAccountId(cfg)];
+  return {
+    dmPolicy: (defaultAccount as any)?.dmPolicy ?? "pairing",
+    dmAllowFrom: (defaultAccount as any)?.allowFrom,
+    supportsPairing: true,
+    accountId: resolveDefaultAccountId(cfg),
+  };
+}
+
+// ── Plugin ─────────────────────────────────────────────────────────────────
 
 const telegramPlugin: ChannelPlugin = {
   id: "telegram",
@@ -27,14 +102,19 @@ const telegramPlugin: ChannelPlugin = {
   },
   outbound: {
     maxLength: 4096,
-    async sendText(target: string, text: string) {
+    async sendText(target: string, text: string): Promise<MessageSendResult> {
       const rt = getRuntime();
-      await sendOutboundViaAccount({
-        runtime: rt,
-        defaultAccountId,
-        target,
-        text,
-      });
+      try {
+        await sendOutboundViaAccount({
+          runtime: rt,
+          defaultAccountId,
+          target,
+          text,
+        });
+        return { ok: true };
+      } catch (err) {
+        return { ok: false, error: String(err) };
+      }
     },
     async sendMedia(target: string, filePath: string, opts?: MediaSendOptions): Promise<MediaSendResult> {
       const rt = getRuntime();
@@ -47,6 +127,8 @@ const telegramPlugin: ChannelPlugin = {
       });
     },
   },
+
+  streaming: streamingAdapter,
 
   async init(api: GatewayPluginApi) {
     const channelCfg = api.config.channels.telegram as TelegramChannelConfig | undefined;
@@ -63,6 +145,9 @@ const telegramPlugin: ChannelPlugin = {
     };
 
     defaultAccountId = resolveDefaultAccountId(channelCfg);
+    securityAdapter = buildSecurityAdapter(channelCfg);
+    telegramPlugin.security = securityAdapter;
+
     const resolved = resolveTelegramAccounts(channelCfg);
     if (resolved.length === 0) {
       api.logger.info("Telegram: no enabled account with token, skipping");
