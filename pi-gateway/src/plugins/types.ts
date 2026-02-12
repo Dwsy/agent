@@ -16,7 +16,6 @@ import type {
   SessionState,
 } from "../core/types.ts";
 import type { Config } from "../core/config.ts";
-import type { DispatchResult } from "../gateway/types.ts";
 
 // ============================================================================
 // Plugin Hook Names (aligned 1:1 with OpenClaw PluginHookName)
@@ -417,7 +416,7 @@ export interface GatewayPluginApi {
   // --- Runtime ---
 
   /** Dispatch an inbound message to the agent pipeline */
-  dispatch(msg: InboundMessage): Promise<DispatchResult>;
+  dispatch(msg: InboundMessage): Promise<{ injected?: boolean; enqueued?: boolean }>;
 
   /** Send a message to a specific channel target */
   sendToChannel(channel: string, target: string, text: string): Promise<void>;

@@ -31,6 +31,8 @@ export type TelegramMessageMode = "steer" | "follow-up" | "interrupt";
 export interface DispatchResult {
   /** True when the message was injected into an active streaming turn (steer/follow-up). */
   injected?: boolean;
+  /** True when the message was enqueued for normal processing. */
+  enqueued?: boolean;
 }
 
 export interface WsClientData {
