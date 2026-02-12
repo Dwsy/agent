@@ -320,7 +320,7 @@ async function dispatchAgentTurn(params: {
         parts.push(item.content);
       } else if (item.type === 'thinking') {
         // Truncate long thinking for display
-        const truncated = item.content.length > 300 ? item.content.slice(-300) + '...' : item.content;
+        const truncated = item.content.length > 1024 ? item.content.slice(-1024) + '...' : item.content;
         parts.push(`<blockquote>💭 ${escapeHtml(truncated)}</blockquote>`);
       } else if (item.type === 'text') {
         parts.push(item.content);
@@ -488,7 +488,7 @@ async function dispatchAgentTurn(params: {
         if (item.type === 'tool') {
           parts.push(item.content);
         } else if (item.type === 'thinking') {
-          const truncated = item.content.length > 200 ? item.content.slice(0, 200) + "…" : item.content;
+          const truncated = item.content.length > 1024 ? item.content.slice(0, 1024) + "…" : item.content;
           parts.push(`<blockquote>💭 ${escapeHtml(truncated)}</blockquote>`);
         } else if (item.type === 'text') {
           parts.push(item.content);
