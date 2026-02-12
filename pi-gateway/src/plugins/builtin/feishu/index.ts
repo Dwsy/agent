@@ -5,7 +5,7 @@ import type { ChannelPlugin, GatewayPluginApi } from "../../types.ts";
 import type { FeishuChannelConfig, FeishuPluginRuntime } from "./types.ts";
 import { createFeishuClient, createFeishuWSClient, createEventDispatcher, clearClientCache } from "./client.ts";
 import { registerFeishuEvents } from "./bot.ts";
-import { sendFeishuText, chunkText, resolveReceiveIdType } from "./send.ts";
+import { sendFeishuText, sendFeishuCard, chunkText, resolveReceiveIdType } from "./send.ts";
 import type * as Lark from "@larksuiteoapi/node-sdk";
 
 let runtime: FeishuPluginRuntime | null = null;
@@ -19,7 +19,7 @@ const feishuPlugin: ChannelPlugin = {
   },
   capabilities: {
     direct: true,
-    group: false, // v2
+    group: true,
     media: false,  // v2
   },
   outbound: {
@@ -28,7 +28,7 @@ const feishuPlugin: ChannelPlugin = {
       if (!runtime) return;
       const chunks = chunkText(text, runtime.channelCfg.textChunkLimit ?? 4000);
       for (const chunk of chunks) {
-        await sendFeishuText({ client: runtime.client, to: target, text: chunk });
+        await sendFeishuCard({ client: runtime.client, to: target, text: chunk });
       }
     },
     async sendMedia(_target: string, _filePath: string) {
@@ -39,8 +39,15 @@ const feishuPlugin: ChannelPlugin = {
 
   async init(api: GatewayPluginApi) {
     const cfg = api.config.channels.feishu as FeishuChannelConfig | undefined;
-    if (!cfg?.enabled || !cfg?.appId || !cfg?.appSecret) {
+    if (!cfg?.enabled) {
       api.logger.info("Feishu: disabled or not configured, skipping");
+      runtime = null;
+      return;
+    }
+
+    // Validate required credentials
+    if (!cfg.appId || !cfg.appSecret) {
+      api.logger.error("Feishu: enabled but missing required config — channels.feishu.appId and channels.feishu.appSecret must be set");
       runtime = null;
       return;
     }
@@ -86,7 +93,10 @@ const feishuPlugin: ChannelPlugin = {
   },
 
   async stop() {
-    wsClient = null;
+    if (wsClient) {
+      try { (wsClient as any).close?.(); } catch {}
+      wsClient = null;
+    }
     runtime = null;
     clearClientCache();
   },

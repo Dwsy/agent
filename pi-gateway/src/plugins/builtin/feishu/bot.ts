@@ -6,7 +6,7 @@ import type { GatewayPluginApi } from "../../types.ts";
 import type { MessageSource } from "../../../core/types.ts";
 import { resolveAgentId, resolveSessionKey } from "../../../core/session-router.ts";
 import type { FeishuChannelConfig, FeishuMessageContext, FeishuPluginRuntime } from "./types.ts";
-import { sendFeishuText, chunkText } from "./send.ts";
+import { sendFeishuText, sendFeishuCard, chunkText } from "./send.ts";
 
 // ── Dedup ──────────────────────────────────────────────────────────────────
 const DEDUP_TTL_MS = 30 * 60 * 1000;
@@ -110,6 +110,7 @@ function stripBotMention(text: string, mentions?: FeishuMessageEvent["message"][
 export function parseFeishuEvent(event: FeishuMessageEvent, botOpenId?: string): FeishuMessageContext {
   const raw = parseMessageContent(event.message.content, event.message.message_type);
   const content = stripBotMention(raw, event.message.mentions);
+  const mentionedBot = checkBotMentioned(event, botOpenId);
   return {
     chatId: event.message.chat_id,
     messageId: event.message.message_id,
@@ -120,7 +121,15 @@ export function parseFeishuEvent(event: FeishuMessageEvent, botOpenId?: string):
     contentType: event.message.message_type,
     rootId: event.message.root_id || undefined,
     parentId: event.message.parent_id || undefined,
+    mentionedBot,
   };
+}
+
+function checkBotMentioned(event: FeishuMessageEvent, botOpenId?: string): boolean {
+  const mentions = event.message.mentions ?? [];
+  if (mentions.length === 0) return false;
+  if (!botOpenId) return mentions.length > 0;
+  return mentions.some((m) => m.id.open_id === botOpenId);
 }
 
 // ── DM Policy ──────────────────────────────────────────────────────────────
@@ -132,6 +141,34 @@ export function checkDmPolicy(senderId: string, cfg: FeishuChannelConfig): boole
     return (cfg.allowFrom ?? []).includes(senderId);
   }
   return true;
+}
+
+// ── Group Policy ───────────────────────────────────────────────────────────
+
+export function checkGroupPolicy(
+  chatId: string,
+  senderId: string,
+  mentionedBot: boolean,
+  cfg: FeishuChannelConfig,
+): { allowed: boolean; reason?: string } {
+  const policy = cfg.groupPolicy ?? "disabled";
+
+  if (policy === "disabled") {
+    return { allowed: false, reason: "group disabled" };
+  }
+
+  if (policy === "allowlist") {
+    const allowed = (cfg.groupAllowFrom ?? []).includes(chatId);
+    if (!allowed) return { allowed: false, reason: "group not in allowlist" };
+  }
+
+  // requireMention check (default true for groups)
+  const requireMention = cfg.requireMention ?? true;
+  if (requireMention && !mentionedBot) {
+    return { allowed: false, reason: "bot not mentioned" };
+  }
+
+  return { allowed: true };
 }
 
 // ── Event registration ─────────────────────────────────────────────────────
@@ -172,6 +209,7 @@ async function handleFeishuMessage(
   const log = api.logger;
 
   const ctx = parseFeishuEvent(event, botOpenId);
+  const isGroup = ctx.chatType === "group";
 
   // Dedup
   if (isDuplicate(ctx.messageId)) {
@@ -179,16 +217,18 @@ async function handleFeishuMessage(
     return;
   }
 
-  // v1: DM only
-  if (ctx.chatType !== "p2p") {
-    log.info(`feishu: ignoring group message in ${ctx.chatId} (v1 DM only)`);
-    return;
-  }
-
-  // DM policy
-  if (!checkDmPolicy(ctx.senderOpenId, channelCfg)) {
-    log.info(`feishu: sender ${ctx.senderOpenId} not in allowlist`);
-    return;
+  // Policy checks
+  if (isGroup) {
+    const { allowed, reason } = checkGroupPolicy(ctx.chatId, ctx.senderOpenId, ctx.mentionedBot, channelCfg);
+    if (!allowed) {
+      log.info(`feishu: group message blocked — ${reason} (chat=${ctx.chatId}, sender=${ctx.senderOpenId})`);
+      return;
+    }
+  } else {
+    if (!checkDmPolicy(ctx.senderOpenId, channelCfg)) {
+      log.info(`feishu: sender ${ctx.senderOpenId} not in allowlist`);
+      return;
+    }
   }
 
   if (!ctx.content.trim()) {
@@ -196,12 +236,12 @@ async function handleFeishuMessage(
     return;
   }
 
-  log.info(`feishu: DM from ${ctx.senderOpenId}: ${ctx.content.slice(0, 80)}`);
+  log.info(`feishu: ${isGroup ? "group" : "DM"} from ${ctx.senderOpenId} in ${ctx.chatId}: ${ctx.content.slice(0, 80)}`);
 
   // Build source + resolve routing
   const source: MessageSource = {
     channel: "feishu",
-    chatType: "dm",
+    chatType: isGroup ? "group" : "dm",
     chatId: ctx.chatId,
     senderId: ctx.senderOpenId,
   };
@@ -218,7 +258,7 @@ async function handleFeishuMessage(
       if (!reply.trim()) return;
       const chunks = chunkText(reply, channelCfg.textChunkLimit ?? 4000);
       for (const chunk of chunks) {
-        await sendFeishuText({ client, to: ctx.chatId, text: chunk });
+        await sendFeishuCard({ client, to: ctx.chatId, text: chunk });
       }
     },
     setTyping: async () => {},
