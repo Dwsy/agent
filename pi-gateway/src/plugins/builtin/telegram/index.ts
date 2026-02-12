@@ -1,12 +1,12 @@
 import type {
   ChannelPlugin, GatewayPluginApi, MediaSendOptions, MediaSendResult,
-  MessageSendResult, ChannelStreamingAdapter, ChannelSecurityAdapter,
+  MessageSendResult, MessageActionResult, ReactionOptions, ChannelStreamingAdapter, ChannelSecurityAdapter,
   StreamPlaceholderOpts, StreamEditOpts,
 } from "../../types.ts";
 import type { TelegramChannelConfig } from "../../../core/config.ts";
 import { resolveDefaultAccountId, resolveTelegramAccounts } from "./accounts.ts";
 import { createAccountRuntime, startAccountRuntime, stopAccountRuntime } from "./bot.ts";
-import { sendOutboundViaAccount, sendMediaViaAccount, parseTelegramTarget } from "./handlers.ts";
+import { sendOutboundViaAccount, sendMediaViaAccount, sendReactionViaAccount, editMessageViaAccount, deleteMessageViaAccount, parseTelegramTarget } from "./handlers.ts";
 import { markdownToTelegramHtml } from "./format.ts";
 import { recordSentMessage } from "./sent-message-cache.ts";
 import type { TelegramPluginRuntime } from "./types.ts";
@@ -120,6 +120,18 @@ const telegramPlugin: ChannelPlugin = {
         filePath,
         opts,
       });
+    },
+    async sendReaction(target: string, messageId: string, emoji: string | string[], opts?: ReactionOptions): Promise<MessageActionResult> {
+      const rt = getRuntime();
+      return sendReactionViaAccount({ runtime: rt, defaultAccountId, target, messageId, emoji, opts });
+    },
+    async editMessage(target: string, messageId: string, text: string): Promise<MessageActionResult> {
+      const rt = getRuntime();
+      return editMessageViaAccount({ runtime: rt, defaultAccountId, target, messageId, text });
+    },
+    async deleteMessage(target: string, messageId: string): Promise<MessageActionResult> {
+      const rt = getRuntime();
+      return deleteMessageViaAccount({ runtime: rt, defaultAccountId, target, messageId });
     },
   },
 

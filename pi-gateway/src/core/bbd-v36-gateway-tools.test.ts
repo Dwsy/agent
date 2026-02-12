@@ -339,4 +339,88 @@ describe("gateway-tools extension [v3.6]", () => {
       expect(result.content[0].text).toContain("Gateway down");
     });
   });
+
+  // ==========================================================================
+  // GT-5: message tool (react/edit/delete)
+  // ==========================================================================
+
+  describe("GT-5: message tool layer", () => {
+    it("registers message tool", () => {
+      expect(registeredTools.find((t) => t.name === "message")).toBeTruthy();
+    });
+
+    it("react formats success", async () => {
+      mockFetchResponse(200, { ok: true, action: "react", messageId: "1", emoji: "👍" });
+      const tool = getTool("message");
+      const result = await tool.execute("c", { action: "react", messageId: "1", emoji: "👍" });
+      expect(result.content[0].text).toContain("Reacted");
+      expect(result.content[0].text).toContain("👍");
+    });
+
+    it("react remove formats correctly", async () => {
+      mockFetchResponse(200, { ok: true });
+      const tool = getTool("message");
+      const result = await tool.execute("c", { action: "react", messageId: "1", emoji: "👍", remove: true });
+      expect(result.content[0].text).toContain("removed");
+    });
+
+    it("edit formats success", async () => {
+      mockFetchResponse(200, { ok: true, textLength: 10 });
+      const tool = getTool("message");
+      const result = await tool.execute("c", { action: "edit", messageId: "1", text: "new text!!" });
+      expect(result.content[0].text).toContain("edited");
+      expect(result.content[0].text).toContain("10 chars");
+    });
+
+    it("delete formats success", async () => {
+      mockFetchResponse(200, { ok: true });
+      const tool = getTool("message");
+      const result = await tool.execute("c", { action: "delete", messageId: "1" });
+      expect(result.content[0].text).toContain("deleted");
+    });
+
+    it("validates missing messageId", async () => {
+      const tool = getTool("message");
+      const result = await tool.execute("c", { action: "react", emoji: "👍" });
+      expect(result.content[0].text).toContain("messageId is required");
+    });
+
+    it("validates react missing emoji", async () => {
+      const tool = getTool("message");
+      const result = await tool.execute("c", { action: "react", messageId: "1" });
+      expect(result.content[0].text).toContain("emoji is required");
+    });
+
+    it("validates edit missing text", async () => {
+      const tool = getTool("message");
+      const result = await tool.execute("c", { action: "edit", messageId: "1" });
+      expect(result.content[0].text).toContain("text is required");
+    });
+
+    it("handles HTTP error", async () => {
+      mockFetchResponse(501, { error: "Channel does not support reactions" });
+      const tool = getTool("message");
+      const result = await tool.execute("c", { action: "react", messageId: "1", emoji: "👍" });
+      expect(result.content[0].text).toContain("does not support");
+    });
+
+    it("handles network error", async () => {
+      mockFetchError("Connection refused");
+      const tool = getTool("message");
+      const result = await tool.execute("c", { action: "react", messageId: "1", emoji: "👍" });
+      expect(result.content[0].text).toContain("Connection refused");
+    });
+
+    it("sends correct request body", async () => {
+      mockFetchResponse(200, { ok: true });
+      const tool = getTool("message");
+      await tool.execute("c", { action: "react", messageId: "42", emoji: ["👍", "❤️"], remove: true });
+      const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+      expect(body.action).toBe("react");
+      expect(body.messageId).toBe("42");
+      expect(body.emoji).toEqual(["👍", "❤️"]);
+      expect(body.remove).toBe(true);
+      expect(body.token).toBe("test-token-123");
+    });
+  });
 });
