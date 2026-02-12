@@ -131,3 +131,36 @@ export async function updateFeishuCard(params: {
     throw new Error(`Feishu card update failed: ${response.msg || `code ${response.code}`}`);
   }
 }
+
+/**
+ * Send a CardKit card entity (by card_id) as a message.
+ */
+export async function sendFeishuCardById(params: {
+  client: Lark.Client;
+  to: string;
+  cardId: string;
+  replyTo?: string;
+}): Promise<{ messageId: string }> {
+  const { client, to, cardId, replyTo } = params;
+  const content = JSON.stringify({ type: "card_id", data: { card_id: cardId } });
+
+  if (replyTo) {
+    const response = await client.im.message.reply({
+      path: { message_id: replyTo },
+      data: { content, msg_type: "interactive" },
+    });
+    if (response.code !== 0) {
+      throw new Error(`Feishu card-by-id reply failed: ${response.msg || `code ${response.code}`}`);
+    }
+    return { messageId: response.data?.message_id ?? "unknown" };
+  }
+
+  const response = await client.im.message.create({
+    params: { receive_id_type: resolveReceiveIdType(to) },
+    data: { receive_id: to, content, msg_type: "interactive" },
+  });
+  if (response.code !== 0) {
+    throw new Error(`Feishu card-by-id send failed: ${response.msg || `code ${response.code}`}`);
+  }
+  return { messageId: response.data?.message_id ?? "unknown" };
+}
