@@ -5,8 +5,32 @@
  * Protocol reference: pi-mono/packages/coding-agent/docs/rpc.md
  */
 
+import { appendFile, mkdir } from "node:fs/promises";
+import { join } from "node:path";
 import type { RpcCommand, RpcResponse, AgentEvent, AssistantMessageEvent, ImageContent } from "./types.ts";
 import { createLogger, type Logger } from "./types.ts";
+
+// ── RPC file logger ────────────────────────────────────────────────────────
+
+const RPC_LOG_DIR = join(process.cwd(), "log");
+const RPC_LOG_PATH = join(RPC_LOG_DIR, "rpc.log");
+let logDirReady = false;
+
+async function ensureLogDir(): Promise<void> {
+  if (logDirReady) return;
+  await mkdir(RPC_LOG_DIR, { recursive: true });
+  logDirReady = true;
+}
+
+async function rpcFileLog(clientId: string, direction: ">>>" | "<<<", line: string): Promise<void> {
+  try {
+    await ensureLogDir();
+    const ts = new Date().toISOString();
+    await appendFile(RPC_LOG_PATH, `${ts} [${clientId}] ${direction} ${line}\n`);
+  } catch {
+    // Non-critical — don't break RPC flow for log failures
+  }
+}
 
 /** Bun Subprocess with piped stdio — we assert the types since Bun.spawn with "pipe" guarantees them */
 interface PipedSubprocess {
@@ -377,12 +401,14 @@ export class RpcClient {
         }));
       }
       this.log.info(`RPC send: ${JSON.stringify(debugCmd).slice(0, 500)}`);
+      void rpcFileLog(this.id, ">>>", JSON.stringify(debugCmd).slice(0, 2000));
       this.proc!.stdin.write(line);
     });
   }
 
   private handleLine(line: string): void {
     if (!line.trim()) return;
+    void rpcFileLog(this.id, "<<<", line.slice(0, 2000));
 
     try {
       const data = JSON.parse(line);
