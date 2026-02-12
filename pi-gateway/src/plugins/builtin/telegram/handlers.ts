@@ -443,6 +443,8 @@ async function dispatchAgentTurn(params: {
       pushLiveUpdate();
     },
     respond: async (reply: string) => {
+      const log = runtime.api.logger;
+      log.info(`[telegram:respond] chatId=${chatId} replyLen=${reply?.length ?? 0} replyMsgId=${replyMsgId}`);
       clearInterval(typingInterval);
       stopSpinner();
 
@@ -501,7 +503,8 @@ async function dispatchAgentTurn(params: {
               });
               markReplyUsed(replyToMessageId);
               recordSentMessage(chatId, sent.message_id);
-            } catch {
+            } catch (chunkErr: any) {
+              log.warn(`[telegram:respond] HTML sendMessage failed for chunk, retrying plain: ${chunkErr?.message ?? chunkErr}`);
               const replyToMessageId = maybeReplyTo();
               const sent = await botClient.api.sendMessage(chatId, chunk, {
                 ...(threadId ? { message_thread_id: threadId } : {}),
@@ -511,13 +514,17 @@ async function dispatchAgentTurn(params: {
               recordSentMessage(chatId, sent.message_id);
             }
           }
-        } catch {
+        } catch (editErr: any) {
+          log.warn(`[telegram:respond] editMessageText failed, falling back to sendMessage: ${editErr?.message ?? editErr}`);
           for (const chunk of chunks) {
             const replyToMessageId = maybeReplyTo();
             const sent = await botClient.api.sendMessage(chatId, chunk, {
               ...(threadId ? { message_thread_id: threadId } : {}),
               ...(replyToMessageId ? { reply_to_message_id: replyToMessageId } : {}),
-            }).catch(() => null);
+            }).catch((sendErr: any) => {
+              log.error(`[telegram:respond] fallback sendMessage also failed: ${sendErr?.message ?? sendErr}`);
+              return null;
+            });
             if (sent) markReplyUsed(replyToMessageId);
             if (sent) recordSentMessage(chatId, sent.message_id);
           }
@@ -533,12 +540,16 @@ async function dispatchAgentTurn(params: {
             });
             markReplyUsed(replyToMessageId);
             recordSentMessage(chatId, sent.message_id);
-          } catch {
+          } catch (htmlErr: any) {
+            log.warn(`[telegram:respond] HTML sendMessage failed, retrying plain: ${htmlErr?.message ?? htmlErr}`);
             const replyToMessageId = maybeReplyTo();
             const sent = await botClient.api.sendMessage(chatId, chunk, {
               ...(threadId ? { message_thread_id: threadId } : {}),
               ...(replyToMessageId ? { reply_to_message_id: replyToMessageId } : {}),
-            }).catch(() => null);
+            }).catch((plainErr: any) => {
+              log.error(`[telegram:respond] plain sendMessage also failed: ${plainErr?.message ?? plainErr}`);
+              return null;
+            });
             if (sent) markReplyUsed(replyToMessageId);
             if (sent) recordSentMessage(chatId, sent.message_id);
           }
