@@ -7,7 +7,7 @@ import { refreshPiCommands } from "./commands.ts";
 import { resolveStreamCompat } from "./config-compat.ts";
 import { escapeHtml, markdownToTelegramHtml, splitTelegramText } from "./format.ts";
 import { downloadTelegramFile } from "./media-download.ts";
-import { parseOutboundMediaDirectives, sendTelegramMedia, sendTelegramTextAndMedia } from "./media-send.ts";
+import { parseOutboundMediaDirectives, sendTelegramMedia, sendTelegramTextAndMedia, IMAGE_EXTS, AUDIO_EXTS } from "./media-send.ts";
 import { migrateTelegramGroupConfig } from "./group-migration.ts";
 import { buildReactionText } from "./reaction-level.ts";
 import { recordSentMessage, wasRecentlySent } from "./sent-message-cache.ts";
@@ -1028,14 +1028,12 @@ export async function sendMediaViaAccount(params: {
 
   // Map MediaSendOptions.type to TelegramMediaDirective.kind ("photo" | "audio" | "file")
   const ext = params.filePath.split(".").pop()?.toLowerCase() ?? "";
-  const imageExts = new Set(["jpg", "jpeg", "png", "gif", "webp", "bmp"]);
-  const audioExts = new Set(["mp3", "ogg", "wav", "m4a", "flac"]);
   const typeHint = params.opts?.type;
   const kind: "photo" | "audio" | "file" = typeHint === "photo" ? "photo"
     : typeHint === "audio" ? "audio"
     : typeHint === "video" || typeHint === "document" ? "file"
-    : imageExts.has(ext) ? "photo"
-    : audioExts.has(ext) ? "audio"
+    : IMAGE_EXTS.has(ext) ? "photo"
+    : AUDIO_EXTS.has(ext) ? "audio"
     : "file";
 
   try {

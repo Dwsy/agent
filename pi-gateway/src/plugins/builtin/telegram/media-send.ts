@@ -5,6 +5,10 @@ import type { TelegramMediaDirective, TelegramParsedOutbound } from "./types.ts"
 import { clipCaption, markdownToTelegramHtml, splitCaption, splitTelegramText } from "./format.ts";
 import { validateMediaPath } from "../../../core/media-security.ts";
 
+export const IMAGE_EXTS = new Set(["jpg", "jpeg", "png", "gif", "webp", "bmp"]);
+export const AUDIO_EXTS = new Set(["mp3", "ogg", "wav", "m4a", "flac"]);
+export const VIDEO_EXTS = new Set(["mp4", "webm", "mov", "avi"]);
+
 export interface TelegramSendOptions {
   messageThreadId?: number;
   replyToMessageId?: number;
@@ -70,9 +74,7 @@ export function parseOutboundMediaDirectives(text: string): TelegramParsedOutbou
       }
       // Infer kind from extension
       const ext = path.split(".").pop()?.toLowerCase() ?? "";
-      const imageExts = new Set(["jpg", "jpeg", "png", "gif", "webp", "bmp"]);
-      const audioExts = new Set(["mp3", "ogg", "wav", "m4a", "flac"]);
-      const kind = imageExts.has(ext) ? "photo" : audioExts.has(ext) ? "audio" : "file";
+      const kind = IMAGE_EXTS.has(ext) ? "photo" : AUDIO_EXTS.has(ext) ? "audio" : "file";
       media.push({ kind: kind as any, url: path });
       continue;
     }
@@ -123,10 +125,9 @@ async function sendLocalFileByKind(bot: Bot, chatId: string, item: TelegramMedia
     }
   } else {
     // kind === "file": video or generic document
-    const videoExts = new Set(["mp4", "webm", "mov", "avi"]);
     const lower = fileName.toLowerCase();
     const ext = lower.split(".").pop() ?? "";
-    if (videoExts.has(ext)) {
+    if (VIDEO_EXTS.has(ext)) {
       await bot.api.sendVideo(chatId, file, htmlCaption ? { caption: htmlCaption, parse_mode: "HTML", ...threadOpts, ...replyOpts } : { ...threadOpts, ...replyOpts });
     } else {
       await bot.api.sendDocument(chatId, file, htmlCaption ? { caption: htmlCaption, parse_mode: "HTML", ...threadOpts, ...replyOpts } : { ...threadOpts, ...replyOpts });
