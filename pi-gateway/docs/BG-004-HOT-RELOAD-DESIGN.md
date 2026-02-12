@@ -4,7 +4,9 @@
 > Author: NiceViper (OpenClaw Architecture Consultant)  
 > Date: 2026-02-12  
 > Scope: pi-gateway v3.6+  
-> Depends on: BG-001 (tool bridge, for agent-side tool refresh)
+> Depends on: BG-001 (tool bridge, for agent-side tool refresh)  
+> Related: BG-003 (naming conflict detection — already tracks pluginId in conflicts)  
+> Limitation: Builtin plugins (telegram/discord/webchat/feishu) are bundled in the gateway source. Changes to builtins require rebuild + restart — hot-reload only applies to external plugins loaded from config dirs or `~/.pi/gateway/plugins/`.
 
 ---
 
@@ -274,7 +276,7 @@ reload("telegram")
 ## 6. Implementation Plan
 
 ### Phase 1: Registry Isolation (v3.6, prerequisite)
-1. Add `pluginId` to `ToolPlugin` entries in registry
+1. Add `pluginId` to `ToolPlugin` entries in registry (BG-003 already tracks pluginId in `RegistrationConflict` but `tools` Map values lack it)
 2. Add `pluginId` to `BackgroundService` entries
 3. Add `HookRegistry.removeByPlugin(pluginId)`
 4. Add `PluginRegistryState.removeByPlugin(pluginId)` — centralized cleanup
@@ -299,7 +301,7 @@ reload("telegram")
 
 | Risk | Impact | Mitigation |
 |---|---|---|
-| Module cache busting breaks on Bun update | Reload fails silently | Fallback: copy to temp path + import |
+| Module cache busting breaks on Bun update | Reload fails silently | Primary: `?t=` query param; Fallback: copy to temp path + import from there |
 | Channel reconnect fails after reload | Channel offline | Retry with exponential backoff; if 3 failures, log error + keep old state |
 | Stale closures reference old state | Subtle bugs | Factory pattern ensures fresh closures on re-register |
 | Concurrent reload of same plugin | Race condition | Mutex per pluginId (reject concurrent reload) |
