@@ -127,16 +127,10 @@ export async function processMessage(
     if (rpc.sessionKey !== sessionKey) return;
     eventCount++;
 
-    ctx.log.debug(`[RPC-EVENT] ${sessionKey} type=${(event as any).type} eventCount=${eventCount}`);
-    ctx.log.debug(`[RPC-EVENT] ${sessionKey} full event: ${JSON.stringify(event).slice(0, 1000)}`);
     ctx.transcripts.logEvent(sessionKey, event as Record<string, unknown>);
 
     const extractPartialText = (partial: unknown): { text?: string; thinking?: string } => {
-      ctx.log.debug(`[RPC-EVENT] ${sessionKey} extractPartialText input: ${JSON.stringify(partial).slice(0, 500)}`);
-      if (!partial || typeof partial !== 'object') {
-        ctx.log.debug(`[RPC-EVENT] ${sessionKey} extractPartialText: no partial or not object`);
-        return {};
-      }
+      if (!partial || typeof partial !== 'object') return {};
       const record = partial as Record<string, unknown>;
       let content = record.content;
       if (!Array.isArray(content) && record.message && typeof record.message === 'object') {
@@ -159,42 +153,29 @@ export async function processMessage(
         if (typeof record.text === 'string') text = record.text;
         if (typeof record.thinking === 'string') thinking = record.thinking;
       }
-      ctx.log.debug(`[RPC-EVENT] ${sessionKey} extractPartialText result: text=${text?.length ?? 0} chars, thinking=${thinking?.length ?? 0} chars`);
       return { text, thinking };
     };
 
     // Stream text and thinking deltas
     if (event.type === "message_update") {
       const ame = (event as any).assistantMessageEvent ?? (event as any).assistant_message_event;
-      ctx.log.debug(`[RPC-EVENT] ${sessionKey} message_update ame.type=${ame?.type} ame.delta=${ame?.delta?.length ?? 0} chars`);
-      ctx.log.debug(`[RPC-EVENT] ${sessionKey} ame.full: ${JSON.stringify(ame).slice(0, 800)}`);
-
       const partial = extractPartialText(ame?.partial);
-      ctx.log.debug(`[RPC-EVENT] ${sessionKey} partial extracted: text=${partial.text?.length ?? 0} chars, thinking=${partial.thinking?.length ?? 0} chars`);
 
-      const beforeFullText = fullText;
       switch (ame?.type) {
         case 'text_delta':
           if (ame.delta) {
             fullText += ame.delta;
-            ctx.log.debug(`[RPC-EVENT] ${sessionKey} text_delta: added ${ame.delta.length} chars, total=${fullText.length}`);
             msg.onStreamDelta?.(fullText, ame.delta);
           } else if (partial.text) {
             fullText = partial.text;
-            ctx.log.debug(`[RPC-EVENT] ${sessionKey} text_delta (from partial): total=${fullText.length}`);
             msg.onStreamDelta?.(fullText, partial.text);
-          } else {
-            ctx.log.warn(`[RPC-EVENT] ${sessionKey} text_delta: no delta and no partial.text`);
           }
           break;
         case 'text_start':
           fullText = '';
           if (partial.text) {
             fullText = partial.text;
-            ctx.log.debug(`[RPC-EVENT] ${sessionKey} text_start: total=${fullText.length}`);
             msg.onStreamDelta?.(fullText, partial.text);
-          } else {
-            ctx.log.debug(`[RPC-EVENT] ${sessionKey} text_start: empty`);
           }
           break;
         case 'text_end':
@@ -203,14 +184,10 @@ export async function processMessage(
               ? ame.content.map((c: any) => c.type === 'text' ? c.text : '').join('')
               : String(ame.content);
             fullText = content;
-            ctx.log.debug(`[RPC-EVENT] ${sessionKey} text_end: total=${fullText.length}`);
             msg.onStreamDelta?.(fullText, content);
           } else if (partial.text) {
             fullText = partial.text;
-            ctx.log.debug(`[RPC-EVENT] ${sessionKey} text_end (from partial): total=${fullText.length}`);
             msg.onStreamDelta?.(fullText, partial.text);
-          } else {
-            ctx.log.warn(`[RPC-EVENT] ${sessionKey} text_end: no content and no partial.text`);
           }
           break;
         case 'thinking_delta': {
@@ -219,46 +196,37 @@ export async function processMessage(
             thinkingText += thinkDelta;
             msg.onThinkingDelta?.(thinkingText, thinkDelta);
           }
-          ctx.log.debug(`[RPC-EVENT] ${sessionKey} thinking_delta: ${thinkDelta.length} chars`);
           break;
         }
         case 'thinking_start':
           thinkingText = '';
-          ctx.log.debug(`[RPC-EVENT] ${sessionKey} thinking_start`);
           break;
         case 'thinking_end':
-          ctx.log.debug(`[RPC-EVENT] ${sessionKey} thinking_end (${thinkingText.length} chars total)`);
           break;
         case 'start':
           if (partial.text) {
             fullText = partial.text;
-            ctx.log.debug(`[RPC-EVENT] ${sessionKey} start (text): total=${fullText.length}`);
             msg.onStreamDelta?.(fullText, partial.text);
           }
           break;
-        default:
-          ctx.log.warn(`[RPC-EVENT] ${sessionKey} unhandled ame.type: ${ame?.type}`);
+        // default: silently ignore unhandled ame.type
       }
-      ctx.log.debug(`[RPC-EVENT] ${sessionKey} fullText changed: ${beforeFullText.length} -> ${fullText.length} chars`);
     }
 
     // Tool execution labels
     if (event.type === "tool_execution_start") {
       const eventAny = event as any;
-      ctx.log.info(`[RPC-EVENT] ${sessionKey} tool_execution_start: ${eventAny.toolName}`);
       const label = (eventAny.args as any)?.label || eventAny.toolName;
       if (label) toolLabels.push(label);
       msg.onToolStart?.(eventAny.toolName, eventAny.args, eventAny.toolCallId);
     }
 
     if (event.type === "agent_end") {
-      ctx.log.info(`[RPC-EVENT] ${sessionKey} agent_end`);
       agentEndMessages = (event as any).messages ?? [];
     }
 
     if (event.type === "message_end") {
       const msgEnd = event as any;
-      ctx.log.debug(`[RPC-EVENT] ${sessionKey} message_end: role=${msgEnd.message?.role}, stopReason=${msgEnd.message?.stopReason}`);
       if (msgEnd.message?.role === "assistant" && msgEnd.message?.stopReason) {
         agentEndStopReason = msgEnd.message.stopReason;
       }
@@ -313,9 +281,6 @@ export async function processMessage(
     session.isStreaming = false;
     await setTyping(false);
   }
-
-  ctx.log.info(`[RPC-EVENT] ${sessionKey} Final fullText: ${fullText.length} chars, eventCount=${eventCount}`);
-  ctx.log.debug(`[RPC-EVENT] ${sessionKey} Final fullText content: ${fullText.slice(0, 500)}`);
 
   // Hook: message_sending
   if (!fullText.trim()) {
