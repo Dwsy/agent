@@ -1337,6 +1337,27 @@ class GwChat extends LitElement {
           this.requestUpdate();
         }
       }),
+      // Media push from send_media API
+      gw.on("media_event", (p) => {
+        if (p.sessionKey && p.sessionKey !== this.sessionKey) return;
+        const isImage = ["photo", "image"].includes(p.type) || /\.(png|jpe?g|gif|webp|svg|bmp)$/i.test(p.filename || "");
+        if (isImage && p.url) {
+          // Append to last assistant message or create new one
+          const last = this.messages[this.messages.length - 1];
+          if (last && (last.role === "assistant" || last.role === "streaming")) {
+            last.mediaImages = [...(last.mediaImages || []), p.url];
+            this.messages = [...this.messages];
+          } else {
+            this.messages = [...this.messages, { role: "assistant", text: p.caption || "", mediaImages: [p.url] }];
+          }
+        } else if (p.url) {
+          // Non-image file: render as download link
+          const label = p.caption || p.filename || "Download";
+          const link = `[📎 ${label}](${p.url})`;
+          this.messages = [...this.messages, { role: "assistant", text: link }];
+        }
+        this._scrollBottom();
+      }),
     );
   }
 
