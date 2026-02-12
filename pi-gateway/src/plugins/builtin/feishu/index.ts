@@ -1,7 +1,7 @@
 /**
  * Feishu channel plugin entry — register with pi-gateway.
  */
-import type { ChannelPlugin, GatewayPluginApi } from "../../types.ts";
+import type { ChannelPlugin, GatewayPluginApi, MessageSendResult } from "../../types.ts";
 import type { FeishuChannelConfig, FeishuPluginRuntime } from "./types.ts";
 import { createFeishuClient, createFeishuWSClient, createEventDispatcher, clearClientCache } from "./client.ts";
 import { registerFeishuEvents } from "./bot.ts";
@@ -25,11 +25,18 @@ const feishuPlugin: ChannelPlugin = {
   },
   outbound: {
     maxLength: 4000,
-    async sendText(target: string, text: string) {
-      if (!runtime) return;
-      const chunks = chunkText(text, runtime.channelCfg.textChunkLimit ?? 4000);
-      for (const chunk of chunks) {
-        await sendFeishuCard({ client: runtime.client, to: target, text: chunk });
+    async sendText(target: string, text: string): Promise<MessageSendResult> {
+      if (!runtime) return { ok: false, error: "Feishu not initialized" };
+      try {
+        const chunks = chunkText(text, runtime.channelCfg.textChunkLimit ?? 4000);
+        let lastMessageId: string | undefined;
+        for (const chunk of chunks) {
+          const result = await sendFeishuCard({ client: runtime.client, to: target, text: chunk });
+          lastMessageId = result.messageId;
+        }
+        return { ok: true, messageId: lastMessageId };
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) };
       }
     },
     async sendMedia(target: string, filePath: string, opts?) {
