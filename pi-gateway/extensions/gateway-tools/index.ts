@@ -3,6 +3,8 @@
  *
  * Registers tools that allow the pi agent to interact with the gateway:
  * - send_media: Send files (images, audio, documents) to the current chat
+ * - send_message: Send text messages to the current chat
+ * - cron: Manage scheduled tasks (list/add/remove/pause/resume/run)
  *
  * Environment variables (set by gateway when spawning pi processes):
  * - PI_GATEWAY_URL: Gateway HTTP base URL (e.g., http://127.0.0.1:18789)
@@ -202,4 +204,184 @@ export default function gatewayTools(pi: ExtensionAPI) {
       }
     },
   });
+
+  // ========================================================================
+  // cron — scheduled task management (v3.6)
+  // ========================================================================
+
+  const CRON_ACTIONS = ["list", "add", "remove", "pause", "resume", "run"] as const;
+
+  pi.registerTool({
+    name: "cron",
+    label: "Cron",
+    description:
+      "Manage gateway scheduled tasks (cron jobs). " +
+      "Actions: list (show all jobs), add (create job), remove (delete job), " +
+      "pause/resume (toggle job), run (trigger immediately).\n\n" +
+      "SCHEDULE TYPES (schedule.kind):\n" +
+      '- "cron": Standard cron expression, e.g. "0 */6 * * *"\n' +
+      '- "every": Interval, e.g. "30m", "2h", "1d"\n' +
+      '- "at": One-shot ISO 8601 datetime (fires once)\n\n' +
+      "MODE:\n" +
+      '- "isolated" (default): Runs in independent session\n' +
+      '- "main": Injects as system event into main session\n\n' +
+      "EXAMPLES:\n" +
+      '- List: { action: "list" }\n' +
+      '- Add hourly task: { action: "add", id: "backup", schedule: { kind: "every", expr: "1h" }, task: "Run backup check" }\n' +
+      '- Add cron: { action: "add", id: "morning", schedule: { kind: "cron", expr: "0 9 * * *" }, task: "Morning briefing" }\n' +
+      '- One-shot reminder: { action: "add", id: "remind-1", schedule: { kind: "at", expr: "2026-02-13T10:00:00Z" }, task: "Remind user about meeting", deleteAfterRun: true }\n' +
+      '- Remove: { action: "remove", id: "backup" }\n' +
+      '- Pause: { action: "pause", id: "morning" }\n' +
+      '- Run now: { action: "run", id: "backup" }',
+    parameters: Type.Object({
+      action: Type.Union(
+        CRON_ACTIONS.map((a) => Type.Literal(a)),
+        { description: "Action to perform" },
+      ),
+      id: Type.Optional(
+        Type.String({ description: "Job ID — required for add/remove/pause/resume/run" }),
+      ),
+      schedule: Type.Optional(
+        Type.Object(
+          {
+            kind: Type.Union(
+              [Type.Literal("cron"), Type.Literal("every"), Type.Literal("at")],
+              { description: "Schedule type" },
+            ),
+            expr: Type.String({ description: 'Schedule expression (cron: "0 */6 * * *", every: "30m", at: ISO 8601)' }),
+            timezone: Type.Optional(Type.String({ description: "Timezone for cron expressions (e.g. Asia/Shanghai)" })),
+          },
+          { description: "Schedule — required for add" },
+        ),
+      ),
+      task: Type.Optional(
+        Type.String({ description: "Task description text — required for add" }),
+      ),
+      mode: Type.Optional(
+        Type.Union([Type.Literal("isolated"), Type.Literal("main")], {
+          description: 'Execution mode. Default: "isolated"',
+        }),
+      ),
+      deleteAfterRun: Type.Optional(
+        Type.Boolean({ description: "Remove job after first execution. Default: false" }),
+      ),
+    }),
+    async execute(_toolCallId, params) {
+      const { action, id, schedule, task, mode, deleteAfterRun } = params as {
+        action: string;
+        id?: string;
+        schedule?: { kind: string; expr: string; timezone?: string };
+        task?: string;
+        mode?: string;
+        deleteAfterRun?: boolean;
+      };
+
+      try {
+        switch (action) {
+          case "list": {
+            const res = await fetch(`${gatewayUrl}/api/cron/jobs`, {
+              headers: { Authorization: `Bearer ${internalToken}` },
+            });
+            const data = (await res.json()) as { ok: boolean; jobs?: unknown[]; error?: string };
+            if (!res.ok) return cronError(data.error || res.statusText);
+            const jobs = data.jobs ?? [];
+            return cronOk(
+              jobs.length === 0
+                ? "No scheduled jobs."
+                : `${jobs.length} job(s):\n${JSON.stringify(jobs, null, 2)}`,
+            );
+          }
+
+          case "add": {
+            if (!id) return cronError("id is required for add");
+            if (!schedule) return cronError("schedule is required for add");
+            if (!task) return cronError("task is required for add");
+
+            const res = await fetch(`${gatewayUrl}/api/cron/jobs`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${internalToken}`,
+              },
+              body: JSON.stringify({
+                id,
+                schedule,
+                task,
+                mode: mode || "isolated",
+                deleteAfterRun: deleteAfterRun ?? false,
+              }),
+            });
+            const data = (await res.json()) as Record<string, unknown>;
+            if (!res.ok) return cronError(data.error as string || res.statusText);
+            return cronOk(`Job "${id}" created (${schedule.kind}: ${schedule.expr})`);
+          }
+
+          case "remove": {
+            if (!id) return cronError("id is required for remove");
+            const res = await fetch(`${gatewayUrl}/api/cron/jobs/${encodeURIComponent(id)}`, {
+              method: "DELETE",
+              headers: { Authorization: `Bearer ${internalToken}` },
+            });
+            const data = (await res.json()) as Record<string, unknown>;
+            if (!res.ok) return cronError(data.error as string || res.statusText);
+            return cronOk(`Job "${id}" removed.`);
+          }
+
+          case "pause":
+          case "resume": {
+            if (!id) return cronError(`id is required for ${action}`);
+            const res = await fetch(`${gatewayUrl}/api/cron/jobs/${encodeURIComponent(id)}`, {
+              method: "PATCH",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${internalToken}`,
+              },
+              body: JSON.stringify({ action }),
+            });
+            const data = (await res.json()) as Record<string, unknown>;
+            if (!res.ok) return cronError(data.error as string || res.statusText);
+            return cronOk(`Job "${id}" ${action}d.`);
+          }
+
+          case "run": {
+            if (!id) return cronError("id is required for run");
+            const res = await fetch(
+              `${gatewayUrl}/api/cron/jobs/${encodeURIComponent(id)}/run`,
+              {
+                method: "POST",
+                headers: { Authorization: `Bearer ${internalToken}` },
+              },
+            );
+            const data = (await res.json()) as Record<string, unknown>;
+            if (!res.ok) return cronError(data.error as string || res.statusText);
+            return cronOk(`Job "${id}" triggered.`);
+          }
+
+          default:
+            return cronError(`Unknown action: ${action}`);
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return cronError(message);
+      }
+    },
+  });
+}
+
+// ============================================================================
+// Cron tool helpers
+// ============================================================================
+
+function cronOk(text: string) {
+  return {
+    content: [{ type: "text" as const, text }],
+    details: { ok: true },
+  };
+}
+
+function cronError(error: string) {
+  return {
+    content: [{ type: "text" as const, text: `Cron error: ${error}` }],
+    details: { error: true },
+  };
 }
