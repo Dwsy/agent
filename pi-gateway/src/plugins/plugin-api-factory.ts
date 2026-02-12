@@ -133,7 +133,7 @@ export function createPluginApi(
     },
 
     async dispatch(msg) {
-      await ctx.dispatch(msg);
+      return ctx.dispatch(msg);
     },
 
     async sendToChannel(channel: string, target: string, text: string) {

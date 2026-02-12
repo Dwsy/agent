@@ -6,7 +6,7 @@
  * @owner MintHawk (KeenUnion)
  */
 
-import type { GatewayContext, TelegramMessageMode } from "./types.ts";
+import type { GatewayContext, TelegramMessageMode, DispatchResult } from "./types.ts";
 import type { InboundMessage, SessionKey, ImageContent, MessageSource } from "../core/types.ts";
 import type { RpcClient } from "../core/rpc-client.ts";
 import type { PrioritizedWork } from "../core/message-queue.ts";
@@ -130,11 +130,11 @@ export async function deliverHeartbeatAlert(
  * Dispatch an inbound message to the agent pipeline.
  * Called by channel plugins and WebChat.
  */
-export async function dispatchMessage(msg: InboundMessage, ctx: GatewayContext): Promise<void> {
+export async function dispatchMessage(msg: InboundMessage, ctx: GatewayContext): Promise<DispatchResult> {
   // Layer 0: Deduplication
   if (ctx.config.queue.dedup.enabled && ctx.dedup.isDuplicate(msg)) {
     ctx.log.debug(`Dedup: skipping duplicate message from ${msg.source.senderId} on ${msg.source.channel}`);
-    return;
+    return {};
   }
 
   await ctx.registry.hooks.dispatch("message_received", { message: msg });
@@ -148,14 +148,15 @@ export async function dispatchMessage(msg: InboundMessage, ctx: GatewayContext):
 
     if (mode === "interrupt") {
       await handleInterruptMode(sessionKey, rpc, msg, ctx);
-      return;
+      return {};
     } else {
       const handled = await handleInjectionMode(sessionKey, rpc, msg, mode, ctx);
-      if (handled) return;
+      if (handled) return { injected: true };
     }
   }
 
   await enqueueMessage(msg, ctx);
+  return {};
 }
 
 async function handleInterruptMode(
