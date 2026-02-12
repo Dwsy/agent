@@ -17,7 +17,7 @@ const webchatPlugin: ChannelPlugin = {
     direct: true,
     group: false,
     thread: false,
-    media: false,
+    media: true,
   },
   outbound: {
     maxLength: Infinity,
