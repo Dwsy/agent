@@ -179,7 +179,13 @@ function sanitizeArgs(args: string[]): string[] {
   for (let i = 0; i < args.length; i++) {
     const lower = args[i].toLowerCase();
     if (lower.startsWith("--") || lower.startsWith("-")) {
-      if (lower.includes("token") || lower.includes("key") || lower.includes("secret") || lower.includes("password")) {
+      // Handle --flag=value inline format
+      if (lower.includes("=")) {
+        const flagPart = lower.split("=")[0];
+        if (flagPart.includes("token") || flagPart.includes("key") || flagPart.includes("secret") || flagPart.includes("password")) {
+          sensitiveFlags.add(i); // mark for inline redaction
+        }
+      } else if (lower.includes("token") || lower.includes("key") || lower.includes("secret") || lower.includes("password")) {
         sensitiveFlags.add(i);
       }
     }
@@ -187,11 +193,15 @@ function sanitizeArgs(args: string[]): string[] {
 
   // Second pass: redact
   return args.map((arg, i) => {
-    // Redact value after a sensitive flag
-    if (i > 0 && sensitiveFlags.has(i - 1)) {
+    // Redact value after a sensitive flag (--token <value>)
+    if (i > 0 && sensitiveFlags.has(i - 1) && !args[i - 1].includes("=")) {
       return "[REDACTED]";
     }
-    // Redact inline key=value patterns
+    // Redact inline --flag=value
+    if (sensitiveFlags.has(i) && arg.includes("=")) {
+      return arg.split("=")[0] + "=[REDACTED]";
+    }
+    // Redact bare key=value patterns
     if (/^(token|key|secret|password|auth)=/i.test(arg)) {
       return arg.split("=")[0] + "=[REDACTED]";
     }

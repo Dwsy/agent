@@ -122,6 +122,14 @@ describe("ExecGuard", () => {
     expect(log[0].args[1]).toBe("--verbose");
   });
 
+  test("redacts --flag=value format", () => {
+    const guard = new ExecGuard();
+    guard.check("pi", ["--token=secret123", "--mode", "rpc"]);
+
+    const log = guard.getAuditLog();
+    expect(log[0].args).toEqual(["--token=[REDACTED]", "--mode", "rpc"]);
+  });
+
   // -------------------------------------------------------------------------
   // Stats
   // -------------------------------------------------------------------------
