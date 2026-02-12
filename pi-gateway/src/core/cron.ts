@@ -37,7 +37,7 @@ export interface CronAnnouncer {
    * mode "announce" → inject into main session for agent retelling
    * mode "direct"   → send raw text to channel
    */
-  deliver(agentId: string, text: string, delivery: import("./config.ts").CronDelivery): Promise<void>;
+  deliver(agentId: string, text: string, delivery: import("./config.ts").CronDelivery, sessionKey: string): Promise<void>;
 }
 
 export interface CronRunRecord {
@@ -348,7 +348,7 @@ export class CronEngine {
         const stripped = responseText.replace(/HEARTBEAT_OK/gi, "").trim();
         const isAckOnly = stripped.length < 300;
         if (delivery.mode !== "silent" && responseText && !isAckOnly && this.announcer) {
-          await this.announcer.deliver(agentId, `[CRON:${job.id}] ${responseText}`, delivery);
+          await this.announcer.deliver(agentId, `[CRON:${job.id}] ${responseText}`, delivery, sessionKey);
         }
 
         this.recordRun({ jobId: job.id, startedAt, finishedAt: Date.now(), durationMs: Date.now() - startedAt, status: "completed", resultPreview: responseText.slice(0, 200) });

@@ -74,6 +74,8 @@ export class Gateway {
   private log: Logger;
   private nextClientId = 0;
   private dedup: DeduplicationCache;
+  /** Track cron sessions that already sent messages to user (skip announce). */
+  private cronSelfDelivered = new Set<string>();
   private sessionMessageModeOverrides = new Map<SessionKey, TelegramMessageMode>();
   private delegateExecutor: DelegateExecutor | null = null;
   private heartbeatExecutor: HeartbeatExecutor | null = null;
@@ -273,7 +275,15 @@ export class Gateway {
    */
   private buildCronAnnouncer(): import("./core/cron.ts").CronAnnouncer {
     return {
-      deliver: async (agentId: string, text: string, delivery) => {
+      deliver: async (agentId: string, text: string, delivery, sessionKey: string) => {
+        // Skip if agent already sent message to user during this cron execution
+        if (this.cronSelfDelivered.has(sessionKey)) {
+          this.log.info(`[cron-announcer] skipping — agent already sent message in ${sessionKey}`);
+          this.cronSelfDelivered.delete(sessionKey);
+          return;
+        }
+        this.cronSelfDelivered.delete(sessionKey); // cleanup
+
         if (delivery.mode === "announce") {
           // Try inject into main session for agent retelling
           const injected = this.tryCronInject(agentId, text);
@@ -556,6 +566,9 @@ export class Gateway {
       listAvailableRoles: () => [],
       setSessionRole: async () => false,
       reloadConfig: () => { this.config = loadConfig(); },
+      onCronDelivered: (sk) => {
+        if (sk.startsWith("cron:")) this.cronSelfDelivered.add(sk);
+      },
     };
   }
 
