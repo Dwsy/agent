@@ -32,6 +32,7 @@ function createMockCtx(overrides: Partial<GatewayContext> = {}): GatewayContext 
       httpRoutes: [] as any[],
       gatewayMethods: new Map(),
       services: [],
+      conflicts: [],
     } as any,
     sessions: {
       get: (key: string) => ({ sessionKey: key, role: "default", messageCount: 5, lastActivity: 0 }),
@@ -144,6 +145,11 @@ describe("BG-003: plugin registration conflict detection", () => {
 
     // Tool should be overwritten (last wins)
     expect(ctx.registry.tools.size).toBe(1);
+    // Conflict recorded
+    expect(ctx.registry.conflicts).toHaveLength(1);
+    expect(ctx.registry.conflicts[0]).toMatchObject({
+      type: "tool", name: "weather", newPlugin: "plugin-b", resolution: "overwritten",
+    });
   });
 
   test("registerCommand warns on duplicate command", async () => {
@@ -159,6 +165,11 @@ describe("BG-003: plugin registration conflict detection", () => {
     // Command should be overwritten (last wins)
     const entry = ctx.registry.commands.get("help");
     expect(entry?.pluginId).toBe("my-plugin");
+    // Conflict recorded
+    expect(ctx.registry.conflicts).toHaveLength(1);
+    expect(ctx.registry.conflicts[0]).toMatchObject({
+      type: "command", name: "/help", existingPlugin: "builtin", newPlugin: "my-plugin", resolution: "overwritten",
+    });
   });
 
   test("registerHttpRoute warns on duplicate method+path", async () => {
@@ -173,6 +184,11 @@ describe("BG-003: plugin registration conflict detection", () => {
 
     // Both routes are added (array-based, first match wins at runtime)
     expect(ctx.registry.httpRoutes.length).toBe(2);
+    // Conflict recorded as duplicate
+    expect(ctx.registry.conflicts).toHaveLength(1);
+    expect(ctx.registry.conflicts[0]).toMatchObject({
+      type: "httpRoute", name: "GET /api/custom", existingPlugin: "plugin-a", newPlugin: "plugin-b", resolution: "duplicate",
+    });
   });
 
   test("registerGatewayMethod skips duplicate (existing behavior)", async () => {
@@ -187,6 +203,11 @@ describe("BG-003: plugin registration conflict detection", () => {
 
     // Should skip second registration (existing behavior)
     expect(ctx.registry.gatewayMethods.size).toBe(1);
+    // Conflict recorded
+    expect(ctx.registry.conflicts).toHaveLength(1);
+    expect(ctx.registry.conflicts[0]).toMatchObject({
+      type: "wsMethod", name: "custom.method", existingPlugin: "plugin-a", newPlugin: "plugin-b", resolution: "skipped",
+    });
   });
 
   test("registerChannel skips duplicate (existing behavior)", async () => {
@@ -207,5 +228,10 @@ describe("BG-003: plugin registration conflict detection", () => {
     api2.registerChannel(channel2 as any);
 
     expect(ctx.registry.channels.size).toBe(1);
+    // Conflict recorded
+    expect(ctx.registry.conflicts).toHaveLength(1);
+    expect(ctx.registry.conflicts[0]).toMatchObject({
+      type: "channel", name: "test-ch", newPlugin: "plugin-b", resolution: "skipped",
+    });
   });
 });

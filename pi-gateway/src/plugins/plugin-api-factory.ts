@@ -44,6 +44,11 @@ export function createPluginApi(
     registerChannel(channel: ChannelPlugin) {
       if (ctx.registry.channels.has(channel.id)) {
         pluginLogger.warn(`Channel ${channel.id} already registered, skipping`);
+        ctx.registry.conflicts.push({
+          type: "channel", name: channel.id,
+          existingPlugin: ctx.channelApis.get(channel.id)?.id ?? "unknown",
+          newPlugin: pluginId, resolution: "skipped",
+        });
         return;
       }
       ctx.registry.channels.set(channel.id, channel);
@@ -52,8 +57,13 @@ export function createPluginApi(
     },
 
     registerTool(tool: ToolPlugin) {
-      if (ctx.registry.tools.has(tool.name)) {
+      const existing = ctx.registry.tools.get(tool.name);
+      if (existing) {
         pluginLogger.warn(`Tool "${tool.name}" already registered by another plugin, overwriting`);
+        ctx.registry.conflicts.push({
+          type: "tool", name: tool.name,
+          existingPlugin: "unknown", newPlugin: pluginId, resolution: "overwritten",
+        });
       }
       ctx.registry.tools.set(tool.name, tool);
       pluginLogger.info(`Registered tool: ${tool.name}`);
@@ -67,14 +77,23 @@ export function createPluginApi(
       const dup = ctx.registry.httpRoutes.find(r => r.method === method.toUpperCase() && r.path === path);
       if (dup) {
         pluginLogger.warn(`HTTP route ${method.toUpperCase()} ${path} already registered by ${dup.pluginId}, adding duplicate`);
+        ctx.registry.conflicts.push({
+          type: "httpRoute", name: `${method.toUpperCase()} ${path}`,
+          existingPlugin: dup.pluginId, newPlugin: pluginId, resolution: "duplicate",
+        });
       }
       ctx.registry.httpRoutes.push({ method: method.toUpperCase(), path, handler, pluginId });
       pluginLogger.info(`Registered HTTP route: ${method} ${path}`);
     },
 
     registerGatewayMethod(method: string, handler: WsMethodHandler) {
-      if (ctx.registry.gatewayMethods.has(method)) {
+      const existing = ctx.registry.gatewayMethods.get(method);
+      if (existing) {
         pluginLogger.warn(`Gateway method ${method} already registered, skipping`);
+        ctx.registry.conflicts.push({
+          type: "wsMethod", name: method,
+          existingPlugin: existing.pluginId, newPlugin: pluginId, resolution: "skipped",
+        });
         return;
       }
       ctx.registry.gatewayMethods.set(method, { handler, pluginId });
@@ -90,6 +109,10 @@ export function createPluginApi(
       const existing = ctx.registry.commands.get(normalized);
       if (existing) {
         pluginLogger.warn(`Command "/${normalized}" already registered by ${existing.pluginId}, overwriting`);
+        ctx.registry.conflicts.push({
+          type: "command", name: `/${normalized}`,
+          existingPlugin: existing.pluginId, newPlugin: pluginId, resolution: "overwritten",
+        });
       }
       ctx.registry.commands.set(normalized, { pluginId, handler });
       pluginLogger.info(`Registered command: /${normalized}`);
