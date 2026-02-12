@@ -292,6 +292,22 @@ describe("feishu bot mention", () => {
     expect(ctx.mentionedBot).toBe(false);
   });
 
+  test("no botOpenId returns false (fail-closed)", () => {
+    const event: FeishuMessageEvent = {
+      sender: { sender_id: { open_id: "ou_user" } },
+      message: {
+        message_id: "msg_303",
+        chat_id: "oc_grp",
+        chat_type: "group",
+        message_type: "text",
+        content: JSON.stringify({ text: "@Someone hello" }),
+        mentions: [{ key: "@_user_1", id: { open_id: "ou_someone" }, name: "Someone" }],
+      },
+    };
+    const ctx = parseFeishuEvent(event, undefined);
+    expect(ctx.mentionedBot).toBe(false);
+  });
+
   test("mention of different user returns false", () => {
     const event: FeishuMessageEvent = {
       sender: { sender_id: { open_id: "ou_user" } },
