@@ -99,11 +99,10 @@ export async function tryHandleCommand(
 
 /**
  * Register built-in gateway commands.
+ * Currently empty — /role handled by role-persona via RPC.
  */
-export function registerBuiltinCommands(ctx: GatewayContext): void {
-  // /role is handled by role-persona extension via RPC forwarding
-  // No built-in commands registered — all slash commands forward to pi RPC
-  ctx.log.info("Built-in commands: (none — /role forwarded to RPC/role-persona)");
+export function registerBuiltinCommands(_ctx: GatewayContext): void {
+  // All slash commands forward to pi RPC
 }
 
 // ============================================================================
