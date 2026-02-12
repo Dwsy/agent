@@ -130,8 +130,7 @@ export function parseFeishuEvent(event: FeishuMessageEvent, botOpenId?: string):
 
 function checkBotMentioned(event: FeishuMessageEvent, botOpenId?: string): boolean {
   const mentions = event.message.mentions ?? [];
-  if (mentions.length === 0) return false;
-  if (!botOpenId) return mentions.length > 0;
+  if (!botOpenId || mentions.length === 0) return false;
   return mentions.some((m) => m.id.open_id === botOpenId);
 }
 
@@ -142,7 +141,7 @@ function checkBotMentioned(event: FeishuMessageEvent, botOpenId?: string): boole
 export function checkDmPolicy(senderId: string, cfg: FeishuChannelConfig): "allowed" | "pairing" | "blocked" {
   const policy = (cfg.dmPolicy ?? "open") as DmPolicy;
   if (policy === "disabled") return "blocked";
-  if (isSenderAllowed("feishu", senderId, policy, cfg.allowFrom)) return "allowed";
+  if (isSenderAllowed("feishu", senderId, policy, cfg.allowFrom, "default")) return "allowed";
   if (policy === "pairing") return "pairing";
   return "blocked";
 }
