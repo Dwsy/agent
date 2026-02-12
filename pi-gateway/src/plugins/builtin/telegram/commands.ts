@@ -505,6 +505,33 @@ export async function setupTelegramCommands(runtime: TelegramPluginRuntime, acco
     );
   });
 
+  bot.command("role", async (ctx: any) => {
+    const args = String(ctx.match ?? "").trim();
+    const roles = runtime.api.listAvailableRoles();
+
+    if (!args) {
+      await ctx.reply(
+        `<b>Available Roles</b>\n\n${roles.map((r: string) => `• <code>${escapeHtml(r)}</code>`).join("\n")}\n\nUsage: /role &lt;name&gt;`,
+        { parse_mode: "HTML" },
+      );
+      return;
+    }
+
+    if (!roles.includes(args)) {
+      await ctx.reply(`Unknown role: ${args}\nAvailable: ${roles.join(", ")}`);
+      return;
+    }
+
+    const source = toSource(account.accountId, ctx as TelegramContext);
+    const sessionKey = resolveSessionKey(source, runtime.api.config);
+    try {
+      const changed = await runtime.api.setSessionRole(sessionKey, args);
+      await ctx.reply(changed ? `✅ Role switched to: ${args}` : `Already using role: ${args}`);
+    } catch (err: any) {
+      await ctx.reply(`Failed: ${err?.message ?? String(err)}`);
+    }
+  });
+
   bot.command("model", async (ctx: any) => {
     const args = String(ctx.match ?? "").trim();
     const source = toSource(account.accountId, ctx as TelegramContext);
