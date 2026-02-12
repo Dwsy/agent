@@ -156,7 +156,8 @@ async function forwardToRpc(
   ctx.log.info(`[SLASH-CMD] ${msg.sessionKey} forwarding /${parsed.name} → ${rpcText} to pi RPC`);
 
   try {
-    let cmdResponse = "";
+    const responses: string[] = [];
+    const seen = new Set<string>();
     const cmdUnsub = rpc.onEvent((event) => {
       if (rpc.sessionKey !== msg.sessionKey) return;
       const ev = event as any;
@@ -165,7 +166,7 @@ async function forwardToRpc(
       if (ev.type === "message_update") {
         const ame = ev.assistantMessageEvent ?? ev.assistant_message_event;
         if (ame?.type === "text_delta" && ame.delta) {
-          cmdResponse += ame.delta;
+          responses.push(ame.delta);
         }
       }
 
@@ -173,7 +174,10 @@ async function forwardToRpc(
       if (ev.type === "message_end") {
         const content = ev.message?.content;
         if (typeof content === "string" && content && ev.message?.display !== false) {
-          cmdResponse += content;
+          if (!seen.has(content)) {
+            seen.add(content);
+            responses.push(content);
+          }
         }
       }
     });
@@ -184,11 +188,10 @@ async function forwardToRpc(
     // so we can't use waitForIdle. Wait briefly for events to arrive,
     // then check if we got a response. If not, fall back to waitForIdle
     // for commands that DO trigger the agent loop.
-    if (!cmdResponse) {
+    if (responses.length === 0) {
       await new Promise((r) => setTimeout(r, 500));
     }
-    if (!cmdResponse) {
-      // Might be an agent-loop command — wait for agent_end
+    if (responses.length === 0) {
       try {
         await rpc.waitForIdle(15000);
       } catch {
@@ -197,7 +200,8 @@ async function forwardToRpc(
     }
 
     cmdUnsub();
-    await msg.respond(cmdResponse.trim() || `Command /${parsed.name} executed.`);
+    const cmdResponse = responses.join("").trim();
+    await msg.respond(cmdResponse || `Command /${parsed.name} executed.`);
   } catch (err: any) {
     ctx.log.error(`[SLASH-CMD] ${msg.sessionKey} failed to execute /${parsed.name}: ${err?.message ?? String(err)}`);
     await msg.respond(`Failed to execute command: ${err?.message ?? String(err)}`);
