@@ -399,9 +399,15 @@ export class RpcPool {
     } catch (err) {
       this.clients.delete(id);
 
-      // Model fallback: if spawn failed due to invalid model, retry without --provider/--model
+      // Model fallback: if spawn failed due to invalid model/provider config
       const errMsg = String(err).toLowerCase();
-      const isModelError = errMsg.includes("not found") || errMsg.includes("model") || errMsg.includes("provider");
+      const isModelError =
+        (errMsg.includes("model") && errMsg.includes("not found")) ||
+        (errMsg.includes("provider") && errMsg.includes("not found")) ||
+        errMsg.includes("unknown model") ||
+        errMsg.includes("unknown provider") ||
+        errMsg.includes("invalid model") ||
+        errMsg.includes("invalid provider");
       const hasModelArgs = extraArgs.some(a => a === "--provider" || a === "--model");
 
       if (isModelError && hasModelArgs) {
@@ -424,6 +430,14 @@ export class RpcPool {
 
     // Strip --provider and --model (and their values) from args
     const extraArgs = stripModelArgs(profile.args);
+
+    // ExecGuard check (same as spawnClient)
+    if (this.execGuard) {
+      const check = this.execGuard.check(piPath, extraArgs, { caller: "rpc-pool.spawnClientWithoutModel" });
+      if (!check.allowed) {
+        throw new Error(`ExecGuard blocked fallback spawn: ${check.reason}`);
+      }
+    }
 
     if (sessionKey) {
       const sessionDir = getSessionDir(this.config.session.dataDir, sessionKey);
