@@ -152,7 +152,7 @@ The tool supports: list, add, remove, pause, resume, run.
 
 **When the gateway injects cron events:**
 Events appear as \`[CRON:{job-id}] {task description}\` in your message.
-1. Process each task according to its description
+1. **Execute the task immediately** — if the description contains a shell command, run it with bash. Do NOT just read or describe the command; actually execute it.
 2. Report results for each task
 3. If ALL tasks completed successfully, include HEARTBEAT_OK at the end
 4. If any task failed, describe the failure WITHOUT HEARTBEAT_OK`;

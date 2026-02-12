@@ -299,7 +299,7 @@ export class CronEngine {
    */
   private triggerIsolatedMode(job: CronJob, agentId: string): void {
     const sessionKey = job.sessionKey ?? `cron:${job.id}`;
-    const text = `[CRON:${job.id}] ${job.payload.text}`;
+    const text = `[CRON:${job.id}] Execute this task now:\n${job.payload.text}\n\nIMPORTANT: If the task contains a shell command, run it with bash immediately. Do not just describe or acknowledge it.`;
     const startedAt = Date.now();
 
     this.log.info(`Triggering job: ${job.id} → agent ${agentId}, session ${sessionKey}`);

@@ -4,7 +4,6 @@
  */
 import { describe, test, expect, beforeEach, mock } from "bun:test";
 import { resetSession } from "../gateway/session-reset.ts";
-import { setSessionRole } from "../gateway/role-manager.ts";
 import type { GatewayContext } from "../gateway/types.ts";
 import type { SessionKey } from "../core/types.ts";
 
@@ -57,8 +56,8 @@ function createMockCtx(overrides: Partial<GatewayContext> = {}): GatewayContext 
     buildSessionProfile: () => ({}) as any,
     dispatch: async () => {},
     compactSessionWithHooks: async () => {},
-    listAvailableRoles: () => ["default", "dev"],
-    setSessionRole: async () => true,
+    listAvailableRoles: () => [],
+    setSessionRole: async () => false,
     reloadConfig: () => {},
     _hookLog: hookLog,
     ...overrides,
@@ -82,25 +81,6 @@ describe("BG-002: session_end lifecycle", () => {
     // Order: end before reset before start
     expect(log.indexOf("session_end")).toBeLessThan(log.indexOf("session_reset"));
     expect(log.indexOf("session_reset")).toBeLessThan(log.indexOf("session_start"));
-  });
-
-  test("setSessionRole fires session_end for old role and session_start for new", async () => {
-    const ctx = createMockCtx();
-    await setSessionRole(ctx, "test:session:2" as SessionKey, "dev");
-    const log = getHookLog(ctx);
-    expect(log).toContain("session_end");
-    expect(log).toContain("session_start");
-    expect(log.indexOf("session_end")).toBeLessThan(log.indexOf("session_start"));
-  });
-
-  test("setSessionRole does not fire hooks when role unchanged", async () => {
-    const ctx = createMockCtx();
-    // Session already has role "default", setting to "default" should return false
-    const changed = await setSessionRole(ctx, "test:session:3" as SessionKey, "default");
-    expect(changed).toBe(false);
-    const log = getHookLog(ctx);
-    expect(log).not.toContain("session_end");
-    expect(log).not.toContain("session_start");
   });
 });
 
@@ -126,7 +106,6 @@ describe("BG-002: pool eviction session_end", () => {
 //
 // All 5 PRD §4.4 paths verified:
 //   ✅ session-reset.ts        — fires session_end → session_reset → session_start
-//   ✅ role-manager.ts         — fires session_end before releasing old role
 //   ✅ rpc-pool.ts             — onSessionEnd callback on evict/dead/idle-reclaim,
 //                                wired to hooks.dispatch("session_end") in server.ts
 //   ⊘  telegram-helpers.ts    — sessions.delete(oldKey) during key migration is NOT

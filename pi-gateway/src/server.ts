@@ -13,7 +13,6 @@ import { join } from "node:path";
 import { resolveAuthConfig, authenticateRequest, buildAuthExemptPrefixes } from "./core/auth.ts";
 import type { GatewayContext, TelegramMessageMode, WsClientData } from "./gateway/types.ts";
 import { tryHandleCommand, registerBuiltinCommands } from "./gateway/command-handler.ts";
-import { listAvailableRoles, setSessionRole } from "./gateway/role-manager.ts";
 import { executeRegisteredTool } from "./gateway/tool-executor.ts";
 import { loadConfig, ensureDataDir, type Config, type CronJob, resolveConfigPath, watchConfig } from "./core/config.ts";
 import { RpcPool } from "./core/rpc-pool.ts";
@@ -466,8 +465,8 @@ export class Gateway {
       buildSessionProfile: (sk, role) => this.buildSessionProfile(sk, role),
       dispatch: (msg) => this.dispatch(msg),
       compactSessionWithHooks: (sk, inst) => this.compactSessionWithHooks(sk, inst),
-      listAvailableRoles: () => listAvailableRoles(this.ctx),
-      setSessionRole: (sk, role) => setSessionRole(this.ctx, sk, role),
+      listAvailableRoles: () => [],
+      setSessionRole: async () => false,
       reloadConfig: () => { this.config = loadConfig(); },
     };
   }
