@@ -73,6 +73,8 @@ export async function handleMediaSendRequest(
     return Response.json({ error: "Missing path" }, { status: 400 });
   }
 
+  ctx.log.info(`[media-send] request: path=${filePath} sessionKey=${sessionKey || "(empty)"} pid=${callerPid} token=${internalToken ? "yes" : "no"}`);
+
   // Auth: verify via active session OR internal token
   if (sessionKey) {
     if (!ctx.pool.getForSession(sessionKey as SessionKey)) {
@@ -103,15 +105,20 @@ export async function handleMediaSendRequest(
   const rpcClient = sessionKey ? ctx.pool.getForSession(sessionKey as SessionKey) : (callerPid > 0 ? ctx.pool.getByPid(callerPid) : null);
   const workspace = rpcClient?.cwd ?? agentDef?.workspace ?? process.cwd();
 
-  // Path validation: absolute paths use allowlist, relative paths use strict workspace check
+  // Path validation
+  const workspaceOnly = ctx.config.media?.workspaceOnly ?? false;
   let fullPath: string;
   if (isAbsolute(filePath)) {
-    if (!isAllowedAbsolutePath(filePath, workspace)) {
+    if (workspaceOnly && !isAllowedAbsolutePath(filePath, workspace)) {
       return Response.json({ error: "Absolute path not in allowed directories" }, { status: 403 });
     }
     fullPath = filePath;
   } else {
-    if (!validateMediaPath(filePath, workspace)) {
+    // Basic safety checks even when workspaceOnly is off
+    if (filePath.includes("\0") || filePath.includes("..")) {
+      return Response.json({ error: "Path blocked by security policy" }, { status: 403 });
+    }
+    if (workspaceOnly && !validateMediaPath(filePath, workspace)) {
       return Response.json({ error: "Path blocked by security policy" }, { status: 403 });
     }
     fullPath = pathResolve(workspace, filePath);
@@ -133,7 +140,7 @@ export async function handleMediaSendRequest(
   const chatId = session?.lastChatId;
 
   if (!channel) {
-    ctx.log.warn(`[media-send] no channel: sessionKey=${sessionKey} lastChannel=${session?.lastChannel} sessionExists=${!!session}`);
+    ctx.log.warn(`[media-send] no channel: sessionKey=${sessionKey} lastChannel=${session?.lastChannel} sessionExists=${!!session} totalSessions=${ctx.sessions.size}`);
     return Response.json({ error: "Cannot resolve channel from session" }, { status: 400 });
   }
 
@@ -189,14 +196,24 @@ export async function handleMediaSendRequest(
       caption,
     });
 
+    if (!result.ok) {
+      ctx.log.error(`[media-send] channel delivery failed: ${result.error}`);
+      return Response.json({
+        error: result.error ?? "Channel delivery failed",
+        delivered: false,
+        path: filePath,
+        type: resolvedType,
+        channel,
+      }, { status: 502 });
+    }
+
     return Response.json({
-      ok: result.ok,
+      ok: true,
       delivered: true,
       messageId: result.messageId,
       path: filePath,
       type: resolvedType,
       channel,
-      error: result.error,
     });
   } catch (err: any) {
     ctx.log.error(`[media-send] delivery failed: ${err?.message}`);
