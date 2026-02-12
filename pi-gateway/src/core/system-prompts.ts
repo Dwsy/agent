@@ -131,7 +131,10 @@ const CRON_SEGMENT = `## Gateway: Scheduled Tasks
 
 The gateway runs a cron engine for scheduled task execution.
 
-**Managing jobs (slash commands):**
+**Use the \`cron\` tool for programmatic job management** (preferred over slash commands).
+The tool supports: list, add, remove, pause, resume, run.
+
+**Slash commands (alternative):**
 - /cron list — view all jobs with status (active/paused)
 - /cron pause <id> — pause a running job
 - /cron resume <id> — resume a paused job
