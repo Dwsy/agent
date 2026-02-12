@@ -263,6 +263,12 @@ export default function gatewayTools(pi: ExtensionAPI) {
           description: 'Execution mode. Default: "isolated"',
         }),
       ),
+      delivery: Type.Optional(
+        Type.String({
+          enum: ["announce", "direct", "silent"],
+          description: 'Result delivery mode. "announce" (default) = retell via main session, "direct" = send raw to channel, "silent" = log only',
+        }),
+      ),
       deleteAfterRun: Type.Optional(
         Type.Boolean({ description: "Remove job after first execution. Default: false" }),
       ),
@@ -274,12 +280,13 @@ export default function gatewayTools(pi: ExtensionAPI) {
       ),
     }),
     async execute(_toolCallId, params) {
-      const { action, id, schedule, task, mode, deleteAfterRun, wakeMode } = params as {
+      const { action, id, schedule, task, mode, delivery, deleteAfterRun, wakeMode } = params as {
         action: string;
         id?: string;
         schedule?: { kind: string; expr: string; timezone?: string };
         task?: string;
         mode?: string;
+        delivery?: string;
         deleteAfterRun?: boolean;
         wakeMode?: string;
       };
@@ -316,6 +323,7 @@ export default function gatewayTools(pi: ExtensionAPI) {
                 schedule,
                 task,
                 mode: mode || "isolated",
+                delivery: delivery || "announce",
                 deleteAfterRun: deleteAfterRun ?? false,
               }),
             });

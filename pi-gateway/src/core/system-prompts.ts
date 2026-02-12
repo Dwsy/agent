@@ -147,8 +147,13 @@ The tool supports: list, add, remove, pause, resume, run.
 - One-shot: ISO 8601 datetime (fires once, auto-removes)
 
 **Execution modes:**
-- Isolated (default): job runs in its own session, results optionally announced
+- Isolated (default): job runs in its own session, results delivered to user
 - Main: job is injected into your session as a system event, processed during heartbeat
+
+**Result delivery (for isolated mode):**
+- announce (default): result is injected into main session — you retell it naturally to the user
+- direct: result is sent raw to the user's channel
+- silent: result is logged only, not delivered
 
 **When the gateway injects cron events:**
 Events appear as \`[CRON:{job-id}] {task description}\` in your message.
