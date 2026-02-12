@@ -34,9 +34,8 @@ import { HeartbeatExecutor } from "./core/heartbeat-executor.ts";
 import { SystemEventsQueue } from "./core/system-events.ts";
 import { createWsRouter, dispatchWsFrame } from "./ws/ws-router.ts";
 import { routeHttp } from "./api/http-router.ts";
-import { handleMessageSendRequest } from "./api/message-send.ts";
 import { processMessage } from "./gateway/message-pipeline.ts";
-import { dispatch as dispatchMessage, deliverHeartbeatAlert, resolveTelegramMessageMode as resolveTelemgramMsgMode } from "./gateway/dispatch.ts";
+import { dispatchMessage, deliverHeartbeatAlert, resolveTelegramMsgMode } from "./gateway/dispatch.ts";
 import { migrateTelegramSessionKeys } from "./gateway/telegram-helpers.ts";
 import {
   createPluginRegistry,
@@ -303,7 +302,7 @@ export class Gateway {
   }
 
   private resolveTelegramMessageMode(sessionKey: SessionKey, sourceAccountId?: string): TelegramMessageMode {
-    return resolveTelemgramMsgMode(sessionKey, this.ctx, sourceAccountId);
+    return resolveTelegramMsgMode(sessionKey, this.ctx, sourceAccountId);
   }
 
   private async deliverHeartbeatAlert(agentId: string, alertText: string): Promise<void> {
