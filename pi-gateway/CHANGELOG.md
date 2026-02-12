@@ -1,5 +1,68 @@
 # Changelog
 
+## [Unreleased] - v3.5 - 2026-02-12
+
+**BBD Test Results:** 568/568 pass, 0 fail ✅ (v3.4: 531, v3.5: +37)
+
+### Added (CA-1: Channel Adapter Interfaces)
+- `ChannelOutbound`: named interface extracted from inline outbound definition, `sendText` returns `Promise<MessageSendResult>` (by NiceViper)
+- `ChannelStreamingAdapter`: edit-in-place streaming contract (`createPlaceholder`, `editMessage` → boolean skip-not-retry, `setTyping`, `StreamingConfig` with `editThrottleMs >= 300ms`) (by NiceViper)
+- `ChannelSecurityAdapter`: DM access control (`DmPolicy`, `checkAccess` sync|async, pairing tier support) (by NiceViper)
+- `ChannelPluginCapabilities`: added `streaming` and `security` boolean fields (by NiceViper)
+- 3-step sendText migration: union type → channel implementations → type narrowing + `wrapLegacyOutbound` removed (by NiceViper)
+
+### Added (CA-2: Telegram Adapter Migration)
+- Telegram `sendText` returns `MessageSendResult` with try/catch error capture (by TrueJaguar/PureWolf)
+- Telegram `streaming` and `security` adapters wired to `ChannelPlugin` (by TrueJaguar/PureWolf)
+
+### Added (D1: Discord + WebChat Migration)
+- Discord declares `streaming` and `security` capabilities (by MintHawk/KeenWolf)
+- WebChat declares `media` capability (by MintHawk/KeenWolf)
+
+### Added (F3a: Feishu Streaming + Security)
+- Feishu streaming card updates via `client.im.message.patch` + `buildMarkdownCard` (by JadeStorm)
+- Feishu DM policy alignment with `ChannelSecurityAdapter` (by JadeStorm)
+- Feishu `sendText` returns `MessageSendResult` (by NiceViper, CA-1 step 3)
+- `checkBotMentioned` fail-closed fix + `isSenderAllowed` accountId scoping (by JadeStorm)
+
+### Added (Feishu PR2: Media)
+- Feishu media inbound + outbound with `validateMediaPath` guard on `sendFeishuMedia` (by JadeStorm)
+
+### Added (BG-002: Session Lifecycle)
+- `session_end` hook dispatched on 5 paths: explicit reset, RPC disconnect, idle eviction, role switch, gateway shutdown (by PureWolf)
+
+### Added (BG-003: Registration Conflict Detection)
+- Startup summary logs plugin registration conflicts with resolution status (skipped/overwritten/duplicate) (by PureWolf/KeenWolf)
+
+### Added (Telegram Commands)
+- `/context` command showing progress bar, tokens, cost, message counts, tool calls (by TrueJaguar)
+- Context usage display in `/status` output (by TrueJaguar)
+- Restored `/stop` command removed in v3.1 refactor (by TrueJaguar)
+- Added `stop`/`role`/`cron` to `localCommands` set to prevent RPC forwarding (by TrueJaguar)
+
+### Fixed
+- Telegram spinner orphan messages in steer mode — lazy init spinner/reply on first callback fire (by TrueJaguar)
+- Telegram message ordering after tool calls — `toolCallSinceLastText` flag preserves sequence boundaries (by TrueJaguar)
+- RPC `abort()` writes directly to stdin without waiting for response (by HappyCastle)
+- RPC model fallback — retry without `--provider`/`--model` on spawn failure when model not found (by JadeStorm)
+- ExecGuard applied in RPC pool fallback path (by JadeStorm)
+- Audio format support expanded: `.aiff`, `.aac`, `.opus`, `.wma` added to `AUDIO_EXTS` (by HappyCastle)
+- Telegram `bot.catch` error handler + logger level gating (by HappyCastle)
+- Telegram respond callback diagnostic logging — no more silent send failures (by HappyCastle/TrueJaguar)
+- RPC-EVENT log noise reduced: 9 event types downgraded info→debug, tool names logged on `tool_execution_start` (by HappyCastle)
+- Telegram `/stop` command description corrected to match abort behavior (by TrueJaguar)
+
+### Changed
+- Heartbeat enabled by default in config (by HappyCastle)
+- `types.ts`: 308 → 468 lines (+160) with CA-1 interfaces, then 468 → 455 after `wrapLegacyOutbound` removal
+
+### Documentation
+- `docs/BG-001-TOOL-BRIDGE-DESIGN.md`: Gateway ↔ agent tool ecosystem bridge — 3 paths analyzed, Path B (extension bridge) recommended (by NiceViper)
+- `docs/BG-004-HOT-RELOAD-DESIGN.md`: Plugin hot-reload mechanism — scoped reload with 5-tier complexity, 3-phase implementation (by NiceViper)
+- `docs/CA-0-CHANNEL-PATTERN-COMPARISON.md`: Evidence-based channel pattern analysis (by NiceViper)
+- `docs/CA-1-CHANNEL-ADAPTER-INTERFACE.md`: Channel adapter interface spec, 7/7 APPROVE (by NiceViper)
+- `docs/PRD-GATEWAY-V35.md`: v3.5 PRD final (by HappyCastle, 7/7 reviewed)
+
 ## [Unreleased] - v3.4 - 2026-02-12
 
 **BBD Test Results:** 482/482 pass, 0 fail ✅ (v3.3: 448, v3.4: +34)
