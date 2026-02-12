@@ -131,6 +131,17 @@ export class PluginLoader {
       if (this.loaded.has(name)) continue;
       if (this.config.plugins.disabled?.includes(name)) continue;
 
+      // BG-004: Skip unconfigured channels to avoid cold-start SDK import cost.
+      // discord.js ~200ms, @larksuiteoapi ~170ms — no point importing if not used.
+      // webchat is always loaded (stub, no SDK, <2ms).
+      if (name !== "webchat") {
+        const channelConfig = (this.config.channels as Record<string, any>)?.[name];
+        if (!channelConfig || channelConfig.enabled === false) {
+          this.log.debug(`Skipping unconfigured builtin: ${name}`);
+          continue;
+        }
+      }
+
       try {
         const module = await import(path);
         const factory: PluginFactory = module.default ?? module;

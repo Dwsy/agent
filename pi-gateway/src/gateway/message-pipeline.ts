@@ -127,7 +127,7 @@ export async function processMessage(
     if (rpc.sessionKey !== sessionKey) return;
     eventCount++;
 
-    ctx.log.info(`[RPC-EVENT] ${sessionKey} type=${(event as any).type} eventCount=${eventCount}`);
+    ctx.log.debug(`[RPC-EVENT] ${sessionKey} type=${(event as any).type} eventCount=${eventCount}`);
     ctx.log.debug(`[RPC-EVENT] ${sessionKey} full event: ${JSON.stringify(event).slice(0, 1000)}`);
     ctx.transcripts.logEvent(sessionKey, event as Record<string, unknown>);
 
@@ -191,10 +191,10 @@ export async function processMessage(
           fullText = '';
           if (partial.text) {
             fullText = partial.text;
-            ctx.log.info(`[RPC-EVENT] ${sessionKey} text_start: total=${fullText.length}`);
+            ctx.log.debug(`[RPC-EVENT] ${sessionKey} text_start: total=${fullText.length}`);
             msg.onStreamDelta?.(fullText, partial.text);
           } else {
-            ctx.log.info(`[RPC-EVENT] ${sessionKey} text_start: empty`);
+            ctx.log.debug(`[RPC-EVENT] ${sessionKey} text_start: empty`);
           }
           break;
         case 'text_end':
@@ -203,11 +203,11 @@ export async function processMessage(
               ? ame.content.map((c: any) => c.type === 'text' ? c.text : '').join('')
               : String(ame.content);
             fullText = content;
-            ctx.log.info(`[RPC-EVENT] ${sessionKey} text_end: total=${fullText.length}`);
+            ctx.log.debug(`[RPC-EVENT] ${sessionKey} text_end: total=${fullText.length}`);
             msg.onStreamDelta?.(fullText, content);
           } else if (partial.text) {
             fullText = partial.text;
-            ctx.log.info(`[RPC-EVENT] ${sessionKey} text_end (from partial): total=${fullText.length}`);
+            ctx.log.debug(`[RPC-EVENT] ${sessionKey} text_end (from partial): total=${fullText.length}`);
             msg.onStreamDelta?.(fullText, partial.text);
           } else {
             ctx.log.warn(`[RPC-EVENT] ${sessionKey} text_end: no content and no partial.text`);
@@ -224,15 +224,15 @@ export async function processMessage(
         }
         case 'thinking_start':
           thinkingText = '';
-          ctx.log.info(`[RPC-EVENT] ${sessionKey} thinking_start`);
+          ctx.log.debug(`[RPC-EVENT] ${sessionKey} thinking_start`);
           break;
         case 'thinking_end':
-          ctx.log.info(`[RPC-EVENT] ${sessionKey} thinking_end (${thinkingText.length} chars total)`);
+          ctx.log.debug(`[RPC-EVENT] ${sessionKey} thinking_end (${thinkingText.length} chars total)`);
           break;
         case 'start':
           if (partial.text) {
             fullText = partial.text;
-            ctx.log.info(`[RPC-EVENT] ${sessionKey} start (text): total=${fullText.length}`);
+            ctx.log.debug(`[RPC-EVENT] ${sessionKey} start (text): total=${fullText.length}`);
             msg.onStreamDelta?.(fullText, partial.text);
           }
           break;
@@ -258,7 +258,7 @@ export async function processMessage(
 
     if (event.type === "message_end") {
       const msgEnd = event as any;
-      ctx.log.info(`[RPC-EVENT] ${sessionKey} message_end: role=${msgEnd.message?.role}, stopReason=${msgEnd.message?.stopReason}`);
+      ctx.log.debug(`[RPC-EVENT] ${sessionKey} message_end: role=${msgEnd.message?.role}, stopReason=${msgEnd.message?.stopReason}`);
       if (msgEnd.message?.role === "assistant" && msgEnd.message?.stopReason) {
         agentEndStopReason = msgEnd.message.stopReason;
       }
@@ -341,6 +341,12 @@ export async function processMessage(
   ctx.metrics?.incMessageProcessed();
   ctx.metrics?.recordLatency(durationMs);
 
-  await respond(outbound.text);
+  try {
+    ctx.log.info(`[processMessage] Calling respond for ${sessionKey}, text=${outbound.text.length} chars`);
+    await respond(outbound.text);
+    ctx.log.info(`[processMessage] respond completed for ${sessionKey}`);
+  } catch (err: any) {
+    ctx.log.error(`[processMessage] respond FAILED for ${sessionKey}: ${err?.message ?? err}`);
+  }
   await ctx.registry.hooks.dispatch("message_sent", { message: outbound });
 }
