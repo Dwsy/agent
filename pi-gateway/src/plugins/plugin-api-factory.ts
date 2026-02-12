@@ -8,6 +8,7 @@
 import { createLogger as createConsoleLogger } from "../core/types.ts";
 import { createFileLogger } from "../core/logger-file.ts";
 import type { GatewayContext } from "../gateway/types.ts";
+import { resetSession } from "../gateway/session-reset.ts";
 import type { RpcClient } from "../core/rpc-client.ts";
 import type {
   GatewayPluginApi,
@@ -112,16 +113,7 @@ export function createPluginApi(
     },
 
     async resetSession(sessionKey: SessionKey) {
-      const rpc = ctx.pool.getForSession(sessionKey);
-      if (rpc) {
-        await rpc.newSession();
-      }
-      const session = ctx.sessions.get(sessionKey);
-      if (session) {
-        session.messageCount = 0;
-        session.lastActivity = Date.now();
-        ctx.sessions.touch(sessionKey);
-      }
+      await resetSession(ctx, sessionKey);
     },
 
     async setThinkingLevel(sessionKey: SessionKey, level: string) {
