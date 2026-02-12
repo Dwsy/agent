@@ -11,7 +11,7 @@ import { parseOutboundMediaDirectives, sendTelegramMedia, sendTelegramTextAndMed
 import { migrateTelegramGroupConfig } from "./group-migration.ts";
 import { buildReactionText } from "./reaction-level.ts";
 import { recordSentMessage, wasRecentlySent } from "./sent-message-cache.ts";
-import type { MediaSendOptions, MediaSendResult } from "../../types.ts";
+import type { MediaSendOptions, MediaSendResult, MessageSendResult } from "../../types.ts";
 import type {
   TelegramAccountRuntime,
   TelegramContext,
@@ -1006,17 +1006,18 @@ export async function sendOutboundViaAccount(params: {
   defaultAccountId: string;
   target: string;
   text: string;
-}): Promise<void> {
+}): Promise<MessageSendResult> {
   const parsed = parseTelegramTarget(params.target, params.defaultAccountId);
   const account = params.runtime.accounts.get(parsed.accountId)
     ?? params.runtime.accounts.get(params.defaultAccountId)
     ?? Array.from(params.runtime.accounts.values())[0];
   if (!account) {
-    throw new Error("Telegram account not started");
+    return { ok: false, error: "Telegram account not started" };
   }
 
   const threadId = parsed.topicId ? Number.parseInt(parsed.topicId, 10) : undefined;
 
+  let firstMessageId: string | undefined;
   const chunks = splitMessage(params.text, 4096);
   for (const chunk of chunks) {
     try {
@@ -1028,16 +1029,20 @@ export async function sendOutboundViaAccount(params: {
           ...(threadId ? { message_thread_id: threadId } : {}),
         });
         recordSentMessage(parsed.chatId, sent.message_id);
+        firstMessageId ??= String(sent.message_id);
       }
     } catch {
       const sent = await account.bot.api.sendMessage(parsed.chatId, chunk, threadId ? { message_thread_id: threadId } : undefined);
       recordSentMessage(parsed.chatId, sent.message_id);
+      firstMessageId ??= String(sent.message_id);
     }
   }
 
   params.runtime.api.logger.info(
     `[telegram:${account.accountId}] outbound to=${params.target} textLen=${params.text.length}`,
   );
+
+  return { ok: true, messageId: firstMessageId };
 }
 
 /**
