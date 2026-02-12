@@ -230,7 +230,7 @@ describe("BG-003: plugin registration conflict detection", () => {
 
     const channel1 = {
       id: "test-ch", meta: {}, capabilities: {},
-      outbound: { sendText: async () => {}, sendMedia: async () => ({}) },
+      outbound: { sendText: async () => ({ ok: true }), sendMedia: async () => ({}) },
       init: async () => {}, start: async () => {}, stop: async () => {},
     };
     const channel2 = { ...channel1 };
