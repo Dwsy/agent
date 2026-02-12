@@ -398,7 +398,61 @@ export class RpcPool {
       this.metrics?.incProcessSpawn();
     } catch (err) {
       this.clients.delete(id);
+
+      // Model fallback: if spawn failed due to invalid model, retry without --provider/--model
+      const errMsg = String(err).toLowerCase();
+      const isModelError = errMsg.includes("not found") || errMsg.includes("model") || errMsg.includes("provider");
+      const hasModelArgs = extraArgs.some(a => a === "--provider" || a === "--model");
+
+      if (isModelError && hasModelArgs) {
+        this.log.warn(`Model error detected, retrying without --provider/--model: ${String(err).slice(0, 200)}`);
+        return this.spawnClientWithoutModel(profile, sessionKey);
+      }
+
       throw err;
+    }
+
+    return client;
+  }
+
+  /**
+   * Retry spawn without --provider/--model args (model fallback).
+   */
+  private async spawnClientWithoutModel(profile: CapabilityProfile, sessionKey?: SessionKey): Promise<RpcClient> {
+    const id = `rpc-${++this.nextId}`;
+    const piPath = this.config.agent.piCliPath ?? "pi";
+
+    // Strip --provider and --model (and their values) from args
+    const extraArgs = stripModelArgs(profile.args);
+
+    if (sessionKey) {
+      const sessionDir = getSessionDir(this.config.session.dataDir, sessionKey);
+      extraArgs.push("--session-dir", sessionDir);
+    } else {
+      const poolDir = getSessionDir(this.config.session.dataDir, `_pool_${id}`);
+      extraArgs.push("--session-dir", poolDir);
+    }
+
+    const clientOpts: RpcClientOptions = {
+      piCliPath: this.config.agent.piCliPath,
+      cwd: profile.cwd,
+      signature: profile.signature,
+      hardSignature: profile.hardSignature,
+      softResources: profile.softResources,
+      env: profile.env,
+      args: extraArgs.length > 0 ? extraArgs : undefined,
+    };
+
+    const client = new RpcClient(id, clientOpts);
+    this.clients.set(id, client);
+
+    try {
+      await client.start();
+      this.log.warn(`Model fallback succeeded — running with default model for ${sessionKey ?? "pool"}`);
+      this.metrics?.incProcessSpawn();
+    } catch (retryErr) {
+      this.clients.delete(id);
+      throw retryErr;
     }
 
     return client;
@@ -473,4 +527,19 @@ export class RpcPool {
       }
     }
   }
+}
+
+/**
+ * Strip --provider and --model flags (and their values) from args array.
+ */
+export function stripModelArgs(args: string[]): string[] {
+  const result: string[] = [];
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === "--provider" || args[i] === "--model") {
+      i++; // skip the value
+      continue;
+    }
+    result.push(args[i]);
+  }
+  return result;
 }
