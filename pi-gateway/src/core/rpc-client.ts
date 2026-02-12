@@ -401,14 +401,14 @@ export class RpcClient {
         }));
       }
       this.log.info(`RPC send: ${JSON.stringify(debugCmd).slice(0, 500)}`);
-      void rpcFileLog(this.id, ">>>", JSON.stringify(debugCmd).slice(0, 2000));
+      void rpcFileLog(this.id, ">>>", JSON.stringify(debugCmd));
       this.proc!.stdin.write(line);
     });
   }
 
   private handleLine(line: string): void {
     if (!line.trim()) return;
-    void rpcFileLog(this.id, "<<<", line.slice(0, 2000));
+    void rpcFileLog(this.id, "<<<", line);
 
     try {
       const data = JSON.parse(line);

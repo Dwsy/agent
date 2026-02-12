@@ -134,12 +134,16 @@ async function registerNativeCommands(
       description: `Switch to agent: ${id}`,
     })),
     ...piCommands
+    // game filter
+    .filter(cmd => !cmd.name.startsWith("game:"))
       .filter(cmd => !GROUPED_PREFIXES.some(p => cmd.name.replace(/^\//, "").startsWith(p))) // skip grouped commands (shown via inline keyboard)
-      .map(cmd => ({
+      .map(cmd => (
+        {
         command: `pi_${cmd.name.replace(/^\//, "")}`, // pi_role, pi_compact, etc.
         description: cmd.description ?? `pi: ${cmd.name}`,
       })),
   ];
+  console.log(allCommands);
 
   // Telegram 命令名只支持小写字母、数字和下划线，最多 32 字符
   const validCommands = allCommands
