@@ -85,6 +85,10 @@ export interface ChannelPluginCapabilities {
   group?: boolean;
   thread?: boolean;
   media?: boolean;
+  /** Channel supports edit-in-place streaming (CA-1) */
+  streaming?: boolean;
+  /** Channel supports DM security policy (CA-1) */
+  security?: boolean;
 }
 
 export interface SendOptions {
@@ -108,20 +112,142 @@ export interface MediaSendResult {
 /** Result from sendText when message ID tracking is needed */
 export type MessageSendResult = MediaSendResult;
 
+// ============================================================================
+// Channel Outbound (CA-1: extracted as named interface)
+// ============================================================================
+
+export interface ChannelOutbound {
+  /**
+   * Send text to a target in this channel.
+   * Migration: Step 1 returns MessageSendResult | void (backward compat).
+   * After CA-2 + D1 complete, `| void` will be removed.
+   */
+  sendText(target: string, text: string, opts?: SendOptions): Promise<MessageSendResult | void>;
+  /** Send a media file (optional — not all channels support media) */
+  sendMedia?(target: string, filePath: string, opts?: MediaSendOptions): Promise<MediaSendResult>;
+  /** Max message length for this channel (for chunking) */
+  maxLength?: number;
+}
+
+// ============================================================================
+// Channel Streaming Adapter (CA-1: evidence-based, from CA-0 §2)
+// ============================================================================
+
+export interface StreamPlaceholderOpts {
+  /** Initial text for the placeholder (e.g. spinner frame) */
+  text?: string;
+  /** Thread/topic ID for threaded channels */
+  threadId?: string;
+  /** Reply to a specific message */
+  replyTo?: string;
+  parseMode?: "Markdown" | "HTML" | "plain";
+}
+
+export interface StreamEditOpts {
+  parseMode?: "Markdown" | "HTML" | "plain";
+}
+
+export interface StreamingConfig {
+  /** Minimum ms between edits (Telegram: 1000, Discord: 500). Must be >= 300ms. */
+  editThrottleMs?: number;
+  /** Stop editing when text exceeds this length (Discord: 1800) */
+  editCutoffChars?: number;
+  /** Minimum accumulated chars before first edit (Telegram: ~800) */
+  streamStartChars?: number;
+}
+
+/**
+ * Optional streaming adapter for channels that support edit-in-place live updates.
+ * Implementors: Telegram (editMessageText), Discord (editReply).
+ * Channels using WS push (WebChat) or card patch (Feishu) opt out.
+ *
+ * Scope: defines editMessage/createPlaceholder contract only.
+ * Shared pipeline logic (contentSequence, buildLiveText, pushLiveUpdate)
+ * lives in a utility module (streaming/live-text.ts), not here.
+ */
+export interface ChannelStreamingAdapter {
+  /**
+   * Send a placeholder message and return its ID for later editing.
+   * @param target — channel-specific chat target (Telegram: chatId, Discord: channelId)
+   */
+  createPlaceholder(target: string, opts?: StreamPlaceholderOpts): Promise<{ messageId: string }>;
+
+  /**
+   * Edit an existing message with updated content (for live streaming).
+   * Returns false on failure (e.g. Telegram 429) — caller should skip, not retry.
+   * @param target — channel-specific chat target (same as createPlaceholder)
+   *
+   * Security note: text content only. If future streaming embeds MEDIA directives,
+   * any file paths MUST pass validateMediaPath before delivery.
+   */
+  editMessage(target: string, messageId: string, text: string, opts?: StreamEditOpts): Promise<boolean>;
+
+  /** Show typing indicator. Optional — some channels don't support it. */
+  setTyping?(target: string, active: boolean): Promise<void>;
+
+  /** Channel-specific streaming config defaults */
+  config?: StreamingConfig;
+}
+
+// ============================================================================
+// Channel Security Adapter (CA-1: evidence-based, from CA-0 §3)
+// ============================================================================
+
+/** DM access policy for channel security */
+export type DmPolicy = "open" | "allowlist" | "pairing" | "disabled";
+
+export interface AccessCheckContext {
+  channel: string;
+  chatType: "dm" | "group" | "channel" | "thread";
+  chatId?: string;
+  accountId?: string;
+}
+
+export interface AccessResult {
+  allowed: boolean;
+  reason?: string;
+  /** If pairing is needed, the generated code */
+  pairingCode?: string;
+}
+
+/**
+ * Optional security adapter for DM access control.
+ * Delegates to shared security/allowlist.ts by default.
+ * Implementors: Telegram, Discord, Feishu. WebChat uses auth-only (no DM policy).
+ */
+export interface ChannelSecurityAdapter {
+  /** DM access policy */
+  dmPolicy: DmPolicy;
+  /** Static allowlist from config */
+  dmAllowFrom?: Array<string | number>;
+  /**
+   * Whether this channel supports pairing flow.
+   * false → config-only allowFrom check
+   * true  → shared allowlist.ts + pairing.ts (persisted allowlist + code approval)
+   */
+  supportsPairing?: boolean;
+  /** Account ID for scoped allowlist persistence */
+  accountId?: string;
+  /**
+   * Override default access check. If omitted, delegates to shared allowlist.ts.
+   * Channels can override for custom logic (e.g. group-specific rules).
+   * TODO: may become fully Promise<AccessResult> if channels need async I/O lookups.
+   */
+  checkAccess?(senderId: string, context: AccessCheckContext): AccessResult | Promise<AccessResult>;
+}
+
+// ============================================================================
+// Channel Plugin (aligned with OpenClaw ChannelPlugin)
+// ============================================================================
+
 export interface ChannelPlugin {
   /** Unique channel identifier, e.g. "telegram", "discord", "webchat" */
   id: string;
   meta: ChannelPluginMeta;
   capabilities: ChannelPluginCapabilities;
 
-  outbound: {
-    /** Send text to a target in this channel */
-    sendText(target: string, text: string, opts?: SendOptions): Promise<void>;
-    /** Send a media file to a target in this channel (optional — not all channels support media) */
-    sendMedia?(target: string, filePath: string, opts?: MediaSendOptions): Promise<MediaSendResult>;
-    /** Max message length for this channel (for chunking) */
-    maxLength?: number;
-  };
+  /** Outbound messaging (CA-1: named interface, sendText returns MessageSendResult | void) */
+  outbound: ChannelOutbound;
 
   /** Initialize with gateway context */
   init(api: GatewayPluginApi): Promise<void>;
@@ -129,6 +255,11 @@ export interface ChannelPlugin {
   start(): Promise<void>;
   /** Graceful shutdown */
   stop(): Promise<void>;
+
+  /** Optional: edit-in-place streaming (Telegram, Discord) — CA-1 */
+  streaming?: ChannelStreamingAdapter;
+  /** Optional: DM access control (Telegram, Discord, Feishu) — CA-1 */
+  security?: ChannelSecurityAdapter;
 }
 
 // ============================================================================
@@ -329,3 +460,30 @@ export type PluginFactory =
       name: string;
       register(api: GatewayPluginApi): void | Promise<void>;
     };
+
+// ============================================================================
+// Legacy Compatibility (CA-1: migration helper)
+// ============================================================================
+
+/**
+ * Wrap a legacy outbound (sendText returns void) into ChannelOutbound.
+ * Used during the 3-step migration window. Remove when `| void` is dropped.
+ * @deprecated Will be removed after CA-2 + D1 complete.
+ */
+export function wrapLegacyOutbound(old: {
+  sendText(target: string, text: string, opts?: SendOptions): Promise<void>;
+  sendMedia?(target: string, filePath: string, opts?: MediaSendOptions): Promise<MediaSendResult>;
+  maxLength?: number;
+}): ChannelOutbound {
+  return {
+    ...old,
+    async sendText(target: string, text: string, opts?: SendOptions) {
+      try {
+        await old.sendText(target, text, opts);
+        return { ok: true };
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      }
+    },
+  };
+}
