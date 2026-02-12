@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { Gateway } from "./server.ts";
 import { DEFAULT_CONFIG, type Config } from "./core/config.ts";
 import { createPluginRegistry } from "./plugins/loader.ts";
+import { createPluginApi } from "./plugins/plugin-api-factory.ts";
 
 type AnyGateway = any;
 
@@ -220,7 +221,7 @@ describe("gateway extension wiring", () => {
       };
     });
 
-    const api = gateway.createPluginApi("demo", { id: "demo", name: "Demo", main: "index.ts" });
+    const api = createPluginApi("demo", { id: "demo", name: "Demo", main: "index.ts" }, (gateway as any).ctx);
     expect(api.pluginConfig).toEqual({ enabled: true, channels: ["telegram"] });
   });
 

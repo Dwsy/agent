@@ -51,7 +51,6 @@ import {
 } from "./plugins/loader.ts";
 import type {
   GatewayPluginApi,
-  PluginManifest,
 } from "./plugins/types.ts";
 import { createPluginApi } from "./plugins/plugin-api-factory.ts";
 
