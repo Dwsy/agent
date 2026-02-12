@@ -22,6 +22,7 @@ import type { DelegateExecutor } from "../core/delegate-executor.ts";
 import type { DeduplicationCache } from "../core/dedup-cache.ts";
 import type { Logger, SessionKey, InboundMessage } from "../core/types.ts";
 import type { buildCapabilityProfile } from "../core/capability-profile.ts";
+import type { GatewayPluginApi } from "../plugins/types.ts";
 
 export type TelegramMessageMode = "steer" | "follow-up" | "interrupt";
 
@@ -74,6 +75,12 @@ export interface GatewayContext {
   // State
   noGui: boolean;
   sessionMessageModeOverrides: Map<SessionKey, TelegramMessageMode>;
+
+  // R2: plugin-api-factory dependencies (DarkUnion)
+  /** Cached plugin API instances per channel — populated during channel init */
+  channelApis: Map<string, GatewayPluginApi>;
+  /** Resolve Telegram message mode for a session (steer/follow-up/interrupt) */
+  resolveTelegramMessageMode: (sessionKey: SessionKey, sourceAccountId?: string) => TelegramMessageMode;
 
   // Methods (bound from Gateway)
   broadcastToWs: (event: string, payload: unknown) => void;

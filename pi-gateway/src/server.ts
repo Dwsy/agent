@@ -11,12 +11,12 @@ import type { Server, ServerWebSocket } from "bun";
 import { join } from "node:path";
 import { existsSync, renameSync } from "node:fs";
 
-import { safeTokenCompare } from "./core/auth.ts";
+import { safeTokenCompare, resolveAuthConfig, authenticateRequest, buildAuthExemptPrefixes } from "./core/auth.ts";
 import { serveStaticFile } from "./core/static-server.ts";
 import { handleWebhookWake, handleWebhookEvent } from "./api/webhook-api.ts";
 import { handleOpenAiChat } from "./api/openai-compat.ts";
 import type { GatewayContext, TelegramMessageMode, WsClientData } from "./gateway/types.ts";
-import { tryHandleCommand, registerBuiltinCommands, isTuiCommand } from "./gateway/command-handler.ts";
+import { tryHandleCommand, registerBuiltinCommands } from "./gateway/command-handler.ts";
 import { listAvailableRoles, setSessionRole } from "./gateway/role-manager.ts";
 import { executeRegisteredTool, handleToolsList, handleToolCall } from "./gateway/tool-executor.ts";
 import { handleSessionReset, handleSessionThink, handleSessionModel, handleModelsList, handleSessionUsage, handleSessionsList, handleSessionDetail } from "./api/session-api.ts";
@@ -24,7 +24,7 @@ import { loadConfig, ensureDataDir, type Config, type CronJob, resolveConfigPath
 import { RpcPool } from "./core/rpc-pool.ts";
 import type { RpcClient } from "./core/rpc-client.ts";
 import { MessageQueueManager, type PrioritizedWork } from "./core/message-queue.ts";
-import { resolveSessionKey, resolveAgentId, resolveRoleForSession, getCwdForRole } from "./core/session-router.ts";
+import { resolveSessionKey, resolveAgentId, getCwdForRole } from "./core/session-router.ts";
 import { createLogger as createConsoleLogger, type Logger, type InboundMessage, type SessionKey, type SessionState, type WsFrame, type ImageContent, type MessageSource } from "./core/types.ts";
 import { SessionStore, encodeSessionDir, getSessionDir } from "./core/session-store.ts";
 import { initFileLogger, createFileLogger } from "./core/logger-file.ts";
@@ -43,6 +43,7 @@ import { SystemEventsQueue } from "./core/system-events.ts";
 import { handleMediaServe } from "./api/media-routes.ts";
 import { createWsRouter, dispatchWsFrame } from "./ws/ws-router.ts";
 import { handleMediaSendRequest } from "./api/media-send.ts";
+import { processMessage } from "./gateway/message-pipeline.ts";
 import {
   createPluginRegistry,
   PluginLoader,
@@ -51,15 +52,8 @@ import {
 import type {
   GatewayPluginApi,
   PluginManifest,
-  PluginHookName,
-  HookHandler,
-  ChannelPlugin,
-  ToolPlugin,
-  BackgroundService,
-  CommandHandler,
-  HttpHandler,
-  WsMethodHandler,
 } from "./plugins/types.ts";
+import { createPluginApi } from "./plugins/plugin-api-factory.ts";
 
 // ============================================================================
 // Gateway Class
@@ -87,6 +81,8 @@ export class Gateway {
   private configWatcher: (() => void) | null = null;
   private wsClients = new Map<string, ServerWebSocket<WsClientData>>();
   private server: Server<WsClientData> | null = null;
+  private resolvedToken?: string;
+  private authExemptPrefixes: string[] = [];
   private log: Logger;
   private nextClientId = 0;
   private dedup: DeduplicationCache;
@@ -167,7 +163,7 @@ export class Gateway {
     this.metrics.start(this.createMetricsDataSource());
 
     // Load plugins
-    const loader = new PluginLoader(this.config, this.registry, (id, m) => this.createPluginApi(id, m));
+    const loader = new PluginLoader(this.config, this.registry, (id, m) => createPluginApi(id, m, this.ctx));
     // Precedence: external plugins first, builtins as fallback.
     const { errors } = await loader.loadAll();
     await loader.loadBuiltins();
@@ -209,7 +205,7 @@ export class Gateway {
     // Start background services
     for (const service of this.registry.services) {
       try {
-        await service.start(this.createPluginApi(service.name, { id: service.name, name: service.name, main: "" }));
+        await service.start(createPluginApi(service.name, { id: service.name, name: service.name, main: "" }, this.ctx));
         this.log.info(`Service started: ${service.name}`);
       } catch (err: any) {
         this.log.error(`Service ${service.name} failed to start: ${err?.message}`);
@@ -231,6 +227,11 @@ export class Gateway {
 
     // Start heartbeat executor (v3.1)
     this.heartbeatExecutor?.start();
+
+    // Resolve auth config (fail-closed: v3.4 S1)
+    const { resolvedToken } = resolveAuthConfig(this.config.gateway.auth, this.log);
+    this.resolvedToken = resolvedToken;
+    this.authExemptPrefixes = buildAuthExemptPrefixes(this.config);
 
     // Start HTTP + WebSocket server
     this.startServer();
@@ -584,7 +585,7 @@ export class Gateway {
   private async enqueueMessage(msg: InboundMessage): Promise<void> {
     const { sessionKey } = msg;
     const item: PrioritizedWork = {
-      work: async () => { await this.processMessage(msg, item); },
+      work: async () => { await processMessage(msg, this.ctx, item); },
       priority: this.computePriority(msg),
       enqueuedAt: Date.now(),
       ttl: 0,
@@ -627,12 +628,6 @@ export class Gateway {
     });
   }
 
-  private normalizeOutgoingText(value: unknown, fallback: string): string {
-    if (typeof value === "string") return value;
-    if (value === null || value === undefined) return fallback;
-    return String(value);
-  }
-
   private async compactSessionWithHooks(sessionKey: SessionKey, instructions?: string): Promise<void> {
     const rpc = this.pool.getForSession(sessionKey);
     if (!rpc) {
@@ -645,342 +640,6 @@ export class Gateway {
       ? (result as any).summary as string
       : undefined;
     await this.registry.hooks.dispatch("after_compaction", { sessionKey, summary });
-  }
-
-  private async processMessage(msg: InboundMessage, queueItem?: PrioritizedWork): Promise<void> {
-    // If collect mode merged multiple messages, use the merged text
-    const effectiveText = queueItem?.collectMergedText ?? msg.text;
-    const { sessionKey, images, respond, setTyping, source } = msg;
-    const text = effectiveText;
-    const startTime = Date.now();
-
-    // Transcript: log inbound prompt
-    this.transcripts.logPrompt(sessionKey, text, images?.length ?? 0);
-    this.transcripts.logMeta(sessionKey, "process_start", {
-      source: { channel: source.channel, chatType: source.chatType, chatId: source.chatId },
-    });
-
-    // Guard: intercept pi extension commands that use TUI (would hang in RPC mode)
-    // Defensive: also checked inside tryHandleCommand, but we catch it early here
-    // to log transcript + respond before RPC acquisition
-    if (isTuiCommand(text)) {
-      const reply = `Command "${text.trim()}" requires interactive TUI and is not available in gateway mode. Use the pi CLI directly for this command.`;
-      this.transcripts.logResponse(sessionKey, reply, Date.now() - startTime);
-      await respond(reply);
-      return;
-    }
-
-    // Hook: session_start (if new session)
-    const isNew = !this.sessions.has(sessionKey);
-    const session = this.sessions.getOrCreate(sessionKey, {
-      role: resolveRoleForSession(source, this.config),
-      isStreaming: false,
-      lastActivity: Date.now(),
-      messageCount: 0,
-      rpcProcessId: null,
-      lastChatId: source.chatId,
-      lastChannel: source.channel,
-    });
-    if (isNew) {
-      this.transcripts.logMeta(sessionKey, "session_created", { role: session.role });
-      await this.registry.hooks.dispatch("session_start", { sessionKey });
-    }
-    session.lastActivity = Date.now();
-    session.messageCount++;
-    // Update chat routing info on every message (chatId may change in group contexts)
-    if (source.chatId) session.lastChatId = source.chatId;
-    if (source.channel) session.lastChannel = source.channel;
-
-    // Resolve role → capability profile for RPC process
-    const role = session.role ?? "default";
-    const profile = this.buildSessionProfile(sessionKey, role);
-
-    // Acquire RPC process
-    let rpc;
-    try {
-      rpc = await this.pool.acquire(sessionKey, profile);
-    } catch (err: any) {
-      const errMsg = `Failed to acquire RPC process: ${err?.message ?? String(err)}`;
-      this.log.error(errMsg);
-      this.transcripts.logError(sessionKey, errMsg);
-      await respond(`Error: ${errMsg}`);
-      return;
-    }
-    session.rpcProcessId = rpc.id;
-    session.isStreaming = true;
-
-    // Wire Extension UI forwarding to WebChat clients
-    rpc.extensionUIHandler = (data, writeToRpc) =>
-      this.extensionUI.forward(data, this.wsClients, writeToRpc);
-    this.transcripts.logMeta(sessionKey, "rpc_acquired", {
-      rpcId: rpc.id,
-      cwd: profile.cwd,
-      role: profile.role,
-      signature: profile.signature.slice(0, 12),
-      capabilities: profile.resourceCounts,
-    });
-
-    // Typing indicator
-    await setTyping(true);
-
-    // Plugin slash commands bypass LLM (forward to pi RPC if not handled locally)
-    if (await tryHandleCommand(msg, this.ctx, startTime, rpc)) {
-      return;
-    }
-
-    // Collect response
-    let fullText = "";
-    let thinkingText = "";
-    let toolLabels: string[] = [];
-    let agentEndMessages: unknown[] = [];
-    let agentEndStopReason = "stop";
-    let eventCount = 0;
-
-    const unsub = rpc.onEvent((event) => {
-      // Ignore events if this RPC process has been rebound to a different session
-      if (rpc.sessionKey !== sessionKey) return;
-
-      eventCount++;
-
-      // Log every RPC event received
-      this.log.info(`[RPC-EVENT] ${sessionKey} type=${(event as any).type} eventCount=${eventCount}`);
-      this.log.debug(`[RPC-EVENT] ${sessionKey} full event: ${JSON.stringify(event).slice(0, 1000)}`);
-
-      // Transcript: log every agent event
-      this.transcripts.logEvent(sessionKey, event as Record<string, unknown>);
-
-      // Helper: extract partial text exactly like dev branch
-      const extractPartialText = (partial: unknown): { text?: string; thinking?: string } => {
-        this.log.debug(`[RPC-EVENT] ${sessionKey} extractPartialText input: ${JSON.stringify(partial).slice(0, 500)}`);
-        if (!partial || typeof partial !== 'object') {
-          this.log.debug(`[RPC-EVENT] ${sessionKey} extractPartialText: no partial or not object`);
-          return {}
-        }
-        const record = partial as Record<string, unknown>
-        let content = record.content
-        if (!Array.isArray(content) && record.message && typeof record.message === 'object') {
-          const message = record.message as Record<string, unknown>
-          if (Array.isArray(message.content)) {
-            content = message.content
-          }
-        }
-        let text: string | undefined
-        let thinking: string | undefined
-        if (Array.isArray(content)) {
-          for (const part of content) {
-            if (!part || typeof part !== 'object') continue
-            const p = part as Record<string, unknown>
-            const partType = typeof p.type === 'string' ? p.type : ''
-            if (partType === 'text' && typeof p.text === 'string') {
-              text = p.text
-            }
-            if (partType === 'thinking' && typeof p.thinking === 'string') {
-              thinking = p.thinking
-            }
-          }
-        } else {
-          if (typeof record.text === 'string') {
-            text = record.text
-          }
-          if (typeof record.thinking === 'string') {
-            thinking = record.thinking
-          }
-        }
-        this.log.debug(`[RPC-EVENT] ${sessionKey} extractPartialText result: text=${text?.length ?? 0} chars, thinking=${thinking?.length ?? 0} chars`);
-        return { text, thinking }
-      }
-
-      // Stream text and thinking deltas - aligned with dev branch usePiRPC
-      if (event.type === "message_update") {
-        const ame = (event as any).assistantMessageEvent ?? (event as any).assistant_message_event;
-        this.log.debug(`[RPC-EVENT] ${sessionKey} message_update ame.type=${ame?.type} ame.delta=${ame?.delta?.length ?? 0} chars`);
-        this.log.debug(`[RPC-EVENT] ${sessionKey} ame.full: ${JSON.stringify(ame).slice(0, 800)}`);
-        
-        const partial = extractPartialText(ame?.partial);
-        this.log.debug(`[RPC-EVENT] ${sessionKey} partial extracted: text=${partial.text?.length ?? 0} chars, thinking=${partial.thinking?.length ?? 0} chars`);
-
-        const beforeFullText = fullText;
-        switch (ame?.type) {
-          case 'text_delta':
-            if (ame.delta) {
-              fullText += ame.delta;
-              this.log.debug(`[RPC-EVENT] ${sessionKey} text_delta: added ${ame.delta.length} chars, total=${fullText.length}`);
-              msg.onStreamDelta?.(fullText, ame.delta);
-            } else if (partial.text) {
-              fullText = partial.text;
-              this.log.debug(`[RPC-EVENT] ${sessionKey} text_delta (from partial): total=${fullText.length}`);
-              msg.onStreamDelta?.(fullText, partial.text);
-            } else {
-              this.log.warn(`[RPC-EVENT] ${sessionKey} text_delta: no delta and no partial.text`);
-            }
-            break;
-          case 'text_start':
-            fullText = '';
-            if (partial.text) {
-              fullText = partial.text;
-              this.log.info(`[RPC-EVENT] ${sessionKey} text_start: total=${fullText.length}`);
-              msg.onStreamDelta?.(fullText, partial.text);
-            } else {
-              this.log.info(`[RPC-EVENT] ${sessionKey} text_start: empty`);
-            }
-            break;
-          case 'text_end':
-            if (ame.content) {
-              const content = Array.isArray(ame.content)
-                ? ame.content.map((c: any) => c.type === 'text' ? c.text : '').join('')
-                : String(ame.content);
-              fullText = content;
-              this.log.info(`[RPC-EVENT] ${sessionKey} text_end: total=${fullText.length}`);
-              msg.onStreamDelta?.(fullText, content);
-            } else if (partial.text) {
-              fullText = partial.text;
-              this.log.info(`[RPC-EVENT] ${sessionKey} text_end (from partial): total=${fullText.length}`);
-              msg.onStreamDelta?.(fullText, partial.text);
-            } else {
-              this.log.warn(`[RPC-EVENT] ${sessionKey} text_end: no content and no partial.text`);
-            }
-            break;
-          case 'thinking_delta': {
-            const thinkDelta = ame.delta || ame.thinking || '';
-            if (thinkDelta) {
-              thinkingText += thinkDelta;
-              msg.onThinkingDelta?.(thinkingText, thinkDelta);
-            }
-            this.log.debug(`[RPC-EVENT] ${sessionKey} thinking_delta: ${thinkDelta.length} chars`);
-            break;
-          }
-          case 'thinking_start':
-            thinkingText = '';
-            this.log.info(`[RPC-EVENT] ${sessionKey} thinking_start`);
-            break;
-          case 'thinking_end':
-            this.log.info(`[RPC-EVENT] ${sessionKey} thinking_end (${thinkingText.length} chars total)`);
-            break;
-          case 'start':
-            if (partial.text) {
-              fullText = partial.text;
-              this.log.info(`[RPC-EVENT] ${sessionKey} start (text): total=${fullText.length}`);
-              msg.onStreamDelta?.(fullText, partial.text);
-            }
-            // Ignore partial.thinking - don't render it
-            break;
-          default:
-            this.log.warn(`[RPC-EVENT] ${sessionKey} unhandled ame.type: ${ame?.type}`);
-        }
-        this.log.debug(`[RPC-EVENT] ${sessionKey} fullText changed: ${beforeFullText.length} -> ${fullText.length} chars`);
-      }
-
-      // Tool execution labels
-      if (event.type === "tool_execution_start") {
-        const eventAny = event as any;
-        this.log.info(`[RPC-EVENT] ${sessionKey} tool_execution_start: ${eventAny.toolName}`);
-        const label = (eventAny.args as any)?.label || eventAny.toolName;
-        if (label) toolLabels.push(label);
-        msg.onToolStart?.(eventAny.toolName, eventAny.args, eventAny.toolCallId);
-      }
-
-      // Capture agent_end data for hooks
-      if (event.type === "agent_end") {
-        this.log.info(`[RPC-EVENT] ${sessionKey} agent_end`);
-        agentEndMessages = (event as any).messages ?? [];
-      }
-
-      // Capture stop reason from message_end
-      if (event.type === "message_end") {
-        const msgEnd = event as any;
-        this.log.info(`[RPC-EVENT] ${sessionKey} message_end: role=${msgEnd.message?.role}, stopReason=${msgEnd.message?.stopReason}`);
-        if (msgEnd.message?.role === "assistant" && msgEnd.message?.stopReason) {
-          agentEndStopReason = msgEnd.message.stopReason;
-        }
-      }
-
-      // Broadcast to WebSocket clients observing this session
-      this.broadcastToWs("agent", { sessionKey, ...event });
-    });
-
-    // Timeout protection (aligned with OpenClaw abortTimer)
-    const timeoutMs = this.config.agent.timeoutMs ?? 120_000;
-    let abortAttempted = false;
-    const abortTimer = setTimeout(() => {
-      this.log.warn(`Agent timeout for ${sessionKey} (${timeoutMs}ms), aborting`);
-      this.transcripts.logError(sessionKey, `Agent timeout after ${timeoutMs}ms`, { eventCount, textLen: fullText.length });
-      this.metrics?.incRpcTimeout();
-      abortAttempted = true;
-      rpc.abort().catch(() => {});
-      // If abort doesn't unstick within 5s (e.g. TUI hang), force-kill the process
-      setTimeout(() => {
-        if (session.isStreaming) {
-          this.log.warn(`Force-killing hung RPC process ${rpc.id} for ${sessionKey}`);
-          this.transcripts.logError(sessionKey, `Force-killing hung RPC process ${rpc.id}`);
-          rpc.stop().catch(() => {});
-          this.pool.release(sessionKey);
-        }
-      }, 5000);
-    }, timeoutMs);
-
-    try {
-      // Hook: before_agent_start
-      const beforeAgentPayload = { sessionKey, message: text };
-      await this.registry.hooks.dispatch("before_agent_start", beforeAgentPayload);
-      const promptText = this.normalizeOutgoingText(beforeAgentPayload.message, text);
-
-      // Send prompt to pi agent
-      this.log.info(`[processMessage] Sending prompt to ${rpc.id} for ${sessionKey}: "${promptText.slice(0, 80)}"`);
-      await rpc.prompt(promptText, images);
-      await rpc.waitForIdle(timeoutMs);
-
-      // Hook: agent_end with real messages from the RPC event stream
-      await this.registry.hooks.dispatch("agent_end", {
-        sessionKey,
-        messages: agentEndMessages,
-        stopReason: agentEndStopReason,
-      });
-    } catch (err: any) {
-      const errMsg = err?.message ?? "Unknown error";
-      fullText = typeof fullText === 'string' && fullText.trim() ? fullText : `Error: ${errMsg}`;
-      this.log.error(`Agent error for ${sessionKey}: ${errMsg}`);
-      this.transcripts.logError(sessionKey, errMsg, { eventCount, abortAttempted, textLen: fullText.length });
-    } finally {
-      clearTimeout(abortTimer);
-      unsub();
-      session.isStreaming = false;
-      await setTyping(false);
-    }
-
-    this.log.info(`[RPC-EVENT] ${sessionKey} Final fullText: ${fullText.length} chars, eventCount=${eventCount}`);
-    this.log.debug(`[RPC-EVENT] ${sessionKey} Final fullText content: ${fullText.slice(0, 500)}`);
-
-    // Hook: message_sending
-    if (!fullText.trim()) {
-      this.log.warn(`Empty assistant response for ${sessionKey}; sending fallback text.`);
-      fullText = "我这次没有生成可发送的文本，请再发一次或换个问法。";
-    }
-
-    const outbound = { channel: source.channel, target: source.chatId, text: fullText };
-    await this.registry.hooks.dispatch("message_sending", { message: outbound });
-    outbound.text = this.normalizeOutgoingText(outbound.text, fullText);
-
-    // Transcript: log final response (after message_sending mutations)
-    const durationMs = Date.now() - startTime;
-    this.transcripts.logResponse(sessionKey, outbound.text, durationMs);
-    this.transcripts.logMeta(sessionKey, "process_end", {
-      durationMs,
-      eventCount,
-      textLength: outbound.text.length,
-      toolCount: toolLabels.length,
-      tools: toolLabels,
-      abortAttempted,
-    });
-
-    // Metrics: record message processed and latency
-    this.metrics?.incMessageProcessed();
-    this.metrics?.recordLatency(durationMs);
-
-    // Send response
-    await respond(outbound.text);
-
-    // Hook: message_sent
-    await this.registry.hooks.dispatch("message_sent", { message: outbound });
   }
 
   // ==========================================================================
@@ -1000,30 +659,14 @@ export class Gateway {
       async fetch(req, server) {
         const url = new URL(req.url);
 
-        // Auth check (skip for static assets and health)
-        const authMode = self.config.gateway.auth.mode;
-        if (authMode === "token" && url.pathname !== "/health" && !url.pathname.startsWith("/web/") && url.pathname !== "/") {
-          const token = self.config.gateway.auth.token;
-          if (token) {
-            const provided = req.headers.get("authorization")?.replace("Bearer ", "")
-              ?? url.searchParams.get("token");
-            if (!provided || !safeTokenCompare(provided, token)) {
-              return new Response("Unauthorized", { status: 401 });
-            }
-          }
-        }
+        // Auth check — fail-closed (v3.4 S1)
+        const authDenied = authenticateRequest(req, url, self.config.gateway.auth, self.resolvedToken, self.authExemptPrefixes);
+        if (authDenied) return authDenied;
 
         // WebSocket upgrade — Bun requires returning `undefined` on success
         if (req.headers.get("upgrade")?.toLowerCase() === "websocket") {
           const clientId = `ws-${++self.nextClientId}`;
           self.log.debug(`WS upgrade request from ${clientId}`);
-          // WS auth: token in query param for browser WebSocket
-          if (authMode === "token" && self.config.gateway.auth.token) {
-            const wsToken = url.searchParams.get("token");
-            if (!wsToken || !safeTokenCompare(wsToken, self.config.gateway.auth.token)) {
-              return new Response("Unauthorized", { status: 401 });
-            }
-          }
           if (server.upgrade(req, { data: { clientId } })) {
             return; // Must return undefined for Bun WS upgrade
           }
@@ -1515,223 +1158,17 @@ export class Gateway {
   }
 
   // ==========================================================================
-  // Plugin API Factory
-  // ==========================================================================
-
-  private createPluginApi(pluginId: string, manifest: PluginManifest): GatewayPluginApi {
-    const self = this;
-    const pluginLogger = this.config.logging.file
-      ? createFileLogger(`plugin:${pluginId}`)
-      : createConsoleLogger(`plugin:${pluginId}`);
-
-    return {
-      id: pluginId,
-      name: manifest.name,
-      source: "gateway",
-      config: self.config,
-      pluginConfig: self.config.plugins.config?.[pluginId],
-      logger: pluginLogger,
-
-      registerChannel(channel: ChannelPlugin) {
-        if (self.registry.channels.has(channel.id)) {
-          pluginLogger.warn(`Channel ${channel.id} already registered, skipping`);
-          return;
-        }
-        self.registry.channels.set(channel.id, channel);
-        // 保存 api 引用，供后续 init 调用使用
-        self._channelApis.set(channel.id, this);
-        pluginLogger.info(`Registered channel: ${channel.id}`);
-      },
-
-      registerTool(tool: ToolPlugin) {
-        self.registry.tools.set(tool.name, tool);
-        pluginLogger.info(`Registered tool: ${tool.name}`);
-      },
-
-      registerHook(events: PluginHookName[], handler: HookHandler) {
-        self.registry.hooks.register(pluginId, events, handler);
-      },
-
-      registerHttpRoute(method: string, path: string, handler: HttpHandler) {
-        self.registry.httpRoutes.push({ method: method.toUpperCase(), path, handler, pluginId });
-        pluginLogger.info(`Registered HTTP route: ${method} ${path}`);
-      },
-
-      registerGatewayMethod(method: string, handler: WsMethodHandler) {
-        if (self.registry.gatewayMethods.has(method)) {
-          pluginLogger.warn(`Gateway method ${method} already registered, skipping`);
-          return;
-        }
-        self.registry.gatewayMethods.set(method, { handler, pluginId });
-        pluginLogger.info(`Registered gateway method: ${method}`);
-      },
-
-      registerCommand(name: string, handler: CommandHandler) {
-        const normalized = name.replace(/^\//, "").trim().toLowerCase();
-        if (!normalized) {
-          pluginLogger.warn("Skipped empty command registration");
-          return;
-        }
-        self.registry.commands.set(normalized, { pluginId, handler });
-        pluginLogger.info(`Registered command: /${normalized}`);
-      },
-
-      registerService(service: BackgroundService) {
-        self.registry.services.push(service);
-        pluginLogger.info(`Registered service: ${service.name}`);
-      },
-
-      registerCli(registrar: (program: unknown) => void) {
-        self.registry.cliRegistrars.push({ pluginId, registrar: registrar as any });
-        pluginLogger.info("Registered CLI commands");
-      },
-
-      on<T extends PluginHookName>(hook: T, handler: HookHandler<T>) {
-        self.registry.hooks.register(pluginId, [hook], handler);
-      },
-
-      async dispatch(msg: InboundMessage) {
-        await self.dispatch(msg);
-      },
-
-      async sendToChannel(channel: string, target: string, text: string) {
-        const ch = self.registry.channels.get(channel);
-        if (!ch) throw new Error(`Channel not found: ${channel}`);
-        await ch.outbound.sendText(target, text);
-      },
-
-      getSessionState(sessionKey: SessionKey) {
-        return self.sessions.get(sessionKey) ?? null;
-      },
-
-      async resetSession(sessionKey: SessionKey) {
-        const rpc = self.pool.getForSession(sessionKey);
-        if (rpc) {
-          await rpc.newSession();
-        }
-        const session = self.sessions.get(sessionKey);
-        if (session) {
-          session.messageCount = 0;
-          session.lastActivity = Date.now();
-          self.sessions.touch(sessionKey);
-        }
-      },
-
-      async setThinkingLevel(sessionKey: SessionKey, level: string) {
-        const rpc = self.pool.getForSession(sessionKey);
-        if (rpc) {
-          await rpc.setThinkingLevel(level);
-        }
-      },
-
-      async setModel(sessionKey: SessionKey, provider: string, modelId: string) {
-        const rpc = self.pool.getForSession(sessionKey);
-        if (rpc) {
-          await rpc.setModel(provider, modelId);
-        }
-      },
-
-      async getAvailableModels(sessionKey: SessionKey) {
-        const rpc = self.pool.getForSession(sessionKey);
-        if (!rpc) return [];
-        const models = await rpc.getAvailableModels();
-        return Array.isArray(models) ? models : [];
-      },
-
-      async getSessionMessageMode(sessionKey: SessionKey) {
-        return self.resolveTelegramMessageMode(sessionKey);
-      },
-
-      async setSessionMessageMode(sessionKey: SessionKey, mode: "steer" | "follow-up" | "interrupt") {
-        self.sessionMessageModeOverrides.set(sessionKey, mode);
-      },
-
-      async compactSession(sessionKey: SessionKey, instructions?: string) {
-        await self.compactSessionWithHooks(sessionKey, instructions);
-      },
-
-      async abortSession(sessionKey: SessionKey) {
-        const rpc = self.pool.getForSession(sessionKey);
-        if (rpc) {
-          await rpc.abort();
-        }
-      },
-
-      async forwardCommand(sessionKey: SessionKey, command: string, args: string) {
-        const rpc = self.pool.getForSession(sessionKey);
-        if (!rpc) {
-          throw new Error(`No RPC process for session ${sessionKey}`);
-        }
-        self.log.info(`[forwardCommand] ${sessionKey}: ${command} ${args}`);
-        
-        // Map slash commands to RPC methods
-        switch (command) {
-          case "/compact":
-            await rpc.compact(args || undefined);
-            break;
-          case "/stop":
-            await rpc.abort();
-            break;
-          case "/think": {
-            const level = args || "medium";
-            await rpc.setThinkingLevel(level);
-            break;
-          }
-          case "/model": {
-            if (!args || !args.includes("/")) {
-              throw new Error("Usage: /model provider/modelId");
-            }
-            const slash = args.indexOf("/");
-            const provider = args.slice(0, slash);
-            const modelId = args.slice(slash + 1);
-            await rpc.setModel(provider, modelId);
-            break;
-          }
-          default:
-            // For unknown commands, send as prompt
-            const fullCommand = args ? `${command} ${args}` : command;
-            await rpc.prompt(fullCommand);
-        }
-      },
-
-      async getPiCommands(_sessionKey: SessionKey): Promise<{ name: string; description?: string }[]> {
-        // KeenUnion's approach: pi commands are global, use any idle RPC
-        // Find first idle client without acquiring (lightweight, no session binding)
-        const pool = self.pool as any;
-        let rpc: RpcClient | null = null;
-        if (pool.clients) {
-          for (const client of pool.clients.values()) {
-            if (client.isIdle && client.isAlive) {
-              rpc = client;
-              break;
-            }
-          }
-        }
-        if (!rpc) {
-          self.log.debug(`[getPiCommands] no idle RPC available`);
-          return [];
-        }
-        try {
-          const commands = await rpc.getCommands();
-          self.log.info(`[getPiCommands] got ${commands.length} commands from ${rpc.id}`);
-          return commands;
-        } catch (err) {
-          self.log.warn(`[getPiCommands] failed to get commands: ${err}`);
-          return [];
-        }
-      },
-
-      cronEngine: self.cron ?? undefined,
-    };
-  }
-
-  // ==========================================================================
   // Gateway Context (for sub-module injection)
   // ==========================================================================
 
   /** Proxy for extracted tool-executor — preserves public API for tests/plugins */
   async executeRegisteredTool(toolName: string, params: Record<string, unknown>, sessionKey: SessionKey) {
     return executeRegisteredTool(toolName, params, sessionKey, this.ctx);
+  }
+
+  /** Proxy for extracted message-pipeline — preserves public API for tests */
+  async processMessage(msg: InboundMessage, queueItem?: PrioritizedWork) {
+    return processMessage(msg, this.ctx, queueItem);
   }
 
   private get ctx(): GatewayContext {
@@ -1753,6 +1190,8 @@ export class Gateway {
       wsClients: this.wsClients,
       noGui: this.noGui,
       sessionMessageModeOverrides: this.sessionMessageModeOverrides,
+      channelApis: this._channelApis,
+      resolveTelegramMessageMode: (sk, accountId) => this.resolveTelegramMessageMode(sk, accountId),
       broadcastToWs: (event, payload) => this.broadcastToWs(event, payload),
       buildSessionProfile: (sk, role) => this.buildSessionProfile(sk, role),
       dispatch: (msg) => this.dispatch(msg),
