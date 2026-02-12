@@ -1,197 +1,151 @@
 /**
- * Declarative HTTP Router — replaces handleHttp's if-else chain with a route table.
- *
- * Design: spec §4.1 (docs/SERVER-REFACTOR-SPEC.md)
- * Phase: P2 prep (route table + dispatcher now, server.ts replacement later)
+ * HTTP Router — declarative route table replacing handleHttp's if-else chain.
  *
  * @owner MintHawk (KeenUnion)
  */
 
 import type { GatewayContext } from "../gateway/types.ts";
-
-// ============================================================================
-// Types
-// ============================================================================
-
-export type RouteHandler = (req: Request, url: URL, ctx: GatewayContext) => Promise<Response> | Response;
-
-export interface Route {
-  method: string;       // HTTP method (GET, POST, etc.)
-  path?: string;        // Exact pathname match
-  prefix?: string;      // startsWith match (for parameterized routes)
-  handler: RouteHandler;
-}
-
-// ============================================================================
-// Route Table
-// ============================================================================
-// Source: server.ts handleHttp lines ~1068-1254
-//
-// Routes are matched in order: plugin routes → exact match → prefix match → static files.
-// Auth is handled upstream (before routing), not per-route.
-
-export function buildRouteTable(ctx: GatewayContext): Route[] {
-  return [
-    // --- Health ---
-    { method: "GET",  path: "/health",              handler: (_, __, c) => handleHealth(c) },
-    { method: "GET",  path: "/api/health",          handler: (_, __, c) => handleHealth(c) },
-
-    // --- Metrics ---
-    { method: "GET",  path: "/api/metrics",         handler: handleMetrics },
-
-    // --- Chat / Send ---
-    { method: "POST", path: "/api/send",            handler: handleApiSend },
-    { method: "POST", path: "/api/chat",            handler: handleApiChat },
-    { method: "POST", path: "/api/chat/stream",     handler: handleApiChatStream },
-
-    // --- Sessions ---
-    { method: "GET",  path: "/api/sessions",        handler: handleSessionsList },
-    { method: "GET",  prefix: "/api/sessions/",     handler: handleSessionDetail },
-    { method: "GET",  prefix: "/api/transcript/",   handler: handleTranscript },
-    { method: "GET",  path: "/api/transcripts",     handler: handleTranscriptsList },
-    { method: "POST", path: "/api/session/reset",   handler: handleSessionReset },
-    { method: "POST", path: "/api/session/think",   handler: handleSessionThink },
-    { method: "POST", path: "/api/session/model",   handler: handleSessionModel },
-    { method: "GET",  path: "/api/session/usage",   handler: handleSessionUsage },
-
-    // --- Models ---
-    { method: "GET",  path: "/api/models",          handler: handleModelsList },
-
-    // --- Cron ---
-    { method: "GET",  prefix: "/api/cron/",         handler: handleCronApi },
-    { method: "POST", prefix: "/api/cron/",         handler: handleCronApi },
-    { method: "DELETE", prefix: "/api/cron/",       handler: handleCronApi },
-    { method: "PATCH", prefix: "/api/cron/",        handler: handleCronApi },
-
-    // --- Memory ---
-    { method: "GET",  path: "/api/memory/search",   handler: handleMemorySearch },
-    { method: "GET",  path: "/api/memory/stats",    handler: handleMemoryStats },
-    { method: "GET",  path: "/api/memory/roles",    handler: handleMemoryRoles },
-
-    // --- OpenAI-compatible ---
-    { method: "POST", path: "/v1/chat/completions", handler: handleOpenAICompat },
-
-    // --- Pool ---
-    { method: "GET",  path: "/api/pool",            handler: handlePoolStatus },
-
-    // --- Plugins (no method restriction, matches server.ts behavior) ---
-    { method: "GET",  path: "/api/plugins",         handler: handlePluginsList },
-    { method: "POST", path: "/api/plugins",         handler: handlePluginsList },
-
-    // --- Tools ---
-    { method: "GET",  path: "/api/tools",           handler: handleToolsList },
-    { method: "POST", path: "/api/tools/call",      handler: handleToolCall },
-
-    // --- Webhooks (dynamic base path from config) ---
-    { method: "POST", path: `${ctx.config.hooks?.path ?? "/hooks"}/wake`,  handler: handleWebhookWake },
-    { method: "POST", path: `${ctx.config.hooks?.path ?? "/hooks"}/event`, handler: handleWebhookEvent },
-
-    // --- Media ---
-    { method: "GET",  prefix: "/api/media/",        handler: handleMediaServe },
-    { method: "POST", path: "/api/media/send",      handler: handleMediaSend },
-  ];
-}
-
-// ============================================================================
-// Router Dispatcher
-// ============================================================================
+import { serveStaticFile } from "../core/static-server.ts";
+import { handleWebhookWake, handleWebhookEvent } from "./webhook-api.ts";
+import { handleOpenAiChat } from "./openai-compat.ts";
+import { handleSessionReset, handleSessionThink, handleSessionModel, handleModelsList, handleSessionUsage, handleSessionsList, handleSessionDetail } from "./session-api.ts";
+import { handleToolsList, handleToolCall } from "../gateway/tool-executor.ts";
+import { handleCronApi } from "../core/cron-api.ts";
+import { searchMemory, getMemoryStats, getRoleInfo, listRoles } from "../core/memory-access.ts";
+import { handleMediaServe } from "./media-routes.ts";
+import { handleMediaSendRequest } from "./media-send.ts";
+import { handleApiChat, handleApiChatStream } from "./chat-api.ts";
+import { handleApiSend } from "./send-api.ts";
 
 /**
- * Match a route against method + pathname.
- * Exact path match takes priority over prefix match.
+ * Route an HTTP request to the appropriate handler.
+ * Plugin routes are checked in server.ts before calling this.
  */
-function matchRoute(route: Route, method: string, pathname: string): boolean {
-  if (route.method !== method) return false;
-  if (route.path && route.path === pathname) return true;
-  if (route.prefix && pathname.startsWith(route.prefix)) return true;
-  return false;
-}
+export async function routeHttp(req: Request, url: URL, ctx: GatewayContext): Promise<Response> {
+  const { pathname } = url;
+  const method = req.method;
 
-/**
- * Create the HTTP dispatch function.
- * Plugin routes are checked first, then built-in routes, then static files.
- */
-export function createHttpRouter(ctx: GatewayContext): (req: Request, url: URL) => Promise<Response> {
-  const routes = buildRouteTable(ctx);
+  // --- Health ---
+  if (pathname === "/health" || pathname === "/api/health") {
+    return Response.json({
+      status: "ok",
+      uptime: process.uptime(),
+      pool: ctx.pool.getStats(),
+      queue: ctx.queue.getStats(),
+      sessions: ctx.sessions.size,
+      channels: Array.from(ctx.registry.channels.keys()),
+    });
+  }
 
-  return async (req: Request, url: URL): Promise<Response> => {
-    const method = req.method;
-    const pathname = url.pathname;
+  // --- Metrics ---
+  if (pathname === "/api/metrics" && method === "GET") {
+    const snapshot = ctx.metrics.getSnapshot();
+    return new Response(JSON.stringify(snapshot, null, 2), {
+      status: 200,
+      headers: { "Content-Type": "application/json", "Cache-Control": "no-cache" },
+    });
+  }
 
-    // 1. Plugin-registered HTTP routes (highest priority)
-    for (const route of ctx.registry.httpRoutes) {
-      if (route.method === method && pathname === route.path) {
-        return route.handler(req);
-      }
-    }
+  // --- Send ---
+  if (pathname === "/api/send" && method === "POST") return handleApiSend(req, ctx);
 
-    // 2. Built-in routes via table
-    for (const route of routes) {
-      if (matchRoute(route, method, pathname)) {
-        return route.handler(req, url, ctx);
-      }
-    }
+  // --- Chat ---
+  if (pathname === "/api/chat" && method === "POST") return handleApiChat(req, ctx);
+  if (pathname === "/api/chat/stream" && method === "POST") return handleApiChatStream(req, ctx);
 
-    // 3. Static files (/ and /web/*)
-    if (pathname === "/" || pathname.startsWith("/web/")) {
-      return serveStaticFile(pathname, ctx);
-    }
+  // --- Sessions ---
+  if (pathname === "/api/sessions" && method === "GET") return handleSessionsList(req, url, ctx);
+  if (pathname.startsWith("/api/sessions/") && method === "GET") return handleSessionDetail(req, url, ctx);
 
-    return new Response("Not Found", { status: 404 });
-  };
-}
+  if (pathname.startsWith("/api/transcript/") && method === "GET") {
+    const key = decodeURIComponent(pathname.slice("/api/transcript/".length));
+    const lastN = parseInt(url.searchParams.get("last") ?? "100", 10);
+    const entries = ctx.transcripts.readTranscript(key, lastN);
+    return Response.json({ sessionKey: key, count: entries.length, entries });
+  }
 
-// ============================================================================
-// Handler Stubs
-// ============================================================================
-// These will be filled with implementations extracted from server.ts in P2.
-// For now they serve as the contract — each matches the RouteHandler signature.
-//
-// Handlers already extracted to other modules:
-//   - handleToolsList, handleToolCall     → gateway/tool-executor.ts
-//   - handleSessionsList, handleSessionDetail, handleSessionReset → gateway/session-api.ts
-//   - handleMediaServe                    → api/media-routes.ts
-//   - handleMediaSend                     → api/media-send.ts
+  if (pathname === "/api/transcripts" && method === "GET") {
+    return Response.json({ sessions: ctx.transcripts.listSessions() });
+  }
 
-// --- Stubs for handlers still in server.ts ---
+  if (pathname === "/api/session/reset" && method === "POST") return handleSessionReset(req, url, ctx);
+  if (pathname === "/api/session/think" && method === "POST") return handleSessionThink(req, url, ctx);
+  if (pathname === "/api/session/model" && method === "POST") return handleSessionModel(req, url, ctx);
+  if (pathname === "/api/models" && method === "GET") return handleModelsList(req, url, ctx);
+  if (pathname === "/api/session/usage" && method === "GET") return handleSessionUsage(req, url, ctx);
 
-function handleHealth(ctx: GatewayContext): Response {
-  return Response.json({
-    status: "ok",
-    pool: ctx.pool.getStats(),
-    queue: ctx.queue.getStats(),
-    sessions: ctx.sessions.size,
-  });
-}
+  // --- Cron ---
+  if (pathname.startsWith("/api/cron/") && ctx.cron) {
+    const cronResponse = handleCronApi(req, url, ctx.cron, ctx.config);
+    if (cronResponse instanceof Promise) return await cronResponse;
+    if (cronResponse) return cronResponse;
+  }
 
-// Placeholder types — these will be replaced with real imports in P2
-const handleMetrics: RouteHandler = async (_req, _url, _ctx) => new Response("Not implemented", { status: 501 });
-const handleApiSend: RouteHandler = async (_req, _url, _ctx) => new Response("Not implemented", { status: 501 });
-const handleApiChat: RouteHandler = async (_req, _url, _ctx) => new Response("Not implemented", { status: 501 });
-const handleApiChatStream: RouteHandler = async (_req, _url, _ctx) => new Response("Not implemented", { status: 501 });
-const handleSessionsList: RouteHandler = async (_req, _url, _ctx) => new Response("Not implemented", { status: 501 });
-const handleSessionDetail: RouteHandler = async (_req, _url, _ctx) => new Response("Not implemented", { status: 501 });
-const handleTranscript: RouteHandler = async (_req, _url, _ctx) => new Response("Not implemented", { status: 501 });
-const handleTranscriptsList: RouteHandler = async (_req, _url, _ctx) => new Response("Not implemented", { status: 501 });
-const handleSessionReset: RouteHandler = async (_req, _url, _ctx) => new Response("Not implemented", { status: 501 });
-const handleSessionThink: RouteHandler = async (_req, _url, _ctx) => new Response("Not implemented", { status: 501 });
-const handleSessionModel: RouteHandler = async (_req, _url, _ctx) => new Response("Not implemented", { status: 501 });
-const handleSessionUsage: RouteHandler = async (_req, _url, _ctx) => new Response("Not implemented", { status: 501 });
-const handleModelsList: RouteHandler = async (_req, _url, _ctx) => new Response("Not implemented", { status: 501 });
-const handleCronApi: RouteHandler = async (_req, _url, _ctx) => new Response("Not implemented", { status: 501 });
-const handleMemorySearch: RouteHandler = async (_req, _url, _ctx) => new Response("Not implemented", { status: 501 });
-const handleMemoryStats: RouteHandler = async (_req, _url, _ctx) => new Response("Not implemented", { status: 501 });
-const handleMemoryRoles: RouteHandler = async (_req, _url, _ctx) => new Response("Not implemented", { status: 501 });
-const handleOpenAICompat: RouteHandler = async (_req, _url, _ctx) => new Response("Not implemented", { status: 501 });
-const handlePoolStatus: RouteHandler = async (_req, _url, _ctx) => new Response("Not implemented", { status: 501 });
-const handlePluginsList: RouteHandler = async (_req, _url, _ctx) => new Response("Not implemented", { status: 501 });
-const handleToolsList: RouteHandler = async (_req, _url, _ctx) => new Response("Not implemented", { status: 501 });
-const handleToolCall: RouteHandler = async (_req, _url, _ctx) => new Response("Not implemented", { status: 501 });
-const handleWebhookWake: RouteHandler = async (_req, _url, _ctx) => new Response("Not implemented", { status: 501 });
-const handleWebhookEvent: RouteHandler = async (_req, _url, _ctx) => new Response("Not implemented", { status: 501 });
-const handleMediaServe: RouteHandler = async (_req, _url, _ctx) => new Response("Not implemented", { status: 501 });
-const handleMediaSend: RouteHandler = async (_req, _url, _ctx) => new Response("Not implemented", { status: 501 });
+  // --- Memory ---
+  if (pathname === "/api/memory/search" && method === "GET") {
+    const role = url.searchParams.get("role") ?? "default";
+    const query = url.searchParams.get("q") ?? "";
+    const max = parseInt(url.searchParams.get("max") ?? "20", 10);
+    if (!query) return Response.json({ error: "q parameter required" }, { status: 400 });
+    return Response.json({ role, query, results: searchMemory(role, query, { maxResults: max }) });
+  }
+  if (pathname === "/api/memory/stats" && method === "GET") {
+    const role = url.searchParams.get("role") ?? "default";
+    const stats = getMemoryStats(role);
+    if (!stats) return Response.json({ error: "Role not found" }, { status: 404 });
+    return Response.json(stats);
+  }
+  if (pathname === "/api/memory/roles" && method === "GET") {
+    return Response.json({ roles: listRoles().map((r) => getRoleInfo(r)).filter(Boolean) });
+  }
 
-function serveStaticFile(_pathname: string, _ctx: GatewayContext): Response {
-  return new Response("Not implemented", { status: 501 });
+  // --- OpenAI compat ---
+  if (pathname === "/v1/chat/completions" && method === "POST") return handleOpenAiChat(req, ctx);
+
+  // --- Pool ---
+  if (pathname === "/api/pool" && method === "GET") {
+    const clients = ctx.pool.getAllClients();
+    return Response.json({
+      stats: ctx.pool.getStats(),
+      processes: clients.map((c) => ({
+        id: c.id, sessionKey: c.sessionKey, isAlive: c.isAlive,
+        isIdle: c.isIdle, lastActivity: c.lastActivity,
+      })),
+    });
+  }
+
+  // --- Plugins ---
+  if (pathname === "/api/plugins") {
+    return Response.json({
+      channels: Array.from(ctx.registry.channels.keys()),
+      tools: Array.from(ctx.registry.tools.keys()),
+      commands: Array.from(ctx.registry.commands.keys()),
+      hooks: ctx.registry.hooks.getRegistered(),
+    });
+  }
+
+  // --- Tools ---
+  if (pathname === "/api/tools" && method === "GET") return handleToolsList(req, url, ctx);
+  if (pathname === "/api/tools/call" && method === "POST") return handleToolCall(req, url, ctx);
+
+  // --- Webhooks ---
+  const hooksBase = ctx.config.hooks.path ?? "/hooks";
+  if (pathname === `${hooksBase}/wake` && method === "POST") return handleWebhookWake(req, ctx);
+  if (pathname === `${hooksBase}/event` && method === "POST") return handleWebhookEvent(req, ctx);
+
+  // --- Media ---
+  if (pathname.startsWith("/api/media/") && method === "GET") return handleMediaServe(url, ctx.config);
+  if (pathname === "/api/media/send" && method === "POST") {
+    return handleMediaSendRequest(req, {
+      config: ctx.config, pool: ctx.pool, registry: ctx.registry,
+      sessions: ctx.sessions, log: ctx.log, broadcastToWs: ctx.broadcastToWs,
+    });
+  }
+
+  // --- Static files ---
+  if (pathname === "/" || pathname.startsWith("/web/")) {
+    return serveStaticFile(pathname, ctx.noGui);
+  }
+
+  return new Response("Not Found", { status: 404 });
 }
