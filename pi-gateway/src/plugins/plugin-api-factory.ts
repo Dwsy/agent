@@ -52,6 +52,9 @@ export function createPluginApi(
     },
 
     registerTool(tool: ToolPlugin) {
+      if (ctx.registry.tools.has(tool.name)) {
+        pluginLogger.warn(`Tool "${tool.name}" already registered by another plugin, overwriting`);
+      }
       ctx.registry.tools.set(tool.name, tool);
       pluginLogger.info(`Registered tool: ${tool.name}`);
     },
@@ -61,6 +64,10 @@ export function createPluginApi(
     },
 
     registerHttpRoute(method: string, path: string, handler: HttpHandler) {
+      const dup = ctx.registry.httpRoutes.find(r => r.method === method.toUpperCase() && r.path === path);
+      if (dup) {
+        pluginLogger.warn(`HTTP route ${method.toUpperCase()} ${path} already registered by ${dup.pluginId}, adding duplicate`);
+      }
       ctx.registry.httpRoutes.push({ method: method.toUpperCase(), path, handler, pluginId });
       pluginLogger.info(`Registered HTTP route: ${method} ${path}`);
     },
@@ -79,6 +86,10 @@ export function createPluginApi(
       if (!normalized) {
         pluginLogger.warn("Skipped empty command registration");
         return;
+      }
+      const existing = ctx.registry.commands.get(normalized);
+      if (existing) {
+        pluginLogger.warn(`Command "/${normalized}" already registered by ${existing.pluginId}, overwriting`);
       }
       ctx.registry.commands.set(normalized, { pluginId, handler });
       pluginLogger.info(`Registered command: /${normalized}`);
