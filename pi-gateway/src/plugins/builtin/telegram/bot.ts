@@ -15,6 +15,9 @@ export async function createAccountRuntime(
   applyProxyEnv(account.cfg.proxy);
 
   const bot = new Bot(account.token);
+  bot.catch((err) => {
+    runtime.api.logger.error(`[telegram:${account.accountId}] grammy error: ${err.message ?? err}`);
+  });
   bot.use(sequentialize((ctx) => {
     const chatId = ctx.chat?.id;
     if (!chatId) return undefined;

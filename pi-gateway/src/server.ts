@@ -19,7 +19,7 @@ import { loadConfig, ensureDataDir, type Config, type CronJob, resolveConfigPath
 import { RpcPool } from "./core/rpc-pool.ts";
 import { MessageQueueManager, type PrioritizedWork } from "./core/message-queue.ts";
 import { resolveSessionKey, resolveAgentId, getCwdForRole } from "./core/session-router.ts";
-import { createLogger as createConsoleLogger, type Logger, type InboundMessage, type SessionKey, type SessionState, type WsFrame } from "./core/types.ts";
+import { createLogger as createConsoleLogger, setLogLevel, type Logger, type InboundMessage, type SessionKey, type SessionState, type WsFrame } from "./core/types.ts";
 import { SessionStore } from "./core/session-store.ts";
 import { initFileLogger, createFileLogger } from "./core/logger-file.ts";
 import { CronEngine } from "./core/cron.ts";
@@ -88,6 +88,7 @@ export class Gateway {
   constructor(options: GatewayOptions = {}) {
     this.config = loadConfig(options.configPath);
     if (options.port) this.config.gateway.port = options.port;
+    if (this.config.gateway.logLevel) setLogLevel(this.config.gateway.logLevel);
     this.noGui = options.noGui ?? false;
 
     // Initialize file logging if configured
