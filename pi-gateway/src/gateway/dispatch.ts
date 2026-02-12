@@ -28,7 +28,7 @@ export function extractTelegramAccountId(sessionKey: SessionKey, sourceAccountId
   return matched?.[1] ?? "default";
 }
 
-export function resolveTelegramMessageMode(
+export function resolveTelegramMsgMode(
   sessionKey: SessionKey,
   ctx: GatewayContext,
   sourceAccountId?: string,
@@ -55,7 +55,7 @@ export function resolveMessageMode(
   if (override) return override;
 
   if (source.channel === "telegram") {
-    return resolveTelegramMessageMode(sessionKey, ctx, source.accountId);
+    return resolveTelegramMsgMode(sessionKey, ctx, source.accountId);
   }
 
   return ctx.config.agent.messageMode ?? "steer";
@@ -130,7 +130,7 @@ export async function deliverHeartbeatAlert(
  * Dispatch an inbound message to the agent pipeline.
  * Called by channel plugins and WebChat.
  */
-export async function dispatch(msg: InboundMessage, ctx: GatewayContext): Promise<void> {
+export async function dispatchMessage(msg: InboundMessage, ctx: GatewayContext): Promise<void> {
   // Layer 0: Deduplication
   if (ctx.config.queue.dedup.enabled && ctx.dedup.isDuplicate(msg)) {
     ctx.log.debug(`Dedup: skipping duplicate message from ${msg.source.senderId} on ${msg.source.channel}`);

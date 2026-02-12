@@ -1358,6 +1358,14 @@ class GwChat extends LitElement {
         }
         this._scrollBottom();
       }),
+      // Agent-initiated text messages via send_message tool (v3.4 T1)
+      gw.on("message_event", (p) => {
+        if (p.sessionKey && p.sessionKey !== this.sessionKey) return;
+        if (p.type === "text" && p.text) {
+          this.messages = [...this.messages, { role: "assistant", text: p.text }];
+          this._scrollBottom();
+        }
+      }),
     );
   }
 

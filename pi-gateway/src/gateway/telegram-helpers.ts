@@ -10,15 +10,8 @@ import { existsSync, renameSync } from "node:fs";
 import { join } from "node:path";
 import type { Config } from "../core/config.ts";
 import type { SessionStore } from "../core/session-store.ts";
+import { encodeSessionDir, getSessionDir } from "../core/session-store.ts";
 import type { Logger } from "../core/types.ts";
-
-function getSessionDir(dataDir: string, sessionKey: string): string {
-  return join(dataDir, "sessions", encodeSessionDir(sessionKey));
-}
-
-function encodeSessionDir(sessionKey: string): string {
-  return sessionKey.replace(/:/g, "_");
-}
 
 /**
  * Migrate old Telegram session keys (agent:main:telegram:dm:*)

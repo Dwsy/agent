@@ -20,6 +20,7 @@ export interface MessageSendContext {
   registry: PluginRegistryState;
   sessions: SessionStore;
   log: Logger;
+  broadcastToWs?: (event: string, payload: unknown) => void;
 }
 
 export async function handleMessageSendRequest(
@@ -78,6 +79,20 @@ export async function handleMessageSendRequest(
   ctx.log.info(`[message-send] channel=${channel} chatId=${chatId} text=${text.length} chars replyTo=${replyTo ?? "none"}`);
 
   try {
+    // WebChat: broadcast via WS (sendText is no-op for webchat plugin)
+    if (channel === "webchat" && ctx.broadcastToWs) {
+      ctx.broadcastToWs("message_event", {
+        sessionKey,
+        type: "text",
+        text,
+        replyTo: replyTo ?? null,
+        parseMode: parseMode ?? null,
+        timestamp: Date.now(),
+      });
+      ctx.log.info(`[message-send] WebChat message_event broadcast for ${sessionKey}`);
+      return Response.json({ ok: true, channel, textLength: text.length, delivered: true });
+    }
+
     await channelPlugin.outbound.sendText(chatId, text, { replyTo, parseMode });
 
     return Response.json({
