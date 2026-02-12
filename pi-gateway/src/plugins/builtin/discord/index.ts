@@ -1,7 +1,7 @@
 import { Client, GatewayIntentBits, Partials } from "discord.js";
-import type { ChannelPlugin, GatewayPluginApi, MediaSendResult, MediaSendOptions } from "../../types.ts";
+import type { ChannelPlugin, GatewayPluginApi, MediaSendResult, MediaSendOptions, ChannelStreamingAdapter, ChannelSecurityAdapter, MessageSendResult } from "../../types.ts";
 import type { DiscordChannelConfig, DiscordPluginRuntime } from "./types.ts";
-import { handleMessage, handleInteraction, sendOutbound, sendMediaOutbound } from "./handlers.ts";
+import { handleMessage, handleInteraction, sendOutbound, sendMediaOutbound, createDiscordStreamingAdapter } from "./handlers.ts";
 import { registerGuildCommands } from "./commands.ts";
 import { splitDiscordText } from "./format.ts";
 
@@ -21,9 +21,9 @@ const discordPlugin: ChannelPlugin = {
   },
   outbound: {
     maxLength: 2000,
-    async sendText(target: string, text: string) {
-      if (!runtime) return;
-      await sendOutbound(runtime, target, text);
+    async sendText(target: string, text: string): Promise<MessageSendResult> {
+      if (!runtime) return { ok: false, error: "Discord not initialized" };
+      return sendOutbound(runtime, target, text);
     },
     async sendMedia(target: string, filePath: string, opts?: MediaSendOptions): Promise<MediaSendResult> {
       if (!runtime) return { ok: false, error: "Discord not initialized" };
@@ -54,6 +54,16 @@ const discordPlugin: ChannelPlugin = {
       api.logger.info(`Discord: logged in as ${client.user!.tag} (${clientId})`);
 
       runtime = { api, channelCfg: cfg, client, clientId };
+
+      // Wire streaming adapter (needs runtime)
+      discordPlugin.streaming = createDiscordStreamingAdapter(() => runtime);
+
+      // Wire security adapter
+      discordPlugin.security = {
+        dmPolicy: (cfg.dmPolicy as any) ?? "pairing",
+        dmAllowFrom: cfg.dm?.allowFrom,
+        supportsPairing: true,
+      };
 
       // Register slash commands to all guilds
       await registerGuildCommands(runtime);
