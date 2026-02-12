@@ -106,7 +106,7 @@ export default function register(api) {
     id: "telegram",
     meta: { label: "External Telegram" },
     capabilities: { direct: true },
-    outbound: { async sendText() {} },
+    outbound: { async sendText() { return { ok: true }; } },
     async init() {},
     async start() {},
     async stop() {},

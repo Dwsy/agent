@@ -212,7 +212,7 @@ describe("v3.3 media-send: type inference", () => {
       meta: { name: "Telegram", description: "Telegram" },
       capabilities: { direct: true, media: true },
       outbound: {
-        sendText: async () => {},
+        sendText: async () => ({ ok: true }),
         maxLength: 4096,
         // No sendMedia — triggers delivered:false fallback
       },
@@ -347,7 +347,7 @@ describe("v3.3 media-send: edge cases", () => {
       id: "telegram",
       meta: { name: "Telegram", description: "Telegram" },
       capabilities: { direct: true, media: true },
-      outbound: { sendText: async () => {} },
+      outbound: { sendText: async () => ({ ok: true }) },
       init: async () => {},
       start: async () => {},
       stop: async () => {},
@@ -393,7 +393,7 @@ describe("v3.3 media-send: edge cases", () => {
       meta: { name: "Telegram", description: "Telegram" },
       capabilities: { direct: true, media: true },
       outbound: {
-        sendText: async () => {},
+        sendText: async () => ({ ok: true }),
         sendMedia: async () => ({ ok: true }),
       },
       init: async () => {},
@@ -431,7 +431,7 @@ describe("v3.3 media-send: direct delivery", () => {
       meta: { name: "Telegram", description: "Telegram" },
       capabilities: { direct: true, media: true },
       outbound: {
-        sendText: async () => {},
+        sendText: async () => ({ ok: true }),
         sendMedia: async (target: string, filePath: string, opts: any) => {
           capturedArgs = { target, filePath, opts };
           return { ok: true, messageId: "tg-msg-42" };
@@ -473,7 +473,7 @@ describe("v3.3 media-send: direct delivery", () => {
       meta: { name: "Telegram", description: "Telegram" },
       capabilities: { direct: true, media: true },
       outbound: {
-        sendText: async () => {},
+        sendText: async () => ({ ok: true }),
         sendMedia: async () => { throw new Error("Telegram API down"); },
       },
       init: async () => {},
@@ -502,7 +502,7 @@ describe("v3.3 media-send: direct delivery", () => {
       meta: { name: "Telegram", description: "Telegram" },
       capabilities: { direct: true, media: true },
       outbound: {
-        sendText: async () => {},
+        sendText: async () => ({ ok: true }),
         sendMedia: async () => ({ ok: false, error: "File too large" }),
       },
       init: async () => {},
