@@ -105,6 +105,9 @@ export interface MediaSendResult {
   error?: string;
 }
 
+/** Result from sendText when message ID tracking is needed */
+export type MessageSendResult = MediaSendResult;
+
 export interface ChannelPlugin {
   /** Unique channel identifier, e.g. "telegram", "discord", "webchat" */
   id: string;

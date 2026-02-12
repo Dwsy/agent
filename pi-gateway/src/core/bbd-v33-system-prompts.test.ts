@@ -40,9 +40,9 @@ function bareConfig(overrides?: Partial<Config>): Config {
 /** Config with Telegram enabled */
 function telegramConfig(overrides?: Partial<Config>): Config {
   return bareConfig({
-    channels: { telegram: { accounts: [{ token: "fake", allowFrom: [] }] } },
+    channels: { telegram: { enabled: true, accounts: { default: { botToken: "fake", allowFrom: [] } } } },
     ...overrides,
-  });
+  } as any);
 }
 
 /** Config with multiple agents */
@@ -82,9 +82,9 @@ describe("Layer 1: Gateway Identity", () => {
 
   test("SP-12: identity prompt lists enabled capabilities", () => {
     const config = bareConfig({
-      heartbeat: { enabled: true, intervalMs: 60000 },
+      heartbeat: { enabled: true, every: "1m" },
       cron: { enabled: true },
-      channels: { telegram: { accounts: [{ token: "t", allowFrom: [] }] } },
+      channels: { telegram: { accounts: { default: { botToken: "t", allowFrom: [] } } } },
       agents: { default: "main", list: [{ id: "main", workspace: "/tmp" }, { id: "b", workspace: "/tmp" }] },
     });
     const result = buildGatewayIdentityPrompt(config);
@@ -102,7 +102,7 @@ describe("Layer 1: Gateway Identity", () => {
     const result = buildGatewaySystemPrompt(config);
     expect(result).not.toContain("## Gateway Environment");
     // But media segment should still be present
-    expect(result).toContain("## Gateway: Media Replies");
+    expect(result).toContain("## Gateway: Media & Message Tools");
   });
 });
 
@@ -112,14 +112,14 @@ describe("Layer 1: Gateway Identity", () => {
 
 describe("Layer 2: Heartbeat", () => {
   test("SP-15: heartbeat segment injected when heartbeat.enabled=true", () => {
-    const config = bareConfig({ heartbeat: { enabled: true, intervalMs: 60000 } });
+    const config = bareConfig({ heartbeat: { enabled: true, every: "1m" } });
     const result = buildGatewaySystemPrompt(config);
     expect(result).toContain("## Gateway: Heartbeat Protocol");
     expect(result).toContain("HEARTBEAT_OK");
   });
 
   test("SP-16: heartbeat segment NOT injected when heartbeat.enabled=false", () => {
-    const config = bareConfig({ heartbeat: { enabled: false, intervalMs: 60000 } });
+    const config = bareConfig({ heartbeat: { enabled: false, every: "1m" } });
     const result = buildGatewaySystemPrompt(config);
     // May be null or not contain heartbeat
     if (result) expect(result).not.toContain("## Gateway: Heartbeat Protocol");
@@ -127,7 +127,7 @@ describe("Layer 2: Heartbeat", () => {
 
   test("SP-17: alwaysHeartbeat=true injects heartbeat even when disabled", () => {
     const config = bareConfig({
-      heartbeat: { enabled: false, intervalMs: 60000 },
+      heartbeat: { enabled: false, every: "1m" },
       agent: { gatewayPrompts: { alwaysHeartbeat: true } },
     });
     const result = buildGatewaySystemPrompt(config);
@@ -162,14 +162,14 @@ describe("Layer 2: Media", () => {
   test("SP-20: media segment injected when channel active", () => {
     const config = telegramConfig();
     const result = buildGatewaySystemPrompt(config);
-    expect(result).toContain("## Gateway: Media Replies");
+    expect(result).toContain("## Gateway: Media & Message Tools");
     expect(result).toContain("MEDIA:<relative-path>");
   });
 
   test("SP-21: media segment NOT injected when no channels", () => {
     const config = bareConfig();
     const result = buildGatewaySystemPrompt(config);
-    if (result) expect(result).not.toContain("## Gateway: Media Replies");
+    if (result) expect(result).not.toContain("## Gateway: Media & Message Tools");
   });
 });
 
@@ -215,7 +215,7 @@ describe("Layer 2: Channel Hints", () => {
   });
 
   test("SP-26: Discord hints included when Discord enabled", () => {
-    const config = bareConfig({ channels: { discord: { token: "fake" } } });
+    const config = bareConfig({ channels: { discord: { enabled: true, token: "fake" } } });
     const segment = buildChannelSegment(config);
     expect(segment).toContain("### Discord");
     expect(segment).toContain("2000");
@@ -236,9 +236,9 @@ describe("Layer 2: Channel Hints", () => {
 describe("Full Assembly", () => {
   test("SP-28: all features enabled produces all segments in order", () => {
     const config = bareConfig({
-      heartbeat: { enabled: true, intervalMs: 60000 },
+      heartbeat: { enabled: true, every: "1m" },
       cron: { enabled: true },
-      channels: { telegram: { accounts: [{ token: "t", allowFrom: [] }] } },
+      channels: { telegram: { accounts: { default: { botToken: "t", allowFrom: [] } } } },
       agents: { default: "main", list: [{ id: "main", workspace: "/tmp" }, { id: "helper", workspace: "/tmp" }] },
     });
     const result = buildGatewaySystemPrompt(config)!;
@@ -248,7 +248,7 @@ describe("Full Assembly", () => {
     expect(result).toContain("## Gateway Environment");
     expect(result).toContain("## Gateway: Heartbeat Protocol");
     expect(result).toContain("## Gateway: Scheduled Tasks");
-    expect(result).toContain("## Gateway: Media Replies");
+    expect(result).toContain("## Gateway: Media & Message Tools");
     expect(result).toContain("## Gateway: Agent Delegation");
     expect(result).toContain("## Gateway: Channel Formatting");
 
@@ -256,7 +256,7 @@ describe("Full Assembly", () => {
     const idxIdentity = result.indexOf("## Gateway Environment");
     const idxHeartbeat = result.indexOf("## Gateway: Heartbeat Protocol");
     const idxCron = result.indexOf("## Gateway: Scheduled Tasks");
-    const idxMedia = result.indexOf("## Gateway: Media Replies");
+    const idxMedia = result.indexOf("## Gateway: Media & Message Tools");
     expect(idxIdentity).toBeLessThan(idxHeartbeat);
     expect(idxHeartbeat).toBeLessThan(idxCron);
     expect(idxCron).toBeLessThan(idxMedia);
@@ -270,12 +270,12 @@ describe("Full Assembly", () => {
 
   test("SP-30: config overrides can force-disable individual segments", () => {
     const config = telegramConfig({
-      heartbeat: { enabled: true, intervalMs: 60000 },
+      heartbeat: { enabled: true, every: "1m" },
       agent: { gatewayPrompts: { heartbeat: false, channel: false } },
     });
     const result = buildGatewaySystemPrompt(config)!;
     expect(result).toContain("## Gateway Environment"); // identity still on
-    expect(result).toContain("## Gateway: Media Replies"); // media still on
+    expect(result).toContain("## Gateway: Media & Message Tools"); // media still on
     expect(result).not.toContain("## Gateway: Heartbeat Protocol"); // forced off
     expect(result).not.toContain("## Gateway: Channel Formatting"); // forced off
   });
