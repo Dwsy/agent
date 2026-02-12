@@ -401,6 +401,9 @@ async function dispatchAgentTurn(params: {
   // 标记是否已收到过内容（用于判断是否需要显示初始 spinner）
   let hasReceivedContent = false;
 
+  // Bug 2 修复：标记工具调用后是否有新文本
+  let toolCallSinceLastText = false;
+
   await runtime.api.dispatch({
     source,
     sessionKey,
@@ -432,12 +435,18 @@ async function dispatchAgentTurn(params: {
 
       // Text started — keep thinking in contentSequence (shown as blockquote in final reply)
 
-      // Update or add text entry
-      const lastTextIndex = contentSequence.findLastIndex(c => c.type === 'text');
-      if (lastTextIndex >= 0) {
-        contentSequence[lastTextIndex].content = accumulated;
-      } else {
+      // Bug 2 修复：工具调用后的新文本创建新的 text entry
+      if (toolCallSinceLastText) {
         contentSequence.push({ type: 'text', content: accumulated });
+        toolCallSinceLastText = false;
+      } else {
+        // Update or add text entry
+        const lastTextIndex = contentSequence.findLastIndex(c => c.type === 'text');
+        if (lastTextIndex >= 0) {
+          contentSequence[lastTextIndex].content = accumulated;
+        } else {
+          contentSequence.push({ type: 'text', content: accumulated });
+        }
       }
 
       if (!replyMsgId && contentSequence.length === 0 && accumulated.length < streamCfg.streamStartChars) return;
@@ -453,6 +462,7 @@ async function dispatchAgentTurn(params: {
       const line = `→ ${formatToolStartLine(toolName, args)}`;
       // 按顺序添加工具调用
       contentSequence.push({ type: 'tool', content: line });
+      toolCallSinceLastText = true; // Bug 2 修复：标记工具调用后有新文本
       pushLiveUpdate();
     },
     respond: async (reply: string) => {
