@@ -250,6 +250,17 @@ export class RpcPool {
     return this.clients.get(id) ?? null;
   }
 
+  /**
+   * Find a client by its child process PID.
+   * Used by gateway-tools extension to resolve session from PID.
+   */
+  getByPid(pid: number): RpcClient | null {
+    for (const client of this.clients.values()) {
+      if (client.pid === pid) return client;
+    }
+    return null;
+  }
+
   // ==========================================================================
   // Stats
   // ==========================================================================

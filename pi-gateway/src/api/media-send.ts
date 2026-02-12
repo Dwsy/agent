@@ -9,7 +9,7 @@
  */
 
 import { existsSync } from "node:fs";
-import { resolve as pathResolve } from "node:path";
+import { resolve as pathResolve, isAbsolute } from "node:path";
 import type { Config } from "../core/config.ts";
 import type { SessionKey } from "../core/types.ts";
 import { validateMediaPath } from "../core/media-security.ts";
@@ -18,8 +18,28 @@ import type { Logger } from "../core/types.ts";
 import type { PluginRegistryState } from "../plugins/loader.ts";
 import type { SessionStore } from "../core/session-store.ts";
 
+/** Allowed absolute path prefixes for agent tool calls (send_media). */
+const ALLOWED_ABSOLUTE_PREFIXES = [
+  "/tmp/",
+  "/private/tmp/",
+  "/var/folders/",  // macOS per-user temp
+];
+
+/**
+ * Check if an absolute path is allowed for send_media.
+ * Agent tools can access temp dirs; other absolute paths are blocked.
+ */
+function isAllowedAbsolutePath(filePath: string, workspace: string): boolean {
+  if (!isAbsolute(filePath)) return false;
+  // Allow files within workspace (absolute workspace path)
+  const resolvedWorkspace = pathResolve(workspace);
+  if (filePath.startsWith(resolvedWorkspace + "/")) return true;
+  // Allow known temp directories
+  return ALLOWED_ABSOLUTE_PREFIXES.some(prefix => filePath.startsWith(prefix));
+}
+
 const PHOTO_EXTS = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp"]);
-const AUDIO_EXTS = new Set(["mp3", "ogg", "wav", "m4a", "flac"]);
+const AUDIO_EXTS = new Set(["mp3", "ogg", "wav", "m4a", "flac", "aiff", "aac", "opus", "wma"]);
 const VIDEO_EXTS = new Set(["mp4", "webm", "mov", "avi"]);
 
 export interface MediaSendContext {
@@ -42,8 +62,9 @@ export async function handleMediaSendRequest(
     return Response.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const sessionKey = typeof body.sessionKey === "string" ? body.sessionKey.trim() : "";
+  let sessionKey = typeof body.sessionKey === "string" ? body.sessionKey.trim() : "";
   const internalToken = typeof body.token === "string" ? body.token.trim() : "";
+  const callerPid = typeof body.pid === "number" ? body.pid : 0;
   const filePath = typeof body.path === "string" ? body.path.trim() : "";
   const caption = typeof body.caption === "string" ? body.caption.trim() : undefined;
   const mediaType = typeof body.type === "string" ? body.type.trim() : undefined;
@@ -62,21 +83,40 @@ export async function handleMediaSendRequest(
     if (internalToken !== expected) {
       return Response.json({ error: "Invalid token" }, { status: 403 });
     }
+    // Resolve session key from caller PID (extension passes process.pid)
+    if (callerPid > 0) {
+      const client = ctx.pool.getByPid(callerPid);
+      if (client?.sessionKey) {
+        sessionKey = client.sessionKey;
+        ctx.log.info(`[media-send] resolved session from PID ${callerPid}: ${sessionKey}`);
+      } else {
+        ctx.log.warn(`[media-send] PID ${callerPid} not found in pool — cannot resolve session`);
+      }
+    }
   } else {
     return Response.json({ error: "Missing sessionKey or token" }, { status: 400 });
   }
 
-  // Resolve workspace
+  // Resolve workspace — prefer RPC client's CWD (where agent creates files)
   const agentId = sessionKey ? (sessionKey.split(":")[1] || "main") : "main";
   const agentDef = ctx.config.agents?.list.find((a) => a.id === agentId);
-  const workspace = agentDef?.workspace ?? process.cwd();
+  const rpcClient = sessionKey ? ctx.pool.getForSession(sessionKey as SessionKey) : (callerPid > 0 ? ctx.pool.getByPid(callerPid) : null);
+  const workspace = rpcClient?.cwd ?? agentDef?.workspace ?? process.cwd();
 
-  // Validate path security
-  if (!validateMediaPath(filePath, workspace)) {
-    return Response.json({ error: "Path blocked by security policy" }, { status: 403 });
+  // Path validation: absolute paths use allowlist, relative paths use strict workspace check
+  let fullPath: string;
+  if (isAbsolute(filePath)) {
+    if (!isAllowedAbsolutePath(filePath, workspace)) {
+      return Response.json({ error: "Absolute path not in allowed directories" }, { status: 403 });
+    }
+    fullPath = filePath;
+  } else {
+    if (!validateMediaPath(filePath, workspace)) {
+      return Response.json({ error: "Path blocked by security policy" }, { status: 403 });
+    }
+    fullPath = pathResolve(workspace, filePath);
   }
 
-  const fullPath = pathResolve(workspace, filePath);
   if (!existsSync(fullPath)) {
     return Response.json({ error: "File not found" }, { status: 404 });
   }
@@ -93,6 +133,7 @@ export async function handleMediaSendRequest(
   const chatId = session?.lastChatId;
 
   if (!channel) {
+    ctx.log.warn(`[media-send] no channel: sessionKey=${sessionKey} lastChannel=${session?.lastChannel} sessionExists=${!!session}`);
     return Response.json({ error: "Cannot resolve channel from session" }, { status: 400 });
   }
 

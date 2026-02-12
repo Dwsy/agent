@@ -28,10 +28,12 @@ export default function gatewayTools(pi: ExtensionAPI) {
     description:
       "Send a file (image, audio, document, video) to the current chat via pi-gateway. " +
       "The file is delivered directly to the channel (Telegram/Discord/WebChat). " +
-      "Path must be relative to your workspace (e.g., ./output.png). " +
-      "Type is auto-detected from extension if omitted.",
+      "Path can be relative to workspace (e.g., ./output.png) or absolute temp paths (/tmp/, /var/folders/). " +
+      "Type is auto-detected from extension if omitted. " +
+      "Note: SVG files are NOT supported as images on Telegram — convert to PNG first. " +
+      "Telegram image formats: jpg, jpeg, png, gif, webp, bmp.",
     parameters: Type.Object({
-      path: Type.String({ description: "Relative file path (e.g., ./output.png, ./report.pdf)" }),
+      path: Type.String({ description: "File path — relative (./output.png) or absolute temp path (/tmp/xxx.png)" }),
       caption: Type.Optional(
         Type.String({ description: "Optional caption text sent with the media" }),
       ),
@@ -62,6 +64,7 @@ export default function gatewayTools(pi: ExtensionAPI) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             token: internalToken,
+            pid: process.pid,
             sessionKey: sessionKey || undefined,
             path,
             caption,
@@ -155,6 +158,7 @@ export default function gatewayTools(pi: ExtensionAPI) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             token: internalToken,
+            pid: process.pid,
             sessionKey: sessionKey || undefined,
             text,
             replyTo,

@@ -2,3 +2,4 @@ realtime_cutoff_days = 2
 scan_interval_seconds = 30
 enable_fts5 = true
 preload_count = 20
+session_paths = ["~/.pi/gateway/sessions"]
