@@ -5,8 +5,10 @@ import type * as Lark from "@larksuiteoapi/node-sdk";
 import type { GatewayPluginApi } from "../../types.ts";
 import type { MessageSource } from "../../../core/types.ts";
 import { resolveAgentId, resolveSessionKey } from "../../../core/session-router.ts";
+import { isSenderAllowed, type DmPolicy } from "../../../security/allowlist.ts";
+import { createPairingRequest } from "../../../security/pairing.ts";
 import type { FeishuChannelConfig, FeishuMessageContext, FeishuPluginRuntime } from "./types.ts";
-import { sendFeishuText, sendFeishuCard, chunkText } from "./send.ts";
+import { sendFeishuText, sendFeishuCard, updateFeishuCard, chunkText } from "./send.ts";
 import { resolveInboundMedia } from "./media.ts";
 
 // ── Dedup ──────────────────────────────────────────────────────────────────
@@ -135,13 +137,14 @@ function checkBotMentioned(event: FeishuMessageEvent, botOpenId?: string): boole
 
 // ── DM Policy ──────────────────────────────────────────────────────────────
 
-export function checkDmPolicy(senderId: string, cfg: FeishuChannelConfig): boolean {
-  const policy = cfg.dmPolicy ?? "open";
-  if (policy === "open") return true;
-  if (policy === "allowlist") {
-    return (cfg.allowFrom ?? []).includes(senderId);
-  }
-  return true;
+// ── DM Policy (centralized) ─────────────────────────────────────────────────
+
+export function checkDmPolicy(senderId: string, cfg: FeishuChannelConfig): "allowed" | "pairing" | "blocked" {
+  const policy = (cfg.dmPolicy ?? "open") as DmPolicy;
+  if (policy === "disabled") return "blocked";
+  if (isSenderAllowed("feishu", senderId, policy, cfg.allowFrom)) return "allowed";
+  if (policy === "pairing") return "pairing";
+  return "blocked";
 }
 
 // ── Group Policy ───────────────────────────────────────────────────────────
@@ -226,8 +229,18 @@ async function handleFeishuMessage(
       return;
     }
   } else {
-    if (!checkDmPolicy(ctx.senderOpenId, channelCfg)) {
-      log.info(`feishu: sender ${ctx.senderOpenId} not in allowlist`);
+    const dmResult = checkDmPolicy(ctx.senderOpenId, channelCfg);
+    if (dmResult === "blocked") {
+      log.info(`feishu: sender ${ctx.senderOpenId} blocked by DM policy`);
+      return;
+    }
+    if (dmResult === "pairing") {
+      const code = createPairingRequest("feishu", ctx.senderOpenId);
+      if (code) {
+        await sendFeishuText({ client, to: ctx.chatId, text: `🔑 Pairing code: **${code}**\nSend this to the admin to get access.` });
+      } else {
+        await sendFeishuText({ client, to: ctx.chatId, text: "⏳ Too many pending requests. Try again later." });
+      }
       return;
     }
   }
@@ -269,6 +282,14 @@ async function handleFeishuMessage(
   const { agentId, text: routedText } = resolveAgentId(source, ctx.content, api.config);
   const sessionKey = resolveSessionKey(source, api.config, agentId);
 
+  // Streaming state
+  const streamingEnabled = channelCfg.streamingEnabled ?? true;
+  const throttleMs = channelCfg.streamThrottleMs ?? 1200;
+  const startChars = channelCfg.streamStartChars ?? 50;
+  let cardMsgId: string | null = null;
+  let lastEditAt = 0;
+  let editInFlight = false;
+
   // Dispatch to agent
   await api.dispatch({
     source,
@@ -277,11 +298,52 @@ async function handleFeishuMessage(
     images,
     respond: async (reply: string) => {
       if (!reply.trim()) return;
+      // If streaming was active, do a final card update with complete text
+      if (cardMsgId) {
+        try {
+          await updateFeishuCard({ client, messageId: cardMsgId, text: reply });
+        } catch {
+          // Final update failed — send as new message
+          const chunks = chunkText(reply, channelCfg.textChunkLimit ?? 4000);
+          for (const chunk of chunks) {
+            await sendFeishuCard({ client, to: ctx.chatId, text: chunk });
+          }
+        }
+        return;
+      }
       const chunks = chunkText(reply, channelCfg.textChunkLimit ?? 4000);
       for (const chunk of chunks) {
         await sendFeishuCard({ client, to: ctx.chatId, text: chunk });
       }
     },
     setTyping: async () => {},
+    onStreamDelta: streamingEnabled ? (accumulated: string) => {
+      if (accumulated.length < startChars) return;
+      const now = Date.now();
+
+      // First card: send initial
+      if (!cardMsgId) {
+        if (editInFlight) return;
+        editInFlight = true;
+        sendFeishuCard({ client, to: ctx.chatId, text: accumulated + " ▍" })
+          .then((result) => {
+            cardMsgId = result.messageId;
+            lastEditAt = Date.now();
+            editInFlight = false;
+          })
+          .catch(() => { editInFlight = false; });
+        return;
+      }
+
+      // Throttled updates
+      if (editInFlight || now - lastEditAt < throttleMs) return;
+      editInFlight = true;
+      updateFeishuCard({ client, messageId: cardMsgId, text: accumulated + " ▍" })
+        .then(() => {
+          lastEditAt = Date.now();
+          editInFlight = false;
+        })
+        .catch(() => { editInFlight = false; });
+    } : undefined,
   });
 }

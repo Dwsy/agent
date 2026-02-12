@@ -1,7 +1,8 @@
 /**
  * Feishu channel plugin entry — register with pi-gateway.
  */
-import type { ChannelPlugin, GatewayPluginApi, MessageSendResult } from "../../types.ts";
+import type { ChannelPlugin, GatewayPluginApi, MessageSendResult, ChannelSecurityAdapter } from "../../types.ts";
+import type { DmPolicy } from "../../../security/allowlist.ts";
 import type { FeishuChannelConfig, FeishuPluginRuntime } from "./types.ts";
 import { createFeishuClient, createFeishuWSClient, createEventDispatcher, clearClientCache } from "./client.ts";
 import { registerFeishuEvents } from "./bot.ts";
@@ -72,6 +73,13 @@ const feishuPlugin: ChannelPlugin = {
 
     const client = createFeishuClient(cfg);
     runtime = { api, channelCfg: cfg, client };
+
+    // Wire security adapter from config
+    feishuPlugin.security = {
+      dmPolicy: (cfg.dmPolicy ?? "open") as DmPolicy,
+      dmAllowFrom: cfg.allowFrom,
+      supportsPairing: cfg.dmPolicy === "pairing",
+    };
 
     // Probe bot identity
     try {
