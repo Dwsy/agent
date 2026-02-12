@@ -159,10 +159,24 @@ async function forwardToRpc(
     let cmdResponse = "";
     const cmdUnsub = rpc.onEvent((event) => {
       if (rpc.sessionKey !== msg.sessionKey) return;
-      if ((event as any).type === "message_update") {
-        const ame = (event as any).assistantMessageEvent ?? (event as any).assistant_message_event;
+      const ev = event as any;
+
+      // Collect text_delta from assistant messages
+      if (ev.type === "message_update") {
+        const ame = ev.assistantMessageEvent ?? ev.assistant_message_event;
         if (ame?.type === "text_delta" && ame.delta) {
           cmdResponse += ame.delta;
+        }
+      }
+
+      // Collect content from custom messages (e.g. role-persona sendMessage)
+      if (ev.type === "message_start" || ev.type === "message_end") {
+        const content = ev.message?.content;
+        if (typeof content === "string" && content && ev.message?.display !== false) {
+          // Only capture from message_end to avoid duplicates (start+end have same content)
+          if (ev.type === "message_end") {
+            cmdResponse += content;
+          }
         }
       }
     });
