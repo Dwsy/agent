@@ -8,13 +8,20 @@ export interface FeishuChannelConfig {
   appSecret: string;
   domain?: "feishu" | "lark" | string;
   connectionMode?: "websocket" | "webhook";
-  dmPolicy?: "open" | "allowlist";
+  /** DM policy — aligned with gateway security/allowlist.ts */
+  dmPolicy?: "open" | "allowlist" | "pairing" | "disabled";
   allowFrom?: string[];
-  // v2
+  // Group
   groupPolicy?: "disabled" | "open" | "allowlist";
   groupAllowFrom?: string[];
   requireMention?: boolean;
   textChunkLimit?: number;
+  // Streaming
+  streamingEnabled?: boolean;
+  /** Card patch throttle in ms (default 1200, respecting 5/sec bot limit) */
+  streamThrottleMs?: number;
+  /** Min chars before first card send (default 50) */
+  streamStartChars?: number;
 }
 
 export interface FeishuMessageContext {

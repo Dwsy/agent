@@ -120,7 +120,7 @@ describe("feishu message parsing", () => {
 describe("feishu DM policy", () => {
   test("open policy allows anyone", () => {
     const cfg: FeishuChannelConfig = { enabled: true, appId: "x", appSecret: "x", dmPolicy: "open" };
-    expect(checkDmPolicy("ou_anyone", cfg)).toBe(true);
+    expect(checkDmPolicy("ou_anyone", cfg)).toBe("allowed");
   });
 
   test("allowlist policy blocks unknown sender", () => {
@@ -129,7 +129,7 @@ describe("feishu DM policy", () => {
       dmPolicy: "allowlist",
       allowFrom: ["ou_allowed"],
     };
-    expect(checkDmPolicy("ou_unknown", cfg)).toBe(false);
+    expect(checkDmPolicy("ou_unknown", cfg)).toBe("blocked");
   });
 
   test("allowlist policy allows listed sender", () => {
@@ -138,12 +138,31 @@ describe("feishu DM policy", () => {
       dmPolicy: "allowlist",
       allowFrom: ["ou_allowed"],
     };
-    expect(checkDmPolicy("ou_allowed", cfg)).toBe(true);
+    expect(checkDmPolicy("ou_allowed", cfg)).toBe("allowed");
   });
 
   test("default policy (undefined) is open", () => {
     const cfg: FeishuChannelConfig = { enabled: true, appId: "x", appSecret: "x" };
-    expect(checkDmPolicy("ou_anyone", cfg)).toBe(true);
+    expect(checkDmPolicy("ou_anyone", cfg)).toBe("allowed");
+  });
+
+  test("disabled policy blocks everyone", () => {
+    const cfg: FeishuChannelConfig = { enabled: true, appId: "x", appSecret: "x", dmPolicy: "disabled" };
+    expect(checkDmPolicy("ou_anyone", cfg)).toBe("blocked");
+  });
+
+  test("pairing policy returns pairing for unknown sender", () => {
+    const cfg: FeishuChannelConfig = { enabled: true, appId: "x", appSecret: "x", dmPolicy: "pairing" };
+    expect(checkDmPolicy("ou_unknown", cfg)).toBe("pairing");
+  });
+
+  test("pairing policy allows listed sender", () => {
+    const cfg: FeishuChannelConfig = {
+      enabled: true, appId: "x", appSecret: "x",
+      dmPolicy: "pairing",
+      allowFrom: ["ou_allowed"],
+    };
+    expect(checkDmPolicy("ou_allowed", cfg)).toBe("allowed");
   });
 });
 
