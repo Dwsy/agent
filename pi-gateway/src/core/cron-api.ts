@@ -29,7 +29,7 @@ interface AddJobInput {
   task: string;
   agentId?: string;
   mode?: "isolated" | "main";
-  delivery?: "announce" | "silent";
+  delivery?: CronJob["delivery"];
   deleteAfterRun?: boolean;
   timeoutMs?: number;
 }

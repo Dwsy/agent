@@ -12,9 +12,16 @@ import { Cron } from "croner";
 import { existsSync, readFileSync, writeFileSync, appendFileSync, mkdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { createLogger, type Logger, type InboundMessage } from "./types.ts";
-import type { CronJob, Config } from "./config.ts";
+import type { CronJob, CronDelivery, Config } from "./config.ts";
 import type { SystemEventsQueue } from "./system-events.ts";
 import { resolveMainSessionKey } from "./session-router.ts";
+
+/** Normalize delivery config — string shorthand or full object → CronDelivery */
+function resolveDelivery(raw: CronJob["delivery"]): CronDelivery {
+  if (!raw) return { mode: "announce" };
+  if (typeof raw === "string") return { mode: raw };
+  return raw;
+}
 
 // ============================================================================
 // Types
@@ -25,8 +32,12 @@ export interface CronDispatcher {
 }
 
 export interface CronAnnouncer {
-  /** Deliver cron result to the agent's bound channel(s). */
-  announce(agentId: string, text: string): Promise<void>;
+  /**
+   * Deliver cron result to the user.
+   * mode "announce" → inject into main session for agent retelling
+   * mode "direct"   → send raw text to channel
+   */
+  deliver(agentId: string, text: string, delivery: import("./config.ts").CronDelivery): Promise<void>;
 }
 
 export interface CronRunRecord {
@@ -331,13 +342,13 @@ export class CronEngine {
           ),
         ]);
 
-        const delivery = job.delivery ?? "announce";
-        // Skip announce for HEARTBEAT_OK-only responses (OpenClaw pattern:
+        const delivery = resolveDelivery(job.delivery);
+        // Skip delivery for HEARTBEAT_OK-only responses (OpenClaw pattern:
         // strip token, check remaining length — short acks are not worth delivering)
         const stripped = responseText.replace(/HEARTBEAT_OK/gi, "").trim();
         const isAckOnly = stripped.length < 300;
-        if (delivery === "announce" && responseText && !isAckOnly && this.announcer) {
-          await this.announcer.announce(agentId, `[CRON:${job.id}] ${responseText}`);
+        if (delivery.mode !== "silent" && responseText && !isAckOnly && this.announcer) {
+          await this.announcer.deliver(agentId, `[CRON:${job.id}] ${responseText}`, delivery);
         }
 
         this.recordRun({ jobId: job.id, startedAt, finishedAt: Date.now(), durationMs: Date.now() - startedAt, status: "completed", resultPreview: responseText.slice(0, 200) });
