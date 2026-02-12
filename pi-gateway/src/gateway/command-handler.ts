@@ -23,7 +23,6 @@ import type { RpcClient } from "../core/rpc-client.ts";
 
 // TUI-dependent commands that hang in RPC mode
 const TUI_COMMANDS = [
-  "/role info", "/role create", "/role map", "/role list",
   "/memories", "/memory-fix", "/memory-tidy", "/plan",
 ];
 
@@ -102,33 +101,9 @@ export async function tryHandleCommand(
  * Register built-in gateway commands.
  */
 export function registerBuiltinCommands(ctx: GatewayContext): void {
-  // /role <name>
-  ctx.registry.commands.set("role", {
-    pluginId: "builtin",
-    handler: async ({ sessionKey, args, respond }) => {
-      const roleName = args.trim();
-      if (!roleName) {
-        const roles = ctx.listAvailableRoles();
-        await respond(`Usage: /role <name>\nAvailable roles: ${roles.join(", ")}`);
-        return;
-      }
-
-      const roles = ctx.listAvailableRoles();
-      if (!roles.includes(roleName)) {
-        await respond(`Unknown role: ${roleName}\nAvailable: ${roles.join(", ")}`);
-        return;
-      }
-
-      try {
-        const changed = await ctx.setSessionRole(sessionKey, roleName);
-        await respond(changed ? `Role switched to: ${roleName}` : `Already using role: ${roleName}`);
-      } catch (err: any) {
-        await respond(`Failed to switch role: ${err?.message ?? String(err)}`);
-      }
-    },
-  });
-
-  ctx.log.info("Registered built-in command: /role");
+  // /role is handled by role-persona extension via RPC forwarding
+  // No built-in commands registered — all slash commands forward to pi RPC
+  ctx.log.info("Built-in commands: (none — /role forwarded to RPC/role-persona)");
 }
 
 // ============================================================================

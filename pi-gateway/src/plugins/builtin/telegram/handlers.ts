@@ -947,7 +947,7 @@ export async function setupTelegramHandlers(runtime: TelegramPluginRuntime, acco
   const bot = account.bot;
 
   // 本地命令列表（由 bot.command() 处理）
-  const localCommands = new Set(["new", "stop", "status", "queue", "role", "cron", "help", "media", "photo", "audio", "model", "refresh", "skills"]);
+  const localCommands = new Set(["new", "stop", "status", "queue", "cron", "help", "media", "photo", "audio", "model", "refresh", "skills"]);
 
   bot.on("message", async (ctx: any) => {
     const updateId = Number((ctx.update as any)?.update_id ?? -1);
