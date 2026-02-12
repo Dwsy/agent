@@ -21,6 +21,8 @@ export interface MessageSendContext {
   sessions: SessionStore;
   log: Logger;
   broadcastToWs?: (event: string, payload: unknown) => void;
+  /** Called after successful delivery — used to track cron self-delivery. */
+  onDelivered?: (sessionKey: string) => void;
 }
 
 export async function handleMessageSendRequest(
@@ -106,6 +108,8 @@ export async function handleMessageSendRequest(
     }
 
     await channelPlugin.outbound.sendText(chatId, text, { replyTo, parseMode });
+
+    if (sessionKey) ctx.onDelivered?.(sessionKey);
 
     return Response.json({
       ok: true,

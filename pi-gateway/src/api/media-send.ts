@@ -49,6 +49,8 @@ export interface MediaSendContext {
   sessions: SessionStore;
   log: Logger;
   broadcastToWs?: (event: string, payload: unknown) => void;
+  /** Called after successful delivery — used to track cron self-delivery. */
+  onDelivered?: (sessionKey: string) => void;
 }
 
 export async function handleMediaSendRequest(
@@ -206,6 +208,8 @@ export async function handleMediaSendRequest(
         channel,
       }, { status: 502 });
     }
+
+    if (sessionKey) ctx.onDelivered?.(sessionKey);
 
     return Response.json({
       ok: true,
