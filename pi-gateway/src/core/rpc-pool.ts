@@ -54,6 +54,7 @@ export class RpcPool {
     private config: Config,
     private metrics?: MetricsCollector,
     private execGuard?: ExecGuard,
+    private onSessionEnd?: (sessionKey: SessionKey) => void,
   ) {
     this.log = createLogger("rpc-pool");
   }
@@ -416,7 +417,12 @@ export class RpcPool {
     if (!oldest) return false;
 
     this.log.debug(`Evicting idle process ${oldest.id}`);
+    const evictedSessionKey = oldest.sessionKey;
     this.clients.delete(oldest.id);
+    if (evictedSessionKey) {
+      this.sessionBindings.delete(evictedSessionKey);
+      this.onSessionEnd?.(evictedSessionKey);
+    }
     oldest.stop().catch(() => {});
     this.metrics?.incProcessKill();
     return true;
@@ -433,6 +439,7 @@ export class RpcPool {
         // Clean up any session binding
         if (client.sessionKey) {
           this.sessionBindings.delete(client.sessionKey);
+          this.onSessionEnd?.(client.sessionKey);
         }
         this.clients.delete(id);
         this.metrics?.incProcessCrash();
@@ -446,6 +453,10 @@ export class RpcPool {
         now - client.lastActivity > idleTimeout
       ) {
         this.log.debug(`Reclaiming idle process ${id} (idle ${Math.round((now - client.lastActivity) / 1000)}s)`);
+        if (client.sessionKey) {
+          this.sessionBindings.delete(client.sessionKey);
+          this.onSessionEnd?.(client.sessionKey);
+        }
         this.clients.delete(id);
         client.stop().catch(() => {});
         this.metrics?.incProcessKill();

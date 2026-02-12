@@ -122,9 +122,12 @@ describe("resetSession", () => {
     await resetSession(ctx, SK);
 
     const hookCalls = (ctx as any)._hookCalls;
-    expect(hookCalls).toHaveLength(1);
-    expect(hookCalls[0].name).toBe("session_reset");
-    expect(hookCalls[0].payload.sessionKey).toBe(SK);
+    // BG-002: reset now fires session_end → session_reset → session_start
+    expect(hookCalls).toHaveLength(3);
+    expect(hookCalls[0].name).toBe("session_end");
+    expect(hookCalls[1].name).toBe("session_reset");
+    expect(hookCalls[1].payload.sessionKey).toBe(SK);
+    expect(hookCalls[2].name).toBe("session_start");
   });
 
   test("broadcasts to WS clients", async () => {
