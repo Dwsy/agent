@@ -216,9 +216,14 @@ export async function processMessage(
     // Tool execution labels
     if (event.type === "tool_execution_start") {
       const eventAny = event as any;
-      const label = (eventAny.args as any)?.label || eventAny.toolName;
+      // Log tool name but filter out any "unhandled" noise
+      const toolName = eventAny.toolName;
+      if (toolName && !String(toolName).includes("unhandled")) {
+        ctx.log.info(`[RPC] tool: ${toolName}`);
+      }
+      const label = (eventAny.args as any)?.label || toolName;
       if (label) toolLabels.push(label);
-      msg.onToolStart?.(eventAny.toolName, eventAny.args, eventAny.toolCallId);
+      msg.onToolStart?.(toolName, eventAny.args, eventAny.toolCallId);
     }
 
     if (event.type === "agent_end") {
