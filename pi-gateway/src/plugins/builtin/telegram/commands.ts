@@ -21,12 +21,12 @@ const LOCAL_COMMANDS = [
   { command: "status", description: "查看会话状态" },
   { command: "context", description: "上下文使用情况" },
   { command: "queue", description: "会话并发策略" },
-  { command: "role", description: "切换/查看角色" },
+  // { command: "role", description: "切换/查看角色" },
   { command: "cron", description: "定时任务管理" },
   { command: "skills", description: "查看/调用技能" },
-  { command: "media", description: "媒体发送说明" },
-  { command: "photo", description: "发送图片" },
-  { command: "audio", description: "发送音频" },
+  // { command: "media", description: "媒体发送说明" },
+  // { command: "photo", description: "发送图片" },
+  // { command: "audio", description: "发送音频" },
   { command: "refresh", description: "刷新命令列表" },
 ];
 
