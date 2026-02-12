@@ -188,17 +188,18 @@ send_message({ text: "Here's the fix", replyTo: "123456" })
 - Document: pdf, txt, csv, zip, and all other extensions
 
 **Rules:**
-- Path must be relative to your workspace (starts with ./ or filename)
+- Path can be relative to workspace (./output.png) or absolute temp path (/tmp/xxx.png, /var/folders/...)
 - Type is auto-detected from extension; override with the \`type\` parameter if needed
 - Optional \`caption\` parameter adds text alongside the media
+- SVG files are NOT supported as images on Telegram — convert to PNG first
+- Telegram image formats: jpg, jpeg, png, gif, webp, bmp
 
 **Fallback: MEDIA: directive** (used when send_media tool is unavailable)
 Write on a separate line: MEDIA:<relative-path>
 Example: MEDIA:./output.png
 
 **Blocked paths (security):**
-- Absolute paths: /etc/passwd ❌
-- Home directory: ~/file.txt ❌
+- Sensitive system paths: /etc/passwd, ~/.ssh ❌
 - Directory traversal: ../../secret ❌
 - URL schemes: file://, data:, javascript: ❌
 - Null bytes and symlinks outside workspace ❌`;

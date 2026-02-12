@@ -102,8 +102,10 @@ describe("v3.3 media-send: auth", () => {
 
     const req = makeReq({ sessionKey: activeSessionKey, path: tmpFile });
     const res = await handleMediaSendRequest(req, ctx);
-    // Path is absolute so it should be blocked by security
-    expect(res.status).toBe(403);
+    // Absolute /tmp/ path is now allowed; fails at channel resolution (no real channel plugin)
+    expect(res.status).not.toBe(403);
+    // Cleanup
+    try { await Bun.write(tmpFile, ""); } catch {}
   });
 
   test("MS-11: invalid sessionKey returns 403", async () => {
@@ -157,7 +159,7 @@ describe("v3.3 media-send: path security", () => {
     const res = await handleMediaSendRequest(req, ctx);
     expect(res.status).toBe(403);
     const data = await res.json() as any;
-    expect(data.error).toContain("security");
+    expect(data.error).toContain("not in allowed");
   });
 
   test("MS-16: traversal path blocked", async () => {
