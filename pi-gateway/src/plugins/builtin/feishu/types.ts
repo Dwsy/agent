@@ -27,6 +27,7 @@ export interface FeishuMessageContext {
   contentType: string;
   rootId?: string;
   parentId?: string;
+  mentionedBot: boolean;
 }
 
 export interface FeishuPluginRuntime {
