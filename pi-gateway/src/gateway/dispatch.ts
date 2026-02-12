@@ -156,7 +156,7 @@ export async function dispatchMessage(msg: InboundMessage, ctx: GatewayContext):
   }
 
   await enqueueMessage(msg, ctx);
-  return {};
+  return { enqueued: true };
 }
 
 async function handleInterruptMode(
