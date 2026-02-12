@@ -117,12 +117,8 @@ export type MessageSendResult = MediaSendResult;
 // ============================================================================
 
 export interface ChannelOutbound {
-  /**
-   * Send text to a target in this channel.
-   * Migration: Step 1 returns MessageSendResult | void (backward compat).
-   * After CA-2 + D1 complete, `| void` will be removed.
-   */
-  sendText(target: string, text: string, opts?: SendOptions): Promise<MessageSendResult | void>;
+  /** Send text to a target in this channel. Returns delivery result. */
+  sendText(target: string, text: string, opts?: SendOptions): Promise<MessageSendResult>;
   /** Send a media file (optional — not all channels support media) */
   sendMedia?(target: string, filePath: string, opts?: MediaSendOptions): Promise<MediaSendResult>;
   /** Max message length for this channel (for chunking) */
@@ -460,30 +456,3 @@ export type PluginFactory =
       name: string;
       register(api: GatewayPluginApi): void | Promise<void>;
     };
-
-// ============================================================================
-// Legacy Compatibility (CA-1: migration helper)
-// ============================================================================
-
-/**
- * Wrap a legacy outbound (sendText returns void) into ChannelOutbound.
- * Used during the 3-step migration window. Remove when `| void` is dropped.
- * @deprecated Will be removed after CA-2 + D1 complete.
- */
-export function wrapLegacyOutbound(old: {
-  sendText(target: string, text: string, opts?: SendOptions): Promise<void>;
-  sendMedia?(target: string, filePath: string, opts?: MediaSendOptions): Promise<MediaSendResult>;
-  maxLength?: number;
-}): ChannelOutbound {
-  return {
-    ...old,
-    async sendText(target: string, text: string, opts?: SendOptions) {
-      try {
-        await old.sendText(target, text, opts);
-        return { ok: true };
-      } catch (err) {
-        return { ok: false, error: err instanceof Error ? err.message : String(err) };
-      }
-    },
-  };
-}
