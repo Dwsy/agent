@@ -27,6 +27,10 @@ export interface GatewayConfig {
     mode: "off" | "token" | "password";
     token?: string;
     password?: string;
+    /** Must be true to run with mode:"off". Prevents accidental open gateways. */
+    allowUnauthenticated?: boolean;
+    /** Whether to log auto-generated tokens at startup. Default: true. Set false in production. */
+    logToken?: boolean;
   };
 }
 
@@ -431,7 +435,7 @@ export const DEFAULT_CONFIG: Config = {
   gateway: {
     port: 18789,
     bind: "loopback",
-    auth: { mode: "off" },
+    auth: { mode: "token" },
   },
   agent: {
     piCliPath: "pi",
