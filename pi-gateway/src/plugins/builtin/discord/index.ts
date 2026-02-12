@@ -18,6 +18,8 @@ const discordPlugin: ChannelPlugin = {
     group: true,
     thread: true,
     media: true,
+    streaming: true,
+    security: true,
   },
   outbound: {
     maxLength: 2000,
