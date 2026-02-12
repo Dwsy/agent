@@ -58,9 +58,11 @@ export async function resetSession(
     result.queueCleared = ctx.queue.clearCollectBuffer(sessionKey);
   }
 
-  // 5. Fire hook
+  // 5. Fire hooks: session_end (old) → session_reset → session_start (new)
   try {
+    await ctx.registry.hooks.dispatch("session_end", { sessionKey });
     await ctx.registry.hooks.dispatch("session_reset", { sessionKey });
+    await ctx.registry.hooks.dispatch("session_start", { sessionKey });
   } catch {
     // Non-fatal: hooks shouldn't block reset
   }

@@ -43,6 +43,13 @@ export async function setSessionRole(
     return false;
   }
 
+  // Dispatch session_end for old role before releasing
+  try {
+    await ctx.registry.hooks.dispatch("session_end", { sessionKey });
+  } catch {
+    // Non-fatal
+  }
+
   // Release current RPC process
   ctx.pool.release(sessionKey);
 
@@ -61,5 +68,13 @@ export async function setSessionRole(
   }
 
   ctx.log.info(`Role changed for ${sessionKey}: ${currentRole} -> ${newRole}`);
+
+  // Dispatch session_start for new role
+  try {
+    await ctx.registry.hooks.dispatch("session_start", { sessionKey });
+  } catch {
+    // Non-fatal
+  }
+
   return true;
 }

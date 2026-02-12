@@ -106,7 +106,9 @@ export class Gateway {
     this.execGuard = new ExecGuard();
     this.execGuard.validatePiCliPath(this.config.agent.piCliPath ?? "pi");
 
-    this.pool = new RpcPool(this.config, this.metrics, this.execGuard);
+    this.pool = new RpcPool(this.config, this.metrics, this.execGuard, (sessionKey) => {
+      this.registry.hooks.dispatch("session_end", { sessionKey }).catch(() => {});
+    });
     const qc = this.config.queue;
     this.queue = new MessageQueueManager(
       qc.maxPerSession,
