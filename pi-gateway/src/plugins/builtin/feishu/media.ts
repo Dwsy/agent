@@ -5,6 +5,7 @@ import type * as Lark from "@larksuiteoapi/node-sdk";
 import type { FeishuChannelConfig } from "./types.ts";
 import { createFeishuClient } from "./client.ts";
 import { resolveReceiveIdType } from "./send.ts";
+import { validateMediaPath } from "../../../core/media-security.ts";
 import { Readable } from "stream";
 import * as fs from "fs";
 import * as path from "path";
@@ -72,8 +73,8 @@ export async function downloadFeishuMedia(params: {
       params: { type },
     });
 
-    const buffer = await responseToBuffer(response);
-    if (!buffer || buffer.byteLength > maxBytes) return null;
+    const buffer = await responseToBuffer(response, maxBytes);
+    if (!buffer) return null;
 
     const mimeType = inferMimeType(fileKey);
     const data = Buffer.from(buffer).toString("base64");
@@ -106,7 +107,8 @@ export async function resolveInboundMedia(params: {
   const result = await downloadFeishuMedia({ client, messageId, fileKey, type: resourceType, maxBytes });
   if (!result) return [];
 
-  // Only return as image if it's an image MIME type
+  // Only images are returned as InboundMessage.images; non-image files (PDF/audio/video)
+  // are intentionally skipped — pi agent processes text + images only. Extend here if needed.
   if (isImageMime(result.mimeType)) {
     return [{ type: "image", data: result.data, mimeType: result.mimeType }];
   }
@@ -190,6 +192,12 @@ export async function sendFeishuMedia(params: {
   caption?: string;
 }): Promise<{ messageId: string }> {
   const { client, to, filePath, caption } = params;
+
+  // P0 security: validate path before any fs access (aligned with Telegram/Discord guards)
+  if (!validateMediaPath(filePath)) {
+    throw new Error(`Media path blocked: ${filePath}`);
+  }
+
   const ext = path.extname(filePath).toLowerCase();
   const receiveIdType = resolveReceiveIdType(to);
 
@@ -234,25 +242,29 @@ export async function sendFeishuMedia(params: {
 /**
  * Convert various Lark SDK response formats to Buffer.
  */
-async function responseToBuffer(response: unknown): Promise<Buffer | null> {
+async function responseToBuffer(response: unknown, maxBytes?: number): Promise<Buffer | null> {
   const r = response as any;
-  if (Buffer.isBuffer(response)) return response;
-  if (response instanceof ArrayBuffer) return Buffer.from(response);
-  if (r?.data && Buffer.isBuffer(r.data)) return r.data;
-  if (r?.data instanceof ArrayBuffer) return Buffer.from(r.data);
-  if (typeof r?.getReadableStream === "function") {
+  const checkSize = (buf: Buffer) => maxBytes && buf.byteLength > maxBytes ? null : buf;
+
+  if (Buffer.isBuffer(response)) return checkSize(response);
+  if (response instanceof ArrayBuffer) return checkSize(Buffer.from(response));
+  if (r?.data && Buffer.isBuffer(r.data)) return checkSize(r.data);
+  if (r?.data instanceof ArrayBuffer) return checkSize(Buffer.from(r.data));
+
+  // Streaming with early abort on size limit
+  const collectStream = async (iter: AsyncIterable<any>): Promise<Buffer | null> => {
     const chunks: Buffer[] = [];
-    for await (const chunk of r.getReadableStream()) {
-      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    let total = 0;
+    for await (const chunk of iter) {
+      const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      total += buf.byteLength;
+      if (maxBytes && total > maxBytes) return null;
+      chunks.push(buf);
     }
     return Buffer.concat(chunks);
-  }
-  if (typeof r?.[Symbol.asyncIterator] === "function") {
-    const chunks: Buffer[] = [];
-    for await (const chunk of r) {
-      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-    }
-    return Buffer.concat(chunks);
-  }
+  };
+
+  if (typeof r?.getReadableStream === "function") return collectStream(r.getReadableStream());
+  if (typeof r?.[Symbol.asyncIterator] === "function") return collectStream(r);
   return null;
 }
