@@ -23,8 +23,11 @@ const webchatPlugin: ChannelPlugin = {
     maxLength: Infinity,
     async sendText(_target, _text) {
       // WebChat replies are sent via WS events, not through this method
+      return { ok: true };
     },
   },
+  // No streaming adapter — WebChat uses WS push (broadcastToWs), not edit-in-place
+  // No security adapter — WebChat uses HTTP auth only
 
   async init(_api: GatewayPluginApi) {
     // No-op: WebChat is handled by the Gateway WS protocol

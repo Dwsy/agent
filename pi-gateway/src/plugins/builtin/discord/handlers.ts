@@ -4,6 +4,7 @@ import { isSenderAllowed, type DmPolicy } from "../../../security/allowlist.ts";
 import { createPairingRequest } from "../../../security/pairing.ts";
 import type { MessageSource } from "../../../core/types.ts";
 import type { DiscordPluginRuntime } from "./types.ts";
+import type { ChannelStreamingAdapter, MessageSendResult } from "../../types.ts";
 import { formatToolLine, splitDiscordText } from "./format.ts";
 import { helpText } from "./commands.ts";
 
@@ -410,13 +411,69 @@ export async function handleInteraction(rt: DiscordPluginRuntime, interaction: I
 
 // ── Outbound (for gateway.sendText) ─────────────────────────────────
 
-export async function sendOutbound(rt: DiscordPluginRuntime, target: string, text: string): Promise<void> {
-  const channel = await rt.client.channels.fetch(target);
-  if (!channel?.isTextBased() || !("send" in channel)) return;
-  const chunks = splitDiscordText(text, 2000);
-  for (const chunk of chunks) {
-    await (channel as any).send(chunk);
+export async function sendOutbound(rt: DiscordPluginRuntime, target: string, text: string): Promise<MessageSendResult> {
+  try {
+    const channel = await rt.client.channels.fetch(target);
+    if (!channel?.isTextBased() || !("send" in channel)) {
+      return { ok: false, error: "Channel not found or not text-based" };
+    }
+    const chunks = splitDiscordText(text, 2000);
+    let lastMsgId: string | undefined;
+    for (const chunk of chunks) {
+      const msg = await (channel as any).send(chunk);
+      lastMsgId = msg.id;
+    }
+    return { ok: true, messageId: lastMsgId };
+  } catch (err: any) {
+    return { ok: false, error: err?.message ?? String(err) };
   }
+}
+
+// ── Streaming Adapter (CA-1) ────────────────────────────────────────
+
+export function createDiscordStreamingAdapter(
+  getRuntime: () => DiscordPluginRuntime | null,
+): ChannelStreamingAdapter {
+  return {
+    async createPlaceholder(target, opts) {
+      const rt = getRuntime();
+      if (!rt) throw new Error("Discord not initialized");
+      const channel = await rt.client.channels.fetch(target);
+      if (!channel?.isTextBased() || !("send" in channel)) {
+        throw new Error("Channel not found or not text-based");
+      }
+      const msg = await (channel as any).send(opts?.text || "⏳ Processing...");
+      return { messageId: msg.id };
+    },
+    async editMessage(target, messageId, text) {
+      const rt = getRuntime();
+      if (!rt) return false;
+      try {
+        const channel = await rt.client.channels.fetch(target);
+        if (!channel?.isTextBased()) return false;
+        const msg = await (channel as any).messages.fetch(messageId);
+        if (!msg) return false;
+        await msg.edit(text.slice(0, 2000));
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    async setTyping(target) {
+      const rt = getRuntime();
+      if (!rt) return;
+      try {
+        const channel = await rt.client.channels.fetch(target);
+        if (channel && "sendTyping" in channel) {
+          await (channel as any).sendTyping();
+        }
+      } catch {}
+    },
+    config: {
+      editThrottleMs: 500,
+      editCutoffChars: 1800,
+    },
+  };
 }
 
 // ── Outbound Media (for gateway.sendMedia) ──────────────────────────
