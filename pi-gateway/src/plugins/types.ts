@@ -436,6 +436,12 @@ export interface GatewayPluginApi {
   /** Get available pi slash commands from RPC */
   getPiCommands(sessionKey: SessionKey): Promise<{ name: string; description?: string }[]>;
 
+  /** Get session statistics (tokens, cost, message counts) from RPC */
+  getSessionStats(sessionKey: SessionKey): Promise<unknown>;
+
+  /** Get RPC process state (model, thinkingLevel, etc.) */
+  getRpcState(sessionKey: SessionKey): Promise<unknown>;
+
   /** Access the cron engine for job management */
   readonly cronEngine?: import("../core/cron.ts").CronEngine;
 }

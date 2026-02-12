@@ -19,6 +19,7 @@ const LOCAL_COMMANDS = [
   { command: "stop", description: "停止当前会话" },
   { command: "model", description: "查看/切换模型" },
   { command: "status", description: "查看会话状态" },
+  { command: "context", description: "上下文使用情况" },
   { command: "queue", description: "会话并发策略" },
   { command: "role", description: "切换/查看角色" },
   { command: "cron", description: "定时任务管理" },
@@ -263,6 +264,74 @@ export async function setupTelegramCommands(runtime: TelegramPluginRuntime, acco
       `<b>Streaming:</b> ${state.isStreaming}`,
       `<b>Account:</b> ${account.accountId}`,
       `<b>Queue Mode:</b> ${messageMode}${isOverridden ? " (override)" : " (config)"}`,
+    ];
+
+    // Add context usage info
+    try {
+      const [stats, rpcState] = await Promise.all([
+        runtime.api.getSessionStats(sessionKey),
+        runtime.api.getRpcState(sessionKey),
+      ]);
+      const s = stats as any;
+      const st = rpcState as any;
+      const contextWindow = st?.model?.contextWindow ?? 0;
+      const inputTokens = s?.tokens?.input ?? 0;
+      const fmt = (n: number) => n >= 1_000_000 ? (n/1_000_000).toFixed(1)+"M" : n >= 1_000 ? Math.round(n/1_000)+"k" : String(n);
+      const pct = contextWindow > 0 ? ((inputTokens / contextWindow) * 100).toFixed(1) : "?";
+      lines.push(`<b>Context:</b> ${pct}% (${fmt(inputTokens)}/${fmt(contextWindow)})`);
+      lines.push(`<b>Model:</b> ${st?.model?.id ?? "unknown"}`);
+    } catch {
+      // ignore errors
+    }
+
+    await ctx.reply(lines.join("\n"), { parse_mode: "HTML" });
+  });
+
+  bot.command("context", async (ctx: any) => {
+    const source = toSource(account.accountId, ctx as TelegramContext);
+    const sessionKey = resolveSessionKey(source, runtime.api.config);
+
+    const [stats, state] = await Promise.all([
+      runtime.api.getSessionStats(sessionKey),
+      runtime.api.getRpcState(sessionKey),
+    ]).catch((err) => {
+      ctx.reply(`Failed to get context stats: ${err?.message ?? String(err)}`);
+      return [null, null];
+    });
+
+    if (!stats || !state) return;
+
+    const s = stats as any;
+    const st = state as any;
+    const contextWindow = st?.model?.contextWindow ?? 0;
+    const totalTokens = s?.tokens?.total ?? 0;
+    const inputTokens = s?.tokens?.input ?? 0;
+    const outputTokens = s?.tokens?.output ?? 0;
+    const cacheRead = s?.tokens?.cacheRead ?? 0;
+    const cacheWrite = s?.tokens?.cacheWrite ?? 0;
+
+    const fmt = (n: number) => n >= 1_000_000 ? (n/1_000_000).toFixed(1)+"M" : n >= 1_000 ? Math.round(n/1_000)+"k" : String(n);
+
+    const percent = contextWindow > 0 ? ((inputTokens / contextWindow) * 100).toFixed(1) : "?";
+    const pct = contextWindow > 0 ? Math.min(inputTokens / contextWindow, 1) : 0;
+    const barLen = 20;
+    const filled = Math.round(pct * barLen);
+    const bar = "█".repeat(filled) + "░".repeat(barLen - filled);
+
+    const lines = [
+      `<b>📊 Context Usage</b>`,
+      `<code>${bar}</code> ${percent}%`,
+      ``,
+      `<b>Window:</b> ${fmt(contextWindow)} tokens`,
+      `<b>Input:</b> ${fmt(inputTokens)}`,
+      `<b>Output:</b> ${fmt(outputTokens)}`,
+      `<b>Cache R/W:</b> ${fmt(cacheRead)} / ${fmt(cacheWrite)}`,
+      `<b>Cost:</b> $${(s?.cost ?? 0).toFixed(4)}`,
+      ``,
+      `<b>Messages:</b> ${s?.totalMessages ?? 0} (👤${s?.userMessages ?? 0} 🤖${s?.assistantMessages ?? 0} 🔧${s?.toolResults ?? 0})`,
+      `<b>Tool Calls:</b> ${s?.toolCalls ?? 0}`,
+      `<b>Model:</b> ${st?.model?.id ?? "unknown"}`,
+      `<b>Thinking:</b> ${st?.thinkingLevel ?? "off"}`,
     ];
     await ctx.reply(lines.join("\n"), { parse_mode: "HTML" });
   });
