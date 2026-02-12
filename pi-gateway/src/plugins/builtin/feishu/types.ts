@@ -22,6 +22,8 @@ export interface FeishuChannelConfig {
   streamThrottleMs?: number;
   /** Min chars before first card send (default 50) */
   streamStartChars?: number;
+  /** Streaming mode: "cardkit" (native typewriter), "patch" (im.v1.message.patch), "off" */
+  streamMode?: "cardkit" | "patch" | "off";
 }
 
 export interface FeishuMessageContext {

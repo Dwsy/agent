@@ -8,8 +8,9 @@ import { resolveAgentId, resolveSessionKey } from "../../../core/session-router.
 import { isSenderAllowed, type DmPolicy } from "../../../security/allowlist.ts";
 import { createPairingRequest } from "../../../security/pairing.ts";
 import type { FeishuChannelConfig, FeishuMessageContext, FeishuPluginRuntime } from "./types.ts";
-import { sendFeishuText, sendFeishuCard, updateFeishuCard, chunkText } from "./send.ts";
+import { sendFeishuText, sendFeishuCard, sendFeishuCardById, updateFeishuCard, chunkText } from "./send.ts";
 import { resolveInboundMedia } from "./media.ts";
+import { FeishuCardStream } from "./card-stream.ts";
 
 // ── Dedup ──────────────────────────────────────────────────────────────────
 const DEDUP_TTL_MS = 30 * 60 * 1000;
@@ -283,13 +284,17 @@ async function handleFeishuMessage(
   const sessionKey = resolveSessionKey(source, api.config, agentId);
 
   // Streaming state
-  const streamingEnabled = channelCfg.streamingEnabled ?? true;
+  const streamMode = channelCfg.streamMode ?? (channelCfg.streamingEnabled === false ? "off" : "cardkit");
   const throttleMs = channelCfg.streamThrottleMs ?? 800;
   const startChars = channelCfg.streamStartChars ?? 50;
   let cardMsgId: string | null = null;
   let lastEditAt = 0;
   let editInFlight = false;
   let streamingFailed = false;
+
+  // CardKit streaming state
+  let cardStream: FeishuCardStream | null = null;
+  let usePatchFallback = streamMode === "patch";
 
   // Dispatch to agent
   await api.dispatch({
@@ -299,18 +304,23 @@ async function handleFeishuMessage(
     images,
     respond: async (reply: string) => {
       if (!reply.trim()) return;
-      // If streaming was active, do a final card update with complete text
+      // CardKit path: finalize streaming card
+      if (cardStream?.isActive) {
+        try {
+          await cardStream.finalize(reply);
+          return;
+        } catch {
+          // Fall through to chunk send
+        }
+      }
+      // Patch path: final card update
       if (cardMsgId && !streamingFailed) {
         try {
           await updateFeishuCard({ client, messageId: cardMsgId, text: reply });
+          return;
         } catch {
           // Final update failed — send as new message
-          const chunks = chunkText(reply, channelCfg.textChunkLimit ?? 4000);
-          for (const chunk of chunks) {
-            await sendFeishuCard({ client, to: ctx.chatId, text: chunk });
-          }
         }
-        return;
       }
       const chunks = chunkText(reply, channelCfg.textChunkLimit ?? 4000);
       for (const chunk of chunks) {
@@ -318,11 +328,47 @@ async function handleFeishuMessage(
       }
     },
     setTyping: async () => {},
-    onStreamDelta: streamingEnabled ? (accumulated: string) => {
-      if (streamingFailed || accumulated.length < startChars) return;
-      const now = Date.now();
+    onStreamDelta: streamMode !== "off" ? (accumulated: string) => {
+      if (accumulated.length < startChars) return;
 
-      // First card: send initial
+      // ── CardKit path ──────────────────────────────────────────────
+      if (!usePatchFallback) {
+        if (!cardStream) {
+          if (editInFlight) return;
+          editInFlight = true;
+          cardStream = new FeishuCardStream({
+            client,
+            onFallback: () => {
+              usePatchFallback = true;
+              cardStream = null;
+              log.info("feishu: CardKit failed, falling back to patch mode");
+            },
+          });
+          cardStream.create()
+            .then((cardId) => {
+              editInFlight = false;
+              if (!cardId) return; // onFallback already called
+              return sendFeishuCardById({ client, to: ctx.chatId, cardId })
+                .then((r) => { cardMsgId = r.messageId; })
+                .catch(() => {
+                  usePatchFallback = true;
+                  cardStream = null;
+                  log.info("feishu: CardKit card send failed, falling back to patch mode");
+                });
+            })
+            .catch(() => { editInFlight = false; });
+          return;
+        }
+        if (cardStream.isActive) {
+          void cardStream.appendText(accumulated + " ▍");
+          return;
+        }
+        // CardKit failed mid-stream — fall through to patch
+      }
+
+      // ── Patch fallback path (original logic) ─────────────────────
+      if (streamingFailed) return;
+
       if (!cardMsgId) {
         if (editInFlight) return;
         editInFlight = true;
@@ -340,7 +386,7 @@ async function handleFeishuMessage(
         return;
       }
 
-      // Throttled updates
+      const now = Date.now();
       if (editInFlight || now - lastEditAt < throttleMs) return;
       editInFlight = true;
       updateFeishuCard({ client, messageId: cardMsgId, text: accumulated + " ▍" })
