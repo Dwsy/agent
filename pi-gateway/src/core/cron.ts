@@ -28,7 +28,7 @@ function resolveDelivery(raw: CronJob["delivery"]): CronDelivery {
 // ============================================================================
 
 export interface CronDispatcher {
-  dispatch(msg: InboundMessage): Promise<void>;
+  dispatch(msg: InboundMessage): Promise<unknown>;
 }
 
 export interface CronAnnouncer {

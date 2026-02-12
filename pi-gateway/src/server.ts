@@ -11,7 +11,7 @@ import type { Server, ServerWebSocket } from "bun";
 import { join } from "node:path";
 
 import { resolveAuthConfig, authenticateRequest, buildAuthExemptPrefixes } from "./core/auth.ts";
-import type { GatewayContext, TelegramMessageMode, WsClientData } from "./gateway/types.ts";
+import type { GatewayContext, TelegramMessageMode, WsClientData, DispatchResult } from "./gateway/types.ts";
 import { tryHandleCommand, registerBuiltinCommands } from "./gateway/command-handler.ts";
 import { executeRegisteredTool } from "./gateway/tool-executor.ts";
 import { loadConfig, ensureDataDir, type Config, type CronJob, resolveConfigPath, watchConfig } from "./core/config.ts";
@@ -423,7 +423,7 @@ export class Gateway {
    * Dispatch an inbound message to the agent pipeline.
    * Called by channel plugins and WebChat.
    */
-  async dispatch(msg: InboundMessage): Promise<void> {
+  async dispatch(msg: InboundMessage): Promise<DispatchResult> {
     return dispatchMessage(msg, this.ctx);
   }
 

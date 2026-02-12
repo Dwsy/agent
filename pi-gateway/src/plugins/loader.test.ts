@@ -63,7 +63,7 @@ function createApiFactory(config: Config, registry: PluginRegistryState) {
     on<T extends PluginHookName>(hook: T, handler: HookHandler<T>): void {
       registry.hooks.register(pluginId, [hook], handler);
     },
-    async dispatch(): Promise<void> {},
+    async dispatch() { return {}; },
     async sendToChannel(): Promise<void> {},
     getSessionState() {
       return null;

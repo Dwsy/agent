@@ -30,6 +30,7 @@ import type {
   CliCommandHandler,
 } from "./plugins/types.ts";
 import type { InboundMessage, SessionKey } from "./core/types.ts";
+import type { DispatchResult } from "./gateway/types.ts";
 import { createLogger } from "./core/types.ts";
 
 // ============================================================================
@@ -109,7 +110,7 @@ function createCliOnlyPluginApi(
     },
     on<T extends PluginHookName>(_hook: T, _handler: HookHandler<T>): void {},
 
-    async dispatch(_msg: InboundMessage): Promise<void> {
+    async dispatch(_msg: InboundMessage): Promise<DispatchResult> {
       throw new Error("dispatch is not available in CLI-only plugin context");
     },
     async sendToChannel(_channel: string, _target: string, _text: string): Promise<void> {
