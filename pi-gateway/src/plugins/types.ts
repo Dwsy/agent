@@ -36,6 +36,7 @@ export type PluginHookName =
   // Session lifecycle
   | "session_start"
   | "session_end"
+  | "session_reset"
   // Compaction
   | "before_compaction"
   | "after_compaction"
@@ -58,6 +59,7 @@ export interface HookPayload {
   tool_result_persist: { sessionKey: SessionKey; toolName: string; result: unknown };
   session_start: { sessionKey: SessionKey };
   session_end: { sessionKey: SessionKey };
+  session_reset: { sessionKey: SessionKey };
   before_compaction: { sessionKey: SessionKey };
   after_compaction: { sessionKey: SessionKey; summary?: string };
   gateway_start: {};
