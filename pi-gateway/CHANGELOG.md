@@ -1,6 +1,67 @@
 # Changelog
 
-## [Unreleased] - v3.3 - 2026-02-11
+## [Unreleased] - v3.4 - 2026-02-12
+
+**BBD Test Results:** 482/482 pass, 0 fail ✅ (v3.3: 448, v3.4: +34)
+
+### Added (R1: Message Pipeline Extraction — v3.4)
+- `src/gateway/message-pipeline.ts`: `processMessage` extracted from server.ts with full GatewayContext injection, RPC event wiring, hook dispatch, and outbound text normalization (by NiceViper)
+- server.ts reduced from 1783 → 1447 lines after R1
+
+### Added (R2: Plugin API Factory Extraction — v3.4)
+- `src/plugins/plugin-api-factory.ts`: `createPluginApi` extracted from server.ts, constructs scoped `GatewayPluginApi` per plugin with logger, registration methods, and lifecycle hooks (by DarkUnion)
+- server.ts reduced from 1447 → 1228 lines after R2
+
+### Added (S1: Auth Fail-Closed — v3.4)
+- Default auth mode changed to `token` with auto-generated token shown at startup (by TrueJaguar)
+- `auth.mode: "none"` now requires explicit `auth.allowUnauthenticated: true` confirmation
+- All HTTP/WS endpoints require auth except `/health` and webhook paths
+- WS connections support `?token=` query parameter authentication
+- `/webhook/telegram` and `/webhook/discord` get auth exemption only when respective channels are enabled via `buildAuthExemptPrefixes`
+- `auth.logToken: false` config option to hide auto-generated tokens from logs
+- Tests in `bbd-v34-auth.test.ts` (by TrueJaguar)
+
+### Added (S2: SSRF Guard — v3.4)
+- `src/core/ssrf-guard.ts`: outbound URL validation blocking RFC 1918/6890 private ranges, link-local (169.254.x.x), loopback, dangerous schemes, credentials in URLs, decimal IP notation, and IPv4-mapped IPv6 (by JadeHawk)
+- `validateOutboundUrl()`: async DNS-rebinding-aware validation with configurable `allowedHosts` (wildcard support), `blockedHosts`, `allowPrivate`, `maxRedirects`
+- `safeFetch()`: drop-in `fetch` replacement with SSRF guard + redirect blocking
+- `validateConfigUrl()`: startup-time config URL validation (scheme + credentials check)
+- 34 tests in `bbd-v34-ssrf-guard.test.ts` covering AWS metadata, loopback, private nets, IPv6, decimal IP, octal IP rejection, IPv4-mapped IPv6 hex normalization, wildcard hosts, credential blocking (by JadeHawk)
+
+### Added (S3: Exec Allowlist — v3.4)
+- `src/core/exec-guard.ts`: `ExecGuard` class with fail-closed executable allowlist (default: `["pi", "ps"]`), audit logging, and listener API (by JadeHawk)
+- Two-pass arg sanitization: marks sensitive flags (`--token`, `--key`, `--secret`, `--password`), then redacts following values
+- `validatePiCliPath()`: startup validation of configured `piCliPath` against allowlist
+- Audit log with configurable max entries, stats (`total/allowed/blocked`), and `onAudit()` callback for external integrations
+- Cron isolated mode naturally gated via RPC pool → ExecGuard path
+- 20 tests in `bbd-v34-exec-guard.test.ts` (by JadeHawk)
+
+### Added (E1: Session Reset Adaptation — v3.4)
+- `src/gateway/session-reset.ts`: centralized `resetSession()` replacing duplicated logic in `session-api.ts` and `plugin-api-factory.ts` (by JadeHawk)
+- Reset now includes: RPC `newSession` + state reset + `systemEvents.consume` + `queue.clearCollectBuffer` + `session_reset` hook + WS broadcast + transcript logging
+- New `session_reset` hook added to `PluginHookName` for plugin extensibility
+- 11 tests in `bbd-v34-session-reset.test.ts` (by JadeHawk)
+
+### Fixed (Telegram Video Kind — v3.4)
+- `sendLocalFileByKind` now handles `video` kind via `sendVideo`, fixing fallback to audio for video uploads (by TrueJaguar)
+- `TelegramMediaDirective` kind mapping: incoming `"document"` normalized to `"file"` to match expected enum (by TrueJaguar)
+- Tests in `bbd-v34-media-kind.test.ts` (by TrueJaguar)
+
+### Fixed (WebChat Media Event — v3.4)
+- `sendWebChatMedia` signs file URLs and broadcasts `media_event` over WS with `sessionKey` for frontend filtering (by MintHawk)
+- WS `media_event` includes `sessionKey` so multi-session frontends can route pushes correctly (by MintHawk)
+
+### Changed (Code Quality — v3.4)
+- server.ts reduced from 1783 → 1228 lines (31% reduction from v3.3, cumulative 59% from v3.2 peak of 2985)
+- P2 modularization complete: message-pipeline + plugin-api-factory extracted
+- GatewayContext extended with `channelApis`, `reloadConfig` hook, and 6 additional fields for plugin-api-factory support
+
+### Documentation
+- `docs/PRD-GATEWAY-V34.md`: Production Hardening + Deep Refactor PRD (by NiceViper, reviewed by pi-zero)
+- `docs/S2-SSRF-GUARD-SPEC.md`: SSRF guard design spec (by JadeHawk)
+- `docs/S3-EXEC-ALLOWLIST-SPEC.md`: Exec allowlist design spec (by JadeHawk)
+
+## [v3.3] - 2026-02-11
 
 **BBD Test Results:** 361/361 pass, 0 fail ✅ (v3.2: 305, v3.3: +56)
 

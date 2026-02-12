@@ -64,7 +64,7 @@ function makeReq(method: string, path: string, body?: unknown): { req: Request; 
   return { req: new Request(url.toString(), init), url };
 }
 
-async function callApi(cron: MockCronEngine, method: string, path: string, body?: unknown, config?: any) {
+async function callApi(cron: MockCronEngine, method: string, path: string, body?: unknown, config?: any): Promise<{ status: number; data: any }> {
   const { req, url } = makeReq(method, path, body);
   const res = handleCronApi(req, url, cron as any, config);
   const response = res instanceof Promise ? await res : res;

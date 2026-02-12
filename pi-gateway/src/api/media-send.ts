@@ -185,7 +185,7 @@ export function getGatewayInternalToken(config: Config): string {
     pid: process.pid,
   });
   cachedToken = createHash("sha256").update(seed).digest("hex").slice(0, 32);
-  return cachedToken;
+  return cachedToken!;
 }
 
 /** Reset cached token (for testing). */
