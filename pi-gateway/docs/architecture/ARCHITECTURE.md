@@ -137,8 +137,13 @@ src/                          5 files    1,443 lines   Entry points
 │   ├── discord/              5 files      740 lines   Discord
 │   │   ├── handlers.ts      450L       Message handling + streaming
 │   │   └── ... (4 more)
-│   ├── feishu/               5 files      470 lines   Feishu/Lark (v1, DM only)
-│   │   └── ... (5 files)
+│   ├── feishu/               6 files      992 lines   Feishu/Lark (v1, DM+group)
+│   │   ├── bot.ts           359L       Message handling + dedup + DM policy
+│   │   ├── media.ts         272L       Media upload/download/send
+│   │   ├── index.ts         135L       Plugin entry + outbound
+│   │   ├── send.ts          134L       Text/card message sending
+│   │   ├── client.ts         46L       SDK wrapper
+│   │   └── types.ts          46L       Config + runtime types
 │   └── webchat.ts             44L       WebChat (shell, logic in WS)
 │
 ├── security/                 2 files      309 lines   Access control
@@ -424,7 +429,7 @@ graph TD
     subgraph Channels["Channel Plugins"]
         TG["telegram/<br/>20 files, 2635L"]
         DISC["discord/<br/>5 files, 740L"]
-        FEISHU["feishu/<br/>5 files, 470L"]
+        FEISHU["feishu/<br/>6 files, 992L"]
         WEBCHAT["webchat<br/>44L"]
     end
 
@@ -529,8 +534,8 @@ interface GatewayContext {
 
 | Feature | Telegram | Discord | Feishu | WebChat |
 |---|---|---|---|---|
-| Files | 20 | 5 | 5 | 1 (shell) |
-| Lines | 2,635 | 740 | 470 | 44 |
+| Files | 20 | 5 | 6 | 1 (shell) |
+| Lines | 2,635 | 740 | 992 | 44 |
 | DM | ✅ | ✅ | ✅ | ✅ |
 | Group | ✅ | ✅ | ❌ (v2) | N/A |
 | Media in | ✅ photo/video/audio/doc | ❌ | ❌ | ❌ |
