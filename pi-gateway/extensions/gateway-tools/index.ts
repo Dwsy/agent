@@ -209,15 +209,15 @@ export default function gatewayTools(pi: ExtensionAPI) {
   // cron — scheduled task management (v3.6)
   // ========================================================================
 
-  const CRON_ACTIONS = ["list", "add", "remove", "pause", "resume", "run"] as const;
+  const CRON_ACTIONS = ["list", "add", "remove", "pause", "resume", "run", "wake"] as const;
 
   pi.registerTool({
     name: "cron",
     label: "Cron",
     description:
-      "Manage gateway scheduled tasks (cron jobs). " +
+      "Manage gateway scheduled tasks (cron jobs) and send wake events. " +
       "Actions: list (show all jobs), add (create job), remove (delete job), " +
-      "pause/resume (toggle job), run (trigger immediately).\n\n" +
+      "pause/resume (toggle job), run (trigger immediately), wake (inject system event).\n\n" +
       "SCHEDULE TYPES (schedule.kind):\n" +
       '- "cron": Standard cron expression, e.g. "0 */6 * * *"\n' +
       '- "every": Interval, e.g. "30m", "2h", "1d"\n' +
@@ -225,6 +225,9 @@ export default function gatewayTools(pi: ExtensionAPI) {
       "MODE:\n" +
       '- "isolated" (default): Runs in independent session\n' +
       '- "main": Injects as system event into main session\n\n' +
+      "WAKE:\n" +
+      "Inject a system event into the main session. " +
+      'mode "next-heartbeat" (default) queues for next heartbeat; "now" triggers immediately.\n\n' +
       "EXAMPLES:\n" +
       '- List: { action: "list" }\n' +
       '- Add hourly task: { action: "add", id: "backup", schedule: { kind: "every", expr: "1h" }, task: "Run backup check" }\n' +
@@ -232,7 +235,9 @@ export default function gatewayTools(pi: ExtensionAPI) {
       '- One-shot reminder: { action: "add", id: "remind-1", schedule: { kind: "at", expr: "2026-02-13T10:00:00Z" }, task: "Remind user about meeting", deleteAfterRun: true }\n' +
       '- Remove: { action: "remove", id: "backup" }\n' +
       '- Pause: { action: "pause", id: "morning" }\n' +
-      '- Run now: { action: "run", id: "backup" }',
+      '- Run now: { action: "run", id: "backup" }\n' +
+      '- Wake now: { action: "wake", text: "Check email for urgent items", wakeMode: "now" }\n' +
+      '- Wake next: { action: "wake", text: "Review pending PRs" }',
     parameters: Type.Object({
       action: Type.Union(
         CRON_ACTIONS.map((a) => Type.Literal(a)),
@@ -265,15 +270,21 @@ export default function gatewayTools(pi: ExtensionAPI) {
       deleteAfterRun: Type.Optional(
         Type.Boolean({ description: "Remove job after first execution. Default: false" }),
       ),
+      wakeMode: Type.Optional(
+        Type.Union([Type.Literal("now"), Type.Literal("next-heartbeat")], {
+          description: 'Wake mode — "now" triggers immediately, "next-heartbeat" (default) queues for next heartbeat. Only for wake action.',
+        }),
+      ),
     }),
     async execute(_toolCallId, params) {
-      const { action, id, schedule, task, mode, deleteAfterRun } = params as {
+      const { action, id, schedule, task, mode, deleteAfterRun, wakeMode } = params as {
         action: string;
         id?: string;
         schedule?: { kind: string; expr: string; timezone?: string };
         task?: string;
         mode?: string;
         deleteAfterRun?: boolean;
+        wakeMode?: string;
       };
 
       try {
@@ -355,6 +366,29 @@ export default function gatewayTools(pi: ExtensionAPI) {
             const data = (await res.json()) as Record<string, unknown>;
             if (!res.ok) return cronError(data.error as string || res.statusText);
             return cronOk(`Job "${id}" triggered.`);
+          }
+
+          case "wake": {
+            if (!task) return cronError("task (text) is required for wake");
+            const res = await fetch(`${gatewayUrl}/api/wake`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${internalToken}`,
+              },
+              body: JSON.stringify({
+                text: task,
+                mode: wakeMode || "next-heartbeat",
+              }),
+            });
+            const data = (await res.json()) as Record<string, unknown>;
+            if (!res.ok) return cronError(data.error as string || res.statusText);
+            const modeLabel = (data.mode || wakeMode || "next-heartbeat") as string;
+            return cronOk(
+              modeLabel === "now"
+                ? `Wake event injected and heartbeat triggered.`
+                : `Wake event queued for next heartbeat.`,
+            );
           }
 
           default:

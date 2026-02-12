@@ -82,6 +82,11 @@ export async function routeHttp(req: Request, url: URL, ctx: GatewayContext): Pr
     if (cronResponse) return cronResponse;
   }
 
+  // --- Wake (inject system event into main session) ---
+  if (pathname === "/api/wake" && method === "POST") {
+    return handleWake(req, ctx);
+  }
+
   // --- Memory ---
   if (pathname === "/api/memory/search" && method === "GET") {
     const role = url.searchParams.get("role") ?? "default";
@@ -157,4 +162,34 @@ export async function routeHttp(req: Request, url: URL, ctx: GatewayContext): Pr
   }
 
   return new Response("Not Found", { status: 404 });
+}
+
+// ============================================================================
+// Wake handler — inject system event into main session
+// ============================================================================
+
+async function handleWake(req: Request, ctx: GatewayContext): Promise<Response> {
+  try {
+    const body = (await req.json()) as { text?: string; mode?: string };
+    if (!body.text || typeof body.text !== "string" || !body.text.trim()) {
+      return Response.json({ error: "text is required" }, { status: 400 });
+    }
+
+    const text = body.text.trim();
+    const mode = body.mode === "now" ? "now" : "next-heartbeat";
+    const agentId = ctx.config.agents?.default ?? "default";
+    const sessionKey = `agent:${agentId}:main`;
+
+    // Inject event into system events queue
+    ctx.systemEvents.inject(sessionKey, `[WAKE] ${text}`);
+
+    // If mode=now, trigger immediate heartbeat
+    if (mode === "now" && ctx.heartbeat) {
+      ctx.heartbeat.requestNow(agentId);
+    }
+
+    return Response.json({ ok: true, mode, sessionKey });
+  } catch {
+    return Response.json({ error: "Invalid request body" }, { status: 400 });
+  }
 }
