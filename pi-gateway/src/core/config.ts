@@ -349,6 +349,15 @@ export interface HooksConfig {
   path?: string;
 }
 
+export interface CronDelivery {
+  /** Delivery mode. "announce" = retell via main session, "direct" = send raw to channel, "silent" = log only. Default: "announce" */
+  mode: "announce" | "direct" | "silent";
+  /** Target channel. "last" = user's most recent active channel. Default: "last" */
+  channel?: string | "last";
+  /** Target chatId. If omitted, resolved from agent's most recent session. */
+  to?: string;
+}
+
 export interface CronJob {
   id: string;
   schedule: { kind: "cron" | "at" | "every"; expr: string; timezone?: string };
@@ -359,8 +368,8 @@ export interface CronJob {
   agentId?: string;
   /** Execution mode. "isolated" = independent session, "main" = inject into main session. Default: "isolated" */
   mode?: "isolated" | "main";
-  /** Result delivery. "announce" = send to bound channel, "silent" = log only. Default: "silent" */
-  delivery?: "announce" | "silent";
+  /** Result delivery config. String shorthand ("announce"/"direct"/"silent") or full object. Default: "announce" */
+  delivery?: CronDelivery | "announce" | "direct" | "silent";
   /** Per-job timeout in ms. Default: config.delegation.timeoutMs */
   timeoutMs?: number;
   /** If true, remove job after first execution (for "at" jobs). Default: false */

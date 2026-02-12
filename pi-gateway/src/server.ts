@@ -263,54 +263,90 @@ export class Gateway {
   }
 
   /**
-   * Build a CronAnnouncer that delivers isolated job results back to the
-   * agent's bound channel (e.g. Telegram chat).
+   * Build a CronAnnouncer that delivers isolated job results.
    *
-   * Strategy: find the agent's most recent session with a lastChannel + lastChatId,
-   * then use that channel plugin's outbound.sendText to deliver the result.
+   * Two delivery modes (aligned with OpenClaw):
+   * - "announce": inject into main session via SystemEventsQueue → agent retells naturally
+   * - "direct":   send raw text to user's channel via outbound.sendText
+   *
+   * Fallback: if announce injection fails (no main session), falls back to direct send.
    */
   private buildCronAnnouncer(): import("./core/cron.ts").CronAnnouncer {
     return {
-      announce: async (agentId: string, text: string) => {
-        // Find the agent's active session with a bound channel
-        let targetChannel: string | undefined;
-        let targetChatId: string | undefined;
-        let latestActivity = 0;
-
-        for (const session of this.sessions.values()) {
-          const sk = session.sessionKey ?? "";
-          // Match sessions for this agent (format: agent:{agentId}:{channel}:...)
-          const parts = sk.split(":");
-          if (parts[1] !== agentId) continue;
-          // Skip cron sessions themselves
-          if (sk.startsWith("cron:")) continue;
-          // Pick the most recently active session with channel info
-          if (session.lastChannel && session.lastChatId && (session.lastActivity ?? 0) > latestActivity) {
-            targetChannel = session.lastChannel;
-            targetChatId = session.lastChatId;
-            latestActivity = session.lastActivity ?? 0;
-          }
+      deliver: async (agentId: string, text: string, delivery) => {
+        if (delivery.mode === "announce") {
+          // Try inject into main session for agent retelling
+          const injected = this.tryCronInject(agentId, text);
+          if (injected) return;
+          // Fallback to direct send
+          this.log.info(`[cron-announcer] inject failed for ${agentId}, falling back to direct send`);
         }
-
-        if (!targetChannel || !targetChatId) {
-          this.log.warn(`[cron-announcer] no bound channel for agent ${agentId}, dropping announcement`);
-          return;
-        }
-
-        const plugin = this.registry.channels.get(targetChannel);
-        if (!plugin?.outbound?.sendText) {
-          this.log.warn(`[cron-announcer] channel ${targetChannel} has no sendText, dropping`);
-          return;
-        }
-
-        try {
-          await plugin.outbound.sendText(targetChatId, text);
-          this.log.info(`[cron-announcer] delivered to ${targetChannel}:${targetChatId} (${text.length} chars)`);
-        } catch (err: any) {
-          this.log.error(`[cron-announcer] delivery failed: ${err?.message}`);
-        }
+        // Direct send to channel
+        await this.cronDirectSend(agentId, text, delivery);
       },
     };
+  }
+
+  /**
+   * Inject cron result into main session via SystemEventsQueue + wake.
+   * Agent will process it and retell to user in its own voice.
+   */
+  private tryCronInject(agentId: string, text: string): boolean {
+    const mainKey = `agent:${agentId}:main`;
+    // Only inject if main session exists (user has interacted)
+    const mainSession = this.sessions.get(mainKey as import("./core/types.ts").SessionKey);
+    if (!mainSession?.lastChannel) {
+      return false;
+    }
+    const retellPrompt = `[CRON_RESULT] The following cron job completed. Summarize the result naturally for the user in 1-2 sentences. Do not mention technical details or that this was a cron job.\n\n${text}`;
+    this.systemEvents.inject(mainKey, retellPrompt);
+    // Wake heartbeat to process the event
+    this.heartbeatExecutor?.requestNow(agentId);
+    this.log.info(`[cron-announcer] injected to ${mainKey} for retelling (${text.length} chars)`);
+    return true;
+  }
+
+  /**
+   * Direct send cron result to user's channel.
+   * Resolves target from delivery config or agent's most recent session.
+   */
+  private async cronDirectSend(agentId: string, text: string, delivery: import("./core/config.ts").CronDelivery): Promise<void> {
+    let targetChannel = delivery.channel && delivery.channel !== "last" ? delivery.channel : undefined;
+    let targetChatId = delivery.to;
+
+    // Resolve from agent's most recent session if not specified
+    if (!targetChannel || !targetChatId) {
+      let latestActivity = 0;
+      for (const session of this.sessions.values()) {
+        const sk = session.sessionKey ?? "";
+        if (sk.startsWith("cron:")) continue;
+        const parts = sk.split(":");
+        if (parts[1] !== agentId) continue;
+        if (session.lastChannel && session.lastChatId && (session.lastActivity ?? 0) > latestActivity) {
+          if (!targetChannel) targetChannel = session.lastChannel;
+          if (!targetChatId) targetChatId = session.lastChatId;
+          latestActivity = session.lastActivity ?? 0;
+        }
+      }
+    }
+
+    if (!targetChannel || !targetChatId) {
+      this.log.warn(`[cron-announcer] no bound channel for agent ${agentId}, dropping`);
+      return;
+    }
+
+    const plugin = this.registry.channels.get(targetChannel);
+    if (!plugin?.outbound?.sendText) {
+      this.log.warn(`[cron-announcer] channel ${targetChannel} has no sendText, dropping`);
+      return;
+    }
+
+    try {
+      await plugin.outbound.sendText(targetChatId, text);
+      this.log.info(`[cron-announcer] direct send to ${targetChannel}:${targetChatId} (${text.length} chars)`);
+    } catch (err: any) {
+      this.log.error(`[cron-announcer] delivery failed: ${err?.message}`);
+    }
   }
 
   async stop(): Promise<void> {
