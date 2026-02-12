@@ -210,7 +210,27 @@ Example: MEDIA:./output.png
 - Sensitive system paths: /etc/passwd, ~/.ssh ❌
 - Directory traversal: ../../secret ❌
 - URL schemes: file://, data:, javascript: ❌
-- Null bytes and symlinks outside workspace ❌`;
+- Null bytes and symlinks outside workspace ❌
+
+**\`message\` tool** — perform actions on existing messages.
+Use the messageId from previous send_message or send_media results.
+
+\`\`\`
+message({ action: "react", messageId: "123", emoji: "👍" })
+message({ action: "react", messageId: "123", emoji: ["👍", "❤️"] })
+message({ action: "react", messageId: "123", emoji: "👍", remove: true })
+message({ action: "edit", messageId: "123", text: "Updated text" })
+message({ action: "delete", messageId: "123" })
+\`\`\`
+
+**Actions:**
+- react: Add or remove emoji reactions. Supports single emoji or array.
+- edit: Replace message text. Gateway handles format conversion per channel.
+- delete: Remove a message permanently.
+
+**Notes:**
+- Not all channels support all actions (unsupported returns an error)
+- messageId must come from a previous tool result — do not fabricate IDs`;
 
 // --- Delegation ---
 
