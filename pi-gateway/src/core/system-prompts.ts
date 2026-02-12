@@ -278,6 +278,16 @@ export function buildChannelSegment(config: Config): string | null {
 - Slash commands: /new, /status, /compact, /model, /think, /stop, /help`);
   }
 
+  if ((config.channels as any)?.feishu && (config.channels as any).feishu.enabled !== false) {
+    hints.push(`### Feishu (Lark)
+- Formatting: rich text (post) format — use plain text for now, no Markdown
+- Max message length: ~30000 characters per message (post type)
+- Media: not yet supported via channel — use send_media tool for file delivery
+- Interactive cards: future scope — currently text-only replies
+- Slash commands: not supported — use natural language commands
+- Note: Feishu WebSocket mode handles message dedup automatically`);
+  }
+
   // WebChat is always available when gateway is running
   hints.push(`### WebChat
 - No hard message length limit
