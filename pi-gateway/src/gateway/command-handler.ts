@@ -170,21 +170,33 @@ async function forwardToRpc(
       }
 
       // Collect content from custom messages (e.g. role-persona sendMessage)
-      if (ev.type === "message_start" || ev.type === "message_end") {
+      if (ev.type === "message_end") {
         const content = ev.message?.content;
         if (typeof content === "string" && content && ev.message?.display !== false) {
-          // Only capture from message_end to avoid duplicates (start+end have same content)
-          if (ev.type === "message_end") {
-            cmdResponse += content;
-          }
+          cmdResponse += content;
         }
       }
     });
 
     await rpc.prompt(rpcText);
-    await rpc.waitForIdle(30000);
-    cmdUnsub();
 
+    // Extension commands (e.g. role-persona) don't trigger agent_end,
+    // so we can't use waitForIdle. Wait briefly for events to arrive,
+    // then check if we got a response. If not, fall back to waitForIdle
+    // for commands that DO trigger the agent loop.
+    if (!cmdResponse) {
+      await new Promise((r) => setTimeout(r, 500));
+    }
+    if (!cmdResponse) {
+      // Might be an agent-loop command — wait for agent_end
+      try {
+        await rpc.waitForIdle(15000);
+      } catch {
+        // Timeout is OK — command may have already completed without agent_end
+      }
+    }
+
+    cmdUnsub();
     await msg.respond(cmdResponse.trim() || `Command /${parsed.name} executed.`);
   } catch (err: any) {
     ctx.log.error(`[SLASH-CMD] ${msg.sessionKey} failed to execute /${parsed.name}: ${err?.message ?? String(err)}`);
