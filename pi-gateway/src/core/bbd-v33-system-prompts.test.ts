@@ -82,9 +82,9 @@ describe("Layer 1: Gateway Identity", () => {
 
   test("SP-12: identity prompt lists enabled capabilities", () => {
     const config = bareConfig({
-      heartbeat: { enabled: true, every: "1m" },
+      heartbeat: { enabled: true, every: "1m" } as any,
       cron: { enabled: true },
-      channels: { telegram: { accounts: { default: { botToken: "t", allowFrom: [] } } } },
+      channels: { telegram: { enabled: true, accounts: { default: { botToken: "t", allowFrom: [] } } } },
       agents: { default: "main", list: [{ id: "main", workspace: "/tmp" }, { id: "b", workspace: "/tmp" }] },
     });
     const result = buildGatewayIdentityPrompt(config);
@@ -98,7 +98,7 @@ describe("Layer 1: Gateway Identity", () => {
   });
 
   test("SP-14: identity=false suppresses Layer 1", () => {
-    const config = telegramConfig({ agent: { gatewayPrompts: { identity: false } } });
+    const config = telegramConfig({ agent: { gatewayPrompts: { identity: false } } as any });
     const result = buildGatewaySystemPrompt(config);
     expect(result).not.toContain("## Gateway Environment");
     // But media segment should still be present
@@ -112,14 +112,14 @@ describe("Layer 1: Gateway Identity", () => {
 
 describe("Layer 2: Heartbeat", () => {
   test("SP-15: heartbeat segment injected when heartbeat.enabled=true", () => {
-    const config = bareConfig({ heartbeat: { enabled: true, every: "1m" } });
+    const config = bareConfig({ heartbeat: { enabled: true, every: "1m" } as any });
     const result = buildGatewaySystemPrompt(config);
     expect(result).toContain("## Gateway: Heartbeat Protocol");
     expect(result).toContain("HEARTBEAT_OK");
   });
 
   test("SP-16: heartbeat segment NOT injected when heartbeat.enabled=false", () => {
-    const config = bareConfig({ heartbeat: { enabled: false, every: "1m" } });
+    const config = bareConfig({ heartbeat: { enabled: false, every: "1m" } as any });
     const result = buildGatewaySystemPrompt(config);
     // May be null or not contain heartbeat
     if (result) expect(result).not.toContain("## Gateway: Heartbeat Protocol");
@@ -127,8 +127,8 @@ describe("Layer 2: Heartbeat", () => {
 
   test("SP-17: alwaysHeartbeat=true injects heartbeat even when disabled", () => {
     const config = bareConfig({
-      heartbeat: { enabled: false, every: "1m" },
-      agent: { gatewayPrompts: { alwaysHeartbeat: true } },
+      heartbeat: { enabled: false, every: "1m" } as any,
+      agent: { gatewayPrompts: { alwaysHeartbeat: true } } as any,
     });
     const result = buildGatewaySystemPrompt(config);
     expect(result).toContain("## Gateway: Heartbeat Protocol");
@@ -236,9 +236,9 @@ describe("Layer 2: Channel Hints", () => {
 describe("Full Assembly", () => {
   test("SP-28: all features enabled produces all segments in order", () => {
     const config = bareConfig({
-      heartbeat: { enabled: true, every: "1m" },
+      heartbeat: { enabled: true, every: "1m" } as any,
       cron: { enabled: true },
-      channels: { telegram: { accounts: { default: { botToken: "t", allowFrom: [] } } } },
+      channels: { telegram: { enabled: true, accounts: { default: { botToken: "t", allowFrom: [] } } } },
       agents: { default: "main", list: [{ id: "main", workspace: "/tmp" }, { id: "helper", workspace: "/tmp" }] },
     });
     const result = buildGatewaySystemPrompt(config)!;
@@ -263,15 +263,15 @@ describe("Full Assembly", () => {
   });
 
   test("SP-29: no features enabled returns null", () => {
-    const config = bareConfig({ agent: { gatewayPrompts: { identity: false } } });
+    const config = bareConfig({ agent: { gatewayPrompts: { identity: false } } as any });
     const result = buildGatewaySystemPrompt(config);
     expect(result).toBeNull();
   });
 
   test("SP-30: config overrides can force-disable individual segments", () => {
     const config = telegramConfig({
-      heartbeat: { enabled: true, every: "1m" },
-      agent: { gatewayPrompts: { heartbeat: false, channel: false } },
+      heartbeat: { enabled: true, every: "1m" } as any,
+      agent: { gatewayPrompts: { heartbeat: false, channel: false } } as any,
     });
     const result = buildGatewaySystemPrompt(config)!;
     expect(result).toContain("## Gateway Environment"); // identity still on
