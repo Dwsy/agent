@@ -14,6 +14,7 @@ import { handleCronApi } from "../core/cron-api.ts";
 import { searchMemory, getMemoryStats, getRoleInfo, listRoles } from "../core/memory-access.ts";
 import { handleMediaServe } from "./media-routes.ts";
 import { handleMediaSendRequest } from "./media-send.ts";
+import { handleMessageSendRequest } from "./message-send.ts";
 import { handleApiChat, handleApiChatStream } from "./chat-api.ts";
 import { handleApiSend } from "./send-api.ts";
 
@@ -137,6 +138,14 @@ export async function routeHttp(req: Request, url: URL, ctx: GatewayContext): Pr
   if (pathname.startsWith("/api/media/") && method === "GET") return handleMediaServe(url, ctx.config);
   if (pathname === "/api/media/send" && method === "POST") {
     return handleMediaSendRequest(req, {
+      config: ctx.config, pool: ctx.pool, registry: ctx.registry,
+      sessions: ctx.sessions, log: ctx.log, broadcastToWs: ctx.broadcastToWs,
+    });
+  }
+
+  // Message send API (v3.4: direct text delivery via channel plugins)
+  if (pathname === "/api/message/send" && method === "POST") {
+    return handleMessageSendRequest(req, {
       config: ctx.config, pool: ctx.pool, registry: ctx.registry,
       sessions: ctx.sessions, log: ctx.log, broadcastToWs: ctx.broadcastToWs,
     });
