@@ -51,6 +51,9 @@ export function migrateTelegramSessionKeys(
     const state = sessions.get(migration.oldKey);
     if (!state) continue;
     sessions.delete(migration.oldKey);
+    // NOTE (BG-002): No session_end hook here — this is a key rename, not a
+    // session termination. The session state is preserved and moved to newKey.
+    // Eviction-based session_end is handled by rpc-pool.ts onSessionEnd callback.
     state.sessionKey = migration.newKey;
     sessions.set(migration.newKey, state);
 
