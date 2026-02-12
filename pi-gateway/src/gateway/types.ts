@@ -27,6 +27,12 @@ import type { GatewayPluginApi } from "../plugins/types.ts";
 
 export type TelegramMessageMode = "steer" | "follow-up" | "interrupt";
 
+/** Result of dispatching an inbound message through the gateway pipeline. */
+export interface DispatchResult {
+  /** True when the message was injected into an active streaming turn (steer/follow-up). */
+  injected?: boolean;
+}
+
 export interface WsClientData {
   clientId: string;
 }
@@ -87,7 +93,7 @@ export interface GatewayContext {
   // Methods (bound from Gateway)
   broadcastToWs: (event: string, payload: unknown) => void;
   buildSessionProfile: (sessionKey: SessionKey, role: string) => ReturnType<typeof buildCapabilityProfile>;
-  dispatch: (msg: InboundMessage) => Promise<void>;
+  dispatch: (msg: InboundMessage) => Promise<DispatchResult>;
   compactSessionWithHooks: (sessionKey: SessionKey, instructions?: string) => Promise<void>;
   listAvailableRoles: () => string[];
   setSessionRole: (sessionKey: SessionKey, newRole: string) => Promise<boolean>;
