@@ -152,8 +152,8 @@ describe("v3.3 media-send: auth", () => {
 describe("v3.3 media-send: path security", () => {
   beforeEach(() => resetInternalToken());
 
-  test("MS-15: absolute path blocked", async () => {
-    const ctx = makeCtx();
+  test("MS-15: absolute path blocked when workspaceOnly", async () => {
+    const ctx = makeCtx({ media: { workspaceOnly: true } });
     const token = getGatewayInternalToken(ctx.config);
     const req = makeReq({ token, path: "/etc/passwd" });
     const res = await handleMediaSendRequest(req, ctx);
@@ -170,20 +170,29 @@ describe("v3.3 media-send: path security", () => {
     expect(res.status).toBe(403);
   });
 
-  test("MS-17: URL scheme blocked", async () => {
-    const ctx = makeCtx();
+  test("MS-17: URL scheme blocked when workspaceOnly", async () => {
+    const ctx = makeCtx({ media: { workspaceOnly: true } });
     const token = getGatewayInternalToken(ctx.config);
     const req = makeReq({ token, path: "file:///etc/passwd" });
     const res = await handleMediaSendRequest(req, ctx);
     expect(res.status).toBe(403);
   });
 
-  test("MS-18: home path blocked", async () => {
-    const ctx = makeCtx();
+  test("MS-18: home path blocked when workspaceOnly", async () => {
+    const ctx = makeCtx({ media: { workspaceOnly: true } });
     const token = getGatewayInternalToken(ctx.config);
     const req = makeReq({ token, path: "~/secret.txt" });
     const res = await handleMediaSendRequest(req, ctx);
     expect(res.status).toBe(403);
+  });
+
+  test("MS-18b: absolute path allowed when workspaceOnly is false (default)", async () => {
+    const ctx = makeCtx();
+    const token = getGatewayInternalToken(ctx.config);
+    const req = makeReq({ token, path: "/tmp/test-media.png" });
+    // File doesn't exist → 404, but NOT 403 (path is allowed)
+    const res = await handleMediaSendRequest(req, ctx);
+    expect(res.status).toBe(404);
   });
 
   test("MS-19: missing path returns 400", async () => {
@@ -515,11 +524,10 @@ describe("v3.3 media-send: direct delivery", () => {
 
     const req = makeReq({ sessionKey: activeSessionKey, path: `./${tmpName}` });
     const res = await handleMediaSendRequest(req, ctx);
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(502);
     const data = await res.json() as any;
-    expect(data.ok).toBe(false);
-    expect(data.delivered).toBe(true);
     expect(data.error).toBe("File too large");
+    expect(data.delivered).toBe(false);
 
     const { unlinkSync } = require("node:fs");
     try { unlinkSync(tmpName); } catch {}
