@@ -17,6 +17,7 @@ import { getSessionDir } from "./session-store.ts";
 import { getCwdForRole } from "./session-router.ts";
 import { buildCapabilityProfile, type CapabilityProfile } from "./capability-profile.ts";
 import type { MetricsCollector } from "./metrics.ts";
+import type { ExecGuard } from "./exec-guard.ts";
 import { PoolWaitingList } from "./pool-waiting-list.ts";
 
 /** Check if `superset` contains all elements of `subset`. */
@@ -52,6 +53,7 @@ export class RpcPool {
   constructor(
     private config: Config,
     private metrics?: MetricsCollector,
+    private execGuard?: ExecGuard,
   ) {
     this.log = createLogger("rpc-pool");
   }
@@ -355,7 +357,16 @@ export class RpcPool {
 
   private async spawnClient(profile: CapabilityProfile, sessionKey?: SessionKey): Promise<RpcClient> {
     const id = `rpc-${++this.nextId}`;
+    const piPath = this.config.agent.piCliPath ?? "pi";
     const extraArgs: string[] = [...profile.args];
+
+    // Exec guard check before spawn
+    if (this.execGuard) {
+      const check = this.execGuard.check(piPath, extraArgs, { caller: "rpc-pool.spawnClient" });
+      if (!check.allowed) {
+        throw new Error(`ExecGuard blocked spawn: ${check.reason}`);
+      }
+    }
 
     // Session persistence: always set --session-dir so pi writes JSONL transcripts.
     // If we have a session key, use a session-specific dir. Otherwise use a pool temp dir.
