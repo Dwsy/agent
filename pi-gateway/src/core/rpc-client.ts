@@ -212,7 +212,13 @@ export class RpcClient {
   }
 
   async abort(): Promise<void> {
-    await this.send({ type: "abort" });
+    // Urgent: write directly to stdin without waiting for response.
+    // This ensures abort is not blocked by pending requests.
+    if (!this.proc) throw new Error("RPC client not started");
+    const id = `req_${++this.requestCounter}`;
+    const cmd = JSON.stringify({ type: "abort", id }) + "\n";
+    this.proc.stdin.write(cmd);
+    this.lastActivity = Date.now();
   }
 
   async newSession(): Promise<{ cancelled: boolean }> {
