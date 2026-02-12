@@ -168,6 +168,15 @@ export class Gateway {
       this.log.error(`Plugin ${id} failed: ${error}`);
     }
 
+    // BG-003: startup conflict summary
+    const conflicts = ctx.registry.conflicts;
+    if (conflicts.length > 0) {
+      this.log.warn(`Plugin registration conflicts (${conflicts.length}):`);
+      for (const c of conflicts) {
+        this.log.warn(`  ${c.type} "${c.name}": ${c.existingPlugin} → ${c.newPlugin} (${c.resolution})`);
+      }
+    }
+
     // Dispatch gateway_start hook
     await this.registry.hooks.dispatch("gateway_start", {});
 

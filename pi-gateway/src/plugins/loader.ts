@@ -37,6 +37,14 @@ import { HookRegistry } from "./hooks.ts";
 
 export type CliRegistrar = (program: CliProgram) => void;
 
+export interface RegistrationConflict {
+  type: "channel" | "tool" | "command" | "httpRoute" | "wsMethod";
+  name: string;
+  existingPlugin: string;
+  newPlugin: string;
+  resolution: "skipped" | "overwritten" | "duplicate";
+}
+
 export interface PluginRegistryState {
   channels: Map<string, ChannelPlugin>;
   tools: Map<string, ToolPlugin>;
@@ -46,6 +54,7 @@ export interface PluginRegistryState {
   services: BackgroundService[];
   hooks: HookRegistry;
   cliRegistrars: Array<{ pluginId: string; registrar: CliRegistrar }>;
+  conflicts: RegistrationConflict[];
 }
 
 export function createPluginRegistry(): PluginRegistryState {
@@ -58,6 +67,7 @@ export function createPluginRegistry(): PluginRegistryState {
     services: [],
     hooks: new HookRegistry(),
     cliRegistrars: [],
+    conflicts: [],
   };
 }
 
