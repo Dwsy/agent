@@ -107,6 +107,10 @@ async function sendLocalFileByKind(bot: Bot, chatId: string, item: TelegramMedia
 
   const data = readFileSync(localPath);
   const fileName = basename(localPath) || "file";
+
+  // Diagnostic logging for audio debugging
+  console.log(`[sendLocalFileByKind] path=${localPath} kind=${item.kind} fileSize=${data.length} fileName=${fileName}`);
+
   const file = new InputFile(data, fileName);
   const { caption, followUpText } = splitCaption(item.caption);
   const htmlCaption = caption ? markdownToTelegramHtml(clipCaption(caption)) : undefined;
@@ -120,11 +124,13 @@ async function sendLocalFileByKind(bot: Bot, chatId: string, item: TelegramMedia
       await bot.api.sendPhoto(chatId, file, htmlCaption ? { caption: htmlCaption, parse_mode: "HTML", ...threadOpts, ...replyOpts } : { ...threadOpts, ...replyOpts });
     }
   } else if (item.kind === "audio") {
+    console.log(`[sendLocalFileByKind] calling sendAudio chatId=${chatId} fileName=${fileName}`);
     if (fileName.toLowerCase().endsWith(".ogg")) {
       await bot.api.sendVoice(chatId, file, htmlCaption ? { caption: htmlCaption, parse_mode: "HTML", ...threadOpts, ...replyOpts } : { ...threadOpts, ...replyOpts });
     } else {
       await bot.api.sendAudio(chatId, file, htmlCaption ? { caption: htmlCaption, parse_mode: "HTML", ...threadOpts, ...replyOpts } : { ...threadOpts, ...replyOpts });
     }
+    console.log(`[sendLocalFileByKind] sendAudio success`);
   } else {
     // kind === "file": video or generic document
     const lower = fileName.toLowerCase();

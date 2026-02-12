@@ -1072,6 +1072,8 @@ export async function sendMediaViaAccount(params: {
     : "file";
 
   try {
+    console.log(`[sendMediaViaAccount] calling sendTelegramMedia kind=${kind} path=${params.filePath}`);
+
     await sendTelegramMedia(account.bot, parsed.chatId, {
       kind,
       url: params.filePath,
