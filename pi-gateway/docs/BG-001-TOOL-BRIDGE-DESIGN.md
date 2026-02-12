@@ -338,6 +338,7 @@ import { Type } from "@sinclair/typebox";
 const GATEWAY_URL = "{{gatewayUrl}}";
 const INTERNAL_TOKEN = "{{internalToken}}";
 
+// NOTE: Template syntax is pseudocode. Implementation uses string concatenation.
 export default function gatewayToolBridge(pi: ExtensionAPI) {
   {{#each tools}}
   pi.registerTool({
@@ -353,28 +354,17 @@ export default function gatewayToolBridge(pi: ExtensionAPI) {
           body: JSON.stringify({
             token: INTERNAL_TOKEN,
             pid: process.pid,
-            sessionKey: process.env.PI_GATEWAY_SESSION_KEY || "",
+            sessionKey: "",  // resolved via PID on gateway side
             tool: "{{name}}",
             params,
           }),
         });
         const data = await res.json();
-        if (!res.ok) {
-          return {
-            content: [{ type: "text", text: `Tool error: ${data.error || res.statusText}` }],
-            details: { error: true },
-          };
-        }
-        return data.result ?? { content: [{ type: "text", text: "OK" }] };
-      } catch (err) {
-        return {
-          content: [{ type: "text", text: `Tool bridge error: ${err.message}` }],
-          details: { error: true },
-        };
+        // ... error handling
       }
     },
   });
-  {{/each}}
+  // ... more tools (generated via string concatenation)
 }
 ```
 
@@ -386,10 +376,11 @@ export default function gatewayToolBridge(pi: ExtensionAPI) {
 3. Pass generated extension path to `spawnClient` via `--extension`
 4. Add `/api/tools/call` schema validation (currently trusts caller)
 
-#### Phase 2: Migrate gateway-tools (v3.6)
+#### Phase 2: Migrate gateway-tools (v3.6, cautious)
 1. Move `send_media` and `send_message` from hardcoded extension to `registerTool` in a builtin plugin
 2. Bridge generator auto-wraps them like any other tool
-3. Remove `gateway-tools` extension (or keep as fallback)
+3. **Caveat**: `send_media` has special logic (absolute path allowlist, `validateMediaPath`, `skipPathValidation`) that doesn't fit a generic schema+fetch pattern. May need to keep as a specialized tool with bridge-aware execution, or move validation into the `/api/tools/call` handler.
+4. Remove `gateway-tools` extension (or keep as fallback)
 
 #### Phase 3: Upstream RFC (v4.0 proposal)
 1. Propose `register_tool` / `unregister_tool` RPC commands to pi-mono
@@ -406,7 +397,8 @@ The bridge generator needs a `jsonSchemaToTypeBox` converter:
 ```typescript
 function jsonSchemaToTypeBox(schema: Record<string, unknown>): string {
   // Convert JSON Schema → TypeBox source code string
-  // Handles: string, number, boolean, object, array, enum, optional
+  // Phase 1 scope: string, number, boolean, object, array, enum, optional
+  // Deferred: anyOf, oneOf, allOf, $ref, conditional schemas
   // Falls back to Type.Unknown() for unsupported types
 }
 ```
@@ -421,7 +413,7 @@ This is a code generation step (string output), not a runtime conversion.
 |---|---|---|
 | Generated extension has syntax error | Agent starts without gateway tools | Validate generated code with `Bun.build` dry-run before spawning |
 | Tool execution latency (HTTP round-trip) | ~5-20ms per call | Acceptable for gateway tools (not hot-path) |
-| PID session resolution fails | Tool call returns 400 | Improve: use `PI_GATEWAY_SESSION_KEY` env (already set by RPC pool) |
+| PID session resolution fails | Tool call returns 400 | Improve: gateway maps PID→sessionKey via `pool.getByPid()` (current mechanism); consider adding sessionKey to spawn env in future |
 | Plugin adds tool after startup | Tool not available until restart | Document: tool registration is startup-time only (same as OpenClaw) |
 | TypeBox conversion loses schema detail | Agent gets imprecise tool params | Test with all existing tool schemas; fallback to `Type.Unknown()` |
 
