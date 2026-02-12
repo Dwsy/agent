@@ -227,6 +227,20 @@ describe("Layer 2: Channel Hints", () => {
     expect(segment).toContain("### WebChat");
     expect(segment).toContain("lightbox");
   });
+
+  test("SP-27b: Feishu hints included when feishu enabled", () => {
+    const config = bareConfig({ channels: { feishu: { enabled: true, appId: "x", appSecret: "y" } } });
+    const segment = buildChannelSegment(config);
+    expect(segment).toContain("### Feishu");
+    expect(segment).toContain("rich text");
+    expect(segment).toContain("dedup");
+  });
+
+  test("SP-27c: Feishu hints excluded when feishu not configured", () => {
+    const config = bareConfig();
+    const segment = buildChannelSegment(config);
+    expect(segment).not.toContain("### Feishu");
+  });
 });
 
 // ============================================================================
