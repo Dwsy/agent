@@ -111,14 +111,18 @@ async function resolveImagesFromMessage(account: TelegramAccountRuntime, msg: Te
   const maxMb = Math.max(1, account.cfg.mediaMaxMb ?? 10);
   const maxBytes = maxMb * 1024 * 1024;
 
+  console.log(`[telegram-media] resolveImages: photo=${msg.photo?.length ?? 0} document=${msg.document?.file_id ? 'yes' : 'no'} sticker=${msg.sticker ? 'yes' : 'no'}`);
+
   if (msg.photo?.length) {
     const largest = msg.photo[msg.photo.length - 1];
+    console.log(`[telegram-media] downloading photo: file_id=${largest?.file_id?.slice(0, 20)}... maxBytes=${maxBytes}`);
     if (largest?.file_id) {
       const downloaded = await downloadTelegramFile({
         token: account.token,
         fileId: largest.file_id,
         maxBytes,
       });
+      console.log(`[telegram-media] photo download result: ${downloaded ? `${downloaded.mimeType} ${downloaded.data.length} chars base64` : 'null'}`);
       if (downloaded && downloaded.mimeType.startsWith("image/")) {
         images.push({ type: "image", data: downloaded.data, mimeType: downloaded.mimeType });
       }
@@ -295,7 +299,7 @@ async function dispatchAgentTurn(params: {
     spinnerInterval = setInterval(() => {
       spinnerIndex = (spinnerIndex + 1) % spinnerFrames.length;
       pushLiveUpdate();
-    }, 200);
+    }, 1000);
   };
 
   const stopSpinner = () => {
@@ -923,7 +927,7 @@ export async function setupTelegramHandlers(runtime: TelegramPluginRuntime, acco
   const bot = account.bot;
 
   // 本地命令列表（由 bot.command() 处理）
-  const localCommands = new Set(["new", "status", "queue", "help", "media", "photo", "audio", "model", "refresh", "skills"]);
+  const localCommands = new Set(["new", "stop", "status", "queue", "role", "cron", "help", "media", "photo", "audio", "model", "refresh", "skills"]);
 
   bot.on("message", async (ctx: any) => {
     const updateId = Number((ctx.update as any)?.update_id ?? -1);
@@ -1052,7 +1056,10 @@ export async function sendMediaViaAccount(params: {
       kind,
       url: params.filePath,
       caption: params.opts?.caption,
-    }, threadId ? { messageThreadId: threadId } : undefined);
+    }, {
+      ...(threadId ? { messageThreadId: threadId } : {}),
+      skipPathValidation: true,  // API layer already validated
+    });
 
     params.runtime.api.logger.info(
       `[telegram:${account.accountId}] sendMedia to=${params.target} path=${params.filePath} kind=${kind}`,
