@@ -374,7 +374,10 @@ export class HeartbeatExecutor {
       // Process response
       return this.processResponse(response, hbConfig);
     } finally {
-      // Always release RPC process
+      // Always release RPC process back to idle pool.
+      // NOTE (BG-002): No session_end hook here — release() returns the process
+      // to the pool, it does not terminate the session. If the process is later
+      // evicted (idle timeout / pool shrink), rpc-pool.ts fires onSessionEnd.
       this.pool.release(sessionKey);
     }
   }
