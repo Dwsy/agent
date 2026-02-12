@@ -12,13 +12,14 @@
 |---|---|---|---|---|
 | V1 | send_media Telegram 实战验证 (115.191.43.169) | P0 | TrueJaguar + Dwsy | 需要部署 |
 | T1 | send_message tool (text + reply) | P1 | NiceViper | 设计中 |
+| F1 | 飞书 (Feishu/Lark) channel plugin | P1 | JadeStorm | 设计阶段，参考 clawdbot-feishu |
 
 ## 🔧 In Progress
 
 | ID | Task | Owner | Started | Blocker |
 |---|---|---|---|---|
 | R3 | server.ts <500 行 (P3 cleanup) | MintHawk | 02-12 | — |
-| S3-fix | ExecGuard wiring to spawn calls (DarkUnion P0) | JadeHawk | — | DarkUnion review |
+| F1 | 飞书 channel plugin 设计文档 | JadeStorm | 02-12 | — |
 
 ## 👀 In Review
 
@@ -31,7 +32,7 @@
 | ID | Task | Owner | Tests | Commit |
 |---|---|---|---|---|
 | R1 | message-pipeline extraction | NiceViper | — | `d394924` |
-| R2 | plugin-api-factory extraction | DarkUnion | — | `2bbd364` |
+| R2 | plugin-api-factory extraction | DarkUnion | — | `0322fab` |
 | S1 | auth fail-closed | TrueJaguar | 30 | `1479143` |
 | S2 | SSRF guard | JadeHawk | 34 | `0caf605` |
 | S3 | exec allowlist (impl, pending wiring) | JadeHawk | 20 | `681cdfd` |
@@ -59,11 +60,12 @@
 
 | Agent | Current Task | Available |
 |---|---|---|
-| NiceViper | T1 send_message 设计 | — |
-| DarkUnion | S3 review done, waiting | ✅ |
-| TrueJaguar | V1 blocked (deployment) | ✅ |
+| NiceViper | 架构顾问 (OpenClaw 参考) | 咨询 |
+| DarkUnion | 等飞书设计 review | ✅ |
+| TrueJaguar | V1 blocked + SECURITY.md done | ✅ |
 | MintHawk | R3 server.ts cleanup | — |
-| JadeHawk | CHANGELOG + S3 fix | — |
+| JadeHawk | S3 fix done, CHANGELOG done | ✅ |
+| JadeStorm | F1 飞书 plugin 设计文档 | — |
 | HappyNova | 回归守门 | ✅ |
 
 ---

@@ -111,7 +111,7 @@ describe("v3.3 media-send: auth", () => {
     const req = makeReq({ sessionKey: "agent:main:telegram:dm:invalid", path: "./test.png" });
     const res = await handleMediaSendRequest(req, ctx);
     expect(res.status).toBe(403);
-    const data = await res.json();
+    const data = await res.json() as any;
     expect(data.error).toContain("Invalid");
   });
 
@@ -129,7 +129,7 @@ describe("v3.3 media-send: auth", () => {
     const req = makeReq({ token: "wrong-token", path: "./test.png" });
     const res = await handleMediaSendRequest(req, ctx);
     expect(res.status).toBe(403);
-    const data = await res.json();
+    const data = await res.json() as any;
     expect(data.error).toContain("Invalid token");
   });
 
@@ -138,7 +138,7 @@ describe("v3.3 media-send: auth", () => {
     const req = makeReq({ path: "./test.png" });
     const res = await handleMediaSendRequest(req, ctx);
     expect(res.status).toBe(400);
-    const data = await res.json();
+    const data = await res.json() as any;
     expect(data.error).toContain("Missing");
   });
 });
@@ -156,7 +156,7 @@ describe("v3.3 media-send: path security", () => {
     const req = makeReq({ token, path: "/etc/passwd" });
     const res = await handleMediaSendRequest(req, ctx);
     expect(res.status).toBe(403);
-    const data = await res.json();
+    const data = await res.json() as any;
     expect(data.error).toContain("security");
   });
 
@@ -190,7 +190,7 @@ describe("v3.3 media-send: path security", () => {
     const req = makeReq({ token, path: "" });
     const res = await handleMediaSendRequest(req, ctx);
     expect(res.status).toBe(400);
-    const data = await res.json();
+    const data = await res.json() as any;
     expect(data.error).toContain("Missing path");
   });
 });
@@ -372,7 +372,7 @@ describe("v3.3 media-send: edge cases", () => {
     const req = makeReq({ sessionKey: activeSessionKey, path: `./${tmpName}` });
     const res = await handleMediaSendRequest(req, ctx);
     expect(res.status).toBe(404);
-    const data = await res.json();
+    const data = await res.json() as any;
     expect(data.error).toContain("Channel plugin not found");
 
     const { unlinkSync } = require("node:fs");
@@ -405,7 +405,7 @@ describe("v3.3 media-send: edge cases", () => {
     const req = makeReq({ sessionKey: activeSessionKey, path: `./${tmpName}` });
     const res = await handleMediaSendRequest(req, ctx);
     expect(res.status).toBe(400);
-    const data = await res.json();
+    const data = await res.json() as any;
     expect(data.error).toContain("chatId");
 
     const { unlinkSync } = require("node:fs");
@@ -485,7 +485,7 @@ describe("v3.3 media-send: direct delivery", () => {
     const req = makeReq({ sessionKey: activeSessionKey, path: `./${tmpName}` });
     const res = await handleMediaSendRequest(req, ctx);
     expect(res.status).toBe(500);
-    const data = await res.json();
+    const data = await res.json() as any;
     expect(data.error).toContain("Telegram API down");
 
     const { unlinkSync } = require("node:fs");
