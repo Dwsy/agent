@@ -271,10 +271,128 @@ describe("cron tool [v3.6]", () => {
   });
 
   // ==========================================================================
-  // CT-6: System prompt includes cron tool mention
+  // CT-6: Wake (inject system event)
   // ==========================================================================
 
-  describe("CT-6: system prompt", () => {
+  describe("CT-6: wake", () => {
+    it("injects event with next-heartbeat mode", async () => {
+      const { SystemEventsQueue } = await import("./system-events.ts");
+      const sysEvents = new SystemEventsQueue();
+      const { routeHttp } = await import("../api/http-router.ts");
+
+      const mockCtx = {
+        config: {
+          ...testConfig,
+          agents: { default: "main", list: [{ id: "main", role: "default" }] },
+          gateway: { auth: { mode: "off" } },
+          hooks: { enabled: false },
+          channels: {},
+          cron: { enabled: false },
+          queue: { priority: { webhook: 3 } },
+        },
+        systemEvents: sysEvents,
+        heartbeat: null,
+        cron: null,
+        pool: { getStats: () => ({}) },
+        queue: { getStats: () => ({}) },
+        sessions: { size: 0 },
+        registry: { channels: new Map() },
+      } as any;
+
+      const req = new Request("http://localhost/api/wake", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: "Check pending PRs" }),
+      });
+      const url = new URL("http://localhost/api/wake");
+      const res = await routeHttp(req, url, mockCtx);
+      const data = await res.json();
+      expect(data.ok).toBe(true);
+      expect(data.mode).toBe("next-heartbeat");
+
+      // Verify event was injected
+      const events = sysEvents.peek("agent:main:main");
+      expect(events.length).toBe(1);
+      expect(events[0]).toContain("Check pending PRs");
+    });
+
+    it("injects event with now mode and triggers heartbeat", async () => {
+      const { SystemEventsQueue } = await import("./system-events.ts");
+      const sysEvents = new SystemEventsQueue();
+      let heartbeatTriggered = false;
+      const mockHeartbeat = {
+        requestNow: (_agentId: string) => { heartbeatTriggered = true; },
+      };
+
+      const { routeHttp } = await import("../api/http-router.ts");
+      const mockCtx = {
+        config: {
+          agents: { default: "main", list: [{ id: "main", role: "default" }] },
+          gateway: { auth: { mode: "off" } },
+          hooks: { enabled: false },
+          channels: {},
+          cron: { enabled: false },
+          queue: { priority: { webhook: 3 } },
+        },
+        systemEvents: sysEvents,
+        heartbeat: mockHeartbeat,
+        cron: null,
+        pool: { getStats: () => ({}) },
+        queue: { getStats: () => ({}) },
+        sessions: { size: 0 },
+        registry: { channels: new Map() },
+      } as any;
+
+      const req = new Request("http://localhost/api/wake", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: "Urgent: check email", mode: "now" }),
+      });
+      const url = new URL("http://localhost/api/wake");
+      const res = await routeHttp(req, url, mockCtx);
+      const data = await res.json();
+      expect(data.ok).toBe(true);
+      expect(data.mode).toBe("now");
+      expect(heartbeatTriggered).toBe(true);
+    });
+
+    it("rejects empty text", async () => {
+      const { SystemEventsQueue } = await import("./system-events.ts");
+      const { routeHttp } = await import("../api/http-router.ts");
+      const mockCtx = {
+        config: {
+          agents: { default: "main", list: [] },
+          gateway: { auth: { mode: "off" } },
+          hooks: { enabled: false },
+          channels: {},
+          cron: { enabled: false },
+          queue: { priority: { webhook: 3 } },
+        },
+        systemEvents: new SystemEventsQueue(),
+        heartbeat: null,
+        cron: null,
+        pool: { getStats: () => ({}) },
+        queue: { getStats: () => ({}) },
+        sessions: { size: 0 },
+        registry: { channels: new Map() },
+      } as any;
+
+      const req = new Request("http://localhost/api/wake", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: "" }),
+      });
+      const url = new URL("http://localhost/api/wake");
+      const res = await routeHttp(req, url, mockCtx);
+      expect(res.status).toBe(400);
+    });
+  });
+
+  // ==========================================================================
+  // CT-7: System prompt includes cron tool mention
+  // ==========================================================================
+
+  describe("CT-7: system prompt", () => {
     it("CRON_SEGMENT mentions cron tool", async () => {
       const { CRON_PROMPT } = await import("./system-prompts.ts");
       expect(CRON_PROMPT).toContain("cron");
