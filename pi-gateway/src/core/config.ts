@@ -408,6 +408,11 @@ export interface QueueConfig {
   };
 }
 
+export interface MediaConfig {
+  /** Restrict send_media to workspace files only. Default: false (allow any path). */
+  workspaceOnly?: boolean;
+}
+
 export interface Config {
   gateway: GatewayConfig;
   agent: AgentConfig;
@@ -425,6 +430,8 @@ export interface Config {
   agents?: AgentsConfig;
   /** Heartbeat configuration (v3.1). */
   heartbeat?: HeartbeatConfig;
+  /** Media send configuration. */
+  media?: MediaConfig;
 }
 
 // ============================================================================
