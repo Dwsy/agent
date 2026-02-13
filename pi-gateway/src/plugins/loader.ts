@@ -112,8 +112,8 @@ export class PluginLoader {
       try {
         await this.loadPlugin(manifest, dir, source);
         this.loaded.set(manifest.id, { manifest, source });
-      } catch (err: any) {
-        const errMsg = err?.message ?? String(err);
+      } catch (err: unknown) {
+        const errMsg = err instanceof Error ? err.message : String(err);
         this.log.error(`Failed to load plugin ${manifest.id}: ${errMsg}`);
         errors.push({ id: manifest.id, error: errMsg });
       }
@@ -166,8 +166,8 @@ export class PluginLoader {
 
         this.loaded.set(name, { manifest, source: "builtin" });
         this.log.info(`Loaded builtin plugin: ${name}`);
-      } catch (err: any) {
-        this.log.error(`Failed to load builtin ${name}: ${err?.message}`);
+      } catch (err: unknown) {
+        this.log.error(`Failed to load builtin ${name}: ${(err instanceof Error ? err.message : String(err))}`);
       }
     }
   }

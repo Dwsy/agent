@@ -234,11 +234,13 @@ export async function dispatchAgentTurn(params: {
         throttleBackoff = Math.max(0, throttleBackoff - 100);
         clearTimeout(editTimeout);
       })
-      .catch((err: any) => {
+      .catch((err: unknown) => {
         editInFlight = false;
         clearTimeout(editTimeout);
-        if (err?.error_code === 429 || err?.statusCode === 429) {
-          const retryAfter = (err?.parameters?.retry_after ?? 1) * 1000;
+        const tgErr = err as Record<string, unknown> | null;
+        if (tgErr?.error_code === 429 || tgErr?.statusCode === 429) {
+          const params = tgErr?.parameters as Record<string, unknown> | undefined;
+          const retryAfter = (typeof params?.retry_after === 'number' ? params.retry_after : 1) * 1000;
           throttleBackoff = Math.max(throttleBackoff, retryAfter);
           lastEditAt = Date.now();
         }
@@ -444,8 +446,8 @@ export async function dispatchAgentTurn(params: {
             ...(replyToMessageId ? { replyToMessageId } : {}),
           });
           markReplyUsed(replyToMessageId);
-        } catch (err: any) {
-          const reason = err?.message ?? "unknown";
+        } catch (err: unknown) {
+          const reason = err instanceof Error ? err.message : "unknown";
           await botClient.api.sendMessage(chatId, `Failed to send ${media.kind}: ${reason}`).catch(() => {});
         }
       }

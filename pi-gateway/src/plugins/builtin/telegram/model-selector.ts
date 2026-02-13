@@ -87,8 +87,8 @@ export function registerModelCommand(
       try {
         await runtime.api.setModel(sessionKey, provider, modelId);
         await ctx.reply(`Model: <b>${escapeHtml(provider)}/${escapeHtml(modelId)}</b>`, { parse_mode: "HTML" });
-      } catch (err: any) {
-        await ctx.reply(`Failed: ${err?.message ?? String(err)}`);
+      } catch (err: unknown) {
+        await ctx.reply(`Failed: ${err instanceof Error ? err.message : String(err)}`);
       }
       return;
     }
@@ -104,8 +104,8 @@ export function registerModelCommand(
       await ctx.reply("选择 Provider：", {
         reply_markup: { inline_keyboard: buildProviderKeyboard(providers) },
       });
-    } catch (err: any) {
-      await ctx.reply(`Failed to list models: ${err?.message ?? String(err)}`);
+    } catch (err: unknown) {
+      await ctx.reply(`Failed to list models: ${err instanceof Error ? err.message : String(err)}`);
     }
   });
 }

@@ -50,8 +50,8 @@ export async function sendFeishuReaction(
       }
     }
     return { ok: true };
-  } catch (err: any) {
-    return { ok: false, error: err?.message ?? String(err) };
+  } catch (err: unknown) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
 }
 
@@ -70,8 +70,8 @@ export async function editFeishuMessage(
       return { ok: false, error: `Edit failed: ${res.msg}` };
     }
     return { ok: true };
-  } catch (err: any) {
-    return { ok: false, error: err?.message ?? String(err) };
+  } catch (err: unknown) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
 }
 
@@ -87,7 +87,7 @@ export async function deleteFeishuMessage(
       return { ok: false, error: `Delete failed: ${res.msg}` };
     }
     return { ok: true };
-  } catch (err: any) {
-    return { ok: false, error: err?.message ?? String(err) };
+  } catch (err: unknown) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
 }
