@@ -1,0 +1,206 @@
+/** cron tool — manage gateway scheduled tasks. */
+
+import { Type } from "@sinclair/typebox";
+import { cronOk, cronError } from "./helpers.ts";
+
+export function createCronTool(gatewayUrl: string, internalToken: string) {
+  return {
+    name: "cron",
+    label: "Cron",
+    description:
+      "Manage gateway scheduled tasks (cron jobs) and send wake events. " +
+      "Actions: list (show all jobs), add (create job), remove (delete job), " +
+      "pause/resume (toggle job), run (trigger immediately), wake (inject system event).\n\n" +
+      "SCHEDULE TYPES (schedule.kind):\n" +
+      '- "cron": Standard cron expression, e.g. "0 */6 * * *"\n' +
+      '- "every": Interval, e.g. "30m", "2h", "1d"\n' +
+      '- "at": One-shot ISO 8601 datetime (fires once)\n\n' +
+      "MODE:\n" +
+      '- "isolated" (default): Runs in independent session\n' +
+      '- "main": Injects as system event into main session\n\n' +
+      "WAKE:\n" +
+      "Inject a system event into the main session. " +
+      'mode "next-heartbeat" (default) queues for next heartbeat; "now" triggers immediately.\n\n' +
+      "EXAMPLES:\n" +
+      '- List: { action: "list" }\n' +
+      '- Add hourly task: { action: "add", id: "backup", schedule: { kind: "every", expr: "1h" }, task: "Run backup check" }\n' +
+      '- Add cron: { action: "add", id: "morning", schedule: { kind: "cron", expr: "0 9 * * *" }, task: "Morning briefing" }\n' +
+      '- One-shot reminder: { action: "add", id: "remind-1", schedule: { kind: "at", expr: "2026-02-13T10:00:00Z" }, task: "Remind user about meeting", deleteAfterRun: true }\n' +
+      '- Remove: { action: "remove", id: "backup" }\n' +
+      '- Pause: { action: "pause", id: "morning" }\n' +
+      '- Run now: { action: "run", id: "backup" }\n' +
+      '- Wake now: { action: "wake", text: "Check email for urgent items", wakeMode: "now" }\n' +
+      '- Wake next: { action: "wake", text: "Review pending PRs" }',
+    parameters: Type.Object({
+      action: Type.String({
+        enum: ["list", "add", "remove", "pause", "resume", "run", "wake"],
+        description: "Action to perform",
+      }),
+      id: Type.Optional(
+        Type.String({ description: "Job ID — required for add/remove/pause/resume/run" }),
+      ),
+      schedule: Type.Optional(
+        Type.Object(
+          {
+            kind: Type.String({
+              enum: ["cron", "every", "at"],
+              description: "Schedule type",
+            }),
+            expr: Type.String({ description: 'Schedule expression (cron: "0 */6 * * *", every: "30m", at: ISO 8601)' }),
+            timezone: Type.Optional(Type.String({ description: "Timezone for cron expressions (e.g. Asia/Shanghai)" })),
+          },
+          { description: "Schedule — required for add" },
+        ),
+      ),
+      task: Type.Optional(
+        Type.String({ description: "Task description text — required for add" }),
+      ),
+      mode: Type.Optional(
+        Type.String({
+          enum: ["isolated", "main"],
+          description: 'Execution mode. Default: "isolated"',
+        }),
+      ),
+      delivery: Type.Optional(
+        Type.String({
+          enum: ["announce", "direct", "silent"],
+          description: 'Result delivery mode. "announce" (default) = retell via main session, "direct" = send raw to channel, "silent" = log only',
+        }),
+      ),
+      deleteAfterRun: Type.Optional(
+        Type.Boolean({ description: "Remove job after first execution. Default: false" }),
+      ),
+      wakeMode: Type.Optional(
+        Type.String({
+          enum: ["now", "next-heartbeat"],
+          description: 'Wake mode — "now" triggers immediately, "next-heartbeat" (default) queues for next heartbeat. Only for wake action.',
+        }),
+      ),
+    }),
+    async execute(_toolCallId: string, params: unknown) {
+      const { action, id, schedule, task, mode, delivery, deleteAfterRun, wakeMode } = params as {
+        action: string;
+        id?: string;
+        schedule?: { kind: string; expr: string; timezone?: string };
+        task?: string;
+        mode?: string;
+        delivery?: string;
+        deleteAfterRun?: boolean;
+        wakeMode?: string;
+      };
+
+      try {
+        switch (action) {
+          case "list": {
+            const res = await fetch(`${gatewayUrl}/api/cron/jobs`, {
+              headers: { Authorization: `Bearer ${internalToken}` },
+            });
+            const data = (await res.json()) as { ok: boolean; jobs?: unknown[]; error?: string };
+            if (!res.ok) return cronError(data.error || res.statusText);
+            const jobs = data.jobs ?? [];
+            return cronOk(
+              jobs.length === 0
+                ? "No scheduled jobs."
+                : `${jobs.length} job(s):\n${JSON.stringify(jobs, null, 2)}`,
+            );
+          }
+
+          case "add": {
+            if (!id) return cronError("id is required for add");
+            if (!schedule) return cronError("schedule is required for add");
+            if (!task) return cronError("task is required for add");
+
+            const res = await fetch(`${gatewayUrl}/api/cron/jobs`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${internalToken}`,
+              },
+              body: JSON.stringify({
+                id,
+                schedule,
+                task,
+                mode: mode || "isolated",
+                delivery: delivery || "announce",
+                deleteAfterRun: deleteAfterRun ?? false,
+              }),
+            });
+            const data = (await res.json()) as Record<string, unknown>;
+            if (!res.ok) return cronError(data.error as string || res.statusText);
+            return cronOk(`Job "${id}" created (${schedule.kind}: ${schedule.expr})`);
+          }
+
+          case "remove": {
+            if (!id) return cronError("id is required for remove");
+            const res = await fetch(`${gatewayUrl}/api/cron/jobs/${encodeURIComponent(id)}`, {
+              method: "DELETE",
+              headers: { Authorization: `Bearer ${internalToken}` },
+            });
+            const data = (await res.json()) as Record<string, unknown>;
+            if (!res.ok) return cronError(data.error as string || res.statusText);
+            return cronOk(`Job "${id}" removed.`);
+          }
+
+          case "pause":
+          case "resume": {
+            if (!id) return cronError(`id is required for ${action}`);
+            const res = await fetch(`${gatewayUrl}/api/cron/jobs/${encodeURIComponent(id)}`, {
+              method: "PATCH",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${internalToken}`,
+              },
+              body: JSON.stringify({ action }),
+            });
+            const data = (await res.json()) as Record<string, unknown>;
+            if (!res.ok) return cronError(data.error as string || res.statusText);
+            return cronOk(`Job "${id}" ${action}d.`);
+          }
+
+          case "run": {
+            if (!id) return cronError("id is required for run");
+            const res = await fetch(
+              `${gatewayUrl}/api/cron/jobs/${encodeURIComponent(id)}/run`,
+              {
+                method: "POST",
+                headers: { Authorization: `Bearer ${internalToken}` },
+              },
+            );
+            const data = (await res.json()) as Record<string, unknown>;
+            if (!res.ok) return cronError(data.error as string || res.statusText);
+            return cronOk(`Job "${id}" triggered.`);
+          }
+
+          case "wake": {
+            if (!task) return cronError("task (text) is required for wake");
+            const res = await fetch(`${gatewayUrl}/api/wake`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${internalToken}`,
+              },
+              body: JSON.stringify({
+                text: task,
+                mode: wakeMode || "next-heartbeat",
+              }),
+            });
+            const data = (await res.json()) as Record<string, unknown>;
+            if (!res.ok) return cronError(data.error as string || res.statusText);
+            const modeLabel = (data.mode || wakeMode || "next-heartbeat") as string;
+            return cronOk(
+              modeLabel === "now"
+                ? `Wake event injected and heartbeat triggered.`
+                : `Wake event queued for next heartbeat.`,
+            );
+          }
+
+          default:
+            return cronError(`Unknown action: ${action}`);
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return cronError(message);
+      }
+    },
+  };
+}
