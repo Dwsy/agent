@@ -13,12 +13,12 @@
  * 9. Response delivery
  */
 
-import type { InboundMessage, SessionKey, AgentMessage } from "../core/types.ts";
+import type { InboundMessage, SessionKey } from "../core/types.ts";
 import type { GatewayContext } from "./types.ts";
 import type { PrioritizedWork } from "../core/message-queue.ts";
 import { resolveRoleForSession } from "../core/session-router.ts";
 import { isTuiCommand, tryHandleCommand } from "./command-handler.ts";
-import { getAssistantMessageEvent } from "../core/rpc-events.ts";
+import { getAssistantMessageEvent, getAmePartial } from "../core/rpc-events.ts";
 
 // ============================================================================
 // Helpers
@@ -160,7 +160,7 @@ export async function processMessage(
     // Stream text and thinking deltas
     if (event.type === "message_update") {
       const ame = getAssistantMessageEvent(event);
-      const partial = extractPartialText(ame?.partial);
+      const partial = extractPartialText(getAmePartial(ame));
 
       switch (ame?.type) {
         case 'text_delta':
@@ -182,7 +182,7 @@ export async function processMessage(
         case 'text_end':
           if (ame.content) {
             const content = Array.isArray(ame.content)
-              ? ame.content.map((c: any) => c.type === 'text' ? c.text : '').join('')
+              ? ame.content.map((c: { type: string; text?: string }) => c.type === 'text' ? c.text : '').join('')
               : String(ame.content);
             fullText = content;
             msg.onStreamDelta?.(fullText, content);
@@ -192,7 +192,7 @@ export async function processMessage(
           }
           break;
         case 'thinking_delta': {
-          const thinkDelta = ame.delta || ame.thinking || '';
+          const thinkDelta = ame.delta || '';
           if (thinkDelta) {
             thinkingText += thinkDelta;
             msg.onThinkingDelta?.(thinkingText, thinkDelta);
@@ -220,7 +220,7 @@ export async function processMessage(
       if (toolName && !String(toolName).includes("unhandled")) {
         ctx.log.info(`[RPC] tool: ${toolName}`);
       }
-      const label = (args as Record<string, unknown>)?.label || toolName;
+      const label = String((args as Record<string, unknown>)?.label || toolName);
       if (label) toolLabels.push(label);
       msg.onToolStart?.(toolName, args, toolCallId);
     }
@@ -230,8 +230,9 @@ export async function processMessage(
     }
 
     if (event.type === "message_end") {
-      if (event.message?.role === "assistant" && (event.message as AgentMessage & { stopReason?: string }).stopReason) {
-        agentEndStopReason = (event.message as AgentMessage & { stopReason?: string }).stopReason!;
+      const msg_ = event.message;
+      if (msg_?.role === "assistant" && "stopReason" in msg_) {
+        agentEndStopReason = (msg_ as { stopReason: string }).stopReason;
       }
     }
 
