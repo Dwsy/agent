@@ -1,5 +1,33 @@
 # Changelog
 
+## [v3.8] - 2026-02-13
+
+**BBD Test Results:** 723/723 pass, 0 fail ✅ (v3.7: 703, v3.8: +20)
+**Team:** pi-zero (PM), BrightZenith (consultant), YoungStorm, JadePhoenix, NiceNova, CalmArrow, CalmBear
+**Focus:** Agent Autonomy & Interaction — gateway self-management, session resume, message extensions
+
+### New Tools
+- `gateway` tool: 3 actions — config.get (view running config), reload (hot-reload config), restart (graceful restart with config toggle) (by YoungStorm, `5a648c6`)
+- `session_status` tool: query session runtime status — token count, cost, model, context usage, message count (by NiceNova, `d70290e`)
+
+### Message Tool Phase 2
+- `pin` action: pin/unpin messages across Telegram/Discord, Feishu/WebChat stub (by JadePhoenix, `d2fd73f`)
+- `read` action: read chat history with limit/before params, capped at 100 messages (by JadePhoenix, `d2fd73f`)
+
+### Cron Enhancements
+- `update` action: modify existing cron jobs (by JadePhoenix)
+- `runs` action: view job execution history with limit (by JadePhoenix)
+- `status` action: cron engine status overview (by JadePhoenix)
+
+### Session Management
+- Auto-resume on restart: `--continue` flag added to RPC spawn when session directory has existing JSONL; `session.continueOnRestart` config toggle (default true) (by Dwsy, `6d2b783`)
+- Telegram `/sessions` command: list recent sessions with message count, last activity, active status (by Dwsy, `7fbc3b6`)
+- Telegram `/resume <id>` command: switch to a different session with stats display (model, context usage) (by Dwsy, `7fbc3b6`)
+
+### Testing
+- Gateway tool tests: GW-01~GW-10 covering config.get/reload/restart + error cases + auth (by YoungStorm, `ae07db4`)
+- Message Phase 2 tests: MA-21~MA-30 covering pin/unpin/read-history + unsupported/error cases (by CalmArrow, `d6d3183`)
+
 ## [v3.7] - 2026-02-13
 
 **BBD Test Results:** 703/703 pass, 0 fail ✅ (v3.6: 687, v3.7: +16)
