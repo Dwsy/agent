@@ -19,7 +19,7 @@ function asNonNegativeInt(value: unknown, fallback: number): number {
   return Math.floor(num);
 }
 
-export function resolveStreamCompat(cfg: TelegramAccountConfig & { [k: string]: unknown }): TelegramStreamCompat {
+export function resolveStreamCompat(cfg: TelegramAccountConfig): TelegramStreamCompat {
   const legacyStreaming = cfg.streaming as Record<string, unknown> | undefined;
   const draftChunk = cfg.draftChunk ?? {};
 
