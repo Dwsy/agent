@@ -46,7 +46,7 @@
 |---|---|---|---|
 | BG-001 | Tool Bridge Generator 实现 | P1 | 设计文档 ✅，依赖 pi-mono |
 | BG-004 | Plugin Hot-Reload 实现 | P2 | 设计文档 ✅ |
-| F3a | Feishu CardKit v1 streaming | P1 | 暂挂 |
+| ~~F3a~~ | ~~Feishu CardKit v1 streaming~~ | — | 已取消 |
 | msg-pin | message tool Phase 2: pin/unpin | P2 | |
 | msg-read | message tool Phase 2: read-history | P2 | |
 | Role 统一 | gateway /role + role-persona 统一 | P1 | 等 Dwsy 定方向 |

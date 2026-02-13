@@ -173,6 +173,39 @@ export async function handleSessionUsage(
 }
 
 // ============================================================================
+// GET /api/session/status — combined stats + state + session info
+// ============================================================================
+
+export async function handleSessionStatus(
+  _req: Request,
+  url: URL,
+  ctx: GatewayContext,
+): Promise<Response> {
+  const sessionKey = (url.searchParams.get("sessionKey") ?? "agent:main:main:main") as SessionKey;
+  const rpc = ctx.pool.getForSession(sessionKey);
+  if (!rpc) {
+    return Response.json({ error: "No active session" }, { status: 404 });
+  }
+  try {
+    const [stats, state] = await Promise.all([
+      rpc.getSessionStats(),
+      rpc.getState(),
+    ]);
+    const session = ctx.sessions.get(sessionKey);
+    return Response.json({
+      sessionKey,
+      stats,
+      state,
+      messageCount: session?.messageCount ?? 0,
+      isStreaming: session?.isStreaming ?? false,
+      lastActivity: session?.lastActivity ?? null,
+    });
+  } catch (err: unknown) {
+    return Response.json({ error: (err instanceof Error ? err.message : String(err)) }, { status: 500 });
+  }
+}
+
+// ============================================================================
 // GET /api/sessions + GET /api/sessions/:key
 // ============================================================================
 

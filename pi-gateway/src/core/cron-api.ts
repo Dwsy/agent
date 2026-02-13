@@ -122,6 +122,29 @@ export function handleCronApi(
     return Response.json({ ok: true, message: "triggered" });
   }
 
+  // GET /api/cron/jobs/:id/runs
+  const runsMatch = path.match(/^\/api\/cron\/jobs\/([^/]+)\/runs$/);
+  if (runsMatch && req.method === "GET") {
+    const id = decodeURIComponent(runsMatch[1]);
+    const limit = Number(url.searchParams.get("limit") ?? "20");
+    const runs = cron.getRunHistory(id, Math.min(limit, 100));
+    return Response.json({ ok: true, runs });
+  }
+
+  // GET /api/cron/status
+  if (path === "/api/cron/status" && req.method === "GET") {
+    const jobs = cron.listJobs();
+    const active = jobs.filter((j) => !j.paused && j.enabled !== false).length;
+    const paused = jobs.filter((j) => j.paused).length;
+    return Response.json({
+      ok: true,
+      total: jobs.length,
+      active,
+      paused,
+      disabled: jobs.length - active - paused,
+    });
+  }
+
   return null; // not a cron route
 }
 
@@ -190,6 +213,24 @@ async function handlePatchJob(
     const ok = cron.resumeJob(id);
     if (!ok) return Response.json({ ok: false, error: "not found or not paused" }, { status: 404 });
     return Response.json({ ok: true, status: "active" });
+  }
+
+  if (action === "update") {
+    const patch: Record<string, unknown> = {};
+    if (body.schedule) patch.schedule = body.schedule;
+    if (body.task) patch.payload = { text: body.task };
+    if (body.mode) patch.mode = body.mode;
+    if (body.delivery) patch.delivery = body.delivery;
+    if (body.deleteAfterRun != null) patch.deleteAfterRun = body.deleteAfterRun;
+    if (body.timeoutMs != null) patch.timeoutMs = body.timeoutMs;
+
+    if (Object.keys(patch).length === 0) {
+      return Response.json({ ok: false, error: "No fields to update" }, { status: 400 });
+    }
+
+    const updated = cron.updateJob(id, patch as any);
+    if (!updated) return Response.json({ ok: false, error: "not found" }, { status: 404 });
+    return Response.json({ ok: true, job: updated });
   }
 
   return Response.json({ ok: false, error: 'action: must be "pause" or "resume"' }, { status: 400 });
