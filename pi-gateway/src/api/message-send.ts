@@ -117,8 +117,8 @@ export async function handleMessageSendRequest(
       textLength: text.length,
       replyTo: replyTo ?? null,
     });
-  } catch (err: any) {
-    ctx.log.error(`[message-send] delivery failed: ${err?.message}`);
-    return Response.json({ error: err?.message ?? "Message delivery failed" }, { status: 500 });
+  } catch (err: unknown) {
+    ctx.log.error(`[message-send] delivery failed: ${(err instanceof Error ? err.message : String(err))}`);
+    return Response.json({ error: err instanceof Error ? err.message : "Message delivery failed" }, { status: 500 });
   }
 }

@@ -22,6 +22,7 @@ import { createLogger as createConsoleLogger, setLogLevel, type Logger, type Inb
 import { SessionStore } from "./core/session-store.ts";
 import { initFileLogger, createFileLogger } from "./core/logger-file.ts";
 import { CronEngine } from "./core/cron.ts";
+import { buildCronAnnouncer } from "./core/cron-announcer.ts";
 import { TranscriptLogger } from "./core/transcript-logger.ts";
 import { buildCapabilityProfile } from "./core/capability-profile.ts";
 import { ExtensionUIForwarder } from "./core/extension-ui-forwarder.ts";
@@ -74,8 +75,7 @@ export class Gateway {
   private log: Logger;
   private nextClientId = 0;
   private dedup: DeduplicationCache;
-  /** Track cron sessions that already sent messages to user (skip announce). */
-  private cronSelfDelivered = new Set<string>();
+  private cronAnnouncerInstance: ReturnType<typeof buildCronAnnouncer> | null = null;
   private sessionMessageModeOverrides = new Map<SessionKey, TelegramMessageMode>();
   private delegateExecutor: DelegateExecutor | null = null;
   private heartbeatExecutor: HeartbeatExecutor | null = null;
@@ -190,8 +190,8 @@ export class Gateway {
       try {
         const api = this._channelApis.get(id);
         if (api) await channel.init(api);
-      } catch (err: any) {
-        this.log.error(`Channel ${id} init failed: ${err?.message}`);
+      } catch (err: unknown) {
+        this.log.error(`Channel ${id} init failed: ${(err instanceof Error ? err.message : String(err))}`);
       }
     }
 
@@ -200,8 +200,8 @@ export class Gateway {
       try {
         await channel.start();
         this.log.info(`Channel started: ${id}`);
-      } catch (err: any) {
-        this.log.error(`Channel ${id} failed to start: ${err?.message}`);
+      } catch (err: unknown) {
+        this.log.error(`Channel ${id} failed to start: ${(err instanceof Error ? err.message : String(err))}`);
       }
     }
 
@@ -213,19 +213,25 @@ export class Gateway {
       try {
         await service.start(createPluginApi(service.name, { id: service.name, name: service.name, main: "" }, this.ctx));
         this.log.info(`Service started: ${service.name}`);
-      } catch (err: any) {
-        this.log.error(`Service ${service.name} failed to start: ${err?.message}`);
+      } catch (err: unknown) {
+        this.log.error(`Service ${service.name} failed to start: ${(err instanceof Error ? err.message : String(err))}`);
       }
     }
 
     // Start cron engine
     if (this.config.cron.enabled) {
-      const cronAnnouncer = this.buildCronAnnouncer();
+      this.cronAnnouncerInstance = buildCronAnnouncer({
+        log: this.log,
+        sessions: this.sessions,
+        systemEvents: this.systemEvents,
+        getChannels: () => this.registry.channels,
+        heartbeatWake: (agentId) => this.heartbeatExecutor?.requestNow(agentId),
+      });
       this.cron = new CronEngine(
         this.config.session.dataDir.replace(/\/sessions$/, ""),
         this,
         this.config,
-        cronAnnouncer,
+        this.cronAnnouncerInstance,
         this.systemEvents,
         (agentId) => this.heartbeatExecutor?.requestNow(agentId),
       );
@@ -265,100 +271,6 @@ export class Gateway {
     }
   }
 
-  /**
-   * Build a CronAnnouncer that delivers isolated job results.
-   *
-   * Two delivery modes (aligned with OpenClaw):
-   * - "announce": inject into main session via SystemEventsQueue → agent retells naturally
-   * - "direct":   send raw text to user's channel via outbound.sendText
-   *
-   * Fallback: if announce injection fails (no main session), falls back to direct send.
-   */
-  private buildCronAnnouncer(): import("./core/cron.ts").CronAnnouncer {
-    return {
-      deliver: async (agentId: string, text: string, delivery, sessionKey: string) => {
-        // Skip if agent already sent message to user during this cron execution
-        if (this.cronSelfDelivered.has(sessionKey)) {
-          this.log.info(`[cron-announcer] skipping — agent already sent message in ${sessionKey}`);
-          this.cronSelfDelivered.delete(sessionKey);
-          return;
-        }
-        this.cronSelfDelivered.delete(sessionKey); // cleanup
-
-        if (delivery.mode === "announce") {
-          // Try inject into main session for agent retelling
-          const injected = this.tryCronInject(agentId, text);
-          if (injected) return;
-          // Fallback to direct send
-          this.log.info(`[cron-announcer] inject failed for ${agentId}, falling back to direct send`);
-        }
-        // Direct send to channel
-        await this.cronDirectSend(agentId, text, delivery);
-      },
-    };
-  }
-
-  /**
-   * Inject cron result into main session via SystemEventsQueue + wake.
-   * Agent will process it and retell to user in its own voice.
-   */
-  private tryCronInject(agentId: string, text: string): boolean {
-    const mainKey = `agent:${agentId}:main`;
-    // Only inject if main session exists (user has interacted)
-    const mainSession = this.sessions.get(mainKey as import("./core/types.ts").SessionKey);
-    if (!mainSession?.lastChannel) {
-      return false;
-    }
-    const retellPrompt = `[CRON_RESULT] The following cron job completed. Summarize the result naturally for the user in 1-2 sentences. Do not mention technical details or that this was a cron job.\n\n${text}`;
-    this.systemEvents.inject(mainKey, retellPrompt);
-    // Wake heartbeat to process the event
-    this.heartbeatExecutor?.requestNow(agentId);
-    this.log.info(`[cron-announcer] injected to ${mainKey} for retelling (${text.length} chars)`);
-    return true;
-  }
-
-  /**
-   * Direct send cron result to user's channel.
-   * Resolves target from delivery config or agent's most recent session.
-   */
-  private async cronDirectSend(agentId: string, text: string, delivery: import("./core/config.ts").CronDelivery): Promise<void> {
-    let targetChannel = delivery.channel && delivery.channel !== "last" ? delivery.channel : undefined;
-    let targetChatId = delivery.to;
-
-    // Resolve from agent's most recent session if not specified
-    if (!targetChannel || !targetChatId) {
-      let latestActivity = 0;
-      for (const session of this.sessions.values()) {
-        const sk = session.sessionKey ?? "";
-        if (sk.startsWith("cron:")) continue;
-        const parts = sk.split(":");
-        if (parts[1] !== agentId) continue;
-        if (session.lastChannel && session.lastChatId && (session.lastActivity ?? 0) > latestActivity) {
-          if (!targetChannel) targetChannel = session.lastChannel;
-          if (!targetChatId) targetChatId = session.lastChatId;
-          latestActivity = session.lastActivity ?? 0;
-        }
-      }
-    }
-
-    if (!targetChannel || !targetChatId) {
-      this.log.warn(`[cron-announcer] no bound channel for agent ${agentId}, dropping`);
-      return;
-    }
-
-    const plugin = this.registry.channels.get(targetChannel);
-    if (!plugin?.outbound?.sendText) {
-      this.log.warn(`[cron-announcer] channel ${targetChannel} has no sendText, dropping`);
-      return;
-    }
-
-    try {
-      await plugin.outbound.sendText(targetChatId, text);
-      this.log.info(`[cron-announcer] direct send to ${targetChannel}:${targetChatId} (${text.length} chars)`);
-    } catch (err: any) {
-      this.log.error(`[cron-announcer] delivery failed: ${err?.message}`);
-    }
-  }
 
   async stop(): Promise<void> {
     this.log.info("Stopping gateway...");
@@ -509,8 +421,8 @@ export class Gateway {
           try {
             const frame = JSON.parse(typeof raw === "string" ? raw : new TextDecoder().decode(raw)) as WsFrame;
             await dispatchWsFrame(self.wsRouter!, frame, self.ctx, ws);
-          } catch (err: any) {
-            ws.send(JSON.stringify({ type: "res", id: "?", ok: false, error: err?.message }));
+          } catch (err: unknown) {
+            ws.send(JSON.stringify({ type: "res", id: "?", ok: false, error: (err instanceof Error ? err.message : String(err)) }));
           }
         },
       },
@@ -571,7 +483,7 @@ export class Gateway {
       setSessionRole: async () => false,
       reloadConfig: () => { this.config = loadConfig(); },
       onCronDelivered: (sk) => {
-        if (sk.startsWith("cron:")) this.cronSelfDelivered.add(sk);
+        this.cronAnnouncerInstance?.markSelfDelivered(sk);
       },
     };
   }

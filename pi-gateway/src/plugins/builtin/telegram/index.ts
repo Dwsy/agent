@@ -58,9 +58,10 @@ const streamingAdapter: ChannelStreamingAdapter = {
         { parse_mode: "HTML" },
       );
       return true;
-    } catch (err: any) {
-      if (err?.error_code === 429 || err?.statusCode === 429) return false;
-      if (err?.description?.includes("message is not modified")) return true;
+    } catch (err: unknown) {
+      const tgErr = err as Record<string, unknown> | null;
+      if (tgErr?.error_code === 429 || tgErr?.statusCode === 429) return false;
+      if (typeof tgErr?.description === 'string' && tgErr.description.includes("message is not modified")) return true;
       return false;
     }
   },

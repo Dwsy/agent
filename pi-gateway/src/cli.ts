@@ -163,8 +163,8 @@ async function loadPluginCliCommands(configPath?: string): Promise<Map<string, R
 
     try {
       registrar(program);
-    } catch (err: any) {
-      console.warn(`Plugin CLI registrar failed (${pluginId}): ${err?.message ?? String(err)}`);
+    } catch (err: unknown) {
+      console.warn(`Plugin CLI registrar failed (${pluginId}): ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
@@ -322,7 +322,7 @@ async function runSend(): Promise<void> {
       const body = await res.text();
       console.error(`Failed: ${res.status} ${body}`);
     }
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error(`Cannot connect to gateway at :${port}. Is it running?`);
   }
 }

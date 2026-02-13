@@ -32,10 +32,10 @@ export async function startPollingWithRetry(params: {
           params.logger.warn("Telegram polling runner stopped unexpectedly; restarting");
           attempt = 0;
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
         const recoverable = isGetUpdatesConflict(err) || isRecoverableTelegramNetworkError(err);
         if (!recoverable) {
-          params.logger.error(`Telegram polling fatal: ${err?.message ?? String(err)}`);
+          params.logger.error(`Telegram polling fatal: ${err instanceof Error ? err.message : String(err)}`);
           break;
         }
         attempt += 1;

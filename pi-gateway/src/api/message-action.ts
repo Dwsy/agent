@@ -149,8 +149,8 @@ export async function handleMessageAction(
     }
 
     return Response.json({ error: "Unhandled action" }, { status: 400 });
-  } catch (err: any) {
-    ctx.log.error(`[message-action] ${action} failed: ${err?.message}`);
-    return Response.json({ error: err?.message ?? "Action failed" }, { status: 500 });
+  } catch (err: unknown) {
+    ctx.log.error(`[message-action] ${action} failed: ${(err instanceof Error ? err.message : String(err))}`);
+    return Response.json({ error: err instanceof Error ? err.message : "Action failed" }, { status: 500 });
   }
 }

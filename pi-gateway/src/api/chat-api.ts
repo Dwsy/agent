@@ -84,8 +84,8 @@ export async function handleApiChat(req: Request, ctx: GatewayContext): Promise<
       }
       await rpc.prompt(body.message, normalizedImages);
       await rpc.waitForIdle();
-    } catch (err: any) {
-      fullText = `Error: ${err?.message ?? "Unknown error"}`;
+    } catch (err: unknown) {
+      fullText = `Error: ${err instanceof Error ? err.message : "Unknown error"}`;
     } finally {
       unsub();
       session.isStreaming = false;
@@ -97,8 +97,8 @@ export async function handleApiChat(req: Request, ctx: GatewayContext): Promise<
       sessionKey,
       duration: Date.now() - startTime,
     });
-  } catch (err: any) {
-    return Response.json({ error: err?.message ?? "Chat failed" }, { status: 500 });
+  } catch (err: unknown) {
+    return Response.json({ error: err instanceof Error ? err.message : "Chat failed" }, { status: 500 });
   }
 }
 
@@ -119,7 +119,8 @@ export async function handleApiChatStream(req: Request, ctx: GatewayContext): Pr
 
   // Normalize images from request body to ImageContent[]
   const normalizedImages: ImageContent[] | undefined = Array.isArray(body.images)
-    ? body.images.map((img: Record<string, unknown>) => {
+    ? body.images.map((raw: unknown) => {
+        const img = raw as Record<string, unknown>;
         const src = img.source as { data?: string; mediaType?: string } | undefined;
         if (typeof img.data === "string" && typeof img.mimeType === "string") {
           return { type: "image" as const, data: img.data, mimeType: img.mimeType };
@@ -161,8 +162,8 @@ export async function handleApiChatStream(req: Request, ctx: GatewayContext): Pr
       let rpc: Awaited<ReturnType<typeof ctx.pool.acquire>>;
       try {
         rpc = await ctx.pool.acquire(sessionKey, profile);
-      } catch (err: any) {
-        send({ type: "error", error: err?.message ?? "Pool acquire failed" });
+      } catch (err: unknown) {
+        send({ type: "error", error: err instanceof Error ? err.message : "Pool acquire failed" });
         controller.close();
         return;
       }
@@ -201,8 +202,8 @@ export async function handleApiChatStream(req: Request, ctx: GatewayContext): Pr
       try {
         await rpc.prompt(body.message!, normalizedImages);
         await rpc.waitForIdle();
-      } catch (err: any) {
-        send({ type: "error", error: err?.message ?? "Agent error" });
+      } catch (err: unknown) {
+        send({ type: "error", error: err instanceof Error ? err.message : "Agent error" });
       } finally {
         unsub();
         session.isStreaming = false;

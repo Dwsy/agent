@@ -379,8 +379,8 @@ async function handleMessageCommon(runtime: TelegramPluginRuntime, account: Tele
         await ctx.reply("语音转录失败，请重试或发送文字。");
         return;
       }
-    } catch (err: any) {
-      runtime.api.logger.warn(`[telegram] Voice transcription failed: ${err?.message ?? String(err)}`);
+    } catch (err: unknown) {
+      runtime.api.logger.warn(`[telegram] Voice transcription failed: ${err instanceof Error ? err.message : String(err)}`);
       await ctx.reply("语音转录失败，请重试或发送文字。");
       return;
     }
