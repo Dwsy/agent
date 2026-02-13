@@ -263,7 +263,16 @@ export async function processMessage(
     // Hook: before_agent_start
     const beforeAgentPayload = { sessionKey, message: text };
     await ctx.registry.hooks.dispatch("before_agent_start", beforeAgentPayload);
-    const promptText = normalizeOutgoingText(beforeAgentPayload.message, text);
+    let promptText = normalizeOutgoingText(beforeAgentPayload.message, text);
+
+    // Group chat context injection: prepend sender/chat metadata so the agent
+    // knows who is speaking and can decide whether to respond.
+    if (source.chatType !== "dm") {
+      const sender = source.senderName || source.senderId;
+      const parts = [`[group:${source.chatId}`, `from:${sender}`];
+      if (source.threadId) parts.push(`thread:${source.threadId}`);
+      promptText = `${parts.join(" | ")}]\n${promptText}`;
+    }
 
     ctx.log.info(`[processMessage] Sending prompt to ${rpc.id} for ${sessionKey}: "${promptText.slice(0, 80)}"`);
     await rpc.prompt(promptText, images);
@@ -311,9 +320,16 @@ export async function processMessage(
   ctx.metrics?.recordLatency(durationMs);
 
   try {
-    ctx.log.info(`[processMessage] Calling respond for ${sessionKey}, text=${outbound.text.length} chars`);
-    await respond(outbound.text);
-    ctx.log.info(`[processMessage] respond completed for ${sessionKey}`);
+    // Group chat silent mode: if agent responds with [NO_REPLY], skip delivery.
+    const SILENT_TOKEN = "[NO_REPLY]";
+    if (source.chatType !== "dm" && outbound.text.includes(SILENT_TOKEN)) {
+      ctx.log.info(`[processMessage] SILENT: agent declined to reply in group ${sessionKey}`);
+      ctx.transcripts.logMeta(sessionKey, "silent_no_reply", { durationMs });
+    } else {
+      ctx.log.info(`[processMessage] Calling respond for ${sessionKey}, text=${outbound.text.length} chars`);
+      await respond(outbound.text);
+      ctx.log.info(`[processMessage] respond completed for ${sessionKey}`);
+    }
   } catch (err: unknown) {
     ctx.log.error(`[processMessage] respond FAILED for ${sessionKey}: ${err instanceof Error ? err.message : String(err)}`);
   }
