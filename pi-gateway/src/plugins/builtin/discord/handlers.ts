@@ -4,7 +4,7 @@ import { isSenderAllowed, type DmPolicy } from "../../../security/allowlist.ts";
 import { createPairingRequest } from "../../../security/pairing.ts";
 import type { MessageSource } from "../../../core/types.ts";
 import type { DiscordPluginRuntime } from "./types.ts";
-import type { ChannelStreamingAdapter, MessageSendResult, MessageActionResult, ReactionOptions } from "../../types.ts";
+import type { ChannelStreamingAdapter, MessageSendResult, MessageActionResult, ReactionOptions, ReadHistoryResult } from "../../types.ts";
 import { formatToolLine, splitDiscordText } from "./format.ts";
 import { helpText } from "./commands.ts";
 
@@ -543,6 +543,56 @@ export async function deleteMessageOutbound(
     if (!msg) return { ok: false, error: "Message not found" };
     await msg.delete();
     return { ok: true };
+  } catch (err: unknown) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+export async function pinMessageOutbound(
+  rt: DiscordPluginRuntime,
+  target: string,
+  messageId: string,
+  unpin?: boolean,
+): Promise<MessageActionResult> {
+  try {
+    const channel = await rt.client.channels.fetch(target);
+    if (!channel?.isTextBased() || !("messages" in channel)) {
+      return { ok: false, error: "Channel not found or not text-based" };
+    }
+    const msg = await (channel as any).messages.fetch(messageId);
+    if (!msg) return { ok: false, error: "Message not found" };
+    if (unpin) {
+      await msg.unpin();
+    } else {
+      await msg.pin();
+    }
+    return { ok: true };
+  } catch (err: unknown) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+export async function readHistoryOutbound(
+  rt: DiscordPluginRuntime,
+  target: string,
+  limit?: number,
+  before?: string,
+): Promise<ReadHistoryResult> {
+  try {
+    const channel = await rt.client.channels.fetch(target);
+    if (!channel?.isTextBased() || !("messages" in channel)) {
+      return { ok: false, error: "Channel not found or not text-based" };
+    }
+    const opts: Record<string, unknown> = { limit: Math.min(limit ?? 20, 100) };
+    if (before) opts.before = before;
+    const fetched = await (channel as any).messages.fetch(opts);
+    const messages = Array.from(fetched.values()).map((msg: any) => ({
+      id: msg.id,
+      text: msg.content ?? "",
+      sender: msg.author?.username ?? msg.author?.id ?? "unknown",
+      timestamp: msg.createdTimestamp ?? 0,
+    }));
+    return { ok: true, messages };
   } catch (err: unknown) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }

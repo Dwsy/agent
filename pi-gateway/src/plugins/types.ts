@@ -124,6 +124,21 @@ export interface ReactionOptions {
   remove?: boolean;
 }
 
+/** A single message from channel history */
+export interface ChannelHistoryMessage {
+  id: string;
+  text: string;
+  sender: string;
+  timestamp: number;
+}
+
+/** Result from readHistory */
+export interface ReadHistoryResult {
+  ok: boolean;
+  messages?: ChannelHistoryMessage[];
+  error?: string;
+}
+
 // ============================================================================
 // Channel Outbound (CA-1: extracted as named interface)
 // ============================================================================
@@ -139,6 +154,10 @@ export interface ChannelOutbound {
   editMessage?(target: string, messageId: string, text: string): Promise<MessageActionResult>;
   /** Delete a message (optional — v3.6) */
   deleteMessage?(target: string, messageId: string): Promise<MessageActionResult>;
+  /** Pin/unpin a message (optional — v3.8) */
+  pinMessage?(target: string, messageId: string, unpin?: boolean): Promise<MessageActionResult>;
+  /** Read recent messages from a chat (optional — v3.8) */
+  readHistory?(target: string, limit?: number, before?: string): Promise<ReadHistoryResult>;
   /** Max message length for this channel (for chunking) */
   maxLength?: number;
 }
