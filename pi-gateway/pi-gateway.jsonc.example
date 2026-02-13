@@ -12,7 +12,7 @@
 
   "agent": {
     "piCliPath": "pi",
-    "model": "claude-kiro-local/claude-haiku-4-5-20251001",
+    "model": "anthropic/claude-sonnet-4",
     "thinkingLevel": "off",
     "pool": {
       "min": 1,
@@ -21,10 +21,20 @@
     },
     "tools": {
       "profile": "coding"
-    }
+    },
+    // Model failover: automatic fallback when primary model fails
+    // "modelFailover": {
+    //   "primary": "anthropic/claude-sonnet-4",
+    //   "fallbacks": ["openai/gpt-4o", "moonshot/kimi-k2-0711"],
+    //   "cooldownMs": 60000    // cooldown per model after failure (default: 60s)
+    // }
   },
 
   "session": {
+    // dmScope: "main" | "per-peer" | "per-channel-peer"
+    // - main: all DMs share one session (default)
+    // - per-peer: each user gets their own session
+    // - per-channel-peer: each channel+user combo gets a session
     "dmScope": "main"
   },
 
@@ -38,7 +48,28 @@
       "streamMode": "partial",
       // Streaming edit throttle (ms). Lower = faster updates, higher = fewer 429s.
       // Adaptive backoff on 429: reads Telegram retry_after, recovers gradually.
-      "editThrottleMs": 500
+      "editThrottleMs": 500,
+
+      // Group chat configuration
+      // Key: Telegram chat ID (supergroup format: -100xxxxxxxxxx)
+      // Use "*" as wildcard for all unconfigured groups
+      "groups": {
+        "-100123456789": {
+          // requireMention: true (default) — bot only responds when @mentioned
+          // Set false for always-on mode (agent replies to every message)
+          "requireMention": true,
+          // groupPolicy: "open" | "disabled" | "allowlist"
+          "groupPolicy": "open",
+          // Optional: bind a role to this group (uses role-persona for personality)
+          // "role": "code-reviewer",
+          // Optional: restrict who can interact in this group
+          // "allowFrom": [123456789, "*"],
+          // Optional: override system prompt for this group
+          // "systemPrompt": "You are a helpful coding assistant."
+        },
+        // Wildcard: disable all unconfigured groups
+        "*": { "enabled": false }
+      }
     },
     "discord": {
       "enabled": false,
@@ -158,5 +189,15 @@
         }
       }
     ]
+  },
+
+  // Role workspace mapping
+  // Each role gets its own CWD + role-persona files (SOUL.md, IDENTITY.md, etc.)
+  // Groups can bind to roles via groups[chatId].role
+  "roles": {
+    "workspaceDirs": {
+      // "code-reviewer": "~/workspace/reviewer",
+      // "translator": "~/workspace/translator"
+    }
   }
 }
