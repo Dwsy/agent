@@ -30,3 +30,12 @@ interface SnakeCaseFallback {
 export function getAssistantMessageEvent(event: MessageUpdateEvent): AssistantMessageEvent | undefined {
   return event.assistantMessageEvent ?? (event as unknown as SnakeCaseFallback).assistant_message_event;
 }
+
+/**
+ * Safely extract the `partial` field from an AssistantMessageEvent.
+ * Not all AME variants carry `partial` (e.g., `done`, `error`).
+ */
+export function getAmePartial(ame: AssistantMessageEvent | undefined): unknown {
+  if (!ame) return undefined;
+  return "partial" in ame ? ame.partial : undefined;
+}
