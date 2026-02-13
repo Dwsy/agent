@@ -81,7 +81,10 @@ export function createSendMediaTool(gatewayUrl: string, internalToken: string) {
         };
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        return toolError(`send_media: ${message}`);
+        return {
+          content: [{ type: "text" as const, text: `send_media error: ${message}` }],
+          details: { error: true },
+        };
       }
     },
   };
