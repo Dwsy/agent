@@ -23,9 +23,12 @@ const LOCAL_COMMANDS = [
   { command: "new", description: "重置会话" },
   { command: "stop", description: "中断当前输出" },
   { command: "model", description: "查看/切换模型" },
+  { command: "think", description: "设置思考等级" },
+  { command: "compact", description: "压缩上下文" },
   { command: "status", description: "查看会话状态" },
   { command: "context", description: "上下文使用情况" },
   { command: "queue", description: "会话并发策略" },
+  { command: "whoami", description: "查看发送者信息" },
   // { command: "role", description: "切换/查看角色" },
   { command: "cron", description: "定时任务管理" },
   { command: "skills", description: "查看/调用技能" },
@@ -92,13 +95,13 @@ function helpPage(page: number): { text: string; keyboard: { inline_keyboard: Ar
     [
       "<b>Telegram Commands (2/2)</b>",
       "",
-      "/media — 媒体发送说明",
-      "/photo &lt;url|path&gt; [caption] — 发图",
-      "/audio &lt;url|path&gt; [caption] — 发音频",
-      "",
-      "<b>回复中的媒体指令</b>",
-      "<code>[photo] https://... | caption</code>",
-      "<code>[audio] https://... | caption</code>",
+      "/context — 上下文详情",
+      "/whoami — 查看发送者信息",
+      "/cron — 定时任务管理",
+      "/skills — 查看/调用技能",
+      "/sessions — 查看所有会话",
+      "/resume — 恢复指定会话",
+      "/refresh — 刷新命令列表",
     ],
   ];
   const idx = Math.max(0, Math.min(page - 1, pages.length - 1));
@@ -328,6 +331,61 @@ export async function setupTelegramCommands(runtime: TelegramPluginRuntime, acco
       `<b>Queue Mode:</b> ${nextMode} <i>(session override, process-local)</i>`,
       { parse_mode: "HTML" },
     );
+  });
+
+  bot.command("think", async (ctx: any) => {
+    const source = toSource(account.accountId, ctx as TelegramContext);
+    const sessionKey = resolveSessionKey(source, runtime.api.config);
+    const arg = String(ctx.match ?? "").trim().toLowerCase();
+    const LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"];
+
+    if (!arg) {
+      // No arg → cycle to next level
+      try {
+        const result = await runtime.api.cycleThinkingLevel(sessionKey) as any;
+        await ctx.reply(`Thinking: <b>${result?.level ?? "unchanged"}</b>`, { parse_mode: "HTML" });
+      } catch {
+        await ctx.reply("No active session. Send a message first.");
+      }
+      return;
+    }
+
+    if (!LEVELS.includes(arg)) {
+      await ctx.reply(`Invalid level. Use: ${LEVELS.join(", ")}`);
+      return;
+    }
+
+    try {
+      await runtime.api.setThinkingLevel(sessionKey, arg);
+      await ctx.reply(`Thinking set to: <b>${arg}</b>`, { parse_mode: "HTML" });
+    } catch {
+      await ctx.reply("No active session. Send a message first.");
+    }
+  });
+
+  bot.command("compact", async (ctx: any) => {
+    const source = toSource(account.accountId, ctx as TelegramContext);
+    const sessionKey = resolveSessionKey(source, runtime.api.config);
+    const instructions = String(ctx.match ?? "").trim() || undefined;
+
+    try {
+      await ctx.reply("⏳ Compacting…");
+      await runtime.api.compactSession(sessionKey, instructions);
+      await ctx.reply("✅ Context compacted.");
+    } catch (err: any) {
+      await ctx.reply(`Compact failed: ${err?.message ?? String(err)}`);
+    }
+  });
+
+  bot.command("whoami", async (ctx: any) => {
+    const source = toSource(account.accountId, ctx as TelegramContext);
+    const lines = [
+      `<b>Sender ID:</b> <code>${escapeHtml(source.senderId)}</code>`,
+      `<b>Name:</b> ${escapeHtml(source.senderName ?? "unknown")}`,
+      `<b>Chat:</b> <code>${escapeHtml(source.chatId)}</code> (${source.chatType})`,
+      `<b>Account:</b> ${escapeHtml(account.accountId)}`,
+    ];
+    await ctx.reply(lines.join("\n"), { parse_mode: "HTML" });
   });
 
   bot.command("refresh", async (ctx: any) => {
