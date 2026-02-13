@@ -7,6 +7,16 @@ import type { TelegramAccountRuntime, TelegramContext, TelegramPluginRuntime } f
 
 type SessionMessageMode = "steer" | "follow-up" | "interrupt";
 
+function timeSince(ts: number): string {
+  const sec = Math.floor((Date.now() - ts) / 1000);
+  if (sec < 60) return `${sec}s`;
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}m`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h`;
+  return `${Math.floor(hr / 24)}d`;
+}
+
 // Gateway 本地命令列表
 const LOCAL_COMMANDS = [
   { command: "help", description: "显示帮助" },
@@ -19,6 +29,8 @@ const LOCAL_COMMANDS = [
   // { command: "role", description: "切换/查看角色" },
   { command: "cron", description: "定时任务管理" },
   { command: "skills", description: "查看/调用技能" },
+  { command: "sessions", description: "查看所有会话" },
+  { command: "resume", description: "恢复指定会话" },
   // { command: "media", description: "媒体发送说明" },
   // { command: "photo", description: "发送图片" },
   // { command: "audio", description: "发送音频" },
@@ -450,6 +462,86 @@ export async function setupTelegramCommands(runtime: TelegramPluginRuntime, acco
         "/cron remove &lt;id&gt; — 删除任务",
         "/cron run &lt;id&gt; — 手动触发",
       ].join("\n"),
+      { parse_mode: "HTML" },
+    );
+  });
+
+  bot.command("sessions", async (ctx: any) => {
+    const sessions = runtime.api.listSessions();
+    if (sessions.length === 0) {
+      await ctx.reply("No active sessions.");
+      return;
+    }
+    const source = toSource(account.accountId, ctx as TelegramContext);
+    const currentKey = resolveSessionKey(source, runtime.api.config);
+    const top = sessions.slice(0, 10);
+    const lines = top.map((s: any, i: number) => {
+      const active = s.sessionKey === currentKey ? " ✅" : "";
+      const msgs = s.messageCount ?? 0;
+      const ago = s.lastActivity ? timeSince(s.lastActivity) : "?";
+      return `<b>${i + 1}.</b> <code>${escapeHtml(s.sessionKey)}</code>${active}\n   ${msgs} msgs · ${ago} ago`;
+    });
+    await ctx.reply(
+      `<b>Sessions (${sessions.length})</b>\n\n${lines.join("\n\n")}`,
+      { parse_mode: "HTML" },
+    );
+  });
+
+  bot.command("resume", async (ctx: any) => {
+    const arg = String(ctx.match ?? "").trim();
+    if (!arg) {
+      await ctx.reply("Usage: /resume <number|sessionKey>");
+      return;
+    }
+
+    const sessions = runtime.api.listSessions();
+    let target: any = null;
+
+    const idx = parseInt(arg, 10);
+    if (!isNaN(idx) && idx >= 1 && idx <= sessions.length) {
+      target = sessions[idx - 1];
+    } else {
+      target = sessions.find((s: any) => s.sessionKey === arg);
+    }
+
+    if (!target) {
+      await ctx.reply(`Session not found: ${escapeHtml(arg)}`, { parse_mode: "HTML" });
+      return;
+    }
+
+    const source = toSource(account.accountId, ctx as TelegramContext);
+    const currentKey = resolveSessionKey(source, runtime.api.config);
+
+    if (target.sessionKey === currentKey) {
+      await ctx.reply("Already on this session.");
+      return;
+    }
+
+    // Release current RPC so it returns to pool
+    runtime.api.releaseSession(currentKey);
+
+    // Build status line — context% and model from RPC if available
+    let extra = "";
+    try {
+      const [stats, rpcState] = await Promise.all([
+        runtime.api.getSessionStats(target.sessionKey),
+        runtime.api.getRpcState(target.sessionKey),
+      ]);
+      const s = stats as any;
+      const st = rpcState as any;
+      const contextWindow = st?.model?.contextWindow ?? 0;
+      const inputTokens = s?.tokens?.input ?? 0;
+      const pct = contextWindow > 0 ? ((inputTokens / contextWindow) * 100).toFixed(1) : "?";
+      const model = st?.model?.id ?? "unknown";
+      extra = `\n<b>Model:</b> ${model}\n<b>Context:</b> ${pct}%`;
+    } catch {
+      // RPC not yet bound — will auto-resume via --continue on next message
+    }
+
+    const msgs = target.messageCount ?? 0;
+    const ago = target.lastActivity ? timeSince(target.lastActivity) : "?";
+    await ctx.reply(
+      `✅ Switched to session <code>${escapeHtml(target.sessionKey)}</code>\n<b>Messages:</b> ${msgs}\n<b>Last active:</b> ${ago} ago${extra}`,
       { parse_mode: "HTML" },
     );
   });
