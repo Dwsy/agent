@@ -8,7 +8,7 @@ import { splitMessage } from "../../../core/utils.ts";
 import { markdownToTelegramHtml } from "./format.ts";
 import { sendTelegramMedia, sendTelegramTextAndMedia, IMAGE_EXTS, AUDIO_EXTS } from "./media-send.ts";
 import { recordSentMessage } from "./sent-message-cache.ts";
-import type { MediaSendOptions, MediaSendResult, MessageSendResult, MessageActionResult, ReactionOptions } from "../../types.ts";
+import type { MediaSendOptions, MediaSendResult, MessageSendResult, MessageActionResult, ReactionOptions, ReadHistoryResult } from "../../types.ts";
 import type { TelegramPluginRuntime } from "./types.ts";
 
 // ============================================================================
@@ -210,4 +210,39 @@ export async function deleteMessageViaAccount(params: {
   } catch (err: unknown) {
     return { ok: false, error: err instanceof Error ? err.message : "Delete failed" };
   }
+}
+
+export async function pinMessageViaAccount(params: {
+  runtime: TelegramPluginRuntime;
+  defaultAccountId: string;
+  target: string;
+  messageId: string;
+  unpin?: boolean;
+}): Promise<MessageActionResult> {
+  const { account, parsed } = resolveAccount(params.runtime, params.target, params.defaultAccountId);
+  if (!account) return { ok: false, error: "Telegram account not started" };
+
+  try {
+    if (params.unpin) {
+      await account.bot.api.unpinChatMessage(parsed.chatId, { message_id: Number(params.messageId) });
+    } else {
+      await account.bot.api.pinChatMessage(parsed.chatId, Number(params.messageId));
+    }
+    return { ok: true };
+  } catch (err: unknown) {
+    return { ok: false, error: err instanceof Error ? err.message : "Pin failed" };
+  }
+}
+
+export async function readHistoryViaAccount(params: {
+  runtime: TelegramPluginRuntime;
+  defaultAccountId: string;
+  target: string;
+  limit?: number;
+  before?: string;
+}): Promise<ReadHistoryResult> {
+  // Telegram Bot API doesn't have a getHistory method.
+  // Use getChat + recent updates cache, or return not supported.
+  // For now, Telegram bots cannot read arbitrary chat history via Bot API.
+  return { ok: false, error: "Telegram Bot API does not support reading chat history" };
 }

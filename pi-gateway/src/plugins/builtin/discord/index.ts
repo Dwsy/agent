@@ -1,7 +1,7 @@
 import { Client, GatewayIntentBits, Partials } from "discord.js";
-import type { ChannelPlugin, GatewayPluginApi, MediaSendResult, MediaSendOptions, ChannelStreamingAdapter, ChannelSecurityAdapter, MessageSendResult, MessageActionResult, ReactionOptions } from "../../types.ts";
+import type { ChannelPlugin, GatewayPluginApi, MediaSendResult, MediaSendOptions, ChannelStreamingAdapter, ChannelSecurityAdapter, MessageSendResult, MessageActionResult, ReactionOptions, ReadHistoryResult } from "../../types.ts";
 import type { DiscordChannelConfig, DiscordPluginRuntime } from "./types.ts";
-import { handleMessage, handleInteraction, sendOutbound, sendMediaOutbound, createDiscordStreamingAdapter, sendReactionOutbound, editMessageOutbound, deleteMessageOutbound } from "./handlers.ts";
+import { handleMessage, handleInteraction, sendOutbound, sendMediaOutbound, createDiscordStreamingAdapter, sendReactionOutbound, editMessageOutbound, deleteMessageOutbound, pinMessageOutbound, readHistoryOutbound } from "./handlers.ts";
 import { registerGuildCommands } from "./commands.ts";
 import { splitDiscordText } from "./format.ts";
 
@@ -42,6 +42,14 @@ const discordPlugin: ChannelPlugin = {
     async deleteMessage(target: string, messageId: string): Promise<MessageActionResult> {
       if (!runtime) return { ok: false, error: "Discord not initialized" };
       return deleteMessageOutbound(runtime, target, messageId);
+    },
+    async pinMessage(target: string, messageId: string, unpin?: boolean): Promise<MessageActionResult> {
+      if (!runtime) return { ok: false, error: "Discord not initialized" };
+      return pinMessageOutbound(runtime, target, messageId, unpin);
+    },
+    async readHistory(target: string, limit?: number, before?: string): Promise<ReadHistoryResult> {
+      if (!runtime) return { ok: false, error: "Discord not initialized" };
+      return readHistoryOutbound(runtime, target, limit, before);
     },
   },
 

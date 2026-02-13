@@ -3,22 +3,24 @@
 import { Type } from "@sinclair/typebox";
 import { toolOk, toolError } from "./helpers.ts";
 
-const MESSAGE_ACTIONS = ["react", "edit", "delete"] as const;
+const MESSAGE_ACTIONS = ["react", "edit", "delete", "pin", "read"] as const;
 
 export function createMessageActionTool(gatewayUrl: string, internalToken: string) {
   return {
     name: "message",
     label: "Message Action",
     description:
-      "Perform actions on existing chat messages: react with emoji, edit message text, or delete a message. " +
+      "Perform actions on chat messages: react with emoji, edit text, delete, pin/unpin, or read history. " +
       "The messageId comes from previous send_message or send_media tool results. " +
-      "Actions: react (add/remove emoji reaction), edit (replace message text), delete (remove message).",
+      "Actions: react (add/remove emoji), edit (replace text), delete (remove), pin (pin/unpin), read (fetch recent messages).",
     parameters: Type.Object({
       action: Type.String({
         enum: MESSAGE_ACTIONS as unknown as string[],
-        description: "Action to perform: react, edit, or delete",
+        description: "Action to perform: react, edit, delete, pin, or read",
       }),
-      messageId: Type.String({ description: "Target message ID (from send_message/send_media result)" }),
+      messageId: Type.Optional(
+        Type.String({ description: "Target message ID (required for react/edit/delete/pin, not for read)" }),
+      ),
       emoji: Type.Optional(
         Type.Union([Type.String(), Type.Array(Type.String())], {
           description: "Emoji for react action — single emoji or array of emoji",
@@ -30,21 +32,33 @@ export function createMessageActionTool(gatewayUrl: string, internalToken: strin
       remove: Type.Optional(
         Type.Boolean({ description: "Remove reaction instead of adding (react action only, default: false)" }),
       ),
+      unpin: Type.Optional(
+        Type.Boolean({ description: "Unpin instead of pin (pin action only, default: false)" }),
+      ),
+      limit: Type.Optional(
+        Type.Number({ description: "Number of messages to read (read action, default: 20, max: 100)" }),
+      ),
+      before: Type.Optional(
+        Type.String({ description: "Read messages before this message ID (read action, for pagination)" }),
+      ),
     }),
     async execute(_toolCallId: string, params: unknown) {
-      const { action, messageId, emoji, text, remove } = params as {
+      const { action, messageId, emoji, text, remove, unpin, limit, before } = params as {
         action: string;
-        messageId: string;
+        messageId?: string;
         emoji?: string | string[];
         text?: string;
         remove?: boolean;
+        unpin?: boolean;
+        limit?: number;
+        before?: string;
       };
 
       if (!MESSAGE_ACTIONS.includes(action as typeof MESSAGE_ACTIONS[number])) {
         return toolError(`Unknown action: ${action}. Must be one of: ${MESSAGE_ACTIONS.join(", ")}`);
       }
-      if (!messageId) {
-        return toolError("messageId is required");
+      if (!messageId && action !== "read") {
+        return toolError("messageId is required for this action");
       }
       if (action === "react" && !emoji) {
         return toolError("emoji is required for react action");
@@ -66,6 +80,9 @@ export function createMessageActionTool(gatewayUrl: string, internalToken: strin
             emoji,
             text,
             remove,
+            unpin,
+            limit,
+            before,
           }),
         });
 
@@ -84,6 +101,13 @@ export function createMessageActionTool(gatewayUrl: string, internalToken: strin
         }
         if (action === "delete") {
           return toolOk(`Message ${messageId} deleted`);
+        }
+        if (action === "pin") {
+          return toolOk(unpin ? `Message ${messageId} unpinned` : `Message ${messageId} pinned`);
+        }
+        if (action === "read") {
+          const messages = (data.messages as unknown[]) ?? [];
+          return toolOk(JSON.stringify({ count: messages.length, messages }, null, 2));
         }
 
         return toolOk(`Action ${action} completed on message ${messageId}`);

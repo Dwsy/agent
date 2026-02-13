@@ -22,7 +22,7 @@ export interface MessageActionContext {
   log: Logger;
 }
 
-const VALID_ACTIONS = ["react", "edit", "delete"] as const;
+const VALID_ACTIONS = ["react", "edit", "delete", "pin", "read"] as const;
 type ActionType = (typeof VALID_ACTIONS)[number];
 
 export async function handleMessageAction(
@@ -50,7 +50,7 @@ export async function handleMessageAction(
     );
   }
 
-  if (!messageId) {
+  if (!messageId && action !== "read") {
     return Response.json({ error: "Missing messageId" }, { status: 400 });
   }
 
@@ -146,6 +146,31 @@ export async function handleMessageAction(
         return Response.json({ error: result.error ?? "Delete failed" }, { status: 502 });
       }
       return Response.json({ ok: true, action, channel, messageId });
+    }
+
+    if (action === "pin") {
+      if (!channelPlugin.outbound.pinMessage) {
+        return Response.json({ error: `Channel "${channel}" does not support pinning` }, { status: 501 });
+      }
+      const unpin = body.unpin === true;
+      const result = await channelPlugin.outbound.pinMessage(chatId, messageId, unpin);
+      if (!result.ok) {
+        return Response.json({ error: result.error ?? "Pin failed" }, { status: 502 });
+      }
+      return Response.json({ ok: true, action, channel, messageId, unpin });
+    }
+
+    if (action === "read") {
+      if (!channelPlugin.outbound.readHistory) {
+        return Response.json({ error: `Channel "${channel}" does not support read history` }, { status: 501 });
+      }
+      const limit = typeof body.limit === "number" ? Math.min(body.limit, 100) : 20;
+      const before = typeof body.before === "string" ? body.before : undefined;
+      const result = await channelPlugin.outbound.readHistory(chatId, limit, before);
+      if (!result.ok) {
+        return Response.json({ error: result.error ?? "Read history failed" }, { status: 502 });
+      }
+      return Response.json({ ok: true, action, channel, messages: result.messages ?? [] });
     }
 
     return Response.json({ error: "Unhandled action" }, { status: 400 });
