@@ -1,45 +1,45 @@
 # T-COMMANDS: New Telegram Commands (v3.9)
 
-## Implemented (Phase 1)
+## Phase 1 — Implemented (commit 3674d2b)
 
 ### /think [level]
 - No arg → cycles to next thinking level via `cycleThinkingLevel` RPC
-- With arg → sets level via `setThinkingLevel` RPC
-- Valid levels: off, minimal, low, medium, high, xhigh
+- With arg → sets level (off/minimal/low/medium/high/xhigh)
 - Requires active session
 
 ### /compact [instructions]
-- Compacts session context via `compactSession` API
-- Optional custom instructions passed through
+- Compacts session context, optional custom instructions
 - Shows progress indicator (⏳ → ✅)
 
 ### /whoami
 - Returns sender ID, name, chat ID, chat type, account ID
-- No auth required — useful for debugging allowlist/pairing
 
-## Pending Dwsy Confirmation (Phase 2)
+## Phase 2 — Implemented
 
-### /bash <command>
-- **Risk:** High — executes shell on gateway host
-- **Proposed auth:** Reuse `allowFrom` list (only allowlisted senders can use)
-- **Scope:** ExecGuard integration for command sanitization
-- **Estimated:** ~60 lines
+### /bash \<command\>
+- Executes shell command on gateway host via `Bun.spawn(["sh", "-c", cmd])`
+- Authorization: `isAuthorizedSender` — checks `allowFrom` list
+- Output truncated at 4096 chars, timeout 30s
+- `!cmd` shortcut in message handler (handlers.ts) — same auth check
+- `!!` prefix excluded (reserved, passes through to agent)
 
-### /config [show|get <path>]
-- **Phase 2a:** Read-only (show full config or get specific path)
-- **Phase 2b (deferred):** set/unset with jsonc persistence
-- **Estimated:** ~40 lines (read-only)
+### /config [section]
+- Read-only config viewer with sensitive value redaction
+- No arg → lists config sections
+- With arg → shows section as JSON (dot-path traversal: `config channels.telegram`)
+- Redacts: token, secret, password, apikey fields
+- Authorization: `isAuthorizedSender`
 
 ### /restart
-- **Risk:** Medium — restarts gateway process
-- **Gated by:** `commands.restart: true` in config (already exists)
-- **Open question:** SIGUSR1 (graceful) vs process.exit (hard restart via supervisor)
-- **Estimated:** ~20 lines
+- Gated by `gateway.commands.restart: true` (default false)
+- Authorization: `isAuthorizedSender`
+- Sends SIGUSR1 for graceful restart (supervisor picks up)
+- Fallback: `process.exit(0)` after 2s if SIGUSR1 not handled
 
-## Changes Made
+## Changes
 
 | File | Change |
 |------|--------|
-| `commands.ts` | +3 LOCAL_COMMANDS entries, +3 bot.command handlers (~55 lines) |
-| `plugin-api-factory.ts` | +cycleThinkingLevel method (~5 lines) |
-| `commands.ts` help page 2 | Updated to show management commands |
+| `commands.ts` | +6 LOCAL_COMMANDS, +6 bot.command handlers, +5 helpers, help page 3 |
+| `handlers.ts` | +`!cmd` intercept before debounce (~8 lines) |
+| `plugin-api-factory.ts` | +`cycleThinkingLevel` method |

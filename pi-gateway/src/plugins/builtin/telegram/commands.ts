@@ -1,5 +1,6 @@
 import { resolveSessionKey, resolveAgentId } from "../../../core/session-router.ts";
 import type { MessageSource } from "../../../core/types.ts";
+import { isSenderAllowed, type DmPolicy } from "../../../security/allowlist.ts";
 import { escapeHtml, markdownToTelegramHtml } from "./format.ts";
 import { parseMediaCommandArgs, sendTelegramMedia } from "./media-send.ts";
 import { registerModelCommand, registerCallbackHandler } from "./model-selector.ts";
@@ -29,14 +30,14 @@ const LOCAL_COMMANDS = [
   { command: "context", description: "上下文使用情况" },
   { command: "queue", description: "会话并发策略" },
   { command: "whoami", description: "查看发送者信息" },
+  { command: "bash", description: "执行 shell 命令" },
+  { command: "config", description: "查看运行配置" },
+  { command: "restart", description: "重启 gateway" },
   // { command: "role", description: "切换/查看角色" },
   { command: "cron", description: "定时任务管理" },
   { command: "skills", description: "查看/调用技能" },
   { command: "sessions", description: "查看所有会话" },
   { command: "resume", description: "恢复指定会话" },
-  // { command: "media", description: "媒体发送说明" },
-  // { command: "photo", description: "发送图片" },
-  // { command: "audio", description: "发送音频" },
   { command: "refresh", description: "刷新命令列表" },
 ];
 
@@ -78,10 +79,71 @@ function toSource(accountId: string, ctx: TelegramContext): MessageSource {
   };
 }
 
+/** Check if sender is in allowFrom list (for privileged commands like /bash, /config, /restart). */
+export function isAuthorizedSender(senderId: string, account: TelegramAccountRuntime): boolean {
+  const policy: DmPolicy = account.cfg.dmPolicy ?? "pairing";
+  return isSenderAllowed("telegram", senderId, policy, account.cfg.allowFrom, account.accountId);
+}
+
+const BASH_OUTPUT_LIMIT = 4096;
+const BASH_TIMEOUT_MS = 30_000;
+
+/** Execute a shell command and reply with output. */
+export async function executeBashCommand(ctx: any, cmd: string, runtime: TelegramPluginRuntime): Promise<void> {
+  runtime.api.logger.info(`[bash] Executing: ${cmd.slice(0, 200)}`);
+  try {
+    const proc = Bun.spawn(["sh", "-c", cmd], {
+      stdout: "pipe",
+      stderr: "pipe",
+      env: { ...process.env, TERM: "dumb" },
+    });
+
+    const timer = setTimeout(() => proc.kill(), BASH_TIMEOUT_MS);
+    const [stdout, stderr] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+    ]);
+    clearTimeout(timer);
+    await proc.exited;
+
+    const code = proc.exitCode ?? -1;
+    let output = (stdout + (stderr ? `\n--- stderr ---\n${stderr}` : "")).trim();
+    if (output.length > BASH_OUTPUT_LIMIT) {
+      output = output.slice(0, BASH_OUTPUT_LIMIT) + "\n…(truncated)";
+    }
+
+    const header = code === 0 ? "✅" : `⚠️ exit ${code}`;
+    const body = output ? `<pre>${escapeHtml(output)}</pre>` : "<i>(no output)</i>";
+    await ctx.reply(`${header}\n${body}`, { parse_mode: "HTML" });
+  } catch (err: any) {
+    await ctx.reply(`❌ ${escapeHtml(err?.message ?? String(err))}`);
+  }
+}
+
+/** Traverse config by dot-separated path. */
+function getConfigPath(config: any, path: string): unknown {
+  const parts = path.split(".");
+  let current: any = config;
+  for (const part of parts) {
+    if (current == null || typeof current !== "object") return undefined;
+    current = current[part];
+  }
+  return current;
+}
+
+/** JSON replacer that redacts sensitive values. */
+function redactSensitive(key: string, value: unknown): unknown {
+  const lower = key.toLowerCase();
+  if (lower.includes("token") || lower.includes("secret") || lower.includes("password") || lower.includes("apikey") || lower === "bottoken") {
+    return typeof value === "string" && value.length > 0 ? "[REDACTED]" : value;
+  }
+  return value;
+}
+
 function helpPage(page: number): { text: string; keyboard: { inline_keyboard: Array<Array<{ text: string; callback_data: string }>> } } {
   const pages = [
     [
-      "<b>Telegram Commands (1/2)</b>",
+      "<b>Telegram Commands (1/3)</b>",
       "",
       "/help — 帮助",
       "/new — 重置会话",
@@ -93,7 +155,7 @@ function helpPage(page: number): { text: string; keyboard: { inline_keyboard: Ar
       "/queue [mode] — 会话并发策略",
     ],
     [
-      "<b>Telegram Commands (2/2)</b>",
+      "<b>Telegram Commands (2/3)</b>",
       "",
       "/context — 上下文详情",
       "/whoami — 查看发送者信息",
@@ -102,6 +164,15 @@ function helpPage(page: number): { text: string; keyboard: { inline_keyboard: Ar
       "/sessions — 查看所有会话",
       "/resume — 恢复指定会话",
       "/refresh — 刷新命令列表",
+    ],
+    [
+      "<b>Admin Commands (3/3)</b>",
+      "",
+      "/bash &lt;cmd&gt; — 执行 shell 命令",
+      "/config [section] — 查看运行配置",
+      "/restart — 重启 gateway",
+      "",
+      "<i>需要 allowFrom 授权</i>",
     ],
   ];
   const idx = Math.max(0, Math.min(page - 1, pages.length - 1));
@@ -386,6 +457,76 @@ export async function setupTelegramCommands(runtime: TelegramPluginRuntime, acco
       `<b>Account:</b> ${escapeHtml(account.accountId)}`,
     ];
     await ctx.reply(lines.join("\n"), { parse_mode: "HTML" });
+  });
+
+  // --- /bash: execute shell on gateway host (authorized senders only) ---
+  bot.command("bash", async (ctx: any) => {
+    const source = toSource(account.accountId, ctx as TelegramContext);
+    if (!isAuthorizedSender(source.senderId, account)) {
+      await ctx.reply("⛔ Unauthorized.");
+      return;
+    }
+    const cmd = String(ctx.match ?? "").trim();
+    if (!cmd) {
+      await ctx.reply("Usage: /bash <command>");
+      return;
+    }
+    await executeBashCommand(ctx, cmd, runtime);
+  });
+
+  // --- /config: read-only config viewer ---
+  bot.command("config", async (ctx: any) => {
+    const source = toSource(account.accountId, ctx as TelegramContext);
+    if (!isAuthorizedSender(source.senderId, account)) {
+      await ctx.reply("⛔ Unauthorized.");
+      return;
+    }
+    const path = String(ctx.match ?? "").trim();
+    const config = runtime.api.config;
+
+    if (!path) {
+      const sections = Object.keys(config).sort();
+      const lines = [
+        "<b>⚙️ Config Sections</b>",
+        "",
+        ...sections.map((s) => `• <code>${escapeHtml(s)}</code>`),
+        "",
+        "Usage: <code>/config &lt;section&gt;</code>",
+      ];
+      await ctx.reply(lines.join("\n"), { parse_mode: "HTML" });
+      return;
+    }
+
+    const value = getConfigPath(config, path);
+    if (value === undefined) {
+      await ctx.reply(`Not found: <code>${escapeHtml(path)}</code>`, { parse_mode: "HTML" });
+      return;
+    }
+
+    const json = JSON.stringify(value, redactSensitive, 2);
+    const truncated = json.length > 3800 ? json.slice(0, 3800) + "\n…(truncated)" : json;
+    await ctx.reply(`<b>${escapeHtml(path)}</b>\n<pre>${escapeHtml(truncated)}</pre>`, { parse_mode: "HTML" });
+  });
+
+  // --- /restart: restart gateway process ---
+  bot.command("restart", async (ctx: any) => {
+    const source = toSource(account.accountId, ctx as TelegramContext);
+    if (!isAuthorizedSender(source.senderId, account)) {
+      await ctx.reply("⛔ Unauthorized.");
+      return;
+    }
+    if (!runtime.api.config.gateway.commands?.restart) {
+      await ctx.reply("⚠️ /restart is disabled. Set <code>gateway.commands.restart: true</code> to enable.", { parse_mode: "HTML" });
+      return;
+    }
+    await ctx.reply("⚙️ Restarting gateway…");
+    // Give Telegram time to deliver the reply before exiting
+    setTimeout(() => {
+      runtime.api.logger.info("[restart] Gateway restart triggered via /restart command");
+      process.kill(process.pid, "SIGUSR1");
+      // Fallback: if SIGUSR1 doesn't restart (no supervisor), exit after 2s
+      setTimeout(() => process.exit(0), 2000);
+    }, 500);
   });
 
   bot.command("refresh", async (ctx: any) => {

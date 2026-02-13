@@ -3,6 +3,7 @@ import type { ImageContent, MessageSource } from "../../../core/types.ts";
 import { isSenderAllowed, type DmPolicy } from "../../../security/allowlist.ts";
 import { createPairingRequest } from "../../../security/pairing.ts";
 import { resolveStreamCompat } from "./config-compat.ts";
+import { executeBashCommand, isAuthorizedSender } from "./commands.ts";
 import { downloadTelegramFile } from "./media-download.ts";
 import { migrateTelegramGroupConfig } from "./group-migration.ts";
 import { buildReactionText } from "./reaction-level.ts";
@@ -240,6 +241,14 @@ async function dispatchInbound(params: {
       `[telegram:${account.accountId}] inbound chat=${chatId} sender=${entry.source.senderId} type=${entry.source.chatType} agentId=${agentId} textLen=${routedText.length} images=${entry.images.length}`,
     );
   };
+
+  // !cmd shortcut — execute shell on gateway host (authorized senders only)
+  if (text.startsWith("!") && text.length > 1 && !text.startsWith("!!")) {
+    if (isAuthorizedSender(source.senderId, account)) {
+      await executeBashCommand(ctx, text.slice(1).trim(), runtime);
+      return;
+    }
+  }
 
   scheduleDebounce({
     account,
