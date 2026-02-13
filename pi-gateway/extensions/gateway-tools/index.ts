@@ -18,6 +18,7 @@ import { createSendMediaTool } from "./send-media.ts";
 import { createSendMessageTool } from "./send-message.ts";
 import { createCronTool } from "./cron.ts";
 import { createMessageActionTool } from "./message-action.ts";
+import { createGatewayTool } from "./gateway.ts";
 
 export default function gatewayTools(pi: ExtensionAPI) {
   const gatewayUrl = process.env.PI_GATEWAY_URL;
@@ -31,4 +32,5 @@ export default function gatewayTools(pi: ExtensionAPI) {
   pi.registerTool(createSendMessageTool(gatewayUrl, internalToken));
   pi.registerTool(createCronTool(gatewayUrl, internalToken));
   pi.registerTool(createMessageActionTool(gatewayUrl, internalToken));
+  pi.registerTool(createGatewayTool(gatewayUrl, internalToken));
 }

@@ -34,6 +34,11 @@ export interface GatewayConfig {
     /** Whether to log auto-generated tokens at startup. Default: true. Set false in production. */
     logToken?: boolean;
   };
+  /** Gateway command toggles. */
+  commands?: {
+    /** Allow agent to restart the gateway process. Default: false */
+    restart?: boolean;
+  };
 }
 
 export interface AgentPoolConfig {

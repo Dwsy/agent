@@ -18,6 +18,8 @@ import { handleMessageSendRequest } from "./message-send.ts";
 import { handleMessageAction } from "./message-action.ts";
 import { handleApiChat, handleApiChatStream } from "./chat-api.ts";
 import { handleApiSend } from "./send-api.ts";
+import { redactConfig } from "../core/auth.ts";
+import { loadConfig } from "../core/config.ts";
 
 /**
  * Route an HTTP request to the appropriate handler.
@@ -129,6 +131,29 @@ export async function routeHttp(req: Request, url: URL, ctx: GatewayContext): Pr
       commands: Array.from(ctx.registry.commands.keys()),
       hooks: ctx.registry.hooks.getRegistered(),
     });
+  }
+
+  // --- Gateway management ---
+  if (pathname === "/api/gateway/config" && method === "GET") {
+    return Response.json(redactConfig(ctx.config as unknown as Record<string, any>));
+  }
+  if (pathname === "/api/gateway/reload" && method === "POST") {
+    if (ctx.reloadConfig) {
+      ctx.reloadConfig();
+      return Response.json({ ok: true, message: "Config reloaded" });
+    }
+    const newConfig = loadConfig();
+    Object.assign(ctx.config, newConfig);
+    return Response.json({ ok: true, message: "Config reloaded (fallback)" });
+  }
+  if (pathname === "/api/gateway/restart" && method === "POST") {
+    if (!ctx.config.gateway.commands?.restart) {
+      return Response.json({ error: "Restart is disabled. Set gateway.commands.restart: true in config." }, { status: 403 });
+    }
+    // Respond before exiting — process manager (launchd/systemd/docker) will restart
+    const response = Response.json({ ok: true, message: "Gateway restarting..." });
+    setTimeout(() => process.exit(0), 500);
+    return response;
   }
 
   // --- Tools ---
