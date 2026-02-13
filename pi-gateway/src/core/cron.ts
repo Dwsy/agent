@@ -154,6 +154,31 @@ export class CronEngine {
     return true;
   }
 
+  updateJob(id: string, patch: Partial<Pick<CronJob, "schedule" | "payload" | "mode" | "delivery" | "deleteAfterRun" | "timeoutMs">>): CronJob | null {
+    const jobs = this.loadJobs();
+    const idx = jobs.findIndex((j) => j.id === id);
+    if (idx === -1) return null;
+
+    const job = { ...jobs[idx], ...patch, id } as CronJob;
+    if (patch.payload?.text) job.payload = { ...jobs[idx].payload, ...patch.payload };
+    jobs[idx] = job;
+    this.saveJobs(jobs);
+
+    // Reschedule
+    const existing = this.active.get(id);
+    if (existing) {
+      if (existing.cron) existing.cron.stop();
+      if (existing.timer) clearTimeout(existing.timer);
+      this.active.delete(id);
+    }
+    if (job.enabled !== false && !job.paused) {
+      this.scheduleJob(job);
+    }
+
+    this.log.info(`Job updated: ${id}`);
+    return job;
+  }
+
   listJobs(): CronJob[] {
     return this.loadJobs();
   }
