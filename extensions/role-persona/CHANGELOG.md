@@ -5,6 +5,7 @@
 ### Added
 - **压缩时记忆抢救** (`session_before_compact`): 拦截上下文压缩流程，在压缩提示词中注入 `<memory>` 提取指令，让同一次 LLM 调用同时生成 summary 和结构化记忆 JSON。解析后写入 MEMORY.md + daily memory，再从 summary 中剥离 `<memory>` 块。零额外 LLM 调用。
   - 提取类型: learning / preference / event
+- **`/memory-log` 命令**: 会话内记忆操作日志，不持久化。追踪 compaction / auto-extract / tool 三个来源的所有写入操作，显示时间、来源、类型、存储状态和内容摘要。
   - 每次最多 5 条，单条 ≤120 字符
   - 仅提取持久可复用的洞察，跳过一次性任务细节
   - 失败时静默回退到 pi 默认压缩逻辑
