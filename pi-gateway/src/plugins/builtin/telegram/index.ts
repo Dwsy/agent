@@ -6,7 +6,7 @@ import type {
 import type { TelegramChannelConfig } from "../../../core/config.ts";
 import { resolveDefaultAccountId, resolveTelegramAccounts } from "./accounts.ts";
 import { createAccountRuntime, startAccountRuntime, stopAccountRuntime } from "./bot.ts";
-import { sendOutboundViaAccount, sendMediaViaAccount, sendReactionViaAccount, editMessageViaAccount, deleteMessageViaAccount, parseTelegramTarget } from "./outbound.ts";
+import { sendOutboundViaAccount, sendMediaViaAccount, sendReactionViaAccount, editMessageViaAccount, deleteMessageViaAccount, pinMessageViaAccount, readHistoryViaAccount, parseTelegramTarget } from "./outbound.ts";
 import { markdownToTelegramHtml } from "./format.ts";
 import { recordSentMessage } from "./sent-message-cache.ts";
 import type { TelegramPluginRuntime } from "./types.ts";
@@ -133,6 +133,14 @@ const telegramPlugin: ChannelPlugin = {
     async deleteMessage(target: string, messageId: string): Promise<MessageActionResult> {
       const rt = getRuntime();
       return deleteMessageViaAccount({ runtime: rt, defaultAccountId, target, messageId });
+    },
+    async pinMessage(target: string, messageId: string, unpin?: boolean) {
+      if (!rt) return { ok: false, error: "Telegram not initialized" };
+      return pinMessageViaAccount({ runtime: rt, defaultAccountId, target, messageId, unpin });
+    },
+    async readHistory(target: string, limit?: number, before?: string) {
+      if (!rt) return { ok: false, error: "Telegram not initialized" };
+      return readHistoryViaAccount({ runtime: rt, defaultAccountId, target, limit, before });
     },
   },
 

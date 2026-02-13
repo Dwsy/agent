@@ -1,14 +1,14 @@
 /**
  * Feishu channel plugin entry — register with pi-gateway.
  */
-import type { ChannelPlugin, GatewayPluginApi, MessageSendResult, ChannelSecurityAdapter, MessageActionResult, ReactionOptions } from "../../types.ts";
+import type { ChannelPlugin, GatewayPluginApi, MessageSendResult, ChannelSecurityAdapter, MessageActionResult, ReactionOptions, ReadHistoryResult } from "../../types.ts";
 import type { DmPolicy } from "../../../security/allowlist.ts";
 import type { FeishuChannelConfig, FeishuPluginRuntime } from "./types.ts";
 import { createFeishuClient, createFeishuWSClient, createEventDispatcher, clearClientCache } from "./client.ts";
 import { registerFeishuEvents } from "./bot.ts";
 import { sendFeishuText, sendFeishuCard, chunkText, resolveReceiveIdType, updateFeishuCard } from "./send.ts";
 import { sendFeishuMedia } from "./media.ts";
-import { sendFeishuReaction, editFeishuMessage, deleteFeishuMessage } from "./actions.ts";
+import { sendFeishuReaction, editFeishuMessage, deleteFeishuMessage, pinFeishuMessage, readFeishuHistory } from "./actions.ts";
 import type * as Lark from "@larksuiteoapi/node-sdk";
 
 let runtime: FeishuPluginRuntime | null = null;
@@ -67,6 +67,14 @@ const feishuPlugin: ChannelPlugin = {
     async deleteMessage(target: string, messageId: string): Promise<MessageActionResult> {
       if (!runtime) return { ok: false, error: "Feishu not initialized" };
       return deleteFeishuMessage(runtime.client, messageId);
+    },
+    async pinMessage(target: string, messageId: string, unpin?: boolean): Promise<MessageActionResult> {
+      if (!runtime) return { ok: false, error: "Feishu not initialized" };
+      return pinFeishuMessage(runtime.client, messageId, unpin);
+    },
+    async readHistory(target: string, limit?: number, before?: string): Promise<ReadHistoryResult> {
+      if (!runtime) return { ok: false, error: "Feishu not initialized" };
+      return readFeishuHistory(runtime.client, target, limit, before);
     },
   },
 
