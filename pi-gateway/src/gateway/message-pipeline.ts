@@ -19,6 +19,7 @@ import type { PrioritizedWork } from "../core/message-queue.ts";
 import { resolveRoleForSession } from "../core/session-router.ts";
 import { isTuiCommand, tryHandleCommand } from "./command-handler.ts";
 import { getAssistantMessageEvent, getAmePartial } from "../core/rpc-events.ts";
+import { isTransient } from "../core/model-health.ts";
 
 // ============================================================================
 // Helpers
@@ -283,11 +284,34 @@ export async function processMessage(
       messages: agentEndMessages,
       stopReason: agentEndStopReason,
     });
+
+    // Model health: record success
+    if (ctx.modelHealth) {
+      const currentModel = ctx.config.agent?.model ?? "default";
+      ctx.modelHealth.recordSuccess(currentModel);
+    }
   } catch (err: unknown) {
     const errMsg = err instanceof Error ? err.message : "Unknown error";
     fullText = typeof fullText === 'string' && fullText.trim() ? fullText : `Error: ${errMsg}`;
     ctx.log.error(`Agent error for ${sessionKey}: ${errMsg}`);
     ctx.transcripts.logError(sessionKey, errMsg, { eventCount, abortAttempted, textLen: fullText.length });
+
+    // Model health: record failure for failover tracking
+    if (ctx.modelHealth) {
+      const currentModel = ctx.config.agent?.model ?? "default";
+      const category = ctx.modelHealth.recordFailure(currentModel, errMsg);
+      if (isTransient(category)) {
+        const fc = ctx.config.agent?.modelFailover;
+        const primary = fc?.primary ?? currentModel;
+        const fallbacks = fc?.fallbacks ?? [];
+        if (fallbacks.length > 0) {
+          const next = ctx.modelHealth.selectModel(primary, fallbacks);
+          ctx.log.warn(`[model-health] ${currentModel} failed (${category}), next request will use: ${next}`);
+        }
+      } else {
+        ctx.log.warn(`[model-health] ${currentModel} failed (${category}), non-transient error`);
+      }
+    }
   } finally {
     clearTimeout(abortTimer);
     unsub();
