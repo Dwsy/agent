@@ -10,7 +10,8 @@ export function createCronTool(gatewayUrl: string, internalToken: string) {
     description:
       "Manage gateway scheduled tasks (cron jobs) and send wake events. " +
       "Actions: list (show all jobs), add (create job), remove (delete job), " +
-      "pause/resume (toggle job), run (trigger immediately), wake (inject system event).\n\n" +
+      "pause/resume (toggle job), run (trigger immediately), wake (inject system event), " +
+      "update (modify existing job), runs (view execution history), status (engine stats).\n\n" +
       "SCHEDULE TYPES (schedule.kind):\n" +
       '- "cron": Standard cron expression, e.g. "0 */6 * * *"\n' +
       '- "every": Interval, e.g. "30m", "2h", "1d"\n' +
@@ -33,7 +34,7 @@ export function createCronTool(gatewayUrl: string, internalToken: string) {
       '- Wake next: { action: "wake", text: "Review pending PRs" }',
     parameters: Type.Object({
       action: Type.String({
-        enum: ["list", "add", "remove", "pause", "resume", "run", "wake"],
+        enum: ["list", "add", "remove", "pause", "resume", "run", "wake", "update", "runs", "status"],
         description: "Action to perform",
       }),
       id: Type.Optional(
@@ -70,6 +71,9 @@ export function createCronTool(gatewayUrl: string, internalToken: string) {
       deleteAfterRun: Type.Optional(
         Type.Boolean({ description: "Remove job after first execution. Default: false" }),
       ),
+      limit: Type.Optional(
+        Type.Number({ description: "Number of run records to return (runs action, default: 20, max: 100)" }),
+      ),
       wakeMode: Type.Optional(
         Type.String({
           enum: ["now", "next-heartbeat"],
@@ -78,7 +82,7 @@ export function createCronTool(gatewayUrl: string, internalToken: string) {
       ),
     }),
     async execute(_toolCallId: string, params: unknown) {
-      const { action, id, schedule, task, mode, delivery, deleteAfterRun, wakeMode } = params as {
+      const { action, id, schedule, task, mode, delivery, deleteAfterRun, wakeMode, limit } = params as {
         action: string;
         id?: string;
         schedule?: { kind: string; expr: string; timezone?: string };
@@ -87,6 +91,7 @@ export function createCronTool(gatewayUrl: string, internalToken: string) {
         delivery?: string;
         deleteAfterRun?: boolean;
         wakeMode?: string;
+        limit?: number;
       };
 
       try {
@@ -192,6 +197,53 @@ export function createCronTool(gatewayUrl: string, internalToken: string) {
                 ? `Wake event injected and heartbeat triggered.`
                 : `Wake event queued for next heartbeat.`,
             );
+          }
+
+          case "update": {
+            if (!id) return cronError("id is required for update");
+            const patch: Record<string, unknown> = { action: "update" };
+            if (schedule) patch.schedule = schedule;
+            if (task) patch.task = task;
+            if (mode) patch.mode = mode;
+            if (delivery) patch.delivery = delivery;
+            if (deleteAfterRun != null) patch.deleteAfterRun = deleteAfterRun;
+
+            const res = await fetch(`${gatewayUrl}/api/cron/jobs/${encodeURIComponent(id)}`, {
+              method: "PATCH",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${internalToken}`,
+              },
+              body: JSON.stringify(patch),
+            });
+            const data = (await res.json()) as Record<string, unknown>;
+            if (!res.ok) return cronError(data.error as string || res.statusText);
+            return cronOk(`Job "${id}" updated.`);
+          }
+
+          case "runs": {
+            if (!id) return cronError("id is required for runs");
+            const l = Math.min(limit ?? 20, 100);
+            const res = await fetch(`${gatewayUrl}/api/cron/jobs/${encodeURIComponent(id)}/runs?limit=${l}`, {
+              headers: { Authorization: `Bearer ${internalToken}` },
+            });
+            const data = (await res.json()) as { ok: boolean; runs?: unknown[]; error?: string };
+            if (!res.ok) return cronError(data.error || res.statusText);
+            const runs = data.runs ?? [];
+            return cronOk(
+              runs.length === 0
+                ? `No run history for "${id}".`
+                : `${runs.length} run(s) for "${id}":\n${JSON.stringify(runs, null, 2)}`,
+            );
+          }
+
+          case "status": {
+            const res = await fetch(`${gatewayUrl}/api/cron/status`, {
+              headers: { Authorization: `Bearer ${internalToken}` },
+            });
+            const data = (await res.json()) as Record<string, unknown>;
+            if (!res.ok) return cronError(data.error as string || res.statusText);
+            return cronOk(`Cron engine: ${JSON.stringify(data, null, 2)}`);
           }
 
           default:
