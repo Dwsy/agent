@@ -398,6 +398,9 @@ export class Gateway {
     // Persist sessions
     this.sessions.dispose();
 
+    // Stop system events gc timer
+    this.systemEvents.dispose();
+
     // Stop RPC pool
     await this.pool.stop();
 

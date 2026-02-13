@@ -9,6 +9,7 @@
 
 import type { GatewayContext } from "../gateway/types.ts";
 import type { ImageContent } from "../core/types.ts";
+import { getAssistantMessageEvent } from "../core/rpc-events.ts";
 
 /**
  * POST /api/chat — Synchronous chat. Sends message, waits for full reply.
@@ -68,7 +69,7 @@ export async function handleApiChat(req: Request, ctx: GatewayContext): Promise<
     const unsub = rpc.onEvent((event) => {
       if (rpc.sessionKey !== sessionKey) return;
       if (event.type === "message_update") {
-        const ame = (event as any).assistantMessageEvent ?? (event as any).assistant_message_event;
+        const ame = getAssistantMessageEvent(event);
         if (ame?.type === "text_delta" && ame.delta) {
           fullText += ame.delta;
         }
@@ -116,6 +117,20 @@ export async function handleApiChatStream(req: Request, ctx: GatewayContext): Pr
     return Response.json({ error: "message is required" }, { status: 400 });
   }
 
+  // Normalize images from request body to ImageContent[]
+  const normalizedImages: ImageContent[] | undefined = Array.isArray(body.images)
+    ? body.images.map((img: Record<string, unknown>) => {
+        const src = img.source as { data?: string; mediaType?: string } | undefined;
+        if (typeof img.data === "string" && typeof img.mimeType === "string") {
+          return { type: "image" as const, data: img.data, mimeType: img.mimeType };
+        }
+        if (src && typeof src.data === "string" && typeof src.mediaType === "string") {
+          return { type: "image" as const, data: src.data, mimeType: src.mediaType };
+        }
+        return { type: "image" as const, data: "", mimeType: "image/png" };
+      })
+    : undefined;
+
   const sessionKey = body.sessionKey ?? "agent:main:main:main";
   const startTime = Date.now();
 
@@ -159,7 +174,7 @@ export async function handleApiChatStream(req: Request, ctx: GatewayContext): Pr
         if (rpc.sessionKey !== sessionKey) return;
 
         if (event.type === "message_update") {
-          const ame = (event as any).assistantMessageEvent ?? (event as any).assistant_message_event;
+          const ame = getAssistantMessageEvent(event);
           if (ame?.type === "text_delta" && ame.delta) {
             fullText += ame.delta;
             send({ type: "delta", text: ame.delta });
@@ -175,16 +190,16 @@ export async function handleApiChatStream(req: Request, ctx: GatewayContext): Pr
           }
         }
         if (event.type === "tool_execution_start") {
-          const label = ((event as any).args as any)?.label || (event as any).toolName;
-          send({ type: "tool", name: (event as any).toolName, label });
+          const label = (event.args as Record<string, unknown>)?.label || event.toolName;
+          send({ type: "tool", name: event.toolName, label });
         }
         if (event.type === "tool_execution_end") {
-          send({ type: "tool_end", name: (event as any).toolName, isError: (event as any).isError });
+          send({ type: "tool_end", name: event.toolName, isError: event.isError });
         }
       });
 
       try {
-        await rpc.prompt(body.message!, body.images as any);
+        await rpc.prompt(body.message!, normalizedImages);
         await rpc.waitForIdle();
       } catch (err: any) {
         send({ type: "error", error: err?.message ?? "Agent error" });
