@@ -4,6 +4,8 @@ import "./components/Navbar";
 import "./components/HeroSection";
 import "./components/WorkflowSection";
 import "./components/BentoGrid";
+import "./components/ExtensionsSection";
+import "./components/UseCasesSection";
 import "./components/TechSpecs";
 import "./components/CTASection";
 import "./components/Footer";
@@ -16,27 +18,13 @@ export class App extends LitElement {
       min-height: 100vh;
     }
 
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
-
-    body {
-      background: #0F172A;
-      color: #F1F5F9;
-      font-family: "DM Sans", sans-serif;
-      -webkit-font-smoothing: antialiased;
-      -moz-osx-font-smoothing: grayscale;
-    }
-
     main {
-      padding-top: 5rem;
+      padding-top: 4.5rem;
     }
 
     @media (max-width: 768px) {
       main {
-        padding-top: 5.5rem;
+        padding-top: 4rem;
       }
     }
   `;
@@ -46,8 +34,10 @@ export class App extends LitElement {
       <pi-navbar></pi-navbar>
       <main>
         <hero-section></hero-section>
-        <workflow-section></workflow-section>
         <bento-grid></bento-grid>
+        <workflow-section></workflow-section>
+        <extensions-section></extensions-section>
+        <use-cases-section></use-cases-section>
         <tech-specs></tech-specs>
         <cta-section></cta-section>
       </main>
