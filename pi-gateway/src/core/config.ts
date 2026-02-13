@@ -288,6 +288,8 @@ export interface TelegramAccountConfig {
   textChunkLimit?: number;
   chunkMode?: "length" | "newline";
   linkPreview?: boolean;
+  /** @deprecated Legacy streaming config — use streamMode/draftChunk instead */
+  streaming?: Record<string, unknown>;
 }
 
 export interface TelegramChannelConfig extends TelegramAccountConfig {
@@ -315,9 +317,20 @@ export interface DiscordChannelConfig {
   guilds?: Record<string, DiscordGuildConfig>;
 }
 
+export interface WebChatChannelConfig {
+  enabled?: boolean;
+  /** HMAC secret for signed media URLs */
+  mediaSecret?: string;
+  /** Media token TTL in ms (default: 3600000 = 1h) */
+  mediaTokenTtlMs?: number;
+  /** Max upload size in MB (default: 10) */
+  mediaMaxMb?: number;
+}
+
 export interface ChannelsConfig {
   telegram?: TelegramChannelConfig;
   discord?: DiscordChannelConfig;
+  webchat?: WebChatChannelConfig;
   [key: string]: unknown;
 }
 

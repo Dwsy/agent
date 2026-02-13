@@ -32,8 +32,8 @@ export function processWebChatMediaDirectives(
   config: Config,
 ): { text: string; images: string[] } {
   const images: string[] = [];
-  const secret = getMediaSecret((config as any).channels?.webchat?.mediaSecret);
-  const ttlMs = (config as any).channels?.webchat?.mediaTokenTtlMs ?? 3600_000;
+  const secret = getMediaSecret(config.channels.webchat?.mediaSecret);
+  const ttlMs = config.channels.webchat?.mediaTokenTtlMs ?? 3600_000;
   const imageExts = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp"]);
 
   const processed = text.replace(/MEDIA:(\S+)/g, (_match, rawPath: string) => {
@@ -72,7 +72,7 @@ export function handleMediaServe(url: URL, config: Config): Response {
     return new Response("Missing parameters", { status: 400 });
   }
 
-  const secret = getMediaSecret((config as any).channels?.webchat?.mediaSecret);
+  const secret = getMediaSecret(config.channels.webchat?.mediaSecret);
   const verified = verifyMediaToken(token, sk, filePath, exp, secret);
   if (!verified) {
     return new Response("Forbidden", { status: 403 });
@@ -91,7 +91,7 @@ export function handleMediaServe(url: URL, config: Config): Response {
   }
 
   const stat = statSync(fullPath);
-  const maxMb = (config as any).channels?.webchat?.mediaMaxMb ?? 10;
+  const maxMb = config.channels.webchat?.mediaMaxMb ?? 10;
   if (stat.size > maxMb * 1024 * 1024) {
     return new Response("File too large", { status: 413 });
   }
@@ -155,8 +155,8 @@ export function sendWebChatMedia(
     return { ok: false, url: "" };
   }
 
-  const secret = getMediaSecret((config as any).channels?.webchat?.mediaSecret);
-  const ttlMs = (config as any).channels?.webchat?.mediaTokenTtlMs ?? 3600_000;
+  const secret = getMediaSecret(config.channels.webchat?.mediaSecret);
+  const ttlMs = config.channels.webchat?.mediaTokenTtlMs ?? 3600_000;
   const url = signMediaUrl(sessionKey, filePath, secret, ttlMs);
 
   const ext = filePath.split(".").pop()?.toLowerCase() || "";

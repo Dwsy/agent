@@ -138,7 +138,7 @@ function scheduleDebounce(params: {
 }): void {
   const { account, ctx, source, text, images, flush } = params;
   const chatId = String(ctx.chat?.id ?? "");
-  const debounceMs = resolveStreamCompat(account.cfg as any).debounceMs;
+  const debounceMs = resolveStreamCompat(account.cfg).debounceMs;
 
   if (debounceMs <= 0) {
     const existing = account.debounceMap.get(chatId);

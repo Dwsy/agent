@@ -106,7 +106,7 @@ export async function dispatchAgentTurn(params: {
       }).catch(() => {});
     }
   }
-  const streamCfg = resolveStreamCompat(account.cfg as any);
+  const streamCfg = resolveStreamCompat(account.cfg);
   const botClient = account.bot;
   const chatId = String(ctx.chat?.id ?? "");
   const threadId = (ctx.message as any)?.message_thread_id ?? (ctx.update?.edited_message as any)?.message_thread_id;
