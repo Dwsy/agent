@@ -218,6 +218,8 @@ export interface AgentConfig {
 export interface SessionConfig {
   dmScope: "main" | "per-peer" | "per-channel-peer";
   dataDir: string;
+  /** Auto-resume sessions on restart via --continue. Default: true */
+  continueOnRestart?: boolean;
 }
 
 export interface TelegramGroupConfig {

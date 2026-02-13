@@ -18,6 +18,7 @@ import { getCwdForRole } from "./session-router.ts";
 import { buildCapabilityProfile, type CapabilityProfile } from "./capability-profile.ts";
 import type { MetricsCollector } from "./metrics.ts";
 import type { ExecGuard } from "./exec-guard.ts";
+import { existsSync, readdirSync } from "node:fs";
 import { PoolWaitingList } from "./pool-waiting-list.ts";
 
 /** Check if `superset` contains all elements of `subset`. */
@@ -385,6 +386,12 @@ export class RpcPool {
     if (sessionKey) {
       const sessionDir = getSessionDir(this.config.session.dataDir, sessionKey);
       extraArgs.push("--session-dir", sessionDir);
+      // Auto-resume: add --continue if session dir has existing JSONL transcripts
+      if (this.config.session.continueOnRestart !== false
+          && existsSync(sessionDir)
+          && readdirSync(sessionDir).some(f => f.endsWith(".jsonl"))) {
+        extraArgs.push("--continue");
+      }
     } else {
       // Pre-warmed pool process: use temp dir, will be re-bound later
       const poolDir = getSessionDir(this.config.session.dataDir, `_pool_${id}`);
@@ -453,6 +460,11 @@ export class RpcPool {
     if (sessionKey) {
       const sessionDir = getSessionDir(this.config.session.dataDir, sessionKey);
       extraArgs.push("--session-dir", sessionDir);
+      if (this.config.session.continueOnRestart !== false
+          && existsSync(sessionDir)
+          && readdirSync(sessionDir).some(f => f.endsWith(".jsonl"))) {
+        extraArgs.push("--continue");
+      }
     } else {
       const poolDir = getSessionDir(this.config.session.dataDir, `_pool_${id}`);
       extraArgs.push("--session-dir", poolDir);
