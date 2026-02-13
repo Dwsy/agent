@@ -17,6 +17,14 @@ export class SystemEventsQueue {
   private events = new Map<string, SystemEvent[]>();
   private maxPerSession = 20;
   private maxAgeMs = 3600 * 1000; // 1 hour TTL
+  private gcTimer: ReturnType<typeof setInterval> | null = null;
+
+  constructor(gcIntervalMs = 30_000) {
+    this.gcTimer = setInterval(() => this.gc(), gcIntervalMs);
+    if (typeof this.gcTimer === "object" && "unref" in this.gcTimer) {
+      this.gcTimer.unref();
+    }
+  }
 
   /**
    * Inject an event into the queue for a session.
@@ -88,5 +96,15 @@ export class SystemEventsQueue {
       total += queue.length;
     }
     return { sessions: this.events.size, totalEvents: total };
+  }
+
+  /**
+   * Stop the internal gc timer.
+   */
+  dispose(): void {
+    if (this.gcTimer) {
+      clearInterval(this.gcTimer);
+      this.gcTimer = null;
+    }
   }
 }

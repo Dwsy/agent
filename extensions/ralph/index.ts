@@ -242,6 +242,7 @@ function safeReadState(stateFilePath: string): { state: RalphState; prompt: stri
 }
 
 export default function (pi: ExtensionAPI) {
+	if (process.argv.includes("--mode") && process.argv.includes("rpc")) return;
 	// ==================== CLI Flags ====================
 	
 	pi.registerFlag("ralph", {

@@ -426,6 +426,7 @@ const SHORTCUT_HINT = (() => {
 })();
 
 export default function outputStylesExtension(pi: ExtensionAPI): void {
+	if (process.argv.includes("--mode") && process.argv.includes("rpc")) return;
 	let activeStyleName: string | undefined;
 
 	function applyStyle(

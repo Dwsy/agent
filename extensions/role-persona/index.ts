@@ -26,6 +26,7 @@
  */
 
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import { compact as piCompact } from "@mariozechner/pi-coding-agent";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { StringEnum } from "@mariozechner/pi-ai";
@@ -37,6 +38,7 @@ import { config, reloadConfig } from "./config.ts";
 import {
   addRoleLearning,
   addRolePreference,
+  appendDailyRoleMemory,
   buildMemoryEditInstruction,
   consolidateRoleMemory,
   ensureRoleMemoryFiles,
@@ -475,22 +477,10 @@ When creating or editing these files, ALWAYS use the full path:
 - MEMORY.md → ${currentRolePath}/MEMORY.md
 - Daily memories → ${currentRolePath}/memory/YYYY-MM-DD.md
 
-## 📝 HOW TO SAVE MEMORIES
+## 📝 MEMORY
 
-When user says "remember this" or you learn something important:
-
-1. Read the daily memory file: ${currentRolePath}/memory/${today}.md
-2. If it doesn't exist, create it with header: # Memory: ${today}
-3. Append new memory with timestamp:
-   ## [HH:MM] CATEGORY
-   
-   Content here...
-4. Categories: event, lesson, preference, context, decision
-
-Example:
-## [14:32] PREFERENCE
-
-User prefers concise code without excessive comments.
+Memory is auto-managed in the background. Only use the \`memory\` tool when the user explicitly asks to remember something.
+Do NOT proactively save memories or do reflections unless asked.
 
 ${buildMemoryEditInstruction(currentRolePath)}`;
 
@@ -576,6 +566,114 @@ ${buildMemoryEditInstruction(currentRolePath)}`;
 
     // Non-blocking checkpoint: run in background, don't hold the turn.
     scheduleAutoMemoryFlush(event.messages, ctx, decision.reason);
+  });
+
+  // 3.5 Intercept compaction to extract memories before context is lost.
+  // Piggybacks on the default compaction LLM call by injecting a <memory> extraction
+  // instruction into customInstructions. Parses the JSON output and writes to MEMORY.md
+  // + daily memory, then strips the <memory> block from the summary.
+  pi.on("session_before_compact", async (event, ctx) => {
+    if (!AUTO_MEMORY_ENABLED || !currentRole || !currentRolePath) return;
+
+    const { preparation, signal } = event;
+    const rolePath = currentRolePath;
+    const roleName = currentRole;
+    const model = ctx.model;
+    if (!model) return;
+
+    const apiKey = await ctx.modelRegistry.getApiKey(model);
+    if (!apiKey) {
+      log("compact-memory", "no apiKey available, skipping memory extraction");
+      return;
+    }
+
+    log("compact-memory", `intercepting compaction: ${preparation.messagesToSummarize.length} messages to summarize`);
+
+    const memoryInstruction = `
+
+IMPORTANT: In addition to the summary above, extract key memories from this conversation that should be preserved long-term.
+Output them in a <memory> block at the END of your response, after the summary.
+Format:
+
+<memory>
+[
+  {"type": "learning", "content": "concise factual insight or pattern"},
+  {"type": "preference", "content": "user preference or habit", "category": "Communication|Code|Tools|Workflow|General"},
+  {"type": "event", "content": "significant event or milestone", "date": "YYYY-MM-DD"}
+]
+</memory>
+
+Rules for memory extraction:
+- Only extract DURABLE, REUSABLE insights (not one-off task details)
+- Keep each item under 120 chars
+- Max 5 items total
+- Skip the <memory> block entirely if nothing worth remembering
+- The <memory> block must contain valid JSON inside the tags`;
+
+    try {
+      const result = await piCompact(
+        preparation,
+        model,
+        apiKey,
+        memoryInstruction,
+        signal,
+      );
+
+      // Parse and strip <memory> block from summary
+      const memoryMatch = result.summary.match(/<memory>\s*([\s\S]*?)\s*<\/memory>/);
+      if (memoryMatch) {
+        result.summary = result.summary.replace(/<memory>[\s\S]*?<\/memory>/, "").trimEnd();
+
+        try {
+          const items = JSON.parse(memoryMatch[1]) as Array<{
+            type: string;
+            content: string;
+            category?: string;
+            date?: string;
+          }>;
+
+          let storedL = 0, storedP = 0;
+          for (const item of items) {
+            if (!item.content?.trim()) continue;
+
+            if (item.type === "learning") {
+              const r = addRoleLearning(rolePath, roleName, item.content, {
+                source: "compaction",
+                appendDaily: true,
+              });
+              if (r.stored) storedL++;
+            } else if (item.type === "preference") {
+              const r = addRolePreference(rolePath, roleName, item.category || "General", item.content, {
+                appendDaily: true,
+              });
+              if (r.stored) storedP++;
+            } else if (item.type === "event") {
+              appendDailyRoleMemory(rolePath, "event", item.content);
+            }
+          }
+
+          log("compact-memory", `extracted ${storedL}L ${storedP}P from compaction`);
+          setMemoryCheckpointResult(ctx, "compaction", storedL, storedP);
+        } catch (parseErr) {
+          log("compact-memory", `failed to parse <memory> JSON: ${parseErr}`);
+        }
+      } else {
+        log("compact-memory", "no <memory> block in compaction output");
+      }
+
+      return {
+        compaction: {
+          summary: result.summary,
+          firstKeptEntryId: result.firstKeptEntryId,
+          tokensBefore: result.tokensBefore,
+          details: result.details,
+        },
+      };
+    } catch (err) {
+      log("compact-memory", `compaction failed, falling back to default: ${err}`);
+      // Return nothing — pi will run its own default compaction
+      return;
+    }
   });
 
   // 4. Flush on session shutdown if there are pending turns (best-effort, bounded wait)
@@ -1216,32 +1314,45 @@ ${buildMemoryEditInstruction(currentRolePath)}`;
 
   // ============ HEARTBEAT & EVOLUTION ============
 
-  // Evolution trigger based on conversation count
-  let turnCount = 0;
+  // Evolution reminder: periodic gentle nudge for daily reflection.
+  // Counts USER input turns only, with 60-min cooldown to avoid spam.
+  let userTurnCount = 0;
+  let lastEvolutionAt = 0;
   let lastEvolutionDate = "";
 
   pi.on("turn_end", async (event, ctx) => {
     if (!currentRolePath || !ctx.hasUI) return;
 
-    turnCount++;
+    // Only count turns that started from a user message
+    const messages = (event as any).messages || [];
+    const lastUserIdx = messages.findLastIndex((m: any) => m.role === "user");
+    const lastAssistantIdx = messages.findLastIndex((m: any) => m.role === "assistant");
+    // If the latest user message is newer than the latest assistant, this turn was user-initiated
+    if (lastUserIdx < 0 || (lastAssistantIdx >= 0 && lastAssistantIdx > lastUserIdx)) return;
+
+    userTurnCount++;
+
     const today = new Date().toISOString().split("T")[0];
+    const now = Date.now();
+    const cooldownMs = 60 * 60 * 1000; // 60 minutes
 
-    // Daily check (once per day, after N turns)
-    if (lastEvolutionDate !== today && turnCount >= EVOLUTION_REMINDER_TURNS) {
+    // Trigger: every 10 user turns, max once per 60 min, once per day
+    if (
+      userTurnCount >= EVOLUTION_REMINDER_TURNS &&
+      lastEvolutionDate !== today &&
+      now - lastEvolutionAt >= cooldownMs
+    ) {
       lastEvolutionDate = today;
-      turnCount = 0;
+      lastEvolutionAt = now;
+      userTurnCount = 0;
 
-      // Inject evolution reminder to AI
+      // Low-priority note — must NOT override user intent
       pi.sendMessage({
         customType: "evolution-reminder",
-        content: `[Daily Reflection] Consider maintaining your memory and soul:
-
-1. Review recent memories: read ${currentRolePath}/memory/*.md
-2. Summarize key insights to ${currentRolePath}/MEMORY.md
-3. Reflect on your SOUL.md - does it still reflect who you're becoming?
-4. Update as needed.
-
-This is optional but helps you evolve.`,
+        content: `[Low-priority note] When you have a natural pause, consider a brief daily reflection:
+- Skim ${currentRolePath}/memory/ for today's notes
+- Optionally update MEMORY.md with durable insights
+This is background housekeeping — always prioritize the user's current question first.`,
         display: false
       }, {
         triggerTurn: false,
