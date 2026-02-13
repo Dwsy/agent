@@ -13,11 +13,12 @@
  * 9. Response delivery
  */
 
-import type { InboundMessage, SessionKey } from "../core/types.ts";
+import type { InboundMessage, SessionKey, AgentMessage } from "../core/types.ts";
 import type { GatewayContext } from "./types.ts";
 import type { PrioritizedWork } from "../core/message-queue.ts";
 import { resolveRoleForSession } from "../core/session-router.ts";
 import { isTuiCommand, tryHandleCommand } from "./command-handler.ts";
+import { getAssistantMessageEvent } from "../core/rpc-events.ts";
 
 // ============================================================================
 // Helpers
@@ -158,7 +159,7 @@ export async function processMessage(
 
     // Stream text and thinking deltas
     if (event.type === "message_update") {
-      const ame = (event as any).assistantMessageEvent ?? (event as any).assistant_message_event;
+      const ame = getAssistantMessageEvent(event);
       const partial = extractPartialText(ame?.partial);
 
       switch (ame?.type) {
@@ -215,25 +216,22 @@ export async function processMessage(
 
     // Tool execution labels
     if (event.type === "tool_execution_start") {
-      const eventAny = event as any;
-      // Log tool name but filter out any "unhandled" noise
-      const toolName = eventAny.toolName;
+      const { toolName, args, toolCallId } = event;
       if (toolName && !String(toolName).includes("unhandled")) {
         ctx.log.info(`[RPC] tool: ${toolName}`);
       }
-      const label = (eventAny.args as any)?.label || toolName;
+      const label = (args as Record<string, unknown>)?.label || toolName;
       if (label) toolLabels.push(label);
-      msg.onToolStart?.(toolName, eventAny.args, eventAny.toolCallId);
+      msg.onToolStart?.(toolName, args, toolCallId);
     }
 
     if (event.type === "agent_end") {
-      agentEndMessages = (event as any).messages ?? [];
+      agentEndMessages = event.messages ?? [];
     }
 
     if (event.type === "message_end") {
-      const msgEnd = event as any;
-      if (msgEnd.message?.role === "assistant" && msgEnd.message?.stopReason) {
-        agentEndStopReason = msgEnd.message.stopReason;
+      if (event.message?.role === "assistant" && (event.message as AgentMessage & { stopReason?: string }).stopReason) {
+        agentEndStopReason = (event.message as AgentMessage & { stopReason?: string }).stopReason!;
       }
     }
 
@@ -275,8 +273,8 @@ export async function processMessage(
       messages: agentEndMessages,
       stopReason: agentEndStopReason,
     });
-  } catch (err: any) {
-    const errMsg = err?.message ?? "Unknown error";
+  } catch (err: unknown) {
+    const errMsg = err instanceof Error ? err.message : "Unknown error";
     fullText = typeof fullText === 'string' && fullText.trim() ? fullText : `Error: ${errMsg}`;
     ctx.log.error(`Agent error for ${sessionKey}: ${errMsg}`);
     ctx.transcripts.logError(sessionKey, errMsg, { eventCount, abortAttempted, textLen: fullText.length });
@@ -315,8 +313,8 @@ export async function processMessage(
     ctx.log.info(`[processMessage] Calling respond for ${sessionKey}, text=${outbound.text.length} chars`);
     await respond(outbound.text);
     ctx.log.info(`[processMessage] respond completed for ${sessionKey}`);
-  } catch (err: any) {
-    ctx.log.error(`[processMessage] respond FAILED for ${sessionKey}: ${err?.message ?? err}`);
+  } catch (err: unknown) {
+    ctx.log.error(`[processMessage] respond FAILED for ${sessionKey}: ${err instanceof Error ? err.message : String(err)}`);
   }
   await ctx.registry.hooks.dispatch("message_sent", { message: outbound });
 }
