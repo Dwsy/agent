@@ -135,11 +135,11 @@ const telegramPlugin: ChannelPlugin = {
       return deleteMessageViaAccount({ runtime: rt, defaultAccountId, target, messageId });
     },
     async pinMessage(target: string, messageId: string, unpin?: boolean) {
-      if (!rt) return { ok: false, error: "Telegram not initialized" };
+      const rt = getRuntime();
       return pinMessageViaAccount({ runtime: rt, defaultAccountId, target, messageId, unpin });
     },
     async readHistory(target: string, limit?: number, before?: string) {
-      if (!rt) return { ok: false, error: "Telegram not initialized" };
+      const rt = getRuntime();
       return readHistoryViaAccount({ runtime: rt, defaultAccountId, target, limit, before });
     },
   },
