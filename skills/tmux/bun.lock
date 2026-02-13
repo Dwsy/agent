@@ -5,8 +5,8 @@
     "": {
       "name": "pi-tmux-skill",
       "dependencies": {
-        "ink": "4.4.1",
-        "react": "18.3.1",
+        "ink": "^4.4.1",
+        "react": "^18.3.1",
       },
       "devDependencies": {
         "@types/bun": "latest",
