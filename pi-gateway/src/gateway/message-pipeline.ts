@@ -19,7 +19,7 @@ import type { PrioritizedWork } from "../core/message-queue.ts";
 import { resolveRoleForSession } from "../core/session-router.ts";
 import { isTuiCommand, tryHandleCommand } from "./command-handler.ts";
 import { getAssistantMessageEvent, getAmePartial } from "../core/rpc-events.ts";
-import { isTransient } from "../core/model-health.ts";
+import { isTransient, classifyError } from "../core/model-health.ts";
 
 // ============================================================================
 // Helpers
@@ -84,6 +84,20 @@ export async function processMessage(
   const role = session.role ?? "default";
   const profile = ctx.buildSessionProfile(sessionKey, role);
 
+  // Wait for any ongoing compaction to prevent race conditions
+  if (session.isCompacting) {
+    ctx.log.info(`[processMessage] Waiting for compaction to complete for ${sessionKey}`);
+    let waitCycles = 0;
+    const maxWaitCycles = 30; // 30 * 500ms = 15s max wait
+    while (session.isCompacting && waitCycles < maxWaitCycles) {
+      await new Promise((r) => setTimeout(r, 500));
+      waitCycles++;
+    }
+    if (session.isCompacting) {
+      ctx.log.warn(`[processMessage] Compaction timeout for ${sessionKey}, proceeding anyway`);
+    }
+  }
+
   // Acquire RPC process
   let rpc;
   try {
@@ -124,6 +138,10 @@ export async function processMessage(
   let agentEndMessages: unknown[] = [];
   let agentEndStopReason = "stop";
   let eventCount = 0;
+
+  // Retry state tracking (for UX and timeout management)
+  let retryState: { attempt: number; maxAttempts: number; delayMs: number } | null = null;
+  let lastAssistantError: { message: string; model: string } | null = null;
 
   const unsub = rpc.onEvent((event) => {
     if (rpc.sessionKey !== sessionKey) return;
@@ -234,7 +252,64 @@ export async function processMessage(
       const msg_ = event.message;
       if (msg_?.role === "assistant" && "stopReason" in msg_) {
         agentEndStopReason = (msg_ as { stopReason: string }).stopReason;
+
+        // Track assistant errors for failover (auto_retry intermediate failures)
+        if (agentEndStopReason === "error" && ctx.modelHealth) {
+          const assistantMsg = msg_ as { stopReason: string; errorMessage?: string; api?: string; model?: string };
+          const errorMsg = assistantMsg.errorMessage || "Unknown error";
+          const modelName = assistantMsg.model || ctx.config.agent?.model || "default";
+
+          lastAssistantError = { message: errorMsg, model: modelName };
+
+          const category = ctx.modelHealth.recordFailure(modelName, errorMsg);
+          ctx.log.warn(`[model-health] ${modelName} error in turn: ${category} - ${errorMsg.slice(0, 100)}`);
+
+          // If this is the final failure (auto_retry exhausted or non-retryable), trigger failover
+          if (!isTransient(category) || (retryState && retryState.attempt >= retryState.maxAttempts)) {
+            const fc = ctx.config.agent?.modelFailover;
+            const primary = fc?.primary ?? modelName;
+            const fallbacks = fc?.fallbacks ?? [];
+            if (fallbacks.length > 0) {
+              const next = ctx.modelHealth.selectModel(primary, fallbacks);
+              if (next && next !== modelName) {
+                ctx.log.warn(`[model-health] Will switch from ${modelName} to ${next} for next request`);
+              }
+            }
+          }
+        }
       }
+    }
+
+    // Track auto-retry state for UX and timeout management
+    if (event.type === "auto_retry_start") {
+      retryState = {
+        attempt: event.attempt,
+        maxAttempts: event.maxAttempts,
+        delayMs: event.delayMs,
+      };
+      ctx.log.info(`[auto-retry] Attempt ${event.attempt}/${event.maxAttempts} after ${event.delayMs}ms: ${event.errorMessage.slice(0, 100)}`);
+      // Notify user via typing indicator that we're retrying
+      setTyping(true).catch(() => {});
+    }
+
+    if (event.type === "auto_retry_end") {
+      retryState = null;
+      if (event.success) {
+        ctx.log.info(`[auto-retry] Success after ${event.attempt} attempt(s)`);
+      } else {
+        ctx.log.warn(`[auto-retry] Failed after ${event.attempt} attempt(s): ${event.finalError?.slice(0, 100)}`);
+      }
+    }
+
+    // Track auto-compaction state to prevent race conditions
+    if (event.type === "auto_compaction_start") {
+      session.isCompacting = true;
+      ctx.log.info(`[auto-compaction] Started for ${sessionKey} (reason: ${event.reason})`);
+    }
+
+    if (event.type === "auto_compaction_end") {
+      session.isCompacting = false;
+      ctx.log.info(`[auto-compaction] Completed for ${sessionKey} (aborted: ${event.aborted})`);
     }
 
     // Broadcast to WebSocket clients
@@ -301,7 +376,7 @@ export async function processMessage(
     ctx.log.error(`Agent error for ${sessionKey}: ${errMsg}`);
     ctx.transcripts.logError(sessionKey, errMsg, { eventCount, abortAttempted, textLen: fullText.length });
 
-    // Model health: record failure for failover tracking
+    // Model health: record failure and execute failover if transient
     if (ctx.modelHealth) {
       const currentModel = ctx.config.agent?.model ?? "default";
       const category = ctx.modelHealth.recordFailure(currentModel, errMsg);
@@ -311,7 +386,20 @@ export async function processMessage(
         const fallbacks = fc?.fallbacks ?? [];
         if (fallbacks.length > 0) {
           const next = ctx.modelHealth.selectModel(primary, fallbacks);
-          ctx.log.warn(`[model-health] ${currentModel} failed (${category}), next request will use: ${next}`);
+          ctx.log.warn(`[model-health] ${currentModel} failed (${category}), switching to: ${next}`);
+
+          // Execute failover: actually switch the model in the RPC process
+          if (next && next !== currentModel) {
+            const parts = next.split("/");
+            if (parts.length === 2) {
+              const [provider, modelId] = parts;
+              rpc.setModel(provider, modelId)
+                .then(() => ctx.log.info(`[model-health] Switched to ${next}`))
+                .catch((e) => ctx.log.error(`[model-health] Failed to switch to ${next}:`, e));
+            } else {
+              ctx.log.warn(`[model-health] Cannot switch to ${next}: expected "provider/model" format`);
+            }
+          }
         }
       } else {
         ctx.log.warn(`[model-health] ${currentModel} failed (${category}), non-transient error`);

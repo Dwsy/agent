@@ -324,6 +324,45 @@ export class RpcClient {
   }
 
   // ==========================================================================
+  // Session Commands (aligned with RpcCommand types)
+  // ==========================================================================
+
+  async switchSession(sessionPath: string): Promise<void> {
+    await this.send({ type: "switch_session", sessionPath });
+  }
+
+  async fork(entryId: string): Promise<void> {
+    await this.send({ type: "fork", entryId });
+  }
+
+  async getForkMessages(): Promise<unknown[]> {
+    const res = await this.send({ type: "get_fork_messages" });
+    return (res.data as { messages: unknown[] })?.messages ?? [];
+  }
+
+  async setSessionName(name: string): Promise<void> {
+    await this.send({ type: "set_session_name", name });
+  }
+
+  async exportHtml(outputPath?: string): Promise<string | null> {
+    const res = await this.send({ type: "export_html", outputPath });
+    return (res.data as { path?: string })?.path ?? null;
+  }
+
+  // ==========================================================================
+  // Bash Commands
+  // ==========================================================================
+
+  async bash(command: string): Promise<unknown> {
+    const res = await this.send({ type: "bash", command });
+    return res.data;
+  }
+
+  async abortBash(): Promise<void> {
+    await this.send({ type: "abort_bash" });
+  }
+
+  // ==========================================================================
   // Helpers
   // ==========================================================================
 
