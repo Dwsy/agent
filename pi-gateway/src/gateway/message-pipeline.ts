@@ -268,11 +268,16 @@ export async function processMessage(
 
     // Group chat context injection: prepend sender/chat metadata so the agent
     // knows who is speaking and can decide whether to respond.
+    // Inject message context so the agent knows messageId (for pin/react/reply)
+    // and group metadata (for group chat awareness).
     if (source.chatType !== "dm") {
       const sender = source.senderName || source.senderId;
       const parts = [`[group:${source.chatId}`, `from:${sender}`];
       if (source.threadId) parts.push(`thread:${source.threadId}`);
+      if (source.messageId) parts.push(`msgId:${source.messageId}`);
       promptText = `${parts.join(" | ")}]\n${promptText}`;
+    } else if (source.messageId) {
+      promptText = `[msgId:${source.messageId}]\n${promptText}`;
     }
 
     ctx.log.info(`[processMessage] Sending prompt to ${rpc.id} for ${sessionKey}: "${promptText.slice(0, 80)}"`);

@@ -31,6 +31,7 @@ function buildSource(account: TelegramAccountRuntime, ctx: TelegramContext, mess
     topicId: msg?.message_thread_id ? String(msg.message_thread_id) : undefined,
     senderId: String(ctx.from?.id ?? msg?.from?.id ?? "unknown"),
     senderName: ctx.from?.username ?? ctx.from?.first_name ?? msg?.from?.username ?? msg?.from?.first_name,
+    messageId: msg?.message_id ? String(msg.message_id) : undefined,
   };
 }
 
