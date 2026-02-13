@@ -137,8 +137,8 @@ async function executeLocalCommand(
       respond: sendReply,
     });
     ctx.log.info(`[SLASH-CMD] ${msg.sessionKey} local command /${parsed.name} executed successfully`);
-  } catch (err: any) {
-    const errMsg = err?.message ?? String(err);
+  } catch (err: unknown) {
+    const errMsg = err instanceof Error ? err.message : String(err);
     ctx.log.error(`[SLASH-CMD] ${msg.sessionKey} local command /${parsed.name} failed: ${errMsg}`);
     await sendReply(`Command /${parsed.name} failed: ${errMsg}`);
   }
@@ -202,9 +202,10 @@ async function forwardToRpc(
     cmdUnsub();
     const cmdResponse = responses.join("").trim();
     await msg.respond(cmdResponse || `Command /${parsed.name} executed.`);
-  } catch (err: any) {
-    ctx.log.error(`[SLASH-CMD] ${msg.sessionKey} failed to execute /${parsed.name}: ${err?.message ?? String(err)}`);
-    await msg.respond(`Failed to execute command: ${err?.message ?? String(err)}`);
+  } catch (err: unknown) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    ctx.log.error(`[SLASH-CMD] ${msg.sessionKey} failed to execute /${parsed.name}: ${errMsg}`);
+    await msg.respond(`Failed to execute command: ${errMsg}`);
   }
   return true;
 }

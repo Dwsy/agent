@@ -135,9 +135,9 @@ export async function executeRegisteredTool(
     await ctx.registry.hooks.dispatch("tool_result_persist", persistPayload);
 
     return persistPayload.result;
-  } catch (err: any) {
+  } catch (err: unknown) {
     const errorResult = {
-      content: [{ type: "text", text: `Tool error: ${err?.message ?? String(err)}` }],
+      content: [{ type: "text", text: `Tool error: ${err instanceof Error ? err.message : String(err)}` }],
       isError: true,
     };
     await ctx.registry.hooks.dispatch("after_tool_call", {
@@ -186,7 +186,7 @@ export async function handleToolCall(
     const params = body.params && typeof body.params === "object" ? body.params : {};
     const result = await executeRegisteredTool(toolName, params, sessionKey, ctx);
     return Response.json({ ok: true, toolName, sessionKey, result });
-  } catch (err: any) {
-    return Response.json({ error: err?.message ?? "Tool call failed" }, { status: 500 });
+  } catch (err: unknown) {
+    return Response.json({ error: err instanceof Error ? err.message : "Tool call failed" }, { status: 500 });
   }
 }

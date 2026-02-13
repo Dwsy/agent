@@ -117,8 +117,8 @@ export async function deliverHeartbeatAlert(
       { parseMode: "Markdown" },
     );
     ctx.log.info(`Heartbeat alert delivered to ${channelName}:${target}`);
-  } catch (err: any) {
-    ctx.log.error(`Failed to deliver heartbeat alert: ${err?.message}`);
+  } catch (err: unknown) {
+    ctx.log.error(`Failed to deliver heartbeat alert: ${err instanceof Error ? err.message : String(err)}`);
   }
 }
 
@@ -175,8 +175,8 @@ async function handleInterruptMode(
   try {
     await rpc.abort();
     ctx.log.info(`[INTERRUPT] ${sessionKey}: RPC abort sent`);
-  } catch (err: any) {
-    ctx.log.warn(`[INTERRUPT] ${sessionKey}: Failed to abort RPC: ${err?.message ?? String(err)}`);
+  } catch (err: unknown) {
+    ctx.log.warn(`[INTERRUPT] ${sessionKey}: Failed to abort RPC: ${err instanceof Error ? err.message : String(err)}`);
   }
 
   const session = ctx.sessions.get(sessionKey);
@@ -213,8 +213,8 @@ async function handleInjectionMode(
     await rpc.prompt(msg.text, msg.images, rpcMode);
     ctx.log.info(`[INJECT] ${sessionKey}: Message injected with mode=${mode}`);
     return true;
-  } catch (err: any) {
-    ctx.log.warn(`[INJECT] ${sessionKey}: Failed to inject: ${err?.message}. Falling back to enqueue.`);
+  } catch (err: unknown) {
+    ctx.log.warn(`[INJECT] ${sessionKey}: Failed to inject: ${err instanceof Error ? err.message : String(err)}. Falling back to enqueue.`);
     return false;
   }
 }
