@@ -264,5 +264,13 @@ export function createPluginApi(
     },
 
     cronEngine: ctx.cron ?? undefined,
+
+    listSessions() {
+      return ctx.sessions.toArray().sort((a, b) => (b.lastActivity ?? 0) - (a.lastActivity ?? 0));
+    },
+
+    releaseSession(sessionKey: SessionKey) {
+      ctx.pool.release(sessionKey);
+    },
   };
 }

@@ -481,6 +481,12 @@ export interface GatewayPluginApi {
 
   /** Access the cron engine for job management */
   readonly cronEngine?: import("../core/cron.ts").CronEngine;
+
+  /** List all tracked sessions (sorted by lastActivity desc) */
+  listSessions(): import("../core/types.ts").SessionState[];
+
+  /** Release an RPC process bound to a session (returns it to pool) */
+  releaseSession(sessionKey: SessionKey): void;
 }
 
 // ============================================================================
