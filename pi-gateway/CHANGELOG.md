@@ -1,5 +1,31 @@
 # Changelog
 
+## [v3.7] - 2026-02-13
+
+**BBD Test Results:** 703/703 pass, 0 fail ✅ (v3.6: 687, v3.7: +16)
+**Team:** pi-zero (PM), EpicViper (consultant), IronIce, PureWolf, VividBear, YoungStorm, JadePhoenix
+**Focus:** Code Quality & Type Safety — zero new features, pure technical debt reduction
+
+### Security
+- S3 ExecGuard wired to all 6 Bun.spawn call sites — daemon.ts hardcoded subcommand allowlist, metrics.ts/cli.ts audit logging (by EpicViper, `303bcb5`)
+
+### Refactored (Telegram Module Split)
+- `handlers.ts` 1199→528 lines: extracted `streaming.ts` (464L, dispatch+render) + `outbound.ts` (213L, send+actions) (by EpicViper, `c64e913`+`66c0baf`)
+- `commands.ts` 650→464 lines: extracted `model-selector.ts` (222L, /model UI) (by EpicViper, `2880d20`)
+
+### Refactored (Server & Extensions)
+- `server.ts` 597→512 lines: extracted `cron-announcer.ts` (~100L) (by PureWolf, `7a17ab3`)
+- `gateway-tools/index.ts` 538→34 lines: split into 6 modules (send-media/send-message/cron/message-action/helpers/index) (by IronIce, `7056014`)
+
+### Type Safety
+- Config types: `WebChatChannelConfig` + `TelegramAccountConfig.streaming` — eliminated 8 `as any` (by EpicViper, `9d063c6`)
+- RPC event types: `src/core/rpc-events.ts` with typed extractors — eliminated 11 `as any` from chat-api + message-pipeline (by VividBear, `2b82e4e`)
+- `catch (err: any)` → `catch (err: unknown)` across all `src/` non-test files — 45 occurrences (by YoungStorm, `16f59db` + follow-ups)
+
+### Testing
+- Security edge-case tests: +16 tests for allowlist + pairing (corrupted JSON, bootstrap, revokeSender, channel isolation, charset, double approve, legacy migration, per-account cap) (by JadePhoenix, `ed4e7c8`)
+- `SystemEventsQueue` self-contained gc timer with `dispose()` (by IronIce, `34bf02b`)
+
 ## [v3.6] - 2026-02-12
 
 **BBD Test Results:** 687/687 pass, 0 fail ✅ (v3.5: 568, v3.6: +119)
