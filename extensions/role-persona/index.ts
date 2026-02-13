@@ -108,6 +108,29 @@ export default function rolePersonaExtension(pi: ExtensionAPI) {
   let memoryCheckpointFrame = 0;
   let isFirstUserMessage = true;  // 标记是否是第一条用户消息
 
+  // ── Memory operation log (in-session only, not persisted) ──
+  interface MemoryLogEntry {
+    time: string;
+    source: "compaction" | "auto-extract" | "tool" | "manual";
+    op: "learning" | "preference" | "event" | "reinforce" | "consolidate";
+    content: string;
+    stored: boolean;
+    detail?: string; // e.g. category, duplicate reason
+  }
+  const memoryLog: MemoryLogEntry[] = [];
+
+  function memLogPush(entry: Omit<MemoryLogEntry, "time">): void {
+    const now = new Date();
+    memoryLog.push({
+      ...entry,
+      time: [
+        String(now.getHours()).padStart(2, "0"),
+        String(now.getMinutes()).padStart(2, "0"),
+        String(now.getSeconds()).padStart(2, "0"),
+      ].join(":"),
+    });
+  }
+
   const normalizePath = (path: string) => path.replace(/\/$/, "");
 
   /** Notify user — falls back to sendMessage in headless (RPC) mode */
@@ -225,6 +248,21 @@ export default function rolePersonaExtension(pi: ExtensionAPI) {
       if (extracted) {
         log("checkpoint", `result: ${extracted.storedLearnings}L ${extracted.storedPrefs}P`);
         setMemoryCheckpointResult(ctx, reason, extracted.storedLearnings, extracted.storedPrefs);
+        // Log individual items from auto-extract
+        if (extracted.items) {
+          for (const item of extracted.items) {
+            memLogPush({
+              source: "auto-extract",
+              op: item.type === "learning" ? "learning" : item.type === "preference" ? "preference" : "event",
+              content: item.text || item.content || "",
+              stored: item.stored !== false,
+              detail: `reason=${reason}`,
+            });
+          }
+        } else {
+          // No individual items available, log summary
+          memLogPush({ source: "auto-extract", op: "learning", content: `(batch: ${extracted.storedLearnings}L ${extracted.storedPrefs}P)`, stored: true, detail: `reason=${reason}` });
+        }
       } else {
         log("checkpoint", "result: null (no extraction)");
       }
@@ -641,14 +679,17 @@ Rules for memory extraction:
                 source: "compaction",
                 appendDaily: true,
               });
+              memLogPush({ source: "compaction", op: "learning", content: item.content, stored: r.stored, detail: r.reason });
               if (r.stored) storedL++;
             } else if (item.type === "preference") {
               const r = addRolePreference(rolePath, roleName, item.category || "General", item.content, {
                 appendDaily: true,
               });
+              memLogPush({ source: "compaction", op: "preference", content: item.content, stored: r.stored, detail: item.category });
               if (r.stored) storedP++;
             } else if (item.type === "event") {
               appendDailyRoleMemory(rolePath, "event", item.content);
+              memLogPush({ source: "compaction", op: "event", content: item.content, stored: true });
             }
           }
 
@@ -728,6 +769,7 @@ Rules for memory extraction:
           // Use async version with LLM tag extraction
           const { addRoleLearningWithTags } = await import("./memory-md.ts");
           const result = await addRoleLearningWithTags(ctx, currentRolePath, currentRole, params.content, { appendDaily: true });
+          memLogPush({ source: "tool", op: "learning", content: params.content, stored: result.stored, detail: result.reason });
           log("memory-tool", `add_learning: ${result.stored ? "stored" : result.reason} id=${result.id || "-"} tags=${result.tags?.join(",") || "-"}`, params.content);
           if (!result.stored) {
             return {
@@ -752,6 +794,7 @@ Rules for memory extraction:
             params.content,
             { appendDaily: true }
           );
+          memLogPush({ source: "tool", op: "preference", content: params.content, stored: result.stored, detail: params.category || "General" });
           log("memory-tool", `add_preference: ${result.stored ? "stored" : result.reason} [${result.category}] id=${result.id || "-"}`, params.content);
           if (!result.stored) {
             return {
@@ -771,6 +814,7 @@ Rules for memory extraction:
             return { content: [{ type: "text", text: "Error: id/query/content required" }], details: { error: true } };
           }
           const result = reinforceRoleLearning(currentRolePath, currentRole, needle);
+          memLogPush({ source: "tool", op: "reinforce", content: needle, stored: result.updated, detail: result.id });
           log("memory-tool", `reinforce: ${result.updated ? `ok [${result.id}] ${result.used}x` : "not found"}`, needle);
           if (!result.updated) {
             return { content: [{ type: "text", text: "Learning not found" }], details: { error: true } };
@@ -1008,6 +1052,45 @@ Rules for memory extraction:
           maxHeight: "80%",
         },
       });
+    },
+  });
+
+  pi.registerCommand("memory-log", {
+    description: "Show memory operations log for current session (not persisted)",
+    handler: async (_args, ctx) => {
+      if (memoryLog.length === 0) {
+        notify(ctx, "本次会话暂无记忆操作", "info");
+        return;
+      }
+
+      const sourceIcon: Record<string, string> = {
+        "compaction": "🗜",
+        "auto-extract": "🤖",
+        "tool": "🔧",
+        "manual": "✏️",
+      };
+      const opIcon: Record<string, string> = {
+        "learning": "📘",
+        "preference": "⚙️",
+        "event": "📅",
+        "reinforce": "💪",
+        "consolidate": "🧹",
+      };
+
+      const lines = memoryLog.map((e, i) => {
+        const src = sourceIcon[e.source] || "?";
+        const op = opIcon[e.op] || "?";
+        const status = e.stored ? "✓" : "✗";
+        const detail = e.detail ? ` (${e.detail})` : "";
+        return `${String(i + 1).padStart(3)}  ${e.time}  ${src} ${e.source.padEnd(12)} ${op} ${e.op.padEnd(11)} ${status}  ${e.content.slice(0, 80)}${e.content.length > 80 ? "…" : ""}${detail}`;
+      });
+
+      const stored = memoryLog.filter(e => e.stored).length;
+      const skipped = memoryLog.length - stored;
+      const header = `Memory Log — ${memoryLog.length} ops (${stored} stored, ${skipped} skipped)\n${"─".repeat(100)}`;
+      const output = `${header}\n${lines.join("\n")}`;
+
+      pi.sendMessage({ content: output, display: true }, { triggerTurn: false });
     },
   });
 

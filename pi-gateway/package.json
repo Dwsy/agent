@@ -23,6 +23,7 @@
   "devDependencies": {
     "@mariozechner/pi-agent-core": "^0.52.7",
     "@mariozechner/pi-ai": "^0.52.7",
+    "@mariozechner/pi-coding-agent": "^0.52.7",
     "@types/bun": "^1.1.0",
     "acorn": "^8.15.0",
     "typescript": "^5.7.0"
