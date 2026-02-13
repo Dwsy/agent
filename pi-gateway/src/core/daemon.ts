@@ -99,13 +99,33 @@ ${args.map((a) => `    <string>${a}</string>`).join("\n")}
   console.log(`\nLogs: ${logDir}`);
 }
 
+// Hardcoded allowed subcommand combos — ExecGuard allowlist is too broad for
+// system management commands. Only these exact patterns are permitted.
+const ALLOWED_DAEMON_COMMANDS: readonly string[][] = [
+  ["launchctl", "unload"],
+  ["systemctl", "--user", "stop", "pi-gateway"],
+  ["systemctl", "--user", "disable", "pi-gateway"],
+  ["systemctl", "--user", "daemon-reload"],
+];
+
+function guardedSpawnSync(cmd: string[]): void {
+  const match = ALLOWED_DAEMON_COMMANDS.some(
+    (allowed) => cmd.length >= allowed.length && allowed.every((v, i) => cmd[i] === v),
+  );
+  if (!match) {
+    throw new Error(`Daemon spawn blocked: ${cmd.join(" ")} — not in allowed subcommand list`);
+  }
+  log.info(`Daemon spawn: ${cmd.join(" ")}`);
+  Bun.spawnSync(cmd);
+}
+
 function uninstallLaunchd(): void {
   if (!existsSync(LAUNCHD_PLIST)) {
     console.log("No daemon installed.");
     return;
   }
   console.log(`Unloading and removing: ${LAUNCHD_PLIST}`);
-  Bun.spawnSync(["launchctl", "unload", LAUNCHD_PLIST]);
+  guardedSpawnSync(["launchctl", "unload", LAUNCHD_PLIST]);
   const { unlinkSync } = require("node:fs");
   unlinkSync(LAUNCHD_PLIST);
   console.log("Daemon removed.");
@@ -158,10 +178,10 @@ function uninstallSystemd(): void {
     console.log("No daemon installed.");
     return;
   }
-  Bun.spawnSync(["systemctl", "--user", "stop", "pi-gateway"]);
-  Bun.spawnSync(["systemctl", "--user", "disable", "pi-gateway"]);
+  guardedSpawnSync(["systemctl", "--user", "stop", "pi-gateway"]);
+  guardedSpawnSync(["systemctl", "--user", "disable", "pi-gateway"]);
   const { unlinkSync } = require("node:fs");
   unlinkSync(SYSTEMD_SERVICE);
-  Bun.spawnSync(["systemctl", "--user", "daemon-reload"]);
+  guardedSpawnSync(["systemctl", "--user", "daemon-reload"]);
   console.log("Daemon removed.");
 }

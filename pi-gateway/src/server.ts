@@ -102,11 +102,12 @@ export class Gateway {
       retentionDays: this.config.logging.retentionDays,
     });
     this.log = this.config.logging.file ? createFileLogger("gateway") : createConsoleLogger("gateway");
-    this.metrics = new MetricsCollector();
 
-    // Initialize exec guard (v3.4 S3) — before pool so spawn checks work
+    // Initialize exec guard (v3.4 S3) — before pool and metrics so spawn checks work
     this.execGuard = new ExecGuard();
     this.execGuard.validatePiCliPath(this.config.agent.piCliPath ?? "pi");
+
+    this.metrics = new MetricsCollector(this.execGuard);
 
     this.pool = new RpcPool(this.config, this.metrics, this.execGuard, (sessionKey) => {
       this.registry.hooks.dispatch("session_end", { sessionKey }).catch(() => {});

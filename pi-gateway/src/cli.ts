@@ -32,6 +32,7 @@ import type {
 import type { InboundMessage, SessionKey } from "./core/types.ts";
 import type { DispatchResult } from "./gateway/types.ts";
 import { createLogger } from "./core/types.ts";
+import { ExecGuard } from "./core/exec-guard.ts";
 
 // ============================================================================
 // Argument Parsing
@@ -223,14 +224,21 @@ async function runDoctor(): Promise<void> {
   console.log(`Pool: min=${config.agent.pool.min}, max=${config.agent.pool.max}`);
   console.log();
 
-  // Check pi CLI
+  // Check pi CLI (guarded — pi is in default allowlist, adds audit trail)
   try {
-    const proc = Bun.spawn([config.agent.piCliPath ?? "pi", "--version"], {
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    const output = await new Response(proc.stdout).text();
-    console.log(`pi CLI: OK (${output.trim()})`);
+    const piPath = config.agent.piCliPath ?? "pi";
+    const guard = new ExecGuard();
+    const check = guard.check(piPath, ["--version"], { caller: "cli.status" });
+    if (!check.allowed) {
+      console.log(`pi CLI: BLOCKED by ExecGuard — ${check.reason}`);
+    } else {
+      const proc = Bun.spawn([piPath, "--version"], {
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      const output = await new Response(proc.stdout).text();
+      console.log(`pi CLI: OK (${output.trim()})`);
+    }
   } catch {
     console.log("pi CLI: NOT FOUND — install with: npm install -g @mariozechner/pi-coding-agent");
   }

@@ -11,6 +11,7 @@
 
 import { createLogger, type Logger, type SessionKey } from "./types.ts";
 import { DelegationMetrics, type DelegationMetricsSnapshot } from "./delegate-metrics.ts";
+import type { ExecGuard } from "./exec-guard.ts";
 
 // ============================================================================
 // Quantile Tracker (sorted insertion, O(n) insert, O(1) lookup)
@@ -153,9 +154,14 @@ interface ProcessRss {
   timestamp: number;
 }
 
-async function getProcessRss(pid: number): Promise<number> {
+async function getProcessRss(pid: number, execGuard?: ExecGuard): Promise<number> {
   try {
-    const proc = Bun.spawn(["ps", "-o", "rss=", "-p", String(pid)], {
+    const args = ["-o", "rss=", "-p", String(pid)];
+    if (execGuard) {
+      const check = execGuard.check("ps", args, { caller: "metrics.getProcessRss" });
+      if (!check.allowed) return 0;
+    }
+    const proc = Bun.spawn(["ps", ...args], {
       stdout: "pipe",
       stderr: "pipe",
     });
@@ -217,9 +223,11 @@ export class MetricsCollector {
   private log: Logger;
   private dataSource: MetricsDataSource | null = null;
   private delegationMetrics = new DelegationMetrics();
+  private execGuard?: ExecGuard;
 
-  constructor() {
+  constructor(execGuard?: ExecGuard) {
     this.log = createLogger("metrics");
+    this.execGuard = execGuard;
   }
 
   // ==========================================================================
@@ -342,7 +350,7 @@ export class MetricsCollector {
     const results: ProcessRss[] = [];
     const now = Date.now();
 
-    const rssResults = await Promise.all(pids.map(pid => getProcessRss(pid)));
+    const rssResults = await Promise.all(pids.map(pid => getProcessRss(pid, this.execGuard)));
     for (let i = 0; i < pids.length; i++) {
       results.push({ pid: pids[i]!, rssMb: rssResults[i]!, timestamp: now });
     }
