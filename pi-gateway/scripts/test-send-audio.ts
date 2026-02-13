@@ -1,8 +1,13 @@
 import { readFileSync } from "node:fs";
 import { Bot, InputFile } from "grammy";
 
-const token = "REDACTED_BOT_TOKEN";
-const chatId = "REDACTED_CHAT_ID";
+const token = process.env.TELEGRAM_BOT_TOKEN;
+const chatId = process.env.TELEGRAM_CHAT_ID;
+
+if (!token || !chatId) {
+  console.error("Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID env vars");
+  process.exit(1);
+}
 
 const bot = new Bot(token);
 
