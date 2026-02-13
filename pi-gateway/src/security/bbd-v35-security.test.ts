@@ -278,3 +278,131 @@ describe("listPendingRequests", () => {
     expect(all.length).toBeGreaterThanOrEqual(2);
   });
 });
+
+// ============================================================================
+// T9 — Edge cases: allowlist
+// ============================================================================
+
+describe("allowlist edge cases", () => {
+  test("getPersistedAllowlist returns [] for corrupted JSON", () => {
+    const path = join(TEST_CREDS_DIR, "telegram__default-allowFrom.json");
+    writeFileSync(path, "NOT VALID JSON{{{", "utf-8");
+    expect(getPersistedAllowlist("telegram", "default")).toEqual([]);
+  });
+
+  test("getPersistedAllowlist returns [] when credentials dir missing", () => {
+    rmSync(TEST_HOME, { recursive: true, force: true });
+    expect(getPersistedAllowlist("feishu", "default")).toEqual([]);
+  });
+
+  test("approveSender bootstraps credentials dir if missing", () => {
+    rmSync(TEST_HOME, { recursive: true, force: true });
+    approveSender("telegram", "bootstrap-user", "default");
+    expect(getPersistedAllowlist("telegram", "default")).toContain("bootstrap-user");
+  });
+
+  test("revokeSender on non-existent sender is a no-op", () => {
+    approveSender("telegram", "keep-me", "default");
+    revokeSender("telegram", "ghost-user", "default");
+    expect(getPersistedAllowlist("telegram", "default")).toContain("keep-me");
+  });
+
+  test("revokeSender on empty list does not throw", () => {
+    expect(() => revokeSender("telegram", "nobody", "default")).not.toThrow();
+  });
+
+  test("account ID with special chars is normalized in file path", () => {
+    approveSender("telegram", "user-x", "bot@prod/v2");
+    const list = getPersistedAllowlist("telegram", "bot@prod/v2");
+    expect(list).toContain("user-x");
+    const normalized = join(TEST_CREDS_DIR, "telegram__bot_prod_v2-allowFrom.json");
+    expect(existsSync(normalized)).toBe(true);
+  });
+
+  test("different channels are fully isolated", () => {
+    approveSender("telegram", "tg-only", "default");
+    approveSender("discord", "dc-only", "default");
+    expect(isSenderAllowed("telegram", "dc-only", "allowlist", [], "default")).toBe(false);
+    expect(isSenderAllowed("discord", "tg-only", "allowlist", [], "default")).toBe(false);
+  });
+
+  test("isSenderAllowed with undefined configAllowFrom defaults to empty", () => {
+    expect(isSenderAllowed("telegram", "user", "allowlist", undefined)).toBe(false);
+    expect(isSenderAllowed("telegram", "user", "pairing", undefined)).toBe(false);
+  });
+});
+
+// ============================================================================
+// T9 — Edge cases: pairing
+// ============================================================================
+
+describe("pairing edge cases", () => {
+  test("generated code excludes confusing characters (0/O/1/I)", () => {
+    const codes: string[] = [];
+    for (let i = 0; i < 20; i++) {
+      const code = createPairingRequest("telegram", `gen-${i}`, undefined, `gen-acc-${i}`);
+      if (code) codes.push(code);
+    }
+    const allChars = codes.join("");
+    expect(allChars).not.toMatch(/[01OI]/);
+  });
+
+  test("createPairingRequest without accountId uses undefined scoping", () => {
+    const code = createPairingRequest("telegram", "no-acc-user", "Test");
+    expect(code).not.toBeNull();
+    expect(code!.length).toBe(8);
+  });
+
+  test("approvePairingRequest only removes matched request, keeps others", () => {
+    const code1 = createPairingRequest("telegram", "keep-pending", undefined, "default")!;
+    const code2 = createPairingRequest("telegram", "approve-me", undefined, "default")!;
+    approvePairingRequest("telegram", code2, "default");
+    const pending = listPendingRequests("telegram", "default");
+    expect(pending.find((r) => r.senderId === "keep-pending")).toBeDefined();
+    expect(pending.find((r) => r.senderId === "approve-me")).toBeUndefined();
+  });
+
+  test("double approve is safe — second call returns null", () => {
+    const code = createPairingRequest("discord", "double-user", undefined, "default")!;
+    expect(approvePairingRequest("discord", code, "default")).toBe("double-user");
+    expect(approvePairingRequest("discord", code, "default")).toBeNull();
+    expect(isSenderAllowed("discord", "double-user", "pairing", [], "default")).toBe(true);
+  });
+
+  test("listPendingRequests tolerates corrupted pairing JSON", () => {
+    const path = join(TEST_CREDS_DIR, "telegram__default-pairing.json");
+    writeFileSync(path, "BROKEN JSON!!!", "utf-8");
+    expect(listPendingRequests("telegram", "default")).toEqual([]);
+  });
+
+  test("multi-account pairing isolation", () => {
+    const code1 = createPairingRequest("telegram", "user-a", undefined, "bot-1")!;
+    const code2 = createPairingRequest("telegram", "user-b", undefined, "bot-2")!;
+    approvePairingRequest("telegram", code1, "bot-1");
+    expect(isSenderAllowed("telegram", "user-a", "pairing", [], "bot-1")).toBe(true);
+    expect(isSenderAllowed("telegram", "user-a", "pairing", [], "bot-2")).toBe(false);
+  });
+
+  test("legacy pairing migration reads channel-level file for default account", () => {
+    const legacyPath = join(TEST_CREDS_DIR, "feishu-pairing.json");
+    const legacyData = [{
+      code: "LEGACY01",
+      senderId: "legacy-sender",
+      channel: "feishu",
+      createdAt: Date.now(),
+    }];
+    writeFileSync(legacyPath, JSON.stringify(legacyData), "utf-8");
+    const pending = listPendingRequests("feishu", "default");
+    expect(pending.length).toBe(1);
+    expect(pending[0].senderId).toBe("legacy-sender");
+    expect(existsSync(join(TEST_CREDS_DIR, "feishu__default-pairing.json"))).toBe(true);
+  });
+
+  test("max pending cap is per channel+account, not global", () => {
+    createPairingRequest("telegram", "a1", undefined, "default");
+    createPairingRequest("telegram", "a2", undefined, "default");
+    createPairingRequest("telegram", "a3", undefined, "default");
+    expect(createPairingRequest("telegram", "a4", undefined, "default")).toBeNull();
+    expect(createPairingRequest("telegram", "b1", undefined, "other-acc")).not.toBeNull();
+  });
+});
