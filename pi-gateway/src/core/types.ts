@@ -125,6 +125,8 @@ export interface MessageSource {
   guildId?: string;
   /** Target agent ID for routing (cron/delegation). */
   agentId?: string;
+  /** Inbound message ID (platform-specific, for pin/reply/react). */
+  messageId?: string;
 }
 
 /** Inbound message dispatched to the agent */
