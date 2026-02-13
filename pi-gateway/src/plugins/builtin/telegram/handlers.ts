@@ -100,6 +100,8 @@ function shouldAllowGroupMessage(account: TelegramAccountRuntime, ctx: TelegramC
   const groupCfg = account.cfg.groups?.[chatId] ?? account.cfg.groups?.["*"];
   let finalText = text;
 
+  console.log(`[telegram:group-gate] chatId=${chatId} groupCfg=${JSON.stringify(groupCfg)} hasGroups=${!!account.cfg.groups} keys=${Object.keys(account.cfg.groups ?? {}).join(",")}`);
+
   if (groupCfg?.enabled === false) {
     return { allowed: false, text: finalText };
   }
@@ -487,6 +489,7 @@ export async function setupTelegramHandlers(runtime: TelegramPluginRuntime, acco
 
   bot.on("message", async (ctx: any) => {
     const updateId = Number((ctx.update as any)?.update_id ?? -1);
+    console.log(`[telegram:${account.accountId}] on:message updateId=${updateId} chatId=${ctx.chat?.id} chatType=${ctx.chat?.type} text="${(ctx.message?.text ?? ctx.message?.caption ?? "").slice(0, 40)}"`);
     if (updateId >= 0) {
       if (account.seenUpdates.has(updateId)) return;
       account.seenUpdates.add(updateId);
