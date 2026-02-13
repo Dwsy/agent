@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { parseTelegramTarget } from "../handlers.ts";
+import { parseTelegramTarget } from "../outbound.ts";
 
 describe("telegram target parser", () => {
   test("supports legacy chatId target", () => {
