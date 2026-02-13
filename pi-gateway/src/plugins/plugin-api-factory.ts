@@ -157,6 +157,12 @@ export function createPluginApi(
       }
     },
 
+    async cycleThinkingLevel(sessionKey: SessionKey) {
+      const rpc = ctx.pool.getForSession(sessionKey);
+      if (!rpc) throw new Error(`No RPC process for session ${sessionKey}`);
+      return rpc.cycleThinkingLevel();
+    },
+
     async setModel(sessionKey: SessionKey, provider: string, modelId: string) {
       const rpc = ctx.pool.getForSession(sessionKey);
       if (rpc) {
