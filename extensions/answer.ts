@@ -409,6 +409,7 @@ class QnAComponent implements Component {
 }
 
 export default function (pi: ExtensionAPI) {
+	if (process.argv.includes("--mode") && process.argv.includes("rpc")) return;
 	const answerHandler = async (ctx: ExtensionContext) => {
 			if (!ctx.hasUI) {
 				ctx.ui.notify("answer requires interactive mode", "error");

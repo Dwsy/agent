@@ -2,6 +2,7 @@ import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-age
 import { Key } from "@mariozechner/pi-tui";
 
 export default function (pi: ExtensionAPI) {
+	if (process.argv.includes("--mode") && process.argv.includes("rpc")) return;
 	const continueHandler = async (ctx: ExtensionContext) => {
 		if (!ctx.hasUI) {
 			ctx.ui.notify("continue requires interactive mode", "error");

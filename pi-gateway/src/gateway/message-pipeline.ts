@@ -86,8 +86,8 @@ export async function processMessage(
   let rpc;
   try {
     rpc = await ctx.pool.acquire(sessionKey, profile);
-  } catch (err: any) {
-    const errMsg = `Failed to acquire RPC process: ${err?.message ?? String(err)}`;
+  } catch (err: unknown) {
+    const errMsg = `Failed to acquire RPC process: ${err instanceof Error ? err.message : String(err)}`;
     ctx.log.error(errMsg);
     ctx.transcripts.logError(sessionKey, errMsg);
     await respond(`Error: ${errMsg}`);

@@ -1,5 +1,26 @@
 # Changelog
 
+## 2026-02-13
+
+### Added
+- **压缩时记忆抢救** (`session_before_compact`): 拦截上下文压缩流程，在压缩提示词中注入 `<memory>` 提取指令，让同一次 LLM 调用同时生成 summary 和结构化记忆 JSON。解析后写入 MEMORY.md + daily memory，再从 summary 中剥离 `<memory>` 块。零额外 LLM 调用。
+  - 提取类型: learning / preference / event
+  - 每次最多 5 条，单条 ≤120 字符
+  - 仅提取持久可复用的洞察，跳过一次性任务细节
+  - 失败时静默回退到 pi 默认压缩逻辑
+
+### Changed
+- **evolution-reminder 重构**: 从"命令式注入"改为"低优先级备注"，避免劫持 AI 注意力
+  - 计数改为用户输入轮次（非 AI 轮次）
+  - 新增 60 分钟冷却期（每天最多触发一次）
+  - 提示语降级: `[Daily Reflection] Consider maintaining...` → `[Low-priority note] ... always prioritize the user's current question first`
+- **system prompt 记忆指令精简**: 将冗长的 `HOW TO SAVE MEMORIES` 段落替换为简短声明，明确后台自动管理记忆，除非用户要求否则不主动操作
+
+### Files Modified
+- `index.ts` - 新增 `session_before_compact` 钩子、重构 `turn_end` evolution-reminder、精简 `before_agent_start` 记忆指令、新增 `appendDailyRoleMemory` 导入
+
+---
+
 ## 2026-02-10
 
 ### Fixed

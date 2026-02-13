@@ -3,6 +3,7 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Container, Text } from "@mariozechner/pi-tui";
 
 export default function (pi: ExtensionAPI) {
+  if (process.argv.includes("--mode") && process.argv.includes("rpc")) return;
   pi.on("tool_call", async (event, ctx) => {
     if (event.toolName === "bash") {
       const cmd = event.input.command as string;
