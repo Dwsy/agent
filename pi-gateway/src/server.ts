@@ -47,6 +47,7 @@ import type {
 } from "./plugins/types.ts";
 import { createPluginApi } from "./plugins/plugin-api-factory.ts";
 import { ExecGuard } from "./core/exec-guard.ts";
+import { ModelHealthTracker } from "./core/model-health.ts";
 
 
 export interface GatewayOptions {
@@ -80,6 +81,7 @@ export class Gateway {
   private delegateExecutor: DelegateExecutor | null = null;
   private heartbeatExecutor: HeartbeatExecutor | null = null;
   private execGuard: ExecGuard;
+  private modelHealth: ModelHealthTracker | null = null;
   private systemEvents = new SystemEventsQueue();
   private noGui: boolean;
   private wsRouter: Map<string, import("./ws/ws-router.ts").WsMethodFn> | null = null;
@@ -106,6 +108,12 @@ export class Gateway {
     // Initialize exec guard (v3.4 S3) — before pool and metrics so spawn checks work
     this.execGuard = new ExecGuard();
     this.execGuard.validatePiCliPath(this.config.agent.piCliPath ?? "pi");
+
+    // Initialize model health tracker (T10) if failover configured
+    if (this.config.agent?.modelFailover) {
+      this.modelHealth = new ModelHealthTracker(this.config.agent.modelFailover);
+      this.log.info(`Model failover enabled: primary=${this.config.agent.modelFailover.primary ?? this.config.agent.model ?? "default"}, fallbacks=${(this.config.agent.modelFailover.fallbacks ?? []).join(",") || "none"}`);
+    }
 
     this.metrics = new MetricsCollector(this.execGuard);
 
@@ -469,6 +477,7 @@ export class Gateway {
       heartbeat: this.heartbeatExecutor,
       delegateExecutor: this.delegateExecutor,
       execGuard: this.execGuard,
+      modelHealth: this.modelHealth,
       log: this.log,
       wsClients: this.wsClients,
       noGui: this.noGui,
