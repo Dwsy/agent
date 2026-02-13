@@ -6,7 +6,7 @@ import type {
 import type { TelegramChannelConfig } from "../../../core/config.ts";
 import { resolveDefaultAccountId, resolveTelegramAccounts } from "./accounts.ts";
 import { createAccountRuntime, startAccountRuntime, stopAccountRuntime } from "./bot.ts";
-import { sendOutboundViaAccount, sendMediaViaAccount, sendReactionViaAccount, editMessageViaAccount, deleteMessageViaAccount, parseTelegramTarget } from "./handlers.ts";
+import { sendOutboundViaAccount, sendMediaViaAccount, sendReactionViaAccount, editMessageViaAccount, deleteMessageViaAccount, parseTelegramTarget } from "./outbound.ts";
 import { markdownToTelegramHtml } from "./format.ts";
 import { recordSentMessage } from "./sent-message-cache.ts";
 import type { TelegramPluginRuntime } from "./types.ts";
