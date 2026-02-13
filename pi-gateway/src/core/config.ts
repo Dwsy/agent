@@ -179,11 +179,24 @@ export interface GatewayPromptsConfig {
   alwaysHeartbeat?: boolean;
 }
 
+export interface ModelFailoverConfig {
+  /** Primary model name. */
+  primary?: string;
+  /** Fallback model names in priority order. */
+  fallbacks?: string[];
+  /** Max retries before giving up. Default: 1. */
+  maxRetries?: number;
+  /** Cooldown duration in ms after transient failure. Default: 60000. */
+  cooldownMs?: number;
+}
+
 export interface AgentConfig {
   model?: string;
   thinkingLevel?: ThinkingLevel;
   piCliPath?: string;
   runtime?: AgentRuntimeConfig;
+  /** Model failover configuration. */
+  modelFailover?: ModelFailoverConfig;
   /** Replace default system prompt (text or file path). */
   systemPrompt?: string;
   /** Append extra system prompt instructions (text or file path). */

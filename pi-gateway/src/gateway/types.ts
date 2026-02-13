@@ -21,6 +21,7 @@ import type { HeartbeatExecutor } from "../core/heartbeat-executor.ts";
 import type { DelegateExecutor } from "../core/delegate-executor.ts";
 import type { DeduplicationCache } from "../core/dedup-cache.ts";
 import type { ExecGuard } from "../core/exec-guard.ts";
+import type { ModelHealthTracker } from "../core/model-health.ts";
 import type { Logger, SessionKey, InboundMessage } from "../core/types.ts";
 import type { buildCapabilityProfile } from "../core/capability-profile.ts";
 import type { GatewayPluginApi } from "../plugins/types.ts";
@@ -75,6 +76,7 @@ export interface GatewayContext {
   heartbeat: HeartbeatExecutor | null;
   delegateExecutor: DelegateExecutor | null;
   execGuard: ExecGuard | null;
+  modelHealth: ModelHealthTracker | null;
 
   // Logging
   log: Logger;
