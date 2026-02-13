@@ -11,7 +11,7 @@ import type { ModelFailoverConfig } from "./config.ts";
 // Error Classification
 // ============================================================================
 
-export type ErrorCategory = "rate_limit" | "auth" | "billing" | "timeout" | "overloaded" | "unknown";
+export type ErrorCategory = "rate_limit" | "auth" | "billing" | "timeout" | "overloaded" | "connection" | "unknown";
 
 const ERROR_PATTERNS: Array<{ category: ErrorCategory; patterns: RegExp[] }> = [
   {
@@ -34,6 +34,10 @@ const ERROR_PATTERNS: Array<{ category: ErrorCategory; patterns: RegExp[] }> = [
     category: "overloaded",
     patterns: [/503/i, /overloaded/i, /capacity/i, /unavailable/i, /529/i],
   },
+  {
+    category: "connection",
+    patterns: [/connection.?error/i, /ECONNREFUSED/i, /ECONNRESET/i, /ENOTFOUND/i, /EHOSTUNREACH/i, /socket.?hang.?up/i, /network.?error/i, /fetch.?failed/i],
+  },
 ];
 
 export function classifyError(errorText: string): ErrorCategory {
@@ -45,7 +49,7 @@ export function classifyError(errorText: string): ErrorCategory {
 
 /** Whether this error category is transient (worth retrying with fallback). */
 export function isTransient(category: ErrorCategory): boolean {
-  return category === "rate_limit" || category === "timeout" || category === "overloaded";
+  return category === "rate_limit" || category === "timeout" || category === "overloaded" || category === "connection";
 }
 
 // ============================================================================
