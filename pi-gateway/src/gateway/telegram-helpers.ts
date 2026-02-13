@@ -62,8 +62,8 @@ export function migrateTelegramSessionKeys(
     if (existsSync(oldSessionDir) && !existsSync(newSessionDir)) {
       try {
         renameSync(oldSessionDir, newSessionDir);
-      } catch (err: any) {
-        log.warn(`Session dir migration failed ${migration.oldKey}: ${err?.message ?? String(err)}`);
+      } catch (err: unknown) {
+        log.warn(`Session dir migration failed ${migration.oldKey}: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
 
@@ -72,8 +72,8 @@ export function migrateTelegramSessionKeys(
     if (existsSync(oldTranscript) && !existsSync(newTranscript)) {
       try {
         renameSync(oldTranscript, newTranscript);
-      } catch (err: any) {
-        log.warn(`Transcript migration failed ${migration.oldKey}: ${err?.message ?? String(err)}`);
+      } catch (err: unknown) {
+        log.warn(`Transcript migration failed ${migration.oldKey}: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
     log.info(`Migrated Telegram session key: ${migration.oldKey} -> ${migration.newKey}`);
