@@ -3,8 +3,9 @@
 ## [v3.8] - 2026-02-13
 
 **BBD Test Results:** 723/723 pass, 0 fail ✅ (v3.7: 703, v3.8: +20)
+**Commits:** 17 (v3.7..v3.8)
 **Team:** pi-zero (PM), BrightZenith (consultant), YoungStorm, JadePhoenix, NiceNova, CalmArrow, CalmBear
-**Focus:** Agent Autonomy & Interaction — gateway self-management, session resume, message extensions
+**Focus:** Agent Autonomy & Interaction — gateway self-management, session resume, group chat, model failover
 
 ### New Tools
 - `gateway` tool: 3 actions — config.get (view running config), reload (hot-reload config), restart (graceful restart with config toggle) (by YoungStorm, `5a648c6`)
@@ -23,6 +24,28 @@
 - Auto-resume on restart: `--continue` flag added to RPC spawn when session directory has existing JSONL; `session.continueOnRestart` config toggle (default true) (by Dwsy, `6d2b783`)
 - Telegram `/sessions` command: list recent sessions with message count, last activity, active status (by Dwsy, `7fbc3b6`)
 - Telegram `/resume <id>` command: switch to a different session with stats display (model, context usage) (by Dwsy, `7fbc3b6`)
+
+### Group Chat
+- Per-message context injection: `[group:chatId | from:sender | msgId:123]` prefix for group, `[msgId:123]` for DM (by Dwsy, `75ddf44` + `c8f3330`)
+- `[NO_REPLY]` silent token: agent can decline to reply in group chats, transcript logs `silent_no_reply` event (by Dwsy, `75ddf44`)
+- Per-group role binding via `channels.telegram.groups[chatId].role` — each group gets its own workspace + persona
+- `requireMention` (default true), `groupPolicy` (open/disabled/allowlist), `allowFrom` per-group filtering
+- `MessageSource.messageId` field: enables agent to use pin/react/edit/delete via message tool (`c8f3330`)
+
+### Model Failover
+- `src/core/model-health.ts` (135 lines): error classification (6 categories: rate_limit/auth/billing/timeout/overloaded/unknown), per-model health tracking, cooldown management, fallback chain selection (by JadePhoenix)
+- Config: `agent.modelFailover: { primary, fallbacks, cooldownMs }` — ordered fallback chain with configurable cooldown
+- Integration: message-pipeline catch block records failures + classifies errors; agent_end records success + resets cooldown
+- Transient errors (rate_limit/timeout/overloaded) → 60s cooldown; permanent errors (auth/billing) → 1h cooldown
+
+### Documentation
+- `docs/guides/configuration.md` — all 13 config sections with field tables + jsonc examples (by YoungStorm, `5985693`)
+- `docs/guides/telegram.md` — BotFather setup, DM/group, streaming, commands, media, multi-account (by CalmArrow, `25d3f9b`)
+- `docs/guides/group-chat.md` — per-group role, mention, policy, NO_REPLY, forum/topic (by CalmBear, `c53c4f7`)
+- `docs/guides/agent-tools.md` — all 6 gateway tools: send_media/send_message/message/cron/gateway/session_status (by NiceNova, `34f2422`)
+
+### Bug Fixes
+- Telegram pin/readHistory `rt is not defined` — T2 methods missing `getRuntime()` call (`c076909`)
 
 ### Testing
 - Gateway tool tests: GW-01~GW-10 covering config.get/reload/restart + error cases + auth (by YoungStorm, `ae07db4`)
