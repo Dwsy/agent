@@ -1,13 +1,8 @@
 import { resolveSessionKey, resolveAgentId } from "../../../core/session-router.ts";
 import type { MessageSource } from "../../../core/types.ts";
 import { escapeHtml, markdownToTelegramHtml } from "./format.ts";
-import {
-  buildModelsKeyboard,
-  buildProviderKeyboard,
-  groupModelsByProvider,
-  parseModelCallbackData,
-} from "./model-buttons.ts";
 import { parseMediaCommandArgs, sendTelegramMedia } from "./media-send.ts";
+import { registerModelCommand, registerCallbackHandler } from "./model-selector.ts";
 import type { TelegramAccountRuntime, TelegramContext, TelegramPluginRuntime } from "./types.ts";
 
 type SessionMessageMode = "steer" | "follow-up" | "interrupt";
@@ -177,55 +172,7 @@ function resolveConfiguredSessionMode(runtime: TelegramPluginRuntime, account: T
   return topMode ?? "steer";
 }
 
-async function renderModelProviders(account: TelegramAccountRuntime, sessionKey: string, ctx: TelegramContext): Promise<void> {
-  const models = await account.api.getAvailableModels(sessionKey);
-  const grouped = groupModelsByProvider(models);
-  const providers = Object.keys(grouped).sort((a, b) => a.localeCompare(b));
-  if (providers.length === 0) {
-    await ctx.reply("当前无可用模型。", { parse_mode: "HTML" });
-    return;
-  }
-  await ctx.reply("选择 Provider：", {
-    reply_markup: { inline_keyboard: buildProviderKeyboard(providers) },
-  });
-}
-
-async function renderProviderModels(params: {
-  account: TelegramAccountRuntime;
-  ctx: TelegramContext;
-  sessionKey: string;
-  provider: string;
-  page: number;
-  callbackMessageId?: number;
-}): Promise<void> {
-  const models = await params.account.api.getAvailableModels(params.sessionKey);
-  const grouped = groupModelsByProvider(models);
-  const list = grouped[params.provider] ?? [];
-  if (list.length === 0) {
-    await params.ctx.reply(`Provider ${params.provider} 没有可用模型。`);
-    return;
-  }
-
-  const keyboard = buildModelsKeyboard({
-    provider: params.provider,
-    models: list,
-    page: params.page,
-  });
-
-  const text = `选择模型 (${params.provider})`;
-  if (params.callbackMessageId && params.ctx.chat?.id) {
-    await (params.account.bot.api as any).editMessageText(
-      String(params.ctx.chat.id),
-      params.callbackMessageId,
-      text,
-      { reply_markup: { inline_keyboard: keyboard.rows } },
-    ).catch(async () => {
-      await params.ctx.reply(text, { reply_markup: { inline_keyboard: keyboard.rows } });
-    });
-  } else {
-    await params.ctx.reply(text, { reply_markup: { inline_keyboard: keyboard.rows } });
-  }
-}
+// renderModelProviders + renderProviderModels → model-selector.ts
 
 export async function setupTelegramCommands(runtime: TelegramPluginRuntime, account: TelegramAccountRuntime): Promise<void> {
   const bot = account.bot;
@@ -507,142 +454,9 @@ export async function setupTelegramCommands(runtime: TelegramPluginRuntime, acco
     );
   });
 
-  bot.command("model", async (ctx: any) => {
-    const args = String(ctx.match ?? "").trim();
-    const source = toSource(account.accountId, ctx as TelegramContext);
-    const sessionKey = resolveSessionKey(source, runtime.api.config);
-
-    if (args && args.includes("/")) {
-      // Direct switch: /model provider/modelId
-      const slash = args.indexOf("/");
-      const provider = args.slice(0, slash);
-      const modelId = args.slice(slash + 1);
-      try {
-        await runtime.api.setModel(sessionKey, provider, modelId);
-        await ctx.reply(`Model: <b>${escapeHtml(provider)}/${escapeHtml(modelId)}</b>`, { parse_mode: "HTML" });
-      } catch (err: any) {
-        await ctx.reply(`Failed: ${err?.message ?? String(err)}`);
-      }
-      return;
-    }
-
-    // No args: show provider keyboard
-    try {
-      const models = await runtime.api.getAvailableModels(sessionKey);
-      const grouped = groupModelsByProvider(models);
-      const providers = Object.keys(grouped).sort((a, b) => a.localeCompare(b));
-      if (providers.length === 0) {
-        await ctx.reply("没有可用模型。");
-        return;
-      }
-      await ctx.reply("选择 Provider：", {
-        reply_markup: { inline_keyboard: buildProviderKeyboard(providers) },
-      });
-    } catch (err: any) {
-      await ctx.reply(`Failed to list models: ${err?.message ?? String(err)}`);
-    }
-  });
-
-  bot.on("callback_query:data", async (ctx: any) => {
-    const callbackQuery = (ctx as TelegramContext).callbackQuery;
-    const callbackId = callbackQuery?.id;
-    if (!callbackId) return;
-    if (account.seenCallbacks.has(callbackId)) {
-      await ctx.answerCallbackQuery?.();
-      return;
-    }
-    account.seenCallbacks.add(callbackId);
-    if (account.seenCallbacks.size > 2000) {
-      const first = account.seenCallbacks.values().next().value;
-      if (first) account.seenCallbacks.delete(first);
-    }
-
-    const data = String(callbackQuery?.data ?? "").trim();
-
-    if (data.startsWith("cmd_page:")) {
-      const page = Math.max(1, Number.parseInt(data.slice("cmd_page:".length), 10) || 1);
-      const view = helpPage(page);
-      const msg = callbackQuery?.message as any;
-      await ctx.answerCallbackQuery?.();
-      await (bot.api as any).editMessageText(String(msg.chat.id), msg.message_id, view.text, {
-        parse_mode: "HTML",
-        reply_markup: view.keyboard,
-      }).catch(async () => {
-        await ctx.reply(view.text, { parse_mode: "HTML", reply_markup: view.keyboard });
-      });
-      return;
-    }
-
-    if (data.startsWith("skill_run:")) {
-      const skillName = data.slice("skill_run:".length);
-      await ctx.answerCallbackQuery?.({ text: `Running /${skillName}...` });
-      const source = toSource(account.accountId, ctx as TelegramContext);
-      const { agentId, text: routedText } = resolveAgentId(source, `/${skillName}`, runtime.api.config);
-      const sessionKey = resolveSessionKey(source, runtime.api.config, agentId);
-      const chatId = String(callbackQuery?.message?.chat?.id ?? "");
-      await runtime.api.dispatch({
-        source,
-        sessionKey,
-        text: routedText || `/${skillName}`,
-        respond: async (text: string) => {
-          if (text?.trim()) {
-            await bot.api.sendMessage(chatId, markdownToTelegramHtml(text), { parse_mode: "HTML" }).catch(() => {
-              bot.api.sendMessage(chatId, text).catch(() => {});
-            });
-          }
-        },
-        setTyping: async () => {
-          await bot.api.sendChatAction(chatId, "typing").catch(() => {});
-        },
-      });
-      return;
-    }
-
-    const parsed = parseModelCallbackData(data);
-    if (!parsed) {
-      await ctx.answerCallbackQuery?.();
-      return;
-    }
-
-    const source = toSource(account.accountId, ctx as TelegramContext);
-    const sessionKey = resolveSessionKey(source, runtime.api.config);
-
-    if (parsed.type === "providers" || parsed.type === "back") {
-      const models = await runtime.api.getAvailableModels(sessionKey);
-      const grouped = groupModelsByProvider(models);
-      const providers = Object.keys(grouped).sort((a, b) => a.localeCompare(b));
-      const msg = callbackQuery?.message as any;
-      await ctx.answerCallbackQuery?.();
-      await (bot.api as any).editMessageText(String(msg.chat.id), msg.message_id, "选择 Provider：", {
-        reply_markup: { inline_keyboard: buildProviderKeyboard(providers) },
-      }).catch(async () => {
-        await ctx.reply("选择 Provider：", {
-          reply_markup: { inline_keyboard: buildProviderKeyboard(providers) },
-        });
-      });
-      return;
-    }
-
-    if (parsed.type === "list") {
-      await ctx.answerCallbackQuery?.();
-      await renderProviderModels({
-        account,
-        ctx: ctx as TelegramContext,
-        sessionKey,
-        provider: parsed.provider,
-        page: parsed.page,
-        callbackMessageId: (callbackQuery?.message as any)?.message_id,
-      });
-      return;
-    }
-
-    if (parsed.type === "select") {
-      await runtime.api.setModel(sessionKey, parsed.provider, parsed.modelId);
-      await ctx.answerCallbackQuery?.({ text: `已切换到 ${parsed.provider}/${parsed.modelId}` });
-      const message = `Model: <b>${parsed.provider}/${parsed.modelId}</b>`;
-      await ctx.reply(markdownToTelegramHtml(message), { parse_mode: "HTML" });
-    }
-  });
+  // /model + callback_query:data → model-selector.ts
+  registerModelCommand(bot, runtime, account);
+  registerCallbackHandler(bot, runtime, account, helpPage);
 
   // 初始化时尝试获取 pi 命令，如果 RPC 还没连接则只注册本地命令
   // 用户可以稍后用 /refresh 手动刷新
