@@ -685,6 +685,7 @@ function generateHtml(tree: TreeNode, allItems: MemoryItem[]): string {
 }
 
 export default function (pi: ExtensionAPI) {
+  if (process.argv.includes("--mode") && process.argv.includes("rpc")) return;
   pi.registerCommand("memory-export", {
     description: "导出记忆为文件夹视图 HTML",
     

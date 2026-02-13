@@ -112,6 +112,7 @@ rg -l "identifier" --type ts
 };
 
 export default function (pi: ExtensionAPI) {
+	if (process.argv.includes("--mode") && process.argv.includes("rpc")) return;
 	// 注册 analyze 命令
 	pi.registerCommand("analyze", {
 		description: COMMANDS.analyze.description,

@@ -173,6 +173,7 @@ async function loadState(ctx: ExtensionContext): Promise<LoopStateData> {
 }
 
 export default function loopExtension(pi: ExtensionAPI): void {
+	if (process.argv.includes("--mode") && process.argv.includes("rpc")) return;
 	let loopState: LoopStateData = { active: false };
 
 	function persistState(state: LoopStateData): void {
