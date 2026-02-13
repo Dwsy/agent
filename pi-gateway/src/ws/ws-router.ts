@@ -121,7 +121,7 @@ export async function dispatchWsFrame(
     }
 
     respond(false, undefined, `Unknown method: ${method}`);
-  } catch (err: any) {
-    respond(false, undefined, err?.message ?? String(err));
+  } catch (err: unknown) {
+    respond(false, undefined, err instanceof Error ? err.message : String(err));
   }
 }

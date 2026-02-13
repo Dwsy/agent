@@ -213,8 +213,8 @@ export async function sendTelegramTextAndMedia(bot: Bot, chatId: string, text: s
   for (const item of parsed.media) {
     try {
       await sendTelegramMedia(bot, chatId, item, opts);
-    } catch (err: any) {
-      const reason = err?.message ?? "unknown";
+    } catch (err: unknown) {
+      const reason = err instanceof Error ? err.message : "unknown";
       await bot.api.sendMessage(chatId, `Failed to send ${item.kind}: ${reason}`).catch(() => {});
     }
   }

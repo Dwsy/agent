@@ -34,7 +34,7 @@ export async function handleApiSend(req: Request, ctx: GatewayContext): Promise<
 
     await ch.outbound.sendText(target, body.message);
     return Response.json({ ok: true });
-  } catch (err: any) {
-    return Response.json({ error: err?.message ?? "Send failed" }, { status: 500 });
+  } catch (err: unknown) {
+    return Response.json({ error: err instanceof Error ? err.message : "Send failed" }, { status: 500 });
   }
 }

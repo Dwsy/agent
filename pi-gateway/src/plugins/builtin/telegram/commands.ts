@@ -138,7 +138,7 @@ async function registerNativeCommands(
         description: cmd.description ?? `pi: ${cmd.name}`,
       })),
   ];
-  console.log(allCommands);
+  console.log(allCommands.map(cmd => cmd.command).join(","));
 
   // Telegram 命令名只支持小写字母、数字和下划线，最多 32 字符
   const validCommands = allCommands

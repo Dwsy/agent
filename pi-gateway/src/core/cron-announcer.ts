@@ -8,7 +8,8 @@
  * @owner PureWolf
  */
 
-import type { CronAnnouncer, CronDelivery } from "./cron.ts";
+import type { CronAnnouncer } from "./cron.ts";
+import type { CronDelivery } from "./config.ts";
 import type { SessionKey } from "./types.ts";
 import type { Logger } from "./types.ts";
 import type { SessionStore } from "./session-store.ts";
@@ -75,8 +76,8 @@ export function buildCronAnnouncer(deps: CronAnnouncerDeps): CronAnnouncer & { m
     try {
       await plugin.outbound.sendText(targetChatId, text);
       log.info(`[cron-announcer] direct send to ${targetChannel}:${targetChatId} (${text.length} chars)`);
-    } catch (err: any) {
-      log.error(`[cron-announcer] delivery failed: ${err?.message}`);
+    } catch (err: unknown) {
+      log.error(`[cron-announcer] delivery failed: ${(err instanceof Error ? err.message : String(err))}`);
     }
   }
 

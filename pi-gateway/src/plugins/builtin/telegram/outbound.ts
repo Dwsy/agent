@@ -132,11 +132,11 @@ export async function sendMediaViaAccount(params: {
       `[telegram:${account.accountId}] sendMedia to=${params.target} path=${params.filePath} kind=${kind}`,
     );
     return { ok: true };
-  } catch (err: any) {
+  } catch (err: unknown) {
     params.runtime.api.logger.error(
-      `[telegram:${account.accountId}] sendMedia failed: ${err?.message}`,
+      `[telegram:${account.accountId}] sendMedia failed: ${(err instanceof Error ? err.message : String(err))}`,
     );
-    return { ok: false, error: err?.message ?? "Send failed" };
+    return { ok: false, error: err instanceof Error ? err.message : "Send failed" };
   }
 }
 
@@ -167,8 +167,8 @@ export async function sendReactionViaAccount(params: {
       reactions,
     );
     return { ok: true };
-  } catch (err: any) {
-    return { ok: false, error: err?.message ?? "Reaction failed" };
+  } catch (err: unknown) {
+    return { ok: false, error: err instanceof Error ? err.message : "Reaction failed" };
   }
 }
 
@@ -190,8 +190,8 @@ export async function editMessageViaAccount(params: {
       { parse_mode: "HTML" },
     );
     return { ok: true };
-  } catch (err: any) {
-    return { ok: false, error: err?.message ?? "Edit failed" };
+  } catch (err: unknown) {
+    return { ok: false, error: err instanceof Error ? err.message : "Edit failed" };
   }
 }
 
@@ -207,7 +207,7 @@ export async function deleteMessageViaAccount(params: {
   try {
     await account.bot.api.deleteMessage(parsed.chatId, Number(params.messageId));
     return { ok: true };
-  } catch (err: any) {
-    return { ok: false, error: err?.message ?? "Delete failed" };
+  } catch (err: unknown) {
+    return { ok: false, error: err instanceof Error ? err.message : "Delete failed" };
   }
 }

@@ -219,9 +219,9 @@ export async function handleMediaSendRequest(
       type: resolvedType,
       channel,
     });
-  } catch (err: any) {
-    ctx.log.error(`[media-send] delivery failed: ${err?.message}`);
-    return Response.json({ error: err?.message ?? "Media delivery failed" }, { status: 500 });
+  } catch (err: unknown) {
+    ctx.log.error(`[media-send] delivery failed: ${(err instanceof Error ? err.message : String(err))}`);
+    return Response.json({ error: err instanceof Error ? err.message : "Media delivery failed" }, { status: 500 });
   }
 }
 

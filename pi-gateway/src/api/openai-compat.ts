@@ -79,8 +79,8 @@ export async function handleOpenAiChat(req: Request, ctx: GatewayContext): Promi
       }],
       usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
     });
-  } catch (err: any) {
-    return Response.json({ error: { message: err?.message ?? "Internal error", type: "server_error" } }, { status: 500 });
+  } catch (err: unknown) {
+    return Response.json({ error: { message: err instanceof Error ? err.message : "Internal error", type: "server_error" } }, { status: 500 });
   }
 }
 

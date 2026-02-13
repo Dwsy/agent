@@ -41,8 +41,8 @@ export async function handleSessionReset(
 
     const result = await resetSession(ctx, sessionKey);
     return Response.json({ ok: true, ...result });
-  } catch (err: any) {
-    return Response.json({ error: err?.message ?? "Reset failed" }, { status: 500 });
+  } catch (err: unknown) {
+    return Response.json({ error: err instanceof Error ? err.message : "Reset failed" }, { status: 500 });
   }
 }
 
@@ -76,8 +76,8 @@ export async function handleSessionThink(
 
     await rpc.setThinkingLevel(level);
     return Response.json({ ok: true, sessionKey, level });
-  } catch (err: any) {
-    return Response.json({ error: err?.message ?? "Failed" }, { status: 500 });
+  } catch (err: unknown) {
+    return Response.json({ error: err instanceof Error ? err.message : "Failed" }, { status: 500 });
   }
 }
 
@@ -123,8 +123,8 @@ export async function handleSessionModel(
 
     await rpc.setModel(provider, modelId);
     return Response.json({ ok: true, sessionKey, provider, modelId });
-  } catch (err: any) {
-    return Response.json({ error: err?.message ?? "Failed" }, { status: 500 });
+  } catch (err: unknown) {
+    return Response.json({ error: err instanceof Error ? err.message : "Failed" }, { status: 500 });
   }
 }
 
@@ -145,8 +145,8 @@ export async function handleModelsList(
   try {
     const models = await rpc.getAvailableModels();
     return Response.json({ models });
-  } catch (err: any) {
-    return Response.json({ error: err?.message }, { status: 500 });
+  } catch (err: unknown) {
+    return Response.json({ error: (err instanceof Error ? err.message : String(err)) }, { status: 500 });
   }
 }
 
@@ -167,8 +167,8 @@ export async function handleSessionUsage(
   try {
     const stats = await rpc.getSessionStats();
     return Response.json({ sessionKey, stats });
-  } catch (err: any) {
-    return Response.json({ error: err?.message }, { status: 500 });
+  } catch (err: unknown) {
+    return Response.json({ error: (err instanceof Error ? err.message : String(err)) }, { status: 500 });
   }
 }
 

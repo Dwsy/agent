@@ -424,8 +424,8 @@ export async function sendOutbound(rt: DiscordPluginRuntime, target: string, tex
       lastMsgId = msg.id;
     }
     return { ok: true, messageId: lastMsgId };
-  } catch (err: any) {
-    return { ok: false, error: err?.message ?? String(err) };
+  } catch (err: unknown) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
 }
 
@@ -504,8 +504,8 @@ export async function sendReactionOutbound(
       }
     }
     return { ok: true };
-  } catch (err: any) {
-    return { ok: false, error: err?.message ?? String(err) };
+  } catch (err: unknown) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
 }
 
@@ -524,8 +524,8 @@ export async function editMessageOutbound(
     if (!msg) return { ok: false, error: "Message not found" };
     await msg.edit(text.slice(0, 2000));
     return { ok: true };
-  } catch (err: any) {
-    return { ok: false, error: err?.message ?? String(err) };
+  } catch (err: unknown) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
 }
 
@@ -543,8 +543,8 @@ export async function deleteMessageOutbound(
     if (!msg) return { ok: false, error: "Message not found" };
     await msg.delete();
     return { ok: true };
-  } catch (err: any) {
-    return { ok: false, error: err?.message ?? String(err) };
+  } catch (err: unknown) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
 }
 
@@ -573,7 +573,7 @@ export async function sendMediaOutbound(
     });
 
     return { ok: true, messageId: msg.id };
-  } catch (err: any) {
-    return { ok: false, error: err?.message ?? String(err) };
+  } catch (err: unknown) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
 }
