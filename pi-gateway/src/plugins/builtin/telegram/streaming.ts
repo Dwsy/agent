@@ -32,6 +32,13 @@ function codeInline(text: string, max = 160): string {
   return `\`${clipInline(text, max).replace(/`/g, "'")}\``;
 }
 
+function codeBlock(text: string, lang = "", max = 1200): string {
+  const normalized = text.replace(/\r\n?/g, "\n").trim();
+  const clipped = normalized.length > max ? `${normalized.slice(0, max)}\n... (truncated)` : normalized;
+  const escapedFence = clipped.replace(/```/g, "'''");
+  return `\`\`\`${lang}\n${escapedFence}\n\`\`\``;
+}
+
 function pickArgString(args: Record<string, unknown> | undefined, keys: string[]): string | null {
   if (!args) return null;
   for (const key of keys) {
@@ -45,20 +52,20 @@ function formatToolStartLine(toolName: string, args?: Record<string, unknown>): 
   switch (toolName) {
     case "read": {
       const path = pickArgString(args, ["path", "filePath", "file"]);
-      return path ? `read ${codeInline(path)}` : "read";
+      return path ? `read\n${codeBlock(path)}` : "read";
     }
     case "write": {
       const path = pickArgString(args, ["path", "filePath", "file", "outputPath"]);
-      return path ? `write ${codeInline(path)}` : "write";
+      return path ? `write\n${codeBlock(path)}` : "write";
     }
     case "edit":
     case "multi_edit": {
       const path = pickArgString(args, ["path", "filePath", "file"]);
-      return path ? `${toolName} ${codeInline(path)}` : toolName;
+      return path ? `${toolName}\n${codeBlock(path)}` : toolName;
     }
     case "bash": {
       const command = pickArgString(args, ["command", "cmd"]);
-      return command ? `bash ${codeInline(command, 180)}` : "bash";
+      return command ? `bash\n${codeBlock(command, "bash", 1500)}` : "bash";
     }
     default: {
       const payload = args ? clipInline(JSON.stringify(args), 120) : "";
@@ -74,6 +81,10 @@ function formatToolStartLine(toolName: string, args?: Record<string, unknown>): 
 const commandsRegistered = new Map<string, boolean>();
 const commandsRetryCount = new Map<string, number>();
 const MAX_COMMAND_RETRIES = 3;
+
+// Keep latest inbound Telegram message id per session so steer-injected runs
+// can reply to the newest user message instead of the original one.
+const latestInboundReplyTargetBySession = new Map<string, number>();
 
 // ============================================================================
 // dispatchAgentTurn — core streaming dispatch
@@ -113,13 +124,23 @@ export async function dispatchAgentTurn(params: {
   const inboundMessageId = typeof params.inboundMessageId === "number" && params.inboundMessageId > 0
     ? params.inboundMessageId
     : undefined;
+  if (inboundMessageId) {
+    latestInboundReplyTargetBySession.set(sessionKey, inboundMessageId);
+  }
   const replyToMode = account.cfg.replyToMode ?? "first";
   let hasNativeReply = false;
 
+  const resolveReplyTargetMessageId = (): number | undefined => {
+    const latest = latestInboundReplyTargetBySession.get(sessionKey);
+    if (typeof latest === "number" && latest > 0) return latest;
+    return inboundMessageId;
+  };
+
   const maybeReplyTo = (): number | undefined => {
-    if (!inboundMessageId || replyToMode === "off") return undefined;
-    if (replyToMode === "all") return inboundMessageId;
-    if (replyToMode === "first" && !hasNativeReply) return inboundMessageId;
+    const replyTargetMessageId = resolveReplyTargetMessageId();
+    if (!replyTargetMessageId || replyToMode === "off") return undefined;
+    if (replyToMode === "all") return replyTargetMessageId;
+    if (replyToMode === "first" && !hasNativeReply) return replyTargetMessageId;
     return undefined;
   };
 
