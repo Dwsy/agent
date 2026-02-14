@@ -141,7 +141,7 @@ pi agent process
         ├── validateMediaPath(path)     ← reuse existing security
         ├── signMediaToken(path)        ← reuse existing HMAC
         │
-        └── HTTP POST gateway:18789/api/media/send
+        └── HTTP POST gateway:52134/api/media/send
               │
               ├── sessionKey (from tool context)
               ├── path (validated)
