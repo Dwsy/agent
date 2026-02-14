@@ -33,6 +33,14 @@
   - Group: `[group:{chatId} | from:{sender} | thread:{threadId} | msgId:{messageId} | time:2026/02/14 16:08:50 | 2分钟前]`
   - DM: `[msgId:{messageId} | time:2026/02/14 16:08:50 | 刚刚]`
 
+### Telegram Media Delivery Resilience
+- Enhanced media send error logging to include nested `HttpError.error` details (`inner`, `inner_code`, stack head), making ECONNRESET diagnosis actionable (by Dwsy)
+- Added account startup proxy visibility log (redacted) to show effective `cfg.proxy`, `HTTP_PROXY`, `HTTPS_PROXY` at runtime (by Dwsy)
+- Added transport fallback path: when Telegram media send hits recoverable network errors, fallback to direct Telegram HTTP API (`fetch + FormData`) for photo/audio/document (by Dwsy)
+- Added photo downgrade fallback: if photo fallback fails, auto-try `sendDocument` with the same file as last-mile recovery (by Dwsy)
+- Added in-memory sticky circuit: once fallback recovery succeeds, account switches to `http-fallback` mode for subsequent media sends in current process lifecycle (by Dwsy)
+- Optimized retry strategy: for media kinds with fallback support (photo/audio/file), primary path now fails fast (single attempt) then degrades immediately; stickers keep retry behavior (by Dwsy)
+
 ### Benefits
 - AI can now understand time urgency ("刚刚" vs "2小时前" vs "3天前")
 - More natural conversation with time-aware responses ("你5分钟前问的...")

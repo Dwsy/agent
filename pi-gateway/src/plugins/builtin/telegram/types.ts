@@ -63,6 +63,10 @@ export interface TelegramAccountRuntime {
   api: GatewayPluginApi;
   started: boolean;
   startMode: TelegramStartMode;
+  /** Media send transport mode (process-memory circuit breaker). */
+  mediaSendMode?: "auto" | "http-fallback";
+  /** Timestamp when fallback mode was activated. */
+  mediaFallbackSince?: number;
   stopPolling?: () => Promise<void>;
   stopWebhook?: () => Promise<void>;
   webhookServer?: Server;
