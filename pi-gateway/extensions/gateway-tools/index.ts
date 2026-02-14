@@ -8,7 +8,7 @@
  * - message: React/edit/delete existing messages
  *
  * Environment variables (set by gateway when spawning pi processes):
- * - PI_GATEWAY_URL: Gateway HTTP base URL (e.g., http://127.0.0.1:18789)
+ * - PI_GATEWAY_URL: Gateway HTTP base URL (e.g., http://127.0.0.1:52134)
  * - PI_GATEWAY_INTERNAL_TOKEN: Shared secret for authenticating back to gateway
  * - PI_GATEWAY_SESSION_KEY: Current session key (set dynamically by RPC pool)
  */
@@ -24,15 +24,27 @@ import { createSessionStatusTool } from "./session-status.ts";
 export default function gatewayTools(pi: ExtensionAPI) {
   const gatewayUrl = process.env.PI_GATEWAY_URL;
   const internalToken = process.env.PI_GATEWAY_INTERNAL_TOKEN;
+  const authToken = process.env.PI_GATEWAY_AUTH_TOKEN;
+  const sessionKey = process.env.PI_GATEWAY_SESSION_KEY;
 
   if (!gatewayUrl || !internalToken) {
+    console.warn(
+      `[gateway-tools] skipped: missing env PI_GATEWAY_URL or PI_GATEWAY_INTERNAL_TOKEN ` +
+      `(url=${gatewayUrl ? "yes" : "no"}, token=${internalToken ? "yes" : "no"}, session=${sessionKey ? "yes" : "no"})`,
+    );
     return;
   }
 
-  pi.registerTool(createSendMediaTool(gatewayUrl, internalToken));
-  pi.registerTool(createSendMessageTool(gatewayUrl, internalToken));
-  pi.registerTool(createCronTool(gatewayUrl, internalToken));
-  pi.registerTool(createMessageActionTool(gatewayUrl, internalToken));
-  pi.registerTool(createGatewayTool(gatewayUrl, internalToken));
-  pi.registerTool(createSessionStatusTool(gatewayUrl, internalToken));
+  console.info(
+    `[gateway-tools] loading tools (url=${gatewayUrl}, session=${sessionKey ?? "(none)"})`,
+  );
+
+  pi.registerTool(createSendMediaTool(gatewayUrl, internalToken, authToken));
+  pi.registerTool(createSendMessageTool(gatewayUrl, internalToken, authToken));
+  pi.registerTool(createCronTool(gatewayUrl, internalToken, authToken));
+  pi.registerTool(createMessageActionTool(gatewayUrl, internalToken, authToken));
+  pi.registerTool(createGatewayTool(gatewayUrl, internalToken, authToken));
+  pi.registerTool(createSessionStatusTool(gatewayUrl, internalToken, authToken));
+
+  console.info("[gateway-tools] registered tools: send_media, send_message, cron, message, gateway, session_status");
 }

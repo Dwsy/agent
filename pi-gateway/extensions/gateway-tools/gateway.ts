@@ -1,9 +1,9 @@
 /** gateway tool — manage the gateway itself (config, reload, restart). */
 
 import { Type } from "@sinclair/typebox";
-import { toolOk, toolError } from "./helpers.ts";
+import { toolOk, toolError, gatewayHeaders, parseResponseJson } from "./helpers.ts";
 
-export function createGatewayTool(gatewayUrl: string, internalToken: string) {
+export function createGatewayTool(gatewayUrl: string, internalToken: string, authToken?: string) {
   return {
     name: "gateway",
     label: "Gateway",
@@ -22,14 +22,14 @@ export function createGatewayTool(gatewayUrl: string, internalToken: string) {
     }),
     async execute(_toolCallId: string, params: unknown) {
       const { action } = params as { action: string };
-      const headers: Record<string, string> = { Authorization: `Bearer ${internalToken}` };
+      const headers: Record<string, string> = gatewayHeaders(authToken ?? internalToken);
 
       try {
         switch (action) {
           case "config.get": {
             const res = await fetch(`${gatewayUrl}/api/gateway/config`, { headers });
-            if (!res.ok) return toolError(`Failed to get config: ${res.statusText}`);
-            const config = await res.json();
+            const config = await parseResponseJson(res);
+            if (!res.ok) return toolError(`Failed to get config: ${String(config.error || res.statusText)}`);
             return toolOk(JSON.stringify(config, null, 2));
           }
 
@@ -38,9 +38,9 @@ export function createGatewayTool(gatewayUrl: string, internalToken: string) {
               method: "POST",
               headers,
             });
-            const data = (await res.json()) as { ok?: boolean; message?: string; error?: string };
-            if (!res.ok) return toolError(data.error || res.statusText);
-            return toolOk(data.message || "Config reloaded.");
+            const data = await parseResponseJson(res);
+            if (!res.ok) return toolError(String(data.error || res.statusText));
+            return toolOk(String(data.message || "Config reloaded."));
           }
 
           case "restart": {
@@ -48,9 +48,9 @@ export function createGatewayTool(gatewayUrl: string, internalToken: string) {
               method: "POST",
               headers,
             });
-            const data = (await res.json()) as { ok?: boolean; message?: string; error?: string };
-            if (!res.ok) return toolError(data.error || res.statusText);
-            return toolOk(data.message || "Gateway restarting...");
+            const data = await parseResponseJson(res);
+            if (!res.ok) return toolError(String(data.error || res.statusText));
+            return toolOk(String(data.message || "Gateway restarting..."));
           }
 
           default:
