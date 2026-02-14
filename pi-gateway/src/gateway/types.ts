@@ -87,6 +87,7 @@ export interface GatewayContext {
   // State
   noGui: boolean;
   sessionMessageModeOverrides: Map<SessionKey, TelegramMessageMode>;
+  activeInboundMessages: Map<SessionKey, InboundMessage>;
 
   // R2: plugin-api-factory dependencies (DarkUnion)
   /** Cached plugin API instances per channel — populated during channel init */

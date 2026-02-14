@@ -17,6 +17,9 @@ import { buildCapabilityProfile } from "./capability-profile.ts";
 import { resolveSessionKey, resolveMainSessionKey } from "./session-router.ts";
 import { createLogger } from "./types.ts";
 import type { SystemEventsQueue } from "./system-events.ts";
+import type { SessionStore } from "./session-store.ts";
+import type { ChannelPlugin } from "../plugins/types.ts";
+import { resolveDeliveryTarget } from "./channel-resolver.ts";
 
 // ============================================================================
 // Constants & Types
@@ -46,6 +49,12 @@ export interface HeartbeatExecutorEvents {
   onHeartbeatStart?: (agentId: string) => void;
   onHeartbeatComplete?: (agentId: string, result: HeartbeatResult) => void;
   onHeartbeatSkip?: (agentId: string, reason: string) => void;
+}
+
+export interface HeartbeatDeliveryDeps {
+  sessions: SessionStore;
+  getChannels: () => Map<string, ChannelPlugin>;
+  bindings?: Array<{ agentId?: string; match: { channel?: string; peer?: { id?: string }; guildId?: string } }>;
 }
 
 // ============================================================================
@@ -117,7 +126,7 @@ export function stripHeartbeatToken(
 
   text = text.replace(/\s+/g, " ").trim();
 
-  if (didStrip && text.length <= ackMaxChars) {
+  if (didStrip && text.length === 0) {
     return { shouldSkip: true, text, didStrip: true };
   }
   return { shouldSkip: false, text: text || raw.trim(), didStrip };
@@ -183,14 +192,17 @@ export class HeartbeatExecutor {
   private log: Logger;
   private timer: ReturnType<typeof setInterval> | null = null;
   private lastRun = 0;
-  private running = new Set<string>(); // Prevent concurrent heartbeats
-  private wakeRequests = new Set<string>();
+  private running = new Set<string>();
+  private wakeRequests = new Map<string, string>(); // agentId → reason
+  private busyRetries = new Map<string, number>();
 
   constructor(
     private config: Config,
     private pool: RpcPool,
     private events: HeartbeatExecutorEvents = {},
     private systemEvents?: SystemEventsQueue,
+    private onCronEventProcessed?: (jobId: string, status: "completed" | "error", resultPreview?: string) => void,
+    private deliveryDeps?: HeartbeatDeliveryDeps,
   ) {
     this.log = createLogger("heartbeat");
   }
@@ -231,10 +243,10 @@ export class HeartbeatExecutor {
 
   /**
    * Request immediate heartbeat execution for an agent.
+   * @param reason — why the heartbeat was requested (e.g. "cron:jobId", "exec-event", "manual")
    */
-  requestNow(agentId: string): void {
-    this.wakeRequests.add(agentId);
-    // Schedule one-shot check
+  requestNow(agentId: string, reason?: string): void {
+    this.wakeRequests.set(agentId, reason ?? "manual");
     setTimeout(() => this.checkWakeRequests(), 1000);
   }
 
@@ -242,39 +254,37 @@ export class HeartbeatExecutor {
     const hbConfig = this.getHeartbeatConfig();
     if (!hbConfig?.enabled) return;
 
-    // Normal scheduled heartbeat
     const intervalMs = parseDuration(hbConfig.every) || 30 * 60 * 1000;
     const shouldRunScheduled = Date.now() - this.lastRun >= intervalMs * 0.9;
 
-    const agentsToRun = new Set<string>();
+    const agentsToRun = new Map<string, string>(); // agentId → reason
 
-    // Add wake requests
-    for (const agentId of this.wakeRequests) {
-      agentsToRun.add(agentId);
+    for (const [agentId, reason] of this.wakeRequests) {
+      agentsToRun.set(agentId, reason);
     }
     this.wakeRequests.clear();
 
-    // Add scheduled run for default agent
     if (shouldRunScheduled) {
       const defaultAgent = this.config.agents?.default ?? "default";
-      agentsToRun.add(defaultAgent);
+      if (!agentsToRun.has(defaultAgent)) {
+        agentsToRun.set(defaultAgent, "interval");
+      }
     }
 
-    for (const agentId of agentsToRun) {
-      await this.runOnce(agentId);
+    for (const [agentId, reason] of agentsToRun) {
+      await this.runOnce(agentId, reason);
     }
   }
 
   /**
    * Execute a single heartbeat run.
    */
-  async runOnce(agentId: string = "default"): Promise<HeartbeatResult> {
+  async runOnce(agentId: string = "default", reason?: string): Promise<HeartbeatResult> {
     const hbConfig = this.getHeartbeatConfig(agentId);
     if (!hbConfig?.enabled) {
       return { status: "skipped", error: "disabled" };
     }
 
-    // Prevent concurrent execution for same agent
     if (this.running.has(agentId)) {
       this.log.debug(`Heartbeat already running for ${agentId}, skipping`);
       return { status: "skipped", error: "already_running" };
@@ -285,7 +295,7 @@ export class HeartbeatExecutor {
     this.events.onHeartbeatStart?.(agentId);
 
     try {
-      const result = await this.executeHeartbeat(agentId, hbConfig);
+      const result = await this.executeHeartbeat(agentId, hbConfig, reason);
       this.events.onHeartbeatComplete?.(agentId, result);
       return result;
     } catch (error) {
@@ -300,35 +310,52 @@ export class HeartbeatExecutor {
 
   /**
    * Core heartbeat execution logic.
+   *
+   * Key behaviors (aligned with OpenClaw heartbeat-runner.ts):
+   * - reason="cron:*" or "exec-event" → use specialized prompt, skip HEARTBEAT.md empty check
+   * - Reuse existing bound RPC process (no newSession) for session continuity
+   * - Deliver alerts directly via channel plugin (no external callback dependency)
    */
-  private async executeHeartbeat(agentId: string, hbConfig: HeartbeatConfig): Promise<HeartbeatResult> {
-    // Check active hours
+  private async executeHeartbeat(agentId: string, hbConfig: HeartbeatConfig, reason?: string): Promise<HeartbeatResult> {
     if (hbConfig.activeHours && !isInActiveHours(hbConfig.activeHours)) {
       this.log.debug("Outside active hours, skipping");
       return { status: "skipped", error: "outside_active_hours" };
     }
 
-    // Check if busy (skipWhenBusy)
+    const sessionKey = resolveMainSessionKey(agentId);
+    const isCronEvent = Boolean(reason?.startsWith("cron:"));
+    const isExecEvent = reason === "exec-event";
+    const isEventDriven = isCronEvent || isExecEvent;
+
+    // skipWhenBusy — but retry if there are pending events
     if (hbConfig.skipWhenBusy) {
-      const sessionKey = resolveMainSessionKey(agentId);
       const rpc = this.pool.getForSession(sessionKey);
       if (rpc && !rpc.isIdle) {
+        if (isEventDriven && this.systemEvents?.hasPending(sessionKey)) {
+          const retryCount = this.busyRetries.get(agentId) ?? 0;
+          if (retryCount < 3) {
+            this.busyRetries.set(agentId, retryCount + 1);
+            this.log.debug(`Session ${sessionKey} busy with pending events, retry ${retryCount + 1}/3 in 5s`);
+            setTimeout(() => this.runOnce(agentId, reason), 5000);
+            return { status: "skipped", error: "session_busy_retry_scheduled" };
+          }
+          this.busyRetries.delete(agentId);
+        }
         this.log.debug(`Session ${sessionKey} is busy, skipping heartbeat`);
         this.events.onHeartbeatSkip?.(agentId, "session-busy");
         return { status: "skipped", error: "session_busy" };
       }
+      this.busyRetries.delete(agentId);
     }
 
-    // Get agent workspace
+    // Check HEARTBEAT.md — but DON'T skip for cron/exec events (OpenClaw pattern)
     const agentDef = this.config.agents?.list.find((a) => a.id === agentId);
     const workspace = agentDef?.workspace ?? process.cwd();
-
-    // Check HEARTBEAT.md
     const heartbeatPath = join(workspace, "HEARTBEAT.md");
     let heartbeatContent: string | null = null;
     if (existsSync(heartbeatPath)) {
       heartbeatContent = readFileSync(heartbeatPath, "utf-8");
-      if (isHeartbeatContentEffectivelyEmpty(heartbeatContent)) {
+      if (isHeartbeatContentEffectivelyEmpty(heartbeatContent) && !isEventDriven) {
         this.log.debug("HEARTBEAT.md effectively empty, skipping");
         this.events.onHeartbeatSkip?.(agentId, "empty-heartbeat-file");
         return { status: "skipped", error: "empty_heartbeat_md" };
@@ -336,49 +363,64 @@ export class HeartbeatExecutor {
     }
 
     // Check system events
-    const sessionKey = resolveMainSessionKey(agentId);
     const pendingEvents = this.systemEvents?.peek(sessionKey) ?? [];
-    const hasCronEvents = pendingEvents.length > 0;
+    const hasPendingEvents = pendingEvents.length > 0;
 
-    // Build prompt
+    // Build prompt based on reason (OpenClaw: CRON_EVENT_PROMPT / EXEC_EVENT_PROMPT)
     let prompt: string;
-    if (hasCronEvents) {
+    if (hasPendingEvents && isCronEvent) {
       const eventsBlock = pendingEvents.map((e) => `- ${e}`).join("\n");
       prompt = `${eventsBlock}\n\n${CRON_EVENT_PROMPT}`;
-    } else if (heartbeatContent) {
-      prompt = hbConfig.prompt;
+    } else if (hasPendingEvents && isExecEvent) {
+      const eventsBlock = pendingEvents.map((e) => `- ${e}`).join("\n");
+      prompt = `${eventsBlock}\n\n${EXEC_EVENT_PROMPT}`;
+    } else if (hasPendingEvents) {
+      const eventsBlock = pendingEvents.map((e) => `- ${e}`).join("\n");
+      prompt = `${eventsBlock}\n\n${CRON_EVENT_PROMPT}`;
     } else {
-      // No HEARTBEAT.md and no events — let agent decide what to do
       prompt = hbConfig.prompt;
     }
 
-    // Acquire RPC with bounded retry
-    const rpc = await this.acquireForHeartbeat(agentId, hbConfig);
-    if (!rpc) {
-      return { status: "skipped", error: "no_idle_process" };
+    // Acquire RPC — prefer existing bound process for session continuity
+    const existingRpc = this.pool.getForSession(sessionKey);
+    let rpc: import("./rpc-client.ts").RpcClient | null;
+    let reusedExisting = false;
+
+    if (existingRpc?.isIdle && existingRpc.isAlive) {
+      rpc = existingRpc;
+      reusedExisting = true;
+      this.log.debug(`[heartbeat] Reusing bound RPC ${rpc.id} for ${sessionKey}`);
+    } else {
+      rpc = await this.acquireForHeartbeat(agentId, hbConfig);
+      if (!rpc) {
+        return { status: "skipped", error: "no_idle_process" };
+      }
+      rpc.sessionKey = sessionKey;
+      await rpc.newSession();
     }
 
     try {
-      // Bind session (direct property assignment)
-      rpc.sessionKey = sessionKey;
-      await rpc.newSession();
-
-      // Send heartbeat prompt
       const response = await rpc.promptAndCollect(prompt, hbConfig.messageTimeoutMs ?? 60000);
 
       // Consume system events after successful response
-      if (hasCronEvents) {
+      if (hasPendingEvents) {
         this.systemEvents?.consume(sessionKey);
       }
 
-      // Process response
-      return this.processResponse(response, hbConfig);
+      // Process response — for event-driven heartbeats, force delivery (don't suppress)
+      const result = this.processResponse(response, hbConfig, isEventDriven);
+
+      // Direct delivery for alerts (no external callback dependency)
+      if (result.status === "alert" && result.response) {
+        await this.deliverAlert(agentId, result.response);
+      }
+
+      return result;
     } finally {
-      // Always release RPC process back to idle pool.
-      // NOTE (BG-002): No session_end hook here — release() returns the process
-      // to the pool, it does not terminate the session. If the process is later
-      // evicted (idle timeout / pool shrink), rpc-pool.ts fires onSessionEnd.
-      this.pool.release(sessionKey);
+      // Only release if we acquired a new process; keep existing bound process
+      if (!reusedExisting) {
+        this.pool.release(sessionKey);
+      }
     }
   }
 
@@ -415,13 +457,48 @@ export class HeartbeatExecutor {
 
   /**
    * Process heartbeat response.
+   * @param forceDeliver — for cron/exec events, deliver even if response looks like ack-only
    */
-  private processResponse(response: string, hbConfig: HeartbeatConfig): HeartbeatResult {
+  private processResponse(response: string, hbConfig: HeartbeatConfig, forceDeliver = false): HeartbeatResult {
     const { shouldSkip, text, didStrip } = stripHeartbeatToken(response, hbConfig.ackMaxChars);
-    if (shouldSkip) {
+    if (shouldSkip && !forceDeliver) {
       return { status: "ok", response: text || undefined };
     }
-    return { status: "alert", response: text };
+    return { status: text ? "alert" : "ok", response: text || undefined };
+  }
+
+  /**
+   * Deliver heartbeat alert directly via channel plugin.
+   * Resolves delivery target from bindings or most recent active session.
+   */
+  private async deliverAlert(agentId: string, text: string): Promise<void> {
+    if (!this.deliveryDeps) {
+      this.log.debug(`[heartbeat] No delivery deps, skipping alert delivery for ${agentId}`);
+      return;
+    }
+
+    const target = resolveDeliveryTarget(
+      agentId,
+      this.deliveryDeps.sessions,
+      this.deliveryDeps.bindings,
+    );
+    if (!target) {
+      this.log.warn(`[heartbeat] No delivery target for agent ${agentId} (no binding, no recent session)`);
+      return;
+    }
+
+    const channel = this.deliveryDeps.getChannels().get(target.channel);
+    if (!channel) {
+      this.log.warn(`[heartbeat] Channel ${target.channel} not available for delivery`);
+      return;
+    }
+
+    try {
+      await channel.outbound.sendText(target.chatId, text, { parseMode: "Markdown" });
+      this.log.info(`[heartbeat] Alert delivered to ${target.channel}:${target.chatId} (${text.length} chars)`);
+    } catch (err: unknown) {
+      this.log.error(`[heartbeat] Delivery failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
   /**

@@ -32,11 +32,7 @@ export interface CronDispatcher {
 }
 
 export interface CronAnnouncer {
-  /**
-   * Deliver cron result to the user.
-   * mode "announce" → inject into main session for agent retelling
-   * mode "direct"   → send raw text to channel
-   */
+  /** Deliver cron result to the user via channel outbound.sendText. */
   deliver(agentId: string, text: string, delivery: import("./config.ts").CronDelivery, sessionKey: string): Promise<void>;
 }
 
@@ -45,7 +41,7 @@ export interface CronRunRecord {
   startedAt: number;
   finishedAt: number;
   durationMs: number;
-  status: "completed" | "timeout" | "error" | "pending";
+  status: "completed" | "timeout" | "error";
   resultPreview?: string;
   error?: string;
 }
@@ -161,7 +157,7 @@ export class CronEngine {
     return true;
   }
 
-  updateJob(id: string, patch: Partial<Pick<CronJob, "schedule" | "payload" | "mode" | "delivery" | "deleteAfterRun" | "timeoutMs">>): CronJob | null {
+  updateJob(id: string, patch: Partial<Pick<CronJob, "schedule" | "payload" | "delivery" | "deleteAfterRun" | "timeoutMs">>): CronJob | null {
     const jobs = this.loadJobs();
     const idx = jobs.findIndex((j) => j.id === id);
     if (idx === -1) return null;
@@ -302,57 +298,11 @@ export class CronEngine {
 
     this.running.add(job.id);
     const agentId = job.agentId ?? this.config?.agents?.default ?? "main";
-
-    if (job.mode === "main") {
-      this.triggerMainMode(job, agentId);
-      this.running.delete(job.id);
-    } else {
-      this.triggerIsolatedMode(job, agentId);
-    }
+    this.triggerIsolatedMode(job, agentId);
   }
 
   /**
-   * Main mode: inject system event into the agent's main session,
-   * then wake heartbeat to process it.
-   */
-  /**
-   * @deprecated main mode relies on heartbeat for indirect execution — use isolated + announce (direct delivery) instead.
-   */
-  private triggerMainMode(job: CronJob, agentId: string): void {
-    const mainSessionKey = resolveMainSessionKey(agentId);
-    const eventText = `[CRON:${job.id}] ${job.payload.text}`;
-
-    if (!this.systemEvents) {
-      this.log.warn(`[cron:${job.id}] main mode requires systemEvents queue — falling back to isolated`);
-      this.triggerIsolatedMode(job, agentId);
-      return;
-    }
-
-    this.systemEvents.inject(mainSessionKey, eventText);
-    this.log.info(`[cron:${job.id}] Injected system event for main session ${mainSessionKey}`);
-
-    if (this.heartbeatWake) {
-      this.heartbeatWake(agentId, `cron:${job.id}`);
-    } else {
-      this.log.warn(`[cron:${job.id}] main mode without heartbeatWake — falling back to isolated mode`);
-      // Fallback: remove injected event and run as isolated
-      this.systemEvents?.consume(mainSessionKey);
-      this.triggerIsolatedMode(job, agentId);
-      return;
-    }
-
-    this.recordRun({
-      jobId: job.id,
-      startedAt: Date.now(),
-      finishedAt: 0,
-      durationMs: 0,
-      status: "pending",
-      resultPreview: "(injected to main session via system event)",
-    });
-  }
-
-  /**
-   * Isolated mode: dispatch message to a dedicated cron session.
+   * Isolated mode: dispatch message to a dedicated cron session via RPC pool.
    */
   private async triggerIsolatedMode(job: CronJob, agentId: string): Promise<void> {
     const sessionKey = job.sessionKey ?? `cron:${job.id}`;
@@ -513,26 +463,6 @@ export class CronEngine {
       return lines.slice(-limit).map(l => JSON.parse(l));
     } catch {
       return [];
-    }
-  }
-
-  recordRunUpdate(jobId: string, status: "completed" | "error", resultPreview?: string): void {
-    const filePath = join(this.runsDir, `${jobId}.jsonl`);
-    if (!existsSync(filePath)) return;
-    try {
-      const lines = readFileSync(filePath, "utf-8").trim().split("\n").filter(Boolean);
-      const lastIdx = lines.length - 1;
-      if (lastIdx < 0) return;
-      const last: CronRunRecord = JSON.parse(lines[lastIdx]);
-      if (last.status !== "pending") return;
-      last.status = status;
-      last.finishedAt = Date.now();
-      last.durationMs = last.finishedAt - last.startedAt;
-      if (resultPreview) last.resultPreview = resultPreview.slice(0, 200);
-      lines[lastIdx] = JSON.stringify(last);
-      writeFileSync(filePath, lines.join("\n") + "\n", "utf-8");
-    } catch (err) {
-      this.log.warn(`Failed to update run record for ${jobId}: ${err}`);
     }
   }
 
