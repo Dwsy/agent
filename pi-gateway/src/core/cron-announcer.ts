@@ -1,47 +1,26 @@
 /**
- * Cron Announcer — extracted from server.ts (T7).
+ * Cron Announcer — delivers cron job results to users.
  *
- * Delivers cron job results to users via two modes:
- * - "announce": inject into main session → agent retells naturally
- * - "direct":   send raw text to channel via outbound.sendText
- *
- * @owner PureWolf
+ * Aligned with OpenClaw: both "announce" and "direct" modes send
+ * directly via channel outbound.sendText. The main-session summary
+ * is handled separately by CronEngine.notifyOriginSession.
  */
 
 import type { CronAnnouncer } from "./cron.ts";
 import type { CronDelivery } from "./config.ts";
-import type { SessionKey } from "./types.ts";
 import type { Logger } from "./types.ts";
 import type { SessionStore } from "./session-store.ts";
-import type { SystemEventsQueue } from "./system-events.ts";
 import type { ChannelPlugin } from "../plugins/types.ts";
 
 export interface CronAnnouncerDeps {
   log: Logger;
   sessions: SessionStore;
-  systemEvents: SystemEventsQueue;
   getChannels: () => Map<string, ChannelPlugin>;
-  heartbeatWake?: (agentId: string, reason?: string) => void;
 }
 
-/**
- * Build a CronAnnouncer that delivers results via announce (inject) or direct (sendText).
- */
 export function buildCronAnnouncer(deps: CronAnnouncerDeps): CronAnnouncer & { markSelfDelivered(sessionKey: string): void } {
-  const { log, sessions, systemEvents, getChannels, heartbeatWake } = deps;
+  const { log, sessions, getChannels } = deps;
   const selfDelivered = new Set<string>();
-
-  function tryCronInject(agentId: string, text: string): boolean {
-    const mainKey = `agent:${agentId}:main`;
-    const mainSession = sessions.get(mainKey as SessionKey);
-    if (!mainSession?.lastChannel) return false;
-
-    const retellPrompt = `[CRON_RESULT] The following cron job completed. Summarize the result naturally for the user in 1-2 sentences. Do not mention technical details or that this was a cron job.\n\n${text}`;
-    systemEvents.inject(mainKey, retellPrompt);
-    heartbeatWake?.(agentId, "cron:announce");
-    log.info(`[cron-announcer] injected to ${mainKey} for retelling (${text.length} chars)`);
-    return true;
-  }
 
   async function cronDirectSend(agentId: string, text: string, delivery: CronDelivery): Promise<boolean> {
     let targetChannel = delivery.channel && delivery.channel !== "last" ? delivery.channel : undefined;
@@ -75,7 +54,7 @@ export function buildCronAnnouncer(deps: CronAnnouncerDeps): CronAnnouncer & { m
 
     try {
       await plugin.outbound.sendText(targetChatId, text);
-      log.info(`[cron-announcer] direct send to ${targetChannel}:${targetChatId} (${text.length} chars)`);
+      log.info(`[cron-announcer] sent to ${targetChannel}:${targetChatId} (${text.length} chars)`);
       return true;
     } catch (err: unknown) {
       log.error(`[cron-announcer] delivery failed: ${(err instanceof Error ? err.message : String(err))}`);
@@ -91,11 +70,6 @@ export function buildCronAnnouncer(deps: CronAnnouncerDeps): CronAnnouncer & { m
         return;
       }
       selfDelivered.delete(sessionKey);
-
-      if (delivery.mode === "announce") {
-        tryCronInject(agentId, text);
-        return;
-      }
       await cronDirectSend(agentId, text, delivery);
     },
     markSelfDelivered: (sessionKey: string) => {
