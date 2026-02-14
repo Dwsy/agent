@@ -1,6 +1,6 @@
 # Cron & Config Reference
 
-> TL;DR: Cron 引擎支持三种调度模式（cron/every/at）和两种执行模式（isolated/main），通过 HTTP/WS/Slash 三层 API 管理。Config 体系采用 JSON5 + deep merge + 热重载，12 个顶层 section 覆盖网关全部行为。
+> TL;DR: Cron 引擎支持三种调度模式（cron/every/at），通过 isolated session 执行，结果直接通过 channel outbound 投递。HTTP/WS/Slash 三层 API 管理。Config 体系采用 JSON5 + deep merge + 热重载，12 个顶层 section 覆盖网关全部行为。
 
 ---
 
@@ -31,7 +31,7 @@ type CronSchedule =
 | `every` | `setInterval` | 固定间隔，支持 s/m/h/d 单位 | `"30m"` |
 | `at` | `setTimeout` | 一次性触发，过期立即执行；成功后 `removeJob`，失败后 `disableJob` | `"2026-02-12T14:00:00+08:00"` |
 
-### 1.3 执行模式
+### 1.3 执行流程
 
 ```
 triggerJob(job)
@@ -39,13 +39,7 @@ triggerJob(job)
 ├── backoff window active? → skip (错误退避)
 ├── running.add(job.id)
 │
-├── mode === "main"
-│   → systemEvents.inject(mainSessionKey, eventText)
-│   → heartbeatWake(agentId, reason)
-│   → recordRun("pending")
-│   → running.delete(job.id)
-│
-└── mode === "isolated" (default)
+└── isolated execution (唯一路径)
     → await dispatcher.dispatch(...)
     → Promise.race([dispatch, timeout])
     → announcer.deliver() if delivery !== "silent"
@@ -56,8 +50,6 @@ triggerJob(job)
 ```
 
 **isolated 模式：** 每个 job 独立 session（`cron:{jobId}`），通过 RPC pool 获取进程执行。`triggerIsolatedMode` 是 async 方法，await 完成后才处理 deleteAfterRun/one-shot 清理，消除竞态。
-
-**main 模式（deprecated）：** 不直接执行，而是注入 SystemEventsQueue，由心跳消费。降级策略：`systemEvents` 不可用时 fallback 到 isolated。
 
 ### 1.4 结果投递（对齐 OpenClaw）
 
@@ -77,7 +69,6 @@ isolated job 完成
 | delivery 模式 | 行为 | OpenClaw 对应 |
 |---|---|---|
 | `announce` | 直接通过 channel outbound 发给用户 | `delivery.mode = "announce"` |
-| `direct` | 同 announce（统一走 outbound.sendText） | — |
 | `silent` | 不投递，仅记录 | `delivery.mode = "none"` |
 
 **与 OpenClaw 的架构差异：** OpenClaw 使用 embedded agent（直接 import SDK），我们使用 RPC pool（spawn pi CLI 进程）。差异仅在执行路径（`dispatcher.dispatch` → RPC），投递机制完全一致：拿到结果后直接调 channel outbound，不经过 agent。
@@ -127,11 +118,11 @@ export function markCronSelfDelivered(sessionKey: string): void;
 ```typescript
 constructor(
   dataDir: string,           // 数据目录（jobs.json + runs/）
-  dispatcher: CronDispatcher, // isolated 模式的消息分发
+  dispatcher: CronDispatcher, // isolated 执行的消息分发
   config?: Config,            // 全局配置（agents.default、delegation.timeoutMs）
-  announcer?: CronAnnouncer,  // 结果投递到 channel
-  systemEvents?: SystemEventsQueue, // main 模式事件注入
-  heartbeatWake?: (agentId: string, reason?: string) => void, // main 模式 + notifyOriginSession 心跳唤醒
+  announcer?: CronAnnouncer,  // 结果投递到 channel outbound
+  systemEvents?: SystemEventsQueue, // notifyOriginSession 事件注入
+  heartbeatWake?: (agentId: string, reason?: string) => void, // notifyOriginSession 心跳唤醒
 )
 ```
 
@@ -150,13 +141,13 @@ constructor(
 
 **HTTP 创建示例：**
 ```bash
-curl -X POST http://localhost:18789/api/cron/jobs \
+curl -X POST http://localhost:52134/api/cron/jobs \
   -H "Content-Type: application/json" \
   -d '{
     "id": "hourly-check",
     "schedule": { "kind": "every", "expr": "1h" },
     "task": "Check system health and report anomalies.",
-    "mode": "main"
+    "delivery": "announce"
   }'
 ```
 
@@ -165,7 +156,6 @@ curl -X POST http://localhost:18789/api/cron/jobs \
 - `schedule`：必须包含 `kind` + `expr`
 - `task`：非空，最长 2000 字符
 - `agentId`：如指定，必须存在于 `config.agents.list`
-- `mode`：`"isolated"` 或 `"main"`
 
 ---
 
@@ -186,7 +176,7 @@ curl -X POST http://localhost:18789/api/cron/jobs \
 
 | Section | Interface | 用途 | 默认值要点 |
 |---------|-----------|------|-----------|
-| `gateway` | `GatewayConfig` | 端口、绑定地址、认证 | port: 18789, bind: "loopback", auth: off |
+| `gateway` | `GatewayConfig` | 端口、绑定地址、认证 | port: 52134, bind: "loopback", auth: off |
 | `agent` | `AgentConfig` | pi CLI 路径、模型、pool、工具、prompt | model: 无, pool: min=1/max=4, tools: coding |
 | `session` | `SessionConfig` | DM 路由策略、数据目录 | dmScope: "main" |
 | `channels` | `ChannelsConfig` | Telegram/Discord/WebChat 配置 | 空 |
@@ -281,8 +271,7 @@ interface CronJob {
   enabled?: boolean;           // 默认 true
   paused?: boolean;            // 默认 false
   agentId?: string;            // 默认 config.agents.default
-  sessionKey?: string;         // isolated 模式自定义 session key
-  mode?: "isolated" | "main";  // 默认 "isolated"
+  sessionKey?: string;         // 自定义 session key
   delivery?: "announce" | "silent"; // 默认 "silent"
   timeoutMs?: number;          // 默认 config.delegation.timeoutMs (120s)
   deleteAfterRun?: boolean;    // 默认 false
@@ -320,7 +309,7 @@ interface CronJob {
 
 ```jsonc
 {
-  "gateway": { "port": 18789, "bind": "0.0.0.0" },
+  "gateway": { "port": 52134, "bind": "0.0.0.0" },
   "agent": {
     "model": "anthropic/claude-sonnet-4-20250514",
     "pool": { "min": 2, "max": 4 }
@@ -337,14 +326,12 @@ interface CronJob {
         "id": "daily-report",
         "schedule": { "kind": "cron", "expr": "0 9 * * *", "timezone": "Asia/Shanghai" },
         "payload": { "text": "Generate daily status report." },
-        "mode": "isolated",
         "delivery": "announce"
       },
       {
         "id": "health-check",
         "schedule": { "kind": "every", "expr": "1h" },
-        "payload": { "text": "Check system health." },
-        "mode": "main"
+        "payload": { "text": "Check system health." }
       }
     ]
   },

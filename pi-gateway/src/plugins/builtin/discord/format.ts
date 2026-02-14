@@ -14,18 +14,25 @@ export function formatToolLine(name: string, args?: Record<string, unknown>): st
     return undefined;
   };
 
+  const wrap = (content: string): string =>
+    content.trim() ? "```\n" + content.trim() + "\n```" : `\`${name}\``;
+
   switch (name) {
     case "read":
     case "write":
     case "edit":
     case "multi_edit":
-      return `\`${name}\` ${pick(["path", "file"]) ?? ""}`;
-    case "bash":
-      return `\`bash\` ${pick(["command", "cmd"]) ?? ""}`;
+      return wrap(`${name} ${pick(["path", "file"]) ?? ""}`);
+    case "bash": {
+      const cmd = pick(["command", "cmd"]) ?? "";
+      return cmd ? "```bash\n" + cmd + "\n```" : `\`${name}\``;
+    }
     default: {
       if (!args) return `\`${name}\``;
       const preview = JSON.stringify(args);
-      return `\`${name}\` ${preview.length > 120 ? preview.slice(0, 120) + "…" : preview}`;
+      const content =
+        preview.length > 120 ? preview.slice(0, 120) + "…" : preview;
+      return wrap(`${name} ${content}`);
     }
   }
 }

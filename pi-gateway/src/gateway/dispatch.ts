@@ -11,6 +11,7 @@ import type { InboundMessage, SessionKey, ImageContent, MessageSource } from "..
 import type { RpcClient } from "../core/rpc-client.ts";
 import type { PrioritizedWork } from "../core/message-queue.ts";
 import { processMessage } from "./message-pipeline.ts";
+import { resolveDeliveryTarget } from "../core/channel-resolver.ts";
 
 // ============================================================================
 // Telegram Helpers
@@ -82,41 +83,25 @@ export async function deliverHeartbeatAlert(
   alertText: string,
   ctx: GatewayContext,
 ): Promise<void> {
-  const binding = ctx.config.agents?.bindings?.find(b => b.agentId === agentId);
-  if (!binding) {
-    ctx.log.warn(`No binding found for agent ${agentId}, cannot deliver heartbeat alert`);
+  const target = resolveDeliveryTarget(agentId, ctx.sessions, ctx.config.agents?.bindings);
+  if (!target) {
+    ctx.log.warn(`No delivery target for agent ${agentId} heartbeat alert (no binding, no recent session)`);
     return;
   }
 
-  const channelName = binding.match.channel;
-  if (!channelName) {
-    ctx.log.warn(`No channel specified in binding for agent ${agentId}`);
-    return;
-  }
-
-  const channel = ctx.registry.channels.get(channelName);
+  const channel = ctx.registry.channels.get(target.channel);
   if (!channel) {
-    ctx.log.warn(`Channel ${channelName} not available for heartbeat alert delivery`);
-    return;
-  }
-
-  let target: string;
-  if (binding.match.peer?.id) {
-    target = binding.match.peer.id;
-  } else if (binding.match.guildId) {
-    target = binding.match.guildId;
-  } else {
-    ctx.log.warn(`Cannot determine target for agent ${agentId} heartbeat alert`);
+    ctx.log.warn(`Channel ${target.channel} not available for heartbeat alert delivery`);
     return;
   }
 
   try {
     await channel.outbound.sendText(
-      target,
+      target.chatId,
       `🔔 **Heartbeat Alert** (${agentId}):\n${alertText.slice(0, 1000)}`,
       { parseMode: "Markdown" },
     );
-    ctx.log.info(`Heartbeat alert delivered to ${channelName}:${target}`);
+    ctx.log.info(`Heartbeat alert delivered to ${target.channel}:${target.chatId}`);
   } catch (err: unknown) {
     ctx.log.error(`Failed to deliver heartbeat alert: ${err instanceof Error ? err.message : String(err)}`);
   }
@@ -210,6 +195,9 @@ async function handleInjectionMode(
   });
 
   try {
+    if (rpcMode === "steer") {
+      ctx.activeInboundMessages.get(sessionKey)?.onSteerInjected?.();
+    }
     await rpc.prompt(msg.text, msg.images, rpcMode);
     ctx.log.info(`[INJECT] ${sessionKey}: Message injected with mode=${mode}`);
     return true;

@@ -1,9 +1,9 @@
 /** cron tool — manage gateway scheduled tasks. */
 
 import { Type } from "@sinclair/typebox";
-import { cronOk, cronError } from "./helpers.ts";
+import { cronOk, cronError, gatewayHeaders, parseResponseJson } from "./helpers.ts";
 
-export function createCronTool(gatewayUrl: string, internalToken: string) {
+export function createCronTool(gatewayUrl: string, internalToken: string, authToken?: string) {
   return {
     name: "cron",
     label: "Cron",
@@ -98,9 +98,9 @@ export function createCronTool(gatewayUrl: string, internalToken: string) {
         switch (action) {
           case "list": {
             const res = await fetch(`${gatewayUrl}/api/cron/jobs`, {
-              headers: { Authorization: `Bearer ${internalToken}` },
+              headers: gatewayHeaders(authToken ?? internalToken),
             });
-            const data = (await res.json()) as { ok: boolean; jobs?: unknown[]; error?: string };
+            const data = await parseResponseJson(res);
             if (!res.ok) return cronError(data.error || res.statusText);
             const jobs = data.jobs ?? [];
             return cronOk(
@@ -117,10 +117,7 @@ export function createCronTool(gatewayUrl: string, internalToken: string) {
 
             const res = await fetch(`${gatewayUrl}/api/cron/jobs`, {
               method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${internalToken}`,
-              },
+              headers: gatewayHeaders(authToken ?? internalToken, true),
               body: JSON.stringify({
                 id,
                 schedule,
@@ -130,8 +127,8 @@ export function createCronTool(gatewayUrl: string, internalToken: string) {
                 deleteAfterRun: deleteAfterRun ?? false,
               }),
             });
-            const data = (await res.json()) as Record<string, unknown>;
-            if (!res.ok) return cronError(data.error as string || res.statusText);
+            const data = await parseResponseJson(res);
+            if (!res.ok) return cronError(String(data.error || res.statusText));
             return cronOk(`Job "${id}" created (${schedule.kind}: ${schedule.expr})`);
           }
 
@@ -139,10 +136,10 @@ export function createCronTool(gatewayUrl: string, internalToken: string) {
             if (!id) return cronError("id is required for remove");
             const res = await fetch(`${gatewayUrl}/api/cron/jobs/${encodeURIComponent(id)}`, {
               method: "DELETE",
-              headers: { Authorization: `Bearer ${internalToken}` },
+              headers: gatewayHeaders(authToken ?? internalToken),
             });
-            const data = (await res.json()) as Record<string, unknown>;
-            if (!res.ok) return cronError(data.error as string || res.statusText);
+            const data = await parseResponseJson(res);
+            if (!res.ok) return cronError(String(data.error || res.statusText));
             return cronOk(`Job "${id}" removed.`);
           }
 
@@ -151,14 +148,11 @@ export function createCronTool(gatewayUrl: string, internalToken: string) {
             if (!id) return cronError(`id is required for ${action}`);
             const res = await fetch(`${gatewayUrl}/api/cron/jobs/${encodeURIComponent(id)}`, {
               method: "PATCH",
-              headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${internalToken}`,
-              },
+              headers: gatewayHeaders(authToken ?? internalToken, true),
               body: JSON.stringify({ action }),
             });
-            const data = (await res.json()) as Record<string, unknown>;
-            if (!res.ok) return cronError(data.error as string || res.statusText);
+            const data = await parseResponseJson(res);
+            if (!res.ok) return cronError(String(data.error || res.statusText));
             return cronOk(`Job "${id}" ${action}d.`);
           }
 
@@ -168,11 +162,11 @@ export function createCronTool(gatewayUrl: string, internalToken: string) {
               `${gatewayUrl}/api/cron/jobs/${encodeURIComponent(id)}/run`,
               {
                 method: "POST",
-                headers: { Authorization: `Bearer ${internalToken}` },
+                headers: gatewayHeaders(authToken ?? internalToken),
               },
             );
-            const data = (await res.json()) as Record<string, unknown>;
-            if (!res.ok) return cronError(data.error as string || res.statusText);
+            const data = await parseResponseJson(res);
+            if (!res.ok) return cronError(String(data.error || res.statusText));
             return cronOk(`Job "${id}" triggered.`);
           }
 
@@ -180,17 +174,14 @@ export function createCronTool(gatewayUrl: string, internalToken: string) {
             if (!task) return cronError("task (text) is required for wake");
             const res = await fetch(`${gatewayUrl}/api/wake`, {
               method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${internalToken}`,
-              },
+              headers: gatewayHeaders(authToken ?? internalToken, true),
               body: JSON.stringify({
                 text: task,
                 mode: wakeMode || "next-heartbeat",
               }),
             });
-            const data = (await res.json()) as Record<string, unknown>;
-            if (!res.ok) return cronError(data.error as string || res.statusText);
+            const data = await parseResponseJson(res);
+            if (!res.ok) return cronError(String(data.error || res.statusText));
             const modeLabel = (data.mode || wakeMode || "next-heartbeat") as string;
             return cronOk(
               modeLabel === "now"
@@ -210,14 +201,11 @@ export function createCronTool(gatewayUrl: string, internalToken: string) {
 
             const res = await fetch(`${gatewayUrl}/api/cron/jobs/${encodeURIComponent(id)}`, {
               method: "PATCH",
-              headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${internalToken}`,
-              },
+              headers: gatewayHeaders(authToken ?? internalToken, true),
               body: JSON.stringify(patch),
             });
-            const data = (await res.json()) as Record<string, unknown>;
-            if (!res.ok) return cronError(data.error as string || res.statusText);
+            const data = await parseResponseJson(res);
+            if (!res.ok) return cronError(String(data.error || res.statusText));
             return cronOk(`Job "${id}" updated.`);
           }
 
@@ -225,11 +213,11 @@ export function createCronTool(gatewayUrl: string, internalToken: string) {
             if (!id) return cronError("id is required for runs");
             const l = Math.min(limit ?? 20, 100);
             const res = await fetch(`${gatewayUrl}/api/cron/jobs/${encodeURIComponent(id)}/runs?limit=${l}`, {
-              headers: { Authorization: `Bearer ${internalToken}` },
+              headers: gatewayHeaders(authToken ?? internalToken),
             });
-            const data = (await res.json()) as { ok: boolean; runs?: unknown[]; error?: string };
-            if (!res.ok) return cronError(data.error || res.statusText);
-            const runs = data.runs ?? [];
+            const data = await parseResponseJson(res);
+            if (!res.ok) return cronError(String(data.error || res.statusText));
+            const runs = (data.runs as unknown[]) ?? [];
             return cronOk(
               runs.length === 0
                 ? `No run history for "${id}".`
@@ -239,10 +227,10 @@ export function createCronTool(gatewayUrl: string, internalToken: string) {
 
           case "status": {
             const res = await fetch(`${gatewayUrl}/api/cron/status`, {
-              headers: { Authorization: `Bearer ${internalToken}` },
+              headers: gatewayHeaders(authToken ?? internalToken),
             });
-            const data = (await res.json()) as Record<string, unknown>;
-            if (!res.ok) return cronError(data.error as string || res.statusText);
+            const data = await parseResponseJson(res);
+            if (!res.ok) return cronError(String(data.error || res.statusText));
             return cronOk(`Cron engine: ${JSON.stringify(data, null, 2)}`);
           }
 

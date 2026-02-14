@@ -35,7 +35,7 @@ function createMockPi() {
 async function loadExtension() {
   registeredTools.length = 0;
   // Set env vars before importing
-  process.env.PI_GATEWAY_URL = "http://localhost:18789";
+  process.env.PI_GATEWAY_URL = "http://localhost:52134";
   process.env.PI_GATEWAY_INTERNAL_TOKEN = "test-token-123";
   process.env.PI_GATEWAY_SESSION_KEY = "agent:main:telegram:dm:123";
 

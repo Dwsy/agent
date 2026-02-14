@@ -1,9 +1,9 @@
 /** send_message tool — send text messages to the current chat via pi-gateway. */
 
 import { Type } from "@sinclair/typebox";
-import { toolOk, toolError } from "./helpers.ts";
+import { toolOk, toolError, gatewayHeaders, parseResponseJson } from "./helpers.ts";
 
-export function createSendMessageTool(gatewayUrl: string, internalToken: string) {
+export function createSendMessageTool(gatewayUrl: string, internalToken: string, authToken?: string) {
   return {
     name: "send_message",
     label: "Send Message",
@@ -32,7 +32,7 @@ export function createSendMessageTool(gatewayUrl: string, internalToken: string)
       try {
         const res = await fetch(`${gatewayUrl}/api/message/send`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: gatewayHeaders(authToken ?? internalToken, true),
           body: JSON.stringify({
             token: internalToken,
             pid: process.pid,
@@ -43,7 +43,7 @@ export function createSendMessageTool(gatewayUrl: string, internalToken: string)
           }),
         });
 
-        const data = (await res.json()) as Record<string, unknown>;
+        const data = await parseResponseJson(res);
 
         if (!res.ok) {
           return toolError(`Failed to send message: ${data.error || res.statusText}`);

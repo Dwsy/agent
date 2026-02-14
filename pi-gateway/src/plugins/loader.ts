@@ -129,7 +129,7 @@ export class PluginLoader {
     const builtinDir = join(import.meta.dir, "builtin");
     if (!existsSync(builtinDir)) return;
 
-    const builtins = ["telegram", "discord", "webchat", "feishu"];
+    const builtins = ["telegram", "discord", "webchat", "feishu", "cron", "heartbeat"];
     for (const name of builtins) {
       // Support both single-file (name.ts) and modular (name/index.ts) layouts
       let path = join(builtinDir, `${name}.ts`);
@@ -142,9 +142,9 @@ export class PluginLoader {
       if (this.config.plugins.disabled?.includes(name)) continue;
 
       // BG-004: Skip unconfigured channels to avoid cold-start SDK import cost.
-      // discord.js ~200ms, @larksuiteoapi ~170ms — no point importing if not used.
-      // webchat is always loaded (stub, no SDK, <2ms).
-      if (name !== "webchat") {
+      // Non-channel builtins (cron, heartbeat) use their own enabled checks.
+      const isServicePlugin = name === "cron" || name === "heartbeat";
+      if (!isServicePlugin && name !== "webchat") {
         const channelConfig = (this.config.channels as Record<string, any>)?.[name];
         if (!channelConfig || channelConfig.enabled === false) {
           this.log.debug(`Skipping unconfigured builtin: ${name}`);
