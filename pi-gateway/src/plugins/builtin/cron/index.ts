@@ -35,9 +35,7 @@ export default function register(api: GatewayPluginApi) {
       cronAnnouncer = buildCronAnnouncer({
         log: svcApi.logger,
         sessions: sessionStore,
-        systemEvents,
         getChannels: svcApi.getChannels ?? (() => new Map()),
-        heartbeatWake: svcApi.requestHeartbeat,
       });
 
       const dataDir = config.session.dataDir.replace(/\/sessions$/, "");
