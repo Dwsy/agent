@@ -133,10 +133,21 @@ export default function rolePersonaExtension(pi: ExtensionAPI) {
 
   const normalizePath = (path: string) => path.replace(/\/$/, "");
 
-  /** Notify user — falls back to sendMessage in headless (RPC) mode */
+  /** Check if running in RPC mode */
+  function isRpcMode(): boolean {
+    return process.argv.includes("--mode") && process.argv.includes("rpc");
+  }
+
+  /** Check if TUI/custom UI methods are actually available (not RPC mode) */
+  function isTuiAvailable(ctx: ExtensionContext): boolean {
+    // RPC mode: hasUI is true but custom() returns undefined
+    if (isRpcMode()) return false;
+    return ctx.hasUI && typeof ctx.ui.custom === "function";
+  }
+
   /** Notify user — falls back to sendMessage in headless (RPC) mode */
   function notify(ctx: ExtensionContext, message: string, level?: string): void {
-    if (ctx.hasUI) {
+    if (isTuiAvailable(ctx)) {
       ctx.ui.notify(message, (level as any) ?? "info");
     } else {
       pi.sendMessage({ customType: "role-notify", content: message, display: true }, { triggerTurn: false });
@@ -184,7 +195,7 @@ export default function rolePersonaExtension(pi: ExtensionAPI) {
   }
 
   function startMemoryCheckpointSpinner(ctx: ExtensionContext): void {
-    if (!ctx.hasUI) return;
+    if (!isTuiAvailable(ctx)) return;
     stopMemoryCheckpointSpinner();
 
     memoryCheckpointFrame = 0;
@@ -197,7 +208,7 @@ export default function rolePersonaExtension(pi: ExtensionAPI) {
   }
 
   function setMemoryCheckpointResult(ctx: ExtensionContext, reason: string, learnings: number, prefs: number): void {
-    if (!ctx.hasUI) return;
+    if (!isTuiAvailable(ctx)) return;
 
     const badge = reason === "keyword"
       ? "✳"
@@ -295,6 +306,11 @@ export default function rolePersonaExtension(pi: ExtensionAPI) {
   // ============ TUI ROLE SELECTOR ============
 
   async function selectRoleUI(ctx: ExtensionContext): Promise<string | null> {
+    if (!isTuiAvailable(ctx)) {
+      notify(ctx, "角色选择需要交互模式", "warning");
+      return null;
+    }
+
     const roles = getRoles();
 
     const items = roles.map(name => {
@@ -351,6 +367,11 @@ export default function rolePersonaExtension(pi: ExtensionAPI) {
   }
 
   async function selectCreateRoleNameUI(ctx: ExtensionContext): Promise<string | null> {
+    if (!isTuiAvailable(ctx)) {
+      notify(ctx, "角色创建需要交互模式", "warning");
+      return null;
+    }
+
     const preset = ["architect", "backend", "frontend", "reviewer", "mentor", "assistant"];
     const items = [
       { value: "__custom__", label: "+ 自定义名称", description: "输入任意角色名" },
@@ -439,7 +460,7 @@ export default function rolePersonaExtension(pi: ExtensionAPI) {
     ensureRoleMemoryFiles(rolePath, roleName);
     const repair = repairRoleMemory(rolePath, roleName);
 
-    if (ctx.hasUI) {
+    if (isTuiAvailable(ctx)) {
       const identity = getRoleIdentity(rolePath);
       const displayName = identity?.name || roleName;
 
@@ -486,7 +507,7 @@ export default function rolePersonaExtension(pi: ExtensionAPI) {
         ctx.ui?.setStatus("role", "none");
       }
     } else {
-      if (ctx.hasUI) {
+      if (isTuiAvailable(ctx)) {
         ctx.ui.setStatus("role", resolution.source === "disabled" ? "off" : "none");
       }
     }
@@ -497,7 +518,7 @@ export default function rolePersonaExtension(pi: ExtensionAPI) {
     if (!currentRolePath || !currentRole) return;
 
     const repair = repairRoleMemory(currentRolePath, currentRole);
-    if (repair.repaired && ctx.hasUI) {
+    if (repair.repaired && isTuiAvailable(ctx)) {
       notify(ctx, `Memory auto-repair applied (${repair.issues} issues)`, "info");
     }
 
@@ -728,7 +749,7 @@ Rules for memory extraction:
 
     stopMemoryCheckpointSpinner();
 
-    if (ctx.hasUI) {
+    if (isTuiAvailable(ctx)) {
       ctx.ui.setStatus("role", undefined);
       ctx.ui.setStatus("memory-checkpoint", undefined);
     }
@@ -921,7 +942,7 @@ Rules for memory extraction:
 
       const content = buildRoleMemoryViewerMarkdown(currentRolePath, currentRole);
 
-      if (!ctx.hasUI) {
+      if (!isTuiAvailable(ctx)) {
         pi.sendMessage({ customType: "role-memories", content, display: true }, { triggerTurn: false });
         return;
       }
@@ -968,7 +989,7 @@ Rules for memory extraction:
         return;
       }
 
-      if (!ctx.hasUI) {
+      if (!isTuiAvailable(ctx)) {
         const lines = [`# Tag Cloud for ${currentRole}`, ""];
         const sortedTags = Object.entries(tagRegistry)
           .sort((a, b) => b[1].weight - a[1].weight)
@@ -1216,7 +1237,7 @@ Rules for memory extraction:
         case "create": {
           let roleName = argv[1];
           if (!roleName) {
-            if (!ctx.hasUI) {
+            if (!isTuiAvailable(ctx)) {
               notify(ctx, "Usage: /role create <name>", "warning");
               return;
             }
@@ -1241,8 +1262,8 @@ Rules for memory extraction:
           createRole(roleName);
           notify(ctx, `[OK] 创建角色: ${roleName}`, "success");
 
-          // In headless mode, auto-map to current cwd
-          const shouldMap = ctx.hasUI
+          // In headless/RPC mode, auto-map to current cwd
+          const shouldMap = isTuiAvailable(ctx)
             ? await ctx.ui.confirm("映射", `将当前目录映射到 "${roleName}"?`)
             : true;
           if (shouldMap) {
@@ -1261,7 +1282,7 @@ Rules for memory extraction:
           let roleName = argv[1];
 
           if (!roleName) {
-            if (!ctx.hasUI) {
+            if (!isTuiAvailable(ctx)) {
               const roles = getRoles();
               notify(ctx, `Usage: /role map <name>\nAvailable: ${roles.join(", ")}`, "warning");
               return;
@@ -1332,7 +1353,7 @@ Rules for memory extraction:
 
           currentRole = null;
           currentRolePath = null;
-          if (ctx.hasUI) {
+          if (isTuiAvailable(ctx)) {
             ctx.ui.setStatus("role", "off");
             ctx.ui.setStatus("memory-checkpoint", undefined);
           }
