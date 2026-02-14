@@ -312,29 +312,46 @@ export class CronEngine {
     this.log.info(`Triggering job: ${job.id} → agent ${agentId}, session ${sessionKey}`);
 
     let responseText = "";
-    const respond = async (text: string) => { responseText = text; };
+    let didRespond = false;
+    let resolveResponse!: () => void;
+    const responsePromise = new Promise<void>((resolve) => {
+      resolveResponse = resolve;
+    });
+
+    const respond = async (text: string) => {
+      responseText = text;
+      if (!didRespond) {
+        didRespond = true;
+        resolveResponse();
+      }
+    };
 
     const timeoutMs = job.timeoutMs ?? this.config?.delegation?.timeoutMs ?? 120_000;
 
     try {
+      await this.dispatcher.dispatch({
+        source: {
+          channel: "cron",
+          chatType: "dm",
+          chatId: job.id,
+          senderId: "cron",
+          senderName: "Cron Scheduler",
+          agentId,
+        },
+        sessionKey,
+        text,
+        respond,
+        setTyping: async () => {},
+      });
+
       await Promise.race([
-        this.dispatcher.dispatch({
-          source: {
-            channel: "cron",
-            chatType: "dm",
-            chatId: job.id,
-            senderId: "cron",
-            senderName: "Cron Scheduler",
-            agentId,
-          },
-          sessionKey,
-          text,
-          respond,
-          setTyping: async () => {},
+        responsePromise,
+        new Promise<never>((_, reject) => {
+          const timer = setTimeout(() => reject(new Error("CRON_TIMEOUT")), timeoutMs);
+          if (typeof (timer as { unref?: () => void }).unref === "function") {
+            (timer as { unref: () => void }).unref();
+          }
         }),
-        new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error("CRON_TIMEOUT")), timeoutMs),
-        ),
       ]);
 
       const delivery = resolveDelivery(job.delivery);

@@ -1,12 +1,16 @@
 /**
- * System Events Queue — Gateway-layer in-memory queue for cross-cutting events.
+ * System Events Queue — Gateway-layer queue for cross-cutting events.
  *
  * Used by:
  * - Cron main mode (inject cron results, heartbeat consumes)
  * - Async exec completions
  *
+ * Supports optional file-based persistence (JSONL) for crash recovery.
  * Design aligned with OpenClaw's system-events.ts
  */
+
+import { existsSync, readFileSync, writeFileSync, mkdirSync, renameSync, unlinkSync } from "node:fs";
+import { join, dirname } from "node:path";
 
 export interface SystemEvent {
   text: string;
@@ -18,17 +22,19 @@ export class SystemEventsQueue {
   private maxPerSession = 20;
   private maxAgeMs = 3600 * 1000; // 1 hour TTL
   private gcTimer: ReturnType<typeof setInterval> | null = null;
+  private persistPath: string | null = null;
 
-  constructor(gcIntervalMs = 30_000) {
+  constructor(gcIntervalMs = 30_000, dataDir?: string) {
     this.gcTimer = setInterval(() => this.gc(), gcIntervalMs);
     if (typeof this.gcTimer === "object" && "unref" in this.gcTimer) {
       this.gcTimer.unref();
     }
+    if (dataDir) {
+      this.persistPath = join(dataDir, "system-events.jsonl");
+      this.restoreFromDisk();
+    }
   }
 
-  /**
-   * Inject an event into the queue for a session.
-   */
   inject(sessionKey: string, eventText: string): void {
     if (!this.events.has(sessionKey)) {
       this.events.set(sessionKey, []);
@@ -36,32 +42,24 @@ export class SystemEventsQueue {
     const queue = this.events.get(sessionKey)!;
     queue.push({ text: eventText, createdAt: Date.now() });
 
-    // Evict oldest if over limit
     while (queue.length > this.maxPerSession) {
       queue.shift();
     }
+    this.persistToDisk();
   }
 
-  /**
-   * Peek at pending events without consuming.
-   */
   peek(sessionKey: string): string[] {
     this.evictExpired(sessionKey);
     return (this.events.get(sessionKey) ?? []).map((e) => e.text);
   }
 
-  /**
-   * Peek and consume all events for a session.
-   */
   consume(sessionKey: string): string[] {
     const items = this.peek(sessionKey);
     this.events.delete(sessionKey);
+    this.persistToDisk();
     return items;
   }
 
-  /**
-   * Check if there are pending events (without consuming).
-   */
   hasPending(sessionKey: string): boolean {
     return this.peek(sessionKey).length > 0;
   }
@@ -78,18 +76,12 @@ export class SystemEventsQueue {
     }
   }
 
-  /**
-   * Cleanup all expired entries (call periodically).
-   */
   gc(): void {
     for (const key of this.events.keys()) {
       this.evictExpired(key);
     }
   }
 
-  /**
-   * Get stats for monitoring.
-   */
   getStats(): { sessions: number; totalEvents: number } {
     let total = 0;
     for (const queue of this.events.values()) {
@@ -98,13 +90,48 @@ export class SystemEventsQueue {
     return { sessions: this.events.size, totalEvents: total };
   }
 
-  /**
-   * Stop the internal gc timer.
-   */
   dispose(): void {
     if (this.gcTimer) {
       clearInterval(this.gcTimer);
       this.gcTimer = null;
+    }
+    this.persistToDisk();
+  }
+
+  private persistToDisk(): void {
+    if (!this.persistPath) return;
+    try {
+      const dir = dirname(this.persistPath);
+      if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+      const lines: string[] = [];
+      for (const [sessionKey, queue] of this.events) {
+        for (const evt of queue) {
+          lines.push(JSON.stringify({ sessionKey, ...evt }));
+        }
+      }
+      const tmpPath = this.persistPath + ".tmp";
+      writeFileSync(tmpPath, lines.join("\n") + (lines.length ? "\n" : ""), "utf-8");
+      renameSync(tmpPath, this.persistPath);
+    } catch {
+      // Best-effort persistence
+    }
+  }
+
+  private restoreFromDisk(): void {
+    if (!this.persistPath || !existsSync(this.persistPath)) return;
+    try {
+      const content = readFileSync(this.persistPath, "utf-8").trim();
+      if (!content) return;
+      const cutoff = Date.now() - this.maxAgeMs;
+      for (const line of content.split("\n")) {
+        if (!line.trim()) continue;
+        const { sessionKey, text, createdAt } = JSON.parse(line) as { sessionKey: string; text: string; createdAt: number };
+        if (createdAt <= cutoff) continue;
+        if (!this.events.has(sessionKey)) this.events.set(sessionKey, []);
+        this.events.get(sessionKey)!.push({ text, createdAt });
+      }
+    } catch {
+      // Corrupted file — start fresh
     }
   }
 }

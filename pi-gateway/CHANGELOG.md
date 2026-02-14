@@ -847,7 +847,7 @@ Aligned with OpenClaw `src/telegram/` feature set. Gap analysis documented in `d
 - Aligned with OpenClaw's `openclaw onboard --install-daemon`
 
 **Docker Support**
-- `Dockerfile`: based on `oven/bun:1`, installs Node.js 22 + pi CLI, exposes port 18789
+- `Dockerfile`: based on `oven/bun:1`, installs Node.js 22 + pi CLI, exposes port 52134
 - `docker-compose.yml`: one-command startup with volume mounts for `~/.pi/gateway` and `~/.pi/agent`
 - `.dockerignore`: excludes node_modules, dist, docs
 

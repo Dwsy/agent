@@ -1,6 +1,6 @@
 # pi-gateway v2 Telegram 真实环境测试清单
 
-> Target: 115.191.43.169:18789 | Bot: @pi_gateway_bot
+> Target: 115.191.43.169:52134 | Bot: @pi_gateway_bot
 > Tester: MintTiger | Date: 2026-02-11
 
 ## 自动化测试（scripts/bbd-real-test.sh）

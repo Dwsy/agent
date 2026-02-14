@@ -20,7 +20,7 @@ Telegram / Discord / WebChat
          │
          ▼
 ┌──────────────────────────────────┐
-│       pi-gateway (:18789)        │
+│       pi-gateway (:52134)        │
 │  Bun HTTP + WebSocket server     │
 │                                  │
 │  Plugin System → Session Router  │
@@ -52,7 +52,7 @@ pi-gw config show                      # Show config
 
 ```jsonc
 {
-  "gateway": { "port": 18789, "bind": "loopback" },
+  "gateway": { "port": 52134, "bind": "loopback" },
   "agent": {
     "model": "claude-kiro-local/claude-haiku-4-5-20251001",
     "runtime": {
@@ -209,15 +209,46 @@ src/
     app.js                      Lit components (5 panels)
 ```
 
-## Extensibility (reserved)
+## Cron 定时任务
+
+Aligned with OpenClaw delivery model — isolated execution via RPC pool, direct channel delivery.
+
+```jsonc
+{
+  "cron": {
+    "enabled": true,
+    "jobs": [
+      {
+        "id": "daily-report",
+        "schedule": { "kind": "cron", "expr": "0 9 * * *", "timezone": "Asia/Shanghai" },
+        "task": "Generate daily status report.",
+        "delivery": "announce"
+      }
+    ]
+  }
+}
+```
+
+Schedule types: `cron` (cron expr), `every` (interval: "30m"), `at` (one-shot ISO 8601).
+
+Delivery: `announce` (direct channel outbound.sendText), `silent` (record only).
+
+Runtime guards: concurrency lock, error backoff (30s→1h), missed job recovery on startup.
+
+API: HTTP (`/api/cron/jobs`), WebSocket (`cron.*`), Telegram/Discord (`/cron`).
+
+Architecture: `docs/architecture/CRON-AND-CONFIG.md` | Visual: `docs/architecture/cron-architecture.html`
+
+## Extensibility
 
 - **Webhook**: `POST /hooks/wake` (aligned with OpenClaw)
-- **Cron**: scheduled jobs via `jobs.json`
 - **Sandbox**: `off | non-main | all` modes
 - **Tool Policy**: `profile` + `allow/deny` + per-channel overrides
 
 ## Documentation
 
+- `docs/architecture/CRON-AND-CONFIG.md` — Cron 引擎架构与 Config 体系参考
+- `docs/architecture/cron-architecture.html` — Cron 架构可视化（Mermaid 图表）
 - `docs/FEATURE-REALITY-CHECK.md` — 功能现实校验（实现状态与已知限制）
 - `docs/PLUGIN-ARCHITECTURE.md` — Gateway 插件与 pi Extensions 职责边界
 - `docs/TELEGRAM-GAP-ANALYSIS.md` — Telegram 能力差距分析

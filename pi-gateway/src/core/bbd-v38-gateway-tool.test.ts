@@ -31,7 +31,7 @@ function createMockPi() {
 
 async function loadExtension() {
   registeredTools.length = 0;
-  process.env.PI_GATEWAY_URL = "http://localhost:18789";
+  process.env.PI_GATEWAY_URL = "http://localhost:52134";
   process.env.PI_GATEWAY_INTERNAL_TOKEN = "test-token-123";
   process.env.PI_GATEWAY_SESSION_KEY = "agent:main:telegram:dm:123";
 
@@ -92,16 +92,16 @@ describe("gateway tool [v3.8 T5]", () => {
   });
 
   it("GW-02: config.get returns redacted config JSON", async () => {
-    const fakeConfig = { gateway: { port: 18789, auth: { mode: "token", token: "***" } } };
+    const fakeConfig = { gateway: { port: 52134, auth: { mode: "token", token: "***" } } };
     mockFetchResponse(200, fakeConfig);
     const tool = getTool("gateway");
     const result = await tool.execute("c", { action: "config.get" });
-    expect(result.content[0].text).toContain("18789");
+    expect(result.content[0].text).toContain("52134");
     expect(result.content[0].text).toContain("***");
     expect(result.details?.ok).toBe(true);
     // Verify correct endpoint
     const call = fetchMock.mock.calls[0];
-    expect(call[0]).toBe("http://localhost:18789/api/gateway/config");
+    expect(call[0]).toBe("http://localhost:52134/api/gateway/config");
   });
 
   it("GW-03: config.get handles HTTP error", async () => {
@@ -120,7 +120,7 @@ describe("gateway tool [v3.8 T5]", () => {
     expect(result.details?.ok).toBe(true);
     // Verify POST method
     const call = fetchMock.mock.calls[0];
-    expect(call[0]).toBe("http://localhost:18789/api/gateway/reload");
+    expect(call[0]).toBe("http://localhost:52134/api/gateway/reload");
     expect(call[1].method).toBe("POST");
   });
 
@@ -139,7 +139,7 @@ describe("gateway tool [v3.8 T5]", () => {
     expect(result.content[0].text).toContain("restarting");
     expect(result.details?.ok).toBe(true);
     const call = fetchMock.mock.calls[0];
-    expect(call[0]).toBe("http://localhost:18789/api/gateway/restart");
+    expect(call[0]).toBe("http://localhost:52134/api/gateway/restart");
     expect(call[1].method).toBe("POST");
   });
 

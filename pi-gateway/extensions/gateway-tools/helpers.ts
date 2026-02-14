@@ -27,3 +27,20 @@ export function cronError(error: string) {
     details: { error: true },
   };
 }
+
+export function gatewayHeaders(authToken?: string, includeJson = false): Record<string, string> {
+  const headers: Record<string, string> = {};
+  if (includeJson) headers["Content-Type"] = "application/json";
+  if (authToken) headers.Authorization = `Bearer ${authToken}`;
+  return headers;
+}
+
+export async function parseResponseJson(res: Response): Promise<Record<string, unknown>> {
+  const text = await res.text();
+  if (!text) return {};
+  try {
+    return JSON.parse(text) as Record<string, unknown>;
+  } catch {
+    return { error: text };
+  }
+}

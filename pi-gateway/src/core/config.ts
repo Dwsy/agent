@@ -482,7 +482,7 @@ const DEFAULT_DATA_DIR = join(homedir(), ".pi", "gateway");
 
 export const DEFAULT_CONFIG: Config = {
   gateway: {
-    port: 18789,
+    port: 52134,
     bind: "loopback",
     auth: { mode: "token" },
   },
@@ -598,6 +598,9 @@ export function resolveConfigPath(): string {
 
 /**
  * Load and merge configuration from file with defaults.
+ *
+ * Env override:
+ * - PI_GATEWAY_PORT: force gateway port (1-65535)
  */
 export function loadConfig(configPath?: string): Config {
   const path = configPath ?? resolveConfigPath();
@@ -623,6 +626,12 @@ export function loadConfig(configPath?: string): Config {
     DEFAULT_CONFIG as unknown as Record<string, unknown>,
     migrated as Record<string, unknown>,
   ) as unknown as Config;
+
+  const envPort = Number.parseInt(process.env.PI_GATEWAY_PORT ?? "", 10);
+  if (Number.isInteger(envPort) && envPort > 0 && envPort <= 65535) {
+    merged.gateway.port = envPort;
+  }
+
   validateTelegramConfig(merged);
   return merged;
 }
