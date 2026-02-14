@@ -21,8 +21,7 @@ import { resolveSessionKey, resolveAgentId, getCwdForRole } from "./core/session
 import { createLogger as createConsoleLogger, setLogLevel, type Logger, type InboundMessage, type SessionKey, type SessionState, type WsFrame } from "./core/types.ts";
 import { SessionStore } from "./core/session-store.ts";
 import { initFileLogger, createFileLogger } from "./core/logger-file.ts";
-import { CronEngine } from "./core/cron.ts";
-import { buildCronAnnouncer } from "./core/cron-announcer.ts";
+import { getCronEngine, markCronSelfDelivered } from "./plugins/builtin/cron/index.ts";
 import { TranscriptLogger } from "./core/transcript-logger.ts";
 import { buildCapabilityProfile } from "./core/capability-profile.ts";
 import { ExtensionUIForwarder } from "./core/extension-ui-forwarder.ts";
@@ -35,7 +34,7 @@ import { SystemEventsQueue } from "./core/system-events.ts";
 import { createWsRouter, dispatchWsFrame } from "./ws/ws-router.ts";
 import { routeHttp } from "./api/http-router.ts";
 import { processMessage } from "./gateway/message-pipeline.ts";
-import { dispatchMessage, deliverHeartbeatAlert, resolveTelegramMsgMode } from "./gateway/dispatch.ts";
+import { dispatchMessage, resolveTelegramMsgMode } from "./gateway/dispatch.ts";
 import { migrateTelegramSessionKeys } from "./gateway/telegram-helpers.ts";
 import {
   createPluginRegistry,
@@ -66,7 +65,6 @@ export class Gateway {
   private transcripts: TranscriptLogger;
   private metrics: MetricsCollector;
   private extensionUI = new ExtensionUIForwarder();
-  private cron: CronEngine | null = null;
   private tickTimer: ReturnType<typeof setInterval> | null = null;
   private configWatcher: (() => void) | null = null;
   private wsClients = new Map<string, ServerWebSocket<WsClientData>>();
@@ -76,13 +74,13 @@ export class Gateway {
   private log: Logger;
   private nextClientId = 0;
   private dedup: DeduplicationCache;
-  private cronAnnouncerInstance: ReturnType<typeof buildCronAnnouncer> | null = null;
   private sessionMessageModeOverrides = new Map<SessionKey, TelegramMessageMode>();
+  private activeInboundMessages = new Map<SessionKey, InboundMessage>();
   private delegateExecutor: DelegateExecutor | null = null;
   private heartbeatExecutor: HeartbeatExecutor | null = null;
   private execGuard: ExecGuard;
   private modelHealth: ModelHealthTracker | null = null;
-  private systemEvents = new SystemEventsQueue();
+  private systemEvents: SystemEventsQueue;
   private noGui: boolean;
   private wsRouter: Map<string, import("./ws/ws-router.ts").WsMethodFn> | null = null;
   /** 缓存每个 channel 注册时的 api 引用，供 init 调用 */
@@ -130,6 +128,7 @@ export class Gateway {
     this.dedup = new DeduplicationCache({ cacheSize: qc.dedup.cacheSize, ttlMs: qc.dedup.ttlMs });
     this.registry = createPluginRegistry();
     this.sessions = new SessionStore(this.config.session.dataDir);
+    this.systemEvents = new SystemEventsQueue(30_000, this.config.session.dataDir.replace(/\/sessions$/, ""));
     this.transcripts = new TranscriptLogger(join(this.config.session.dataDir, "transcripts"));
 
     // Initialize v3 delegate executor if multi-agent config exists
@@ -137,21 +136,25 @@ export class Gateway {
       this.delegateExecutor = new DelegateExecutor(this.config, this.pool, this.log, this.metrics);
     }
 
-    // Initialize heartbeat executor (v3.1) with system events
+    // Initialize heartbeat executor (v3.1) with system events and delivery deps
     this.heartbeatExecutor = new HeartbeatExecutor(this.config, this.pool, {
       onHeartbeatStart: (agentId) => {
         this.log.debug(`Heartbeat started for agent: ${agentId}`);
       },
       onHeartbeatComplete: (agentId, result) => {
         this.log.debug(`Heartbeat completed for agent ${agentId}: ${result.status}`);
-        if (result.status === "alert" && result.response) {
-          this.deliverHeartbeatAlert(agentId, result.response);
-        }
+        // Delivery is now handled internally by HeartbeatExecutor.deliverAlert
       },
       onHeartbeatSkip: (agentId, reason) => {
         this.log.debug(`Heartbeat skipped for agent ${agentId}: ${reason}`);
       },
-    }, this.systemEvents);
+    }, this.systemEvents, (jobId, status, preview) => {
+      getCronEngine()?.recordRunUpdate(jobId, status, preview);
+    }, {
+      sessions: this.sessions,
+      getChannels: () => this.registry.channels,
+      bindings: this.config.agents?.bindings,
+    });
   }
 
 
@@ -226,26 +229,6 @@ export class Gateway {
       }
     }
 
-    // Start cron engine
-    if (this.config.cron.enabled) {
-      this.cronAnnouncerInstance = buildCronAnnouncer({
-        log: this.log,
-        sessions: this.sessions,
-        systemEvents: this.systemEvents,
-        getChannels: () => this.registry.channels,
-        heartbeatWake: (agentId) => this.heartbeatExecutor?.requestNow(agentId),
-      });
-      this.cron = new CronEngine(
-        this.config.session.dataDir.replace(/\/sessions$/, ""),
-        this,
-        this.config,
-        this.cronAnnouncerInstance,
-        this.systemEvents,
-        (agentId) => this.heartbeatExecutor?.requestNow(agentId),
-      );
-      this.cron.start();
-    }
-
     // Start heartbeat executor (v3.1)
     this.heartbeatExecutor?.start();
 
@@ -303,9 +286,6 @@ export class Gateway {
     if (this.tickTimer) { clearInterval(this.tickTimer); this.tickTimer = null; }
     if (this.configWatcher) { this.configWatcher(); this.configWatcher = null; }
 
-    // Stop cron
-    this.cron?.stop();
-
     // Stop heartbeat executor (v3.1)
     this.heartbeatExecutor?.stop();
 
@@ -338,9 +318,6 @@ export class Gateway {
     return resolveTelegramMsgMode(sessionKey, this.ctx, sourceAccountId);
   }
 
-  private async deliverHeartbeatAlert(agentId: string, alertText: string): Promise<void> {
-    return deliverHeartbeatAlert(agentId, alertText, this.ctx);
-  }
 
 
   /**
@@ -473,7 +450,7 @@ export class Gateway {
       extensionUI: this.extensionUI,
       systemEvents: this.systemEvents,
       dedup: this.dedup,
-      cron: this.cron,
+      cron: getCronEngine(),
       heartbeat: this.heartbeatExecutor,
       delegateExecutor: this.delegateExecutor,
       execGuard: this.execGuard,
@@ -482,6 +459,7 @@ export class Gateway {
       wsClients: this.wsClients,
       noGui: this.noGui,
       sessionMessageModeOverrides: this.sessionMessageModeOverrides,
+      activeInboundMessages: this.activeInboundMessages,
       channelApis: this._channelApis,
       resolveTelegramMessageMode: (sk, accountId) => this.resolveTelegramMessageMode(sk, accountId),
       broadcastToWs: (event, payload) => this.broadcastToWs(event, payload),
@@ -492,7 +470,7 @@ export class Gateway {
       setSessionRole: async () => false,
       reloadConfig: () => { this.config = loadConfig(); },
       onCronDelivered: (sk) => {
-        this.cronAnnouncerInstance?.markSelfDelivered(sk);
+        markCronSelfDelivered(sk);
       },
     };
   }
