@@ -28,7 +28,6 @@ interface AddJobInput {
   schedule: CronJob["schedule"];
   task: string;
   agentId?: string;
-  mode?: "isolated" | "main";
   delivery?: CronJob["delivery"];
   deleteAfterRun?: boolean;
   timeoutMs?: number;
@@ -61,10 +60,6 @@ function validateAddJob(body: unknown, config?: Config): ValidationError | null 
     if (agents.length > 0 && !agents.some((a) => a.id === b.agentId)) {
       return { ok: false, error: `agentId: "${b.agentId}" not found in agents.list` };
     }
-  }
-
-  if (b.mode != null && b.mode !== "isolated" && b.mode !== "main") {
-    return { ok: false, error: 'mode: must be "isolated" or "main"' };
   }
 
   return null;
@@ -180,7 +175,6 @@ async function handleAddJob(
     schedule: b.schedule,
     payload: { text: b.task },
     agentId: b.agentId,
-    mode: b.mode,
     delivery: b.delivery,
     deleteAfterRun: b.deleteAfterRun,
     timeoutMs: b.timeoutMs,
@@ -219,7 +213,6 @@ async function handlePatchJob(
     const patch: Record<string, unknown> = {};
     if (body.schedule) patch.schedule = body.schedule;
     if (body.task) patch.payload = { text: body.task };
-    if (body.mode) patch.mode = body.mode;
     if (body.delivery) patch.delivery = body.delivery;
     if (body.deleteAfterRun != null) patch.deleteAfterRun = body.deleteAfterRun;
     if (body.timeoutMs != null) patch.timeoutMs = body.timeoutMs;
