@@ -9,7 +9,10 @@ import { migrateTelegramGroupConfig } from "./group-migration.ts";
 import { buildReactionText } from "./reaction-level.ts";
 import { wasRecentlySent } from "./sent-message-cache.ts";
 import { dispatchAgentTurn } from "./streaming.ts";
+import { saveMediaBuffer } from "./media-storage.ts";
+import { getCachedSticker, cacheSticker } from "./sticker-cache.ts";
 import type {
+  StickerMetadata,
   TelegramAccountRuntime,
   TelegramContext,
   TelegramDebouncedEntry,
@@ -39,40 +42,130 @@ function buildSource(account: TelegramAccountRuntime, ctx: TelegramContext, mess
 
 // dispatchAgentTurn → streaming.ts
 
-async function resolveImagesFromMessage(account: TelegramAccountRuntime, msg: TelegramMessage): Promise<{ images: ImageContent[]; documentContext?: string }> {
+async function resolveImagesFromMessage(
+  account: TelegramAccountRuntime,
+  msg: TelegramMessage,
+  chatId?: string,
+): Promise<{ images: ImageContent[]; documentContext?: string; stickerMetadata?: StickerMetadata }> {
   const images: ImageContent[] = [];
   let documentContext: string | undefined;
+  let stickerMetadata: StickerMetadata | undefined;
   const maxMb = Math.max(1, account.cfg.mediaMaxMb ?? 10);
   const maxBytes = maxMb * 1024 * 1024;
 
   console.log(`[telegram-media] resolveImages: photo=${msg.photo?.length ?? 0} document=${msg.document?.file_id ? 'yes' : 'no'} sticker=${msg.sticker ? 'yes' : 'no'}`);
 
-  // Sticker: download as image (webp/webm/tgs) and pass to agent
+  // ── Sticker handling (reference: openclaw/openclaw) ──
   if (msg.sticker?.file_id) {
     const sticker = msg.sticker;
-    console.log(`[telegram-media] downloading sticker: file_id=${sticker.file_id.slice(0, 20)}... emoji=${sticker.emoji ?? ''} set=${sticker.set_name ?? ''} animated=${sticker.is_animated} video=${sticker.is_video}`);
-    const downloaded = await downloadTelegramFile({
-      token: account.token,
-      fileId: sticker.file_id,
-      maxBytes,
-    });
-    if (downloaded) {
-      // Static stickers are webp, video stickers are webm — both viewable as images
-      const mime = downloaded.mimeType.startsWith("image/") || downloaded.mimeType.startsWith("video/")
-        ? downloaded.mimeType
-        : "image/webp";
-      if (mime.startsWith("image/")) {
-        images.push({ type: "image", data: downloaded.data, mimeType: mime });
+    const isAnimated = sticker.is_animated;
+    const isVideo = sticker.is_video;
+    const fileUniqueId = sticker.file_unique_id;
+
+    console.log(`[telegram-media] sticker: file_id=${sticker.file_id.slice(0, 20)}... emoji=${sticker.emoji ?? ''} set=${sticker.set_name ?? ''} animated=${isAnimated} video=${isVideo}`);
+
+    // Check cache first — avoid re-downloading known stickers
+    const cached = fileUniqueId ? getCachedSticker(fileUniqueId) : null;
+    if (cached) {
+      console.log(`[telegram-media] sticker cache hit: ${fileUniqueId}`);
+      // Refresh metadata if changed (file_id rotates, emoji/set may update)
+      const needsRefresh =
+        cached.fileId !== sticker.file_id ||
+        cached.emoji !== (sticker.emoji ?? cached.emoji) ||
+        cached.setName !== (sticker.set_name ?? cached.setName);
+      if (needsRefresh) {
+        cacheSticker({
+          ...cached,
+          fileId: sticker.file_id,
+          emoji: sticker.emoji ?? cached.emoji,
+          setName: sticker.set_name ?? cached.setName,
+        });
       }
-      // Add sticker context (emoji + set name) as document context
+    }
+
+    // For animated (TGS) and video (WEBM) stickers, use thumbnail instead
+    // Static stickers (WEBP) are downloaded directly
+    const downloadFileId = (isAnimated || isVideo)
+      ? sticker.thumbnail?.file_id  // thumbnail is jpg/webp
+      : sticker.file_id;
+    const isThumbnail = isAnimated || isVideo;
+
+    if (downloadFileId) {
+      const downloaded = await downloadTelegramFile({
+        token: account.token,
+        fileId: downloadFileId,
+        maxBytes,
+      });
+
+      if (downloaded) {
+        const mime = downloaded.mimeType.startsWith("image/")
+          ? downloaded.mimeType
+          : "image/webp";
+
+        // Save to disk: .pi/gateway/media/telegram/{chatId}/{date}/sticker-{id}.ext
+        const ext = mime === "image/jpeg" ? "jpg" : mime === "image/png" ? "png" : "webp";
+        const filename = `sticker-${fileUniqueId}${isThumbnail ? "-thumb" : ""}.${ext}`;
+        let savedPath: string | undefined;
+        try {
+          const saved = saveMediaBuffer({
+            channel: "telegram",
+            chatId: chatId ?? "unknown",
+            buffer: Buffer.from(downloaded.data, "base64"),
+            contentType: mime,
+            filename,
+          });
+          savedPath = saved.path;
+          console.log(`[telegram-media] sticker saved: ${saved.relativePath}`);
+        } catch (err) {
+          console.error(`[telegram-media] sticker save failed: ${err instanceof Error ? err.message : String(err)}`);
+        }
+
+        // Pass image to agent
+        images.push({ type: "image", data: downloaded.data, mimeType: mime });
+
+        // Build metadata
+        stickerMetadata = {
+          emoji: sticker.emoji ?? undefined,
+          setName: sticker.set_name ?? undefined,
+          fileId: sticker.file_id,
+          fileUniqueId,
+          isThumbnail,
+          savedPath,
+        };
+
+        // Cache the sticker
+        if (fileUniqueId) {
+          cacheSticker({
+            fileId: sticker.file_id,
+            fileUniqueId,
+            emoji: sticker.emoji ?? undefined,
+            setName: sticker.set_name ?? undefined,
+            filePath: savedPath,
+            contentType: mime,
+            isThumbnail,
+            cachedAt: new Date().toISOString(),
+            receivedFrom: chatId,
+          });
+        }
+
+        // Build context string for agent
+        const parts: string[] = [];
+        if (sticker.emoji) parts.push(sticker.emoji);
+        if (sticker.set_name) parts.push(`from "${sticker.set_name}"`);
+        if (isThumbnail) parts.push("(thumbnail — animated/video sticker)");
+        const stickerCtx = parts.length ? parts.join(" ") : "";
+        documentContext = `[Sticker${stickerCtx ? ` ${stickerCtx}` : ""}]`;
+
+        console.log(`[telegram-media] sticker resolved: ${mime} ${downloaded.data.length} chars base64, thumbnail=${isThumbnail}`);
+      }
+    } else if (isAnimated || isVideo) {
+      // No thumbnail available — provide metadata only
       const parts: string[] = [];
-      if (sticker.emoji) parts.push(`emoji: ${sticker.emoji}`);
-      if (sticker.set_name) parts.push(`set: ${sticker.set_name}`);
-      if (sticker.is_animated) parts.push("animated");
-      if (sticker.is_video) parts.push("video sticker");
-      const stickerMeta = parts.length ? parts.join(", ") : "sticker";
-      documentContext = `[Sticker: ${stickerMeta}]`;
-      console.log(`[telegram-media] sticker resolved: ${mime} ${downloaded.data.length} chars base64, meta=${stickerMeta}`);
+      if (sticker.emoji) parts.push(sticker.emoji);
+      if (sticker.set_name) parts.push(`from "${sticker.set_name}"`);
+      parts.push(isVideo ? "(video sticker, no preview)" : "(animated sticker, no preview)");
+      documentContext = `[Sticker ${parts.join(" ")}]`;
+      console.log(`[telegram-media] sticker skipped (no thumbnail): animated=${isAnimated} video=${isVideo}`);
     }
   }
 
@@ -122,7 +215,7 @@ async function resolveImagesFromMessage(account: TelegramAccountRuntime, msg: Te
     }
   }
 
-  return { images, documentContext };
+  return { images, documentContext, stickerMetadata };
 }
 
 function shouldAllowGroupMessage(account: TelegramAccountRuntime, ctx: TelegramContext, text: string): { allowed: boolean; text: string } {
@@ -277,7 +370,7 @@ async function dispatchInbound(params: {
   // !cmd shortcut — execute shell on gateway host (authorized senders only)
   if (text.startsWith("!") && text.length > 1 && !text.startsWith("!!")) {
     if (isAuthorizedSender(source.senderId, account)) {
-      await executeBashCommand(ctx, text.slice(1).trim(), runtime);
+      await executeBashCommand(ctx, text.slice(1).trim(), runtime, account.accountId);
       return;
     }
   }
@@ -346,7 +439,7 @@ async function handleMessageCommon(runtime: TelegramPluginRuntime, account: Tele
     return;
   }
 
-  const { images, documentContext } = await resolveImagesFromMessage(account, msg);
+  const { images, documentContext } = await resolveImagesFromMessage(account, msg, chatId);
   let text = (msg.text ?? msg.caption ?? "").trim();
 
   // Media note injection — tell agent what media is attached

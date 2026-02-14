@@ -8,6 +8,7 @@ import { validateMediaPath } from "../../../core/media-security.ts";
 export const IMAGE_EXTS = new Set(["jpg", "jpeg", "png", "gif", "webp", "bmp"]);
 export const AUDIO_EXTS = new Set(["mp3", "ogg", "wav", "m4a", "flac", "aiff", "aac", "opus", "wma"]);
 export const VIDEO_EXTS = new Set(["mp4", "webm", "mov", "avi"]);
+export const STICKER_EXTS = new Set(["tgs", "webm_sticker"]);
 
 export interface TelegramSendOptions {
   messageThreadId?: number;
@@ -46,7 +47,7 @@ export function parseOutboundMediaDirectives(text: string): TelegramParsedOutbou
   const lines = text.split("\n");
   const media: TelegramMediaDirective[] = [];
   const remain: string[] = [];
-  const directiveRe = /^\s*\[(photo|audio)\]\s+(.+?)(?:\s*\|\s*(.+))?\s*$/i;
+  const directiveRe = /^\s*\[(photo|audio|sticker)\]\s+(.+?)(?:\s*\|\s*(.+))?\s*$/i;
   const mediaRe = /^\s*MEDIA:(.+)$/;
 
   for (const line of lines) {
@@ -112,7 +113,20 @@ async function sendLocalFileByKind(bot: Bot, chatId: string, item: TelegramMedia
   const { caption, followUpText } = splitCaption(item.caption);
   const htmlCaption = caption ? markdownToTelegramHtml(clipCaption(caption)) : undefined;
 
-  if (item.kind === "photo") {
+  if (item.kind === "sticker") {
+    // Stickers don't support captions — send sticker then follow-up text if any
+    await bot.api.sendSticker(chatId, file, { ...threadOpts, ...replyOpts });
+    if (item.caption) {
+      const fullText = item.caption;
+      for (const chunk of splitTelegramText(fullText, 4096)) {
+        try {
+          await bot.api.sendMessage(chatId, markdownToTelegramHtml(chunk), { parse_mode: "HTML", ...threadOpts, ...replyOpts });
+        } catch {
+          await bot.api.sendMessage(chatId, chunk, { ...threadOpts, ...replyOpts });
+        }
+      }
+    }
+  } else if (item.kind === "photo") {
     const lower = fileName.toLowerCase();
     const isGif = lower.endsWith(".gif");
     if (isGif) {
@@ -155,7 +169,19 @@ async function sendRemoteByKind(bot: Bot, chatId: string, item: TelegramMediaDir
   const { caption: captionShort, followUpText } = splitCaption(caption);
   const htmlCaption = captionShort ? markdownToTelegramHtml(captionShort) : undefined;
 
-  if (item.kind === "photo") {
+  if (item.kind === "sticker") {
+    // Remote sticker: pass URL or file_id directly
+    await bot.api.sendSticker(chatId, item.url, { ...threadOpts, ...replyOpts });
+    if (item.caption) {
+      for (const chunk of splitTelegramText(item.caption, 4096)) {
+        try {
+          await bot.api.sendMessage(chatId, markdownToTelegramHtml(chunk), { parse_mode: "HTML", ...threadOpts, ...replyOpts });
+        } catch {
+          await bot.api.sendMessage(chatId, chunk, { ...threadOpts, ...replyOpts });
+        }
+      }
+    }
+  } else if (item.kind === "photo") {
     const isGif = item.url.toLowerCase().includes(".gif");
     if (isGif) {
       await bot.api.sendAnimation(chatId, item.url, htmlCaption ? { caption: htmlCaption, parse_mode: "HTML", ...threadOpts, ...replyOpts } : { ...threadOpts, ...replyOpts });

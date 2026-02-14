@@ -98,7 +98,7 @@ export interface SendOptions {
 
 export interface MediaSendOptions extends SendOptions {
   /** Media type hint (auto-detected from extension if omitted) */
-  type?: "photo" | "audio" | "document" | "video";
+  type?: "photo" | "audio" | "document" | "video" | "sticker";
   /** Caption text */
   caption?: string;
 }
@@ -481,6 +481,21 @@ export interface GatewayPluginApi {
 
   /** Access the cron engine for job management */
   readonly cronEngine?: import("../core/cron.ts").CronEngine;
+
+  /** Access the system events queue (for cron/heartbeat plugins) */
+  readonly systemEvents?: import("../core/system-events.ts").SystemEventsQueue;
+
+  /** Access the session store */
+  readonly sessionStore?: import("../core/session-store.ts").SessionStore;
+
+  /** Request immediate heartbeat for an agent */
+  requestHeartbeat?: (agentId: string, reason?: string) => void;
+
+  /** Get registered channel plugins (for cron announcer delivery) */
+  getChannels?: () => Map<string, ChannelPlugin>;
+
+  /** Access the RPC pool (for heartbeat plugin) */
+  readonly rpcPool?: import("../core/rpc-pool.ts").RpcPool;
 
   /** List all tracked sessions (sorted by lastActivity desc) */
   listSessions(): import("../core/types.ts").SessionState[];
