@@ -111,7 +111,8 @@ export async function sendMediaViaAccount(params: {
 
   const ext = params.filePath.split(".").pop()?.toLowerCase() ?? "";
   const typeHint = params.opts?.type;
-  const kind: "photo" | "audio" | "file" = typeHint === "photo" ? "photo"
+  const kind: "photo" | "audio" | "file" | "sticker" = typeHint === "sticker" ? "sticker"
+    : typeHint === "photo" ? "photo"
     : typeHint === "audio" ? "audio"
     : typeHint === "video" || typeHint === "document" ? "file"
     : IMAGE_EXTS.has(ext) ? "photo"
