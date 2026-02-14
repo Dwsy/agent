@@ -16,9 +16,9 @@ RUN bun install --frozen-lockfile
 COPY src/ src/
 COPY pi-gateway.jsonc ./
 
-EXPOSE 18789
+EXPOSE 52134
 
 # Data volumes
 VOLUME ["/root/.pi/gateway", "/root/.pi/agent"]
 
-CMD ["bun", "run", "src/cli.ts", "gateway", "--port", "18789"]
+CMD ["bun", "run", "src/cli.ts", "gateway", "--port", "52134"]
