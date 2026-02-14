@@ -4,6 +4,13 @@
 
 **Focus:** AI Personality & Context Enhancement — human-like assistant behavior, proactive communication, message timestamp injection
 
+### Telegram Sticker Support
+- **Inbound Processing**: Download stickers to disk at `~/.pi/gateway/media/telegram/{chatId}/{YYYY-MM-DD}/`, static WEBP stickers downloaded directly, animated/video stickers use thumbnail fallback (by Dwsy)
+- **Sticker Cache**: Metadata cached in `sticker-cache.json` keyed by `file_unique_id`, cache hit refreshes rotating `file_id`/emoji/setName, avoids redundant downloads (by Dwsy)
+- **Outbound Send**: `[sticker]` directive support, `bot.api.sendSticker` for local files and remote URLs, `send_media` tool type enum extended with `sticker` (by Dwsy)
+- **CLI Media Management**: `pi-gw media stats` (storage statistics), `pi-gw media clean --days N` (cleanup old files with dry-run), `pi-gw media sticker-cache [stats|prune|clear]` (cache lifecycle) (by Dwsy)
+- **Architecture**: New `media-storage.ts` (disk persistence with channel/chat/date organization), `sticker-cache.ts` (JSON cache with prune/clear), 17 tests in `bbd-sticker.test.ts` (by Dwsy)
+
 ### System Prompt Enhancement
 - **AI Personality Layer**: Added "Your Role & Personality" section to gateway identity prompt — proactive, intelligent assistant who thinks ahead, stays aware, communicates naturally with emoji status indicators (✅ ⚠️ ❌ 📊 🔔), takes initiative, remembers context, prioritizes clarity (by Dwsy)
 - **Proactive Communication Guidelines**: Enhanced `send_message` tool with 6 proactive scenarios (task completion, status changes, reports, alerts, suggestions, progress updates) with emoji examples and "don't spam" guidance (by Dwsy)
