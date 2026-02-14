@@ -129,10 +129,11 @@ export async function dispatchAgentTurn(params: {
 
   let replyMsgId: number | null = null;
   let creatingReplyMsg = false;
+  let replyMsgPromise: Promise<void> | null = null;
   let lastEditAt = 0;
   let editInFlight = false;
   let lastTypingAt = 0;
-  const typingMinIntervalMs = 3000;
+  const typingMinIntervalMs = 4000;
 
   const contentSequence: { type: 'tool' | 'thinking' | 'text'; content: string }[] = [];
   const seenToolCalls = new Set<string>();
@@ -149,7 +150,7 @@ export async function dispatchAgentTurn(params: {
     creatingReplyMsg = true;
     const firstText = textForFirstMessage?.trim() ? markdownToTelegramHtml(textForFirstMessage) : streamCfg.placeholder;
     const replyToMessageId = maybeReplyTo();
-    botClient.api.sendMessage(chatId, firstText, {
+    replyMsgPromise = botClient.api.sendMessage(chatId, firstText, {
       parse_mode: "HTML",
       ...(threadId ? { message_thread_id: threadId } : {}),
       ...(replyToMessageId ? { reply_to_message_id: replyToMessageId } : {}),
@@ -247,16 +248,19 @@ export async function dispatchAgentTurn(params: {
       });
   };
 
-  const typingInterval = setInterval(() => {
-    sendChatAction();
-  }, 3500);
+  let typingInterval: ReturnType<typeof setInterval> | null = null;
 
-  sendChatAction();
+  const ensureTypingInterval = () => {
+    if (typingInterval) return;
+    typingInterval = setInterval(() => sendChatAction(), 4500);
+    sendChatAction();
+  };
 
   let initialized = false;
   const lazyInit = () => {
     if (initialized) return;
     initialized = true;
+    ensureTypingInterval();
     if (streamCfg.streamMode !== "off") {
       ensureReplyMessage();
     }
@@ -272,6 +276,39 @@ export async function dispatchAgentTurn(params: {
     sessionKey,
     text,
     images: images.length > 0 ? images : undefined,
+    onSteerInjected: () => {
+      if (typingInterval) {
+        clearInterval(typingInterval);
+        typingInterval = null;
+      }
+      stopSpinner();
+      // Finalize current reply with accumulated content (no spinner suffix)
+      if (replyMsgId && contentSequence.length > 0) {
+        const parts: string[] = [];
+        for (const item of contentSequence) {
+          if (item.type === 'tool') parts.push(item.content);
+          else if (item.type === 'thinking') {
+            const truncated = item.content.length > 1024 ? item.content.slice(0, 1024) + "…" : item.content;
+            parts.push(`<blockquote>💭 ${escapeHtml(truncated)}</blockquote>`);
+          } else if (item.type === 'text') parts.push(item.content);
+        }
+        const finalText = markdownToTelegramHtml(parts.join("\n\n"));
+        if (finalText.trim()) {
+          botClient.api.editMessageText(chatId, replyMsgId, finalText, { parse_mode: "HTML" }).catch(() => {});
+        }
+      }
+      // Reset streaming state for next reply
+      replyMsgId = null;
+      contentSequence.length = 0;
+      seenToolCalls.clear();
+      hasReceivedContent = false;
+      toolCallSinceLastText = false;
+      lastStreamAccumLen = 0;
+      creatingReplyMsg = false;
+      replyMsgPromise = null;
+      hasNativeReply = false;
+      initialized = false;
+    },
     onThinkingDelta: (accumulated: string, _delta: string) => {
       lazyInit();
       sendChatAction();
@@ -328,9 +365,13 @@ export async function dispatchAgentTurn(params: {
     },
     respond: async (reply: string) => {
       lazyInit();
+      if (replyMsgPromise) await replyMsgPromise;
       const log = runtime.api.logger;
       log.info(`[telegram:respond] chatId=${chatId} replyLen=${reply?.length ?? 0} replyMsgId=${replyMsgId}`);
-      clearInterval(typingInterval);
+      if (typingInterval) {
+        clearInterval(typingInterval);
+        typingInterval = null;
+      }
       stopSpinner();
 
       if (reply && reply.trim()) {
@@ -453,14 +494,21 @@ export async function dispatchAgentTurn(params: {
       }
     },
     setTyping: async (typing) => {
-      if (!typing) clearInterval(typingInterval);
+      if (!typing && typingInterval) {
+        clearInterval(typingInterval);
+        typingInterval = null;
+      }
     },
   });
 
-  if (result?.injected) {
+  if (result?.injected && typingInterval) {
     clearInterval(typingInterval);
+    typingInterval = null;
     return;
   }
 
-  clearInterval(typingInterval);
+  if (typingInterval) {
+    clearInterval(typingInterval);
+    typingInterval = null;
+  }
 }
