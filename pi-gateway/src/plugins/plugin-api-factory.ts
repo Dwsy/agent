@@ -271,6 +271,16 @@ export function createPluginApi(
 
     cronEngine: ctx.cron ?? undefined,
 
+    systemEvents: ctx.systemEvents,
+
+    sessionStore: ctx.sessions,
+
+    requestHeartbeat: ctx.heartbeat ? (agentId: string, reason?: string) => ctx.heartbeat!.requestNow(agentId, reason) : undefined,
+
+    getChannels: () => ctx.registry.channels,
+
+    rpcPool: ctx.pool,
+
     listSessions() {
       return ctx.sessions.toArray().sort((a, b) => (b.lastActivity ?? 0) - (a.lastActivity ?? 0));
     },

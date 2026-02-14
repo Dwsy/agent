@@ -5,6 +5,7 @@ import { createPairingRequest } from "../../../security/pairing.ts";
 import { resolveStreamCompat } from "./config-compat.ts";
 import { executeBashCommand, isAuthorizedSender } from "./commands.ts";
 import { downloadTelegramFile } from "./media-download.ts";
+import { compressImageForAgent } from "./image-compress.ts";
 import { migrateTelegramGroupConfig } from "./group-migration.ts";
 import { buildReactionText } from "./reaction-level.ts";
 import { wasRecentlySent } from "./sent-message-cache.ts";
@@ -52,6 +53,22 @@ async function resolveImagesFromMessage(
   let stickerMetadata: StickerMetadata | undefined;
   const maxMb = Math.max(1, account.cfg.mediaMaxMb ?? 10);
   const maxBytes = maxMb * 1024 * 1024;
+  const imageMaxBytes = Math.min(maxBytes, Math.floor(4.5 * 1024 * 1024));
+
+  const pushImageForAgent = async (source: string, data: string, mimeType: string): Promise<void> => {
+    const compressed = await compressImageForAgent(
+      { type: "image", data, mimeType },
+      { maxBytes: imageMaxBytes },
+    );
+
+    if (compressed.wasResized) {
+      console.log(
+        `[telegram-media] ${source} compressed: ${compressed.originalWidth}x${compressed.originalHeight} -> ${compressed.width}x${compressed.height}, mime=${compressed.mimeType}, base64=${compressed.data.length}`,
+      );
+    }
+
+    images.push({ type: "image", data: compressed.data, mimeType: compressed.mimeType });
+  };
 
   console.log(`[telegram-media] resolveImages: photo=${msg.photo?.length ?? 0} document=${msg.document?.file_id ? 'yes' : 'no'} sticker=${msg.sticker ? 'yes' : 'no'}`);
 
@@ -121,7 +138,7 @@ async function resolveImagesFromMessage(
         }
 
         // Pass image to agent
-        images.push({ type: "image", data: downloaded.data, mimeType: mime });
+        await pushImageForAgent("sticker", downloaded.data, mime);
 
         // Build metadata
         stickerMetadata = {
@@ -180,7 +197,7 @@ async function resolveImagesFromMessage(
       });
       console.log(`[telegram-media] photo download result: ${downloaded ? `${downloaded.mimeType} ${downloaded.data.length} chars base64` : 'null'}`);
       if (downloaded && downloaded.mimeType.startsWith("image/")) {
-        images.push({ type: "image", data: downloaded.data, mimeType: downloaded.mimeType });
+        await pushImageForAgent("photo", downloaded.data, downloaded.mimeType);
       }
     }
   }
@@ -193,7 +210,7 @@ async function resolveImagesFromMessage(
     });
     if (downloaded) {
       if (downloaded.mimeType.startsWith("image/")) {
-        images.push({ type: "image", data: downloaded.data, mimeType: downloaded.mimeType });
+        await pushImageForAgent("document-image", downloaded.data, downloaded.mimeType);
       }
       // Non-image documents: store metadata for text context
       if (!downloaded.mimeType.startsWith("image/")) {
