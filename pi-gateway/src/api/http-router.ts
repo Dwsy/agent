@@ -131,6 +131,7 @@ export async function routeHttp(req: Request, url: URL, ctx: GatewayContext): Pr
       tools: Array.from(ctx.registry.tools.keys()),
       commands: Array.from(ctx.registry.commands.keys()),
       hooks: ctx.registry.hooks.getRegistered(),
+      services: ctx.registry.services.map(s => s.name),
     });
   }
 
