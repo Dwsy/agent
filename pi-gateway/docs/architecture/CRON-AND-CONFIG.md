@@ -10,11 +10,11 @@
 
 | 文件 | 职责 |
 |------|------|
-| `src/core/cron.ts` | CronEngine 类 — 调度、触发、持久化、生命周期 |
+| `src/core/cron.ts` | CronEngine 类 — 调度、触发、并发防护、错误退避、持久化 |
+| `src/core/cron-announcer.ts` | 结果投递：统一通过 channel outbound.sendText 直接发送 |
+| `src/plugins/builtin/cron/index.ts` | Cron plugin — CronEngine 唯一 owner，导出 `getCronEngine()` |
 | `src/core/cron-api.ts` | HTTP API 路由处理（REST CRUD） |
-| `src/server.ts:1425-1437` | HTTP 路由接入 + WS 方法注册 |
 | `src/plugins/builtin/telegram/commands.ts` | `/cron` Telegram 命令 |
-| `src/plugins/builtin/discord/commands.ts` | `/cron` Discord 命令 |
 
 ### 1.2 Schedule 类型
 
@@ -29,36 +29,78 @@ type CronSchedule =
 |------|------|------|------|
 | `cron` | croner 库 | 标准 cron 表达式，支持 timezone | `"0 */6 * * *"` |
 | `every` | `setInterval` | 固定间隔，支持 s/m/h/d 单位 | `"30m"` |
-| `at` | `setTimeout` | 一次性触发，过期立即执行，触发后自动 `removeJob` | `"2026-02-12T14:00:00+08:00"` |
+| `at` | `setTimeout` | 一次性触发，过期立即执行；成功后 `removeJob`，失败后 `disableJob` | `"2026-02-12T14:00:00+08:00"` |
 
 ### 1.3 执行模式
 
 ```
 triggerJob(job)
+├── running.has(job.id)? → skip (并发防护)
+├── backoff window active? → skip (错误退避)
+├── running.add(job.id)
+│
 ├── mode === "main"
 │   → systemEvents.inject(mainSessionKey, eventText)
-│   → heartbeatWake(agentId)  // 即时唤醒心跳
-│   → recordRun("injected to main session")
+│   → heartbeatWake(agentId, reason)
+│   → recordRun("pending")
+│   → running.delete(job.id)
 │
 └── mode === "isolated" (default)
-    → dispatcher.dispatch({ sessionKey: "cron:{jobId}", ... })
+    → await dispatcher.dispatch(...)
     → Promise.race([dispatch, timeout])
-    → announcer.announce() if delivery === "announce"
-    → recordRun(result)
+    → announcer.deliver() if delivery !== "silent"
+    → notifyOriginSession() + heartbeatWake()
+    → success: clear error counters; at/deleteAfterRun → removeJob
+    → failure: increment error counters; at → disableJob
+    → finally: running.delete(job.id)
 ```
 
-**isolated 模式：** 每个 job 独立 session（`cron:{jobId}`），通过 RPC pool 获取进程执行。支持超时（`timeoutMs`）和结果投递（`announce`/`silent`）。
+**isolated 模式：** 每个 job 独立 session（`cron:{jobId}`），通过 RPC pool 获取进程执行。`triggerIsolatedMode` 是 async 方法，await 完成后才处理 deleteAfterRun/one-shot 清理，消除竞态。
 
-**main 模式：** 不直接执行，而是注入 SystemEventsQueue，由心跳消费。适合需要在主会话上下文中处理的任务。降级策略：`systemEvents` 不可用时 fallback 到 isolated。
+**main 模式（deprecated）：** 不直接执行，而是注入 SystemEventsQueue，由心跳消费。降级策略：`systemEvents` 不可用时 fallback 到 isolated。
 
-### 1.4 Job 生命周期
+### 1.4 结果投递（对齐 OpenClaw）
+
+```
+isolated job 完成
+├── delivery !== "silent" && 有实质内容?
+│   → announcer.deliver() → channel outbound.sendText → 直接发到 Telegram/Discord
+│   （不经过主 Agent 转述，不注入 main session）
+│
+├── notifyOriginSession()
+│   → systemEvents.inject(mainSession, "[CRON_DONE:jobId] ...")
+│   → heartbeatWake(agentId) — 唤醒心跳让主 Agent 感知任务完成
+│
+└── recordRun() → runs/{jobId}.jsonl
+```
+
+| delivery 模式 | 行为 | OpenClaw 对应 |
+|---|---|---|
+| `announce` | 直接通过 channel outbound 发给用户 | `delivery.mode = "announce"` |
+| `direct` | 同 announce（统一走 outbound.sendText） | — |
+| `silent` | 不投递，仅记录 | `delivery.mode = "none"` |
+
+**与 OpenClaw 的架构差异：** OpenClaw 使用 embedded agent（直接 import SDK），我们使用 RPC pool（spawn pi CLI 进程）。差异仅在执行路径（`dispatcher.dispatch` → RPC），投递机制完全一致：拿到结果后直接调 channel outbound，不经过 agent。
+
+### 1.6 运行时防护
+
+**并发防护：** `running: Set<string>` 跟踪正在执行的 job ID。`triggerJob` 入口检查，防止慢任务被重复触发。
+
+**错误退避：** `consecutiveErrors` + `lastErrorAt` 配合退避表 `[30s, 60s, 5m, 15m, 1h]`。成功时清零，失败时递增。退避窗口内的触发被静默跳过。
+
+**错过恢复：** `start()` 末尾调用 `runMissedJobs()`：
+- `at` 任务：目标时间已过且无运行记录 → 立即触发
+- `every` 任务：最后运行距今超过 2 倍间隔 → 触发一次补执行
+
+### 1.7 Job 生命周期
 
 ```
 addJob → saveJobs(jobs.json) → scheduleJob(croner/setTimeout/setInterval)
                                         ↓
                                    triggerJob → recordRun(runs/{jobId}.jsonl)
                                         ↓
-                              deleteAfterRun? → removeJob
+                              success + (at | deleteAfterRun) → removeJob
+                              failure + at → disableJob (保留供检查)
 ```
 
 **持久化：**
@@ -70,7 +112,17 @@ addJob → saveJobs(jobs.json) → scheduleJob(croner/setTimeout/setInterval)
 - `paused: true` — 暂停（停止 croner，保留定义，可恢复）
 - `deleteAfterRun: true` — 执行后自删（适用于非 `at` 类型的一次性任务）
 
-### 1.5 构造函数依赖
+### 1.8 所有权模型
+
+CronEngine 由 `plugins/builtin/cron/index.ts` 独占创建和销毁（plugin service lifecycle）。`server.ts` 不再直接实例化 CronEngine，通过 `getCronEngine()` accessor 获取引用。
+
+```typescript
+// plugins/builtin/cron/index.ts
+export function getCronEngine(): CronEngine | null;
+export function markCronSelfDelivered(sessionKey: string): void;
+```
+
+### 1.9 构造函数依赖
 
 ```typescript
 constructor(
@@ -79,7 +131,7 @@ constructor(
   config?: Config,            // 全局配置（agents.default、delegation.timeoutMs）
   announcer?: CronAnnouncer,  // 结果投递到 channel
   systemEvents?: SystemEventsQueue, // main 模式事件注入
-  heartbeatWake?: (agentId: string) => void, // main 模式心跳唤醒
+  heartbeatWake?: (agentId: string, reason?: string) => void, // main 模式 + notifyOriginSession 心跳唤醒
 )
 ```
 
@@ -305,4 +357,4 @@ interface CronJob {
 
 ---
 
-*SwiftQuartz, 2026-02-11. 基于 cron.ts、cron-api.ts、config.ts、message-queue.ts 源码。*
+*SwiftQuartz, 2026-02-14. 基于 cron.ts、cron-announcer.ts、cron-api.ts、config.ts、message-queue.ts 源码。*
