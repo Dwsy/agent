@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cron 引擎架构 — pi-gateway</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<style>
+  :root { --bg: #0d1117; --card: #161b22; --border: #30363d; --text: #e6edf3; --dim: #8b949e; --accent: #58a6ff; --green: #3fb950; --red: #f85149; --orange: #d29922; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; line-height: 1.6; padding: 2rem; }
+  h1 { font-size: 1.8rem; margin-bottom: .5rem; }
+  h1 span { color: var(--accent); }
+  .subtitle { color: var(--dim); margin-bottom: 2rem; font-size: .9rem; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 1.5rem; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 1.2rem; }
+  .card h2 { font-size: 1rem; color: var(--accent); margin-bottom: .8rem; border-bottom: 1px solid var(--border); padding-bottom: .5rem; }
+  .card.full { grid-column: 1 / -1; }
+  .mermaid { display: flex; justify-content: center; }
+  .mermaid svg { max-width: 100%; }
+  table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+  th, td { padding: .4rem .6rem; border: 1px solid var(--border); text-align: left; }
+  th { background: var(--bg); color: var(--accent); }
+  code { background: var(--bg); padding: .15rem .4rem; border-radius: 4px; font-size: .82rem; color: var(--green); }
+  .tag { display: inline-block; padding: .1rem .5rem; border-radius: 12px; font-size: .75rem; font-weight: 600; }
+  .tag-green { background: #1a3a2a; color: var(--green); }
+  .tag-orange { background: #3a2a1a; color: var(--orange); }
+  .tag-red { background: #3a1a1a; color: var(--red); }
+  .files { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: .5rem; }
+  .file { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: .5rem .8rem; font-size: .82rem; }
+  .file strong { color: var(--accent); }
+  .file span { color: var(--dim); }
+  @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+
+<h1><span>⚙</span> Cron 引擎架构 <span>— pi-gateway</span></h1>
+<p class="subtitle">Schedule 类型 · 执行流程 · 结果投递 · 运行时防护 · Job 生命周期 · 三层 API · 所有权模型</p>
+
+<!-- Row 1: Core Files + Schedule Types -->
+<div class="grid">
+<div class="card">
+  <h2>核心文件</h2>
+  <div class="files">
+    <div class="file"><strong>cron.ts</strong> <span>— CronEngine 调度/触发/防护/退避/持久化</span></div>
+    <div class="file"><strong>cron-announcer.ts</strong> <span>— 结果投递 channel outbound.sendText</span></div>
+    <div class="file"><strong>cron/index.ts</strong> <span>— Plugin owner, getCronEngine()</span></div>
+    <div class="file"><strong>cron-api.ts</strong> <span>— HTTP REST CRUD</span></div>
+  </div>
+</div>
+<div class="card">
+  <h2>Schedule 类型</h2>
+  <table>
+    <tr><th>Kind</th><th>引擎</th><th>行为</th></tr>
+    <tr><td><code>cron</code></td><td>croner</td><td>标准 cron 表达式，支持 timezone</td></tr>
+    <tr><td><code>every</code></td><td>setInterval</td><td>固定间隔 s/m/h/d</td></tr>
+    <tr><td><code>at</code></td><td>setTimeout</td><td>一次性；成功→remove，失败→disable</td></tr>
+  </table>
+</div>
+</div>
+
+<!-- Row 2: Execution Flow (full width) -->
+<div class="grid">
+<div class="card full">
+  <h2>执行流程 — Isolated Mode（唯一执行路径）</h2>
+  <pre class="mermaid">
+flowchart LR
+  A["triggerJob(job)"] --> B{"running?"}
+  B -- Yes --> Z1["skip ⛔"]
+  B -- No --> C{"backoff?"}
+  C -- Yes --> Z2["skip ⏳"]
+  C -- No --> D["running.add(id)"]
+  D --> E["dispatcher.dispatch\n(RPC Pool)"]
+  E --> F["Promise.race\n[dispatch, timeout]"]
+  F --> G{"成功?"}
+  G -- Yes --> H["announcer.deliver\n(channel outbound)"]
+  H --> I["notifyOriginSession\n+ heartbeatWake"]
+  I --> J["recordRun ✅"]
+  J --> K{"at / deleteAfterRun?"}
+  K -- Yes --> L["removeJob"]
+  K -- No --> M["clear errors"]
+  G -- No --> N["increment errors"]
+  N --> O{"at job?"}
+  O -- Yes --> P["disableJob"]
+  O -- No --> Q["recordRun ❌"]
+  L --> R["running.delete(id)"]
+  M --> R
+  P --> R
+  Q --> R
+  </pre>
+</div>
+</div>
+
+<!-- Row 3: Delivery Pipeline + Ownership -->
+<div class="grid">
+<div class="card">
+  <h2>结果投递（对齐 OpenClaw）</h2>
+  <pre class="mermaid">
+flowchart TB
+  A["isolated job 完成"] --> B{"delivery\n!= silent?"}
+  B -- Yes --> C["announcer.deliver()"]
+  C --> D["channel outbound\n.sendText()"]
+  D --> E["Telegram / Discord\n直接发送"]
+  B -- No --> F["仅记录"]
+  A --> G["notifyOriginSession"]
+  G --> H["systemEvents.inject\n[CRON_DONE/FAIL]"]
+  H --> I["heartbeatWake\n唤醒主 Agent"]
+  A --> J["recordRun\nruns/jobId.jsonl"]
+  </pre>
+  <table style="margin-top:.8rem">
+    <tr><th>delivery</th><th>行为</th></tr>
+    <tr><td><code>announce</code></td><td>channel outbound 直接发给用户</td></tr>
+    <tr><td><code>silent</code></td><td>不投递，仅记录</td></tr>
+  </table>
+</div>
+<div class="card">
+  <h2>所有权模型</h2>
+  <pre class="mermaid">
+flowchart TB
+  P["plugins/builtin/cron"] -->|"独占创建"| CE["CronEngine"]
+  P -->|"独占创建"| CA["CronAnnouncer"]
+  S["server.ts"] -->|"getCronEngine()"| CE
+  S -->|"markCronSelfDelivered()"| CA
+  CE -->|"dispatcher"| RP["RPC Pool"]
+  CA -->|"outbound"| CH["Channel Plugins"]
+  CE -->|"systemEvents"| SE["SystemEventsQueue"]
+  CE -->|"heartbeatWake"| HB["HeartbeatExecutor"]
+  </pre>
+  <p style="color:var(--dim);font-size:.82rem;margin-top:.6rem">CronEngine 由 cron plugin 独占管理（service lifecycle）。server.ts 通过 accessor 获取引用，不直接实例化。</p>
+</div>
+</div>
+
+<!-- Row 4: Runtime Guards + Job Lifecycle -->
+<div class="grid">
+<div class="card">
+  <h2>运行时防护</h2>
+  <pre class="mermaid">
+flowchart LR
+  subgraph 并发防护
+    R1["running: Set&lt;string&gt;"] --> R2["triggerJob 入口检查"]
+    R2 --> R3["防止慢任务重复触发"]
+  end
+  subgraph 错误退避
+    E1["consecutiveErrors\n+ lastErrorAt"] --> E2["退避表\n30s→60s→5m→15m→1h"]
+    E2 --> E3["窗口内静默跳过"]
+    E3 --> E4["成功时清零"]
+  end
+  subgraph 错过恢复
+    M1["start() → runMissedJobs()"]
+    M1 --> M2["at: 过期+无记录→触发"]
+    M1 --> M3["every: 超2倍间隔→补执行"]
+  end
+  </pre>
+</div>
+<div class="card">
+  <h2>Job 生命周期</h2>
+  <pre class="mermaid">
+stateDiagram-v2
+  [*] --> Active: addJob
+  Active --> Running: triggerJob
+  Running --> Active: 成功 (cron/every)
+  Running --> Removed: 成功 (at/deleteAfterRun)
+  Running --> Disabled: 失败 (at)
+  Running --> Active: 失败 (cron/every)
+  Active --> Paused: pauseJob
+  Paused --> Active: resumeJob
+  Active --> Removed: removeJob
+  Disabled --> Removed: removeJob
+  Removed --> [*]
+  </pre>
+</div>
+</div>
+
+<!-- Row 5: API Table (full width) -->
+<div class="grid">
+<div class="card full">
+  <h2>三层 API 对照</h2>
+  <table>
+    <tr><th>操作</th><th>HTTP</th><th>WebSocket</th><th>Telegram / Discord</th></tr>
+    <tr><td>列表</td><td><code>GET /api/cron/jobs</code></td><td><code>cron.list</code></td><td><code>/cron list</code></td></tr>
+    <tr><td>创建</td><td><code>POST /api/cron/jobs</code></td><td><code>cron.add</code></td><td>—</td></tr>
+    <tr><td>删除</td><td><code>DELETE /api/cron/jobs/:id</code></td><td><code>cron.remove</code></td><td><code>/cron remove &lt;id&gt;</code></td></tr>
+    <tr><td>暂停</td><td><code>PATCH {action:"pause"}</code></td><td><code>cron.pause</code></td><td><code>/cron pause &lt;id&gt;</code></td></tr>
+    <tr><td>恢复</td><td><code>PATCH {action:"resume"}</code></td><td><code>cron.resume</code></td><td><code>/cron resume &lt;id&gt;</code></td></tr>
+    <tr><td>手动触发</td><td><code>POST /api/cron/jobs/:id/run</code></td><td><code>cron.run</code></td><td><code>/cron run &lt;id&gt;</code></td></tr>
+  </table>
+</div>
+</div>
+
+<!-- Row 6: Architecture Diff -->
+<div class="grid">
+<div class="card full">
+  <h2>与 OpenClaw 架构差异</h2>
+  <pre class="mermaid">
+flowchart LR
+  subgraph pi-gateway
+    PG1["CronEngine"] -->|"dispatcher.dispatch"| PG2["RPC Pool\n(spawn pi CLI)"]
+    PG2 --> PG3["pi CLI 进程"]
+    PG3 -->|"结果"| PG4["announcer.deliver"]
+    PG4 --> PG5["channel outbound"]
+  end
+  subgraph OpenClaw
+    OC1["CronEngine"] -->|"embedded call"| OC2["Agent SDK\n(import)"]
+    OC2 -->|"结果"| OC3["announcer.deliver"]
+    OC3 --> OC4["channel outbound"]
+  end
+  </pre>
+  <p style="color:var(--dim);font-size:.82rem;margin-top:.6rem">差异仅在执行路径（RPC spawn vs embedded SDK）。投递机制完全一致：拿到结果后直接调 channel outbound，不经过 agent 转述。</p>
+</div>
+</div>
+
+<p style="color:var(--dim);font-size:.78rem;text-align:center;margin-top:2rem">pi-gateway Cron Architecture · 2026-02-14</p>
+
+<script>
+mermaid.initialize({
+  startOnLoad: true,
+  theme: 'dark',
+  themeVariables: {
+    primaryColor: '#1f6feb',
+    primaryTextColor: '#e6edf3',
+    primaryBorderColor: '#30363d',
+    lineColor: '#58a6ff',
+    secondaryColor: '#161b22',
+    tertiaryColor: '#0d1117',
+    fontFamily: '-apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif',
+  },
+  flowchart: { curve: 'basis', padding: 12 },
+});
+</script>
+</body>
+</html>

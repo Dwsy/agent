@@ -18,7 +18,7 @@ graph TB
         API["🔌 REST/WS API"]
     end
 
-    subgraph Gateway["pi-gateway (single port :18789)"]
+    subgraph Gateway["pi-gateway (single port :52134)"]
         AUTH["Auth Layer<br/>fail-closed"]
         HTTP["HTTP Router<br/>30+ routes"]
         WS["WS Router<br/>req/res/event"]

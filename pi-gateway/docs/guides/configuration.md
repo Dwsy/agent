@@ -14,12 +14,18 @@ Searched in order (first match wins):
 cp pi-gateway.jsonc.example pi-gateway.jsonc
 ```
 
+Port can also be overridden at runtime with `PI_GATEWAY_PORT` (takes precedence over config file):
+
+```bash
+PI_GATEWAY_PORT=52134 bun run src/server.ts
+```
+
 ## `gateway` — Server
 
 ```jsonc
 {
   "gateway": {
-    "port": 18789,
+    "port": 52134,
     "bind": "loopback",       // "loopback" | "lan" | "auto"
     "logLevel": "info",       // "debug" | "info" | "warn" | "error"
     "auth": {
