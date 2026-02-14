@@ -158,7 +158,7 @@ export async function handleMediaSendRequest(
       const { sendWebChatMedia } = await import("./media-routes.ts");
       const result = sendWebChatMedia(sessionKey, filePath, ctx.config, ctx.broadcastToWs, {
         caption,
-        type: resolvedType as "photo" | "audio" | "video" | "document",
+        type: resolvedType as "photo" | "audio" | "video" | "document" | "sticker",
       });
       if (result.ok) {
         ctx.log.info(`[media-send] webchat push: sessionKey=${sessionKey} path=${filePath}`);
@@ -194,7 +194,7 @@ export async function handleMediaSendRequest(
 
   try {
     const result = await channelPlugin.outbound.sendMedia(chatId, fullPath, {
-      type: resolvedType as "photo" | "audio" | "document" | "video",
+      type: resolvedType as "photo" | "audio" | "document" | "video" | "sticker",
       caption,
     });
 

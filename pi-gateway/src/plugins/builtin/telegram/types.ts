@@ -27,9 +27,20 @@ export interface TelegramDebouncedEntry {
 }
 
 export interface TelegramMediaDirective {
-  kind: "photo" | "audio" | "file";
+  kind: "photo" | "audio" | "file" | "sticker";
   url: string;
   caption?: string;
+}
+
+export interface StickerMetadata {
+  emoji?: string;
+  setName?: string;
+  fileId: string;
+  fileUniqueId: string;
+  /** Whether this was resolved from a thumbnail (animated/video sticker). */
+  isThumbnail?: boolean;
+  /** Absolute path to the saved sticker file on disk. */
+  savedPath?: string;
 }
 
 export interface TelegramParsedOutbound {

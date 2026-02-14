@@ -8,10 +8,11 @@ export function createSendMediaTool(gatewayUrl: string, internalToken: string) {
     name: "send_media",
     label: "Send Media",
     description:
-      "Send a file (image, audio, document, video) to the current chat via pi-gateway. " +
+      "Send a file (image, audio, document, video, sticker) to the current chat via pi-gateway. " +
       "The file is delivered directly to the channel (Telegram/Discord/WebChat). " +
       "Path can be relative to workspace (e.g., ./output.png) or absolute temp paths (/tmp/, /var/folders/). " +
       "Type is auto-detected from extension if omitted. " +
+      "For stickers, use type='sticker' with a .webp/.tgs/.webm file or a Telegram file_id. " +
       "Note: SVG files are NOT supported as images on Telegram — convert to PNG first. " +
       "Telegram image formats: jpg, jpeg, png, gif, webp, bmp.",
     parameters: Type.Object({
@@ -21,7 +22,7 @@ export function createSendMediaTool(gatewayUrl: string, internalToken: string) {
       ),
       type: Type.Optional(
         Type.String({
-          enum: ["photo", "audio", "document", "video"],
+          enum: ["photo", "audio", "document", "video", "sticker"],
           description: "Media type. Auto-detected from file extension if omitted.",
         }),
       ),

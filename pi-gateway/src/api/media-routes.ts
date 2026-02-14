@@ -127,7 +127,7 @@ export function handleMediaServe(url: URL, config: Config): Response {
 
 export interface WebChatMediaOptions {
   caption?: string;
-  type?: "photo" | "audio" | "video" | "document";
+  type?: "photo" | "audio" | "video" | "document" | "sticker";
 }
 
 /**

@@ -447,6 +447,111 @@ async function runCron(): Promise<void> {
   }
 }
 
+async function runMedia(): Promise<void> {
+  const sub = args[1];
+  const channel = getArg("channel");
+
+  if (sub === "stats") {
+    const { getMediaStats } = await import("./plugins/builtin/telegram/media-storage.ts");
+    const { getStickerCacheStats } = await import("./plugins/builtin/telegram/sticker-cache.ts");
+
+    const stats = getMediaStats({ channel });
+    const stickerStats = getStickerCacheStats();
+
+    console.log("Media Storage Statistics");
+    console.log("========================\n");
+
+    if (Object.keys(stats.channels).length === 0) {
+      console.log("  No media files stored.\n");
+    } else {
+      for (const [ch, s] of Object.entries(stats.channels)) {
+        console.log(`  ${ch}:`);
+        console.log(`    Chats: ${s.chats}`);
+        console.log(`    Files: ${s.files}`);
+        console.log(`    Size:  ${formatBytes(s.bytes)}`);
+      }
+      console.log(`\n  Total: ${stats.totalFiles} files, ${formatBytes(stats.totalBytes)}`);
+    }
+
+    console.log(`\nSticker Cache:`);
+    console.log(`  Entries:    ${stickerStats.totalEntries}`);
+    console.log(`  With file:  ${stickerStats.withFile}`);
+    console.log(`  Thumbnails: ${stickerStats.thumbnails}`);
+    console.log();
+
+  } else if (sub === "clean") {
+    const { cleanupMedia } = await import("./plugins/builtin/telegram/media-storage.ts");
+    const { pruneStickerCache } = await import("./plugins/builtin/telegram/sticker-cache.ts");
+
+    const days = getArg("days") ? parseInt(getArg("days")!, 10) : 30;
+    const dryRun = getFlag("dry-run");
+
+    console.log(`${dryRun ? "[DRY RUN] " : ""}Cleaning media older than ${days} days${channel ? ` (channel: ${channel})` : ""}...\n`);
+
+    const result = cleanupMedia({ maxAgeDays: days, channel, dryRun });
+
+    console.log(`  Files removed:  ${result.filesRemoved}`);
+    console.log(`  Space freed:    ${formatBytes(result.bytesFreed)}`);
+    console.log(`  Dirs removed:   ${result.dirsRemoved}`);
+
+    if (result.errors.length > 0) {
+      console.log(`  Errors:         ${result.errors.length}`);
+      for (const err of result.errors.slice(0, 5)) {
+        console.log(`    - ${err}`);
+      }
+    }
+
+    // Prune sticker cache entries whose files were deleted
+    if (!dryRun) {
+      const pruned = pruneStickerCache();
+      if (pruned > 0) {
+        console.log(`  Sticker cache:  ${pruned} stale entries pruned`);
+      }
+    }
+
+    console.log();
+
+  } else if (sub === "sticker-cache") {
+    const subSub = args[2];
+
+    if (subSub === "stats") {
+      const { getStickerCacheStats } = await import("./plugins/builtin/telegram/sticker-cache.ts");
+      const stats = getStickerCacheStats();
+      console.log(`Sticker Cache: ${stats.totalEntries} entries, ${stats.withFile} with file, ${stats.thumbnails} thumbnails`);
+
+    } else if (subSub === "prune") {
+      const { pruneStickerCache } = await import("./plugins/builtin/telegram/sticker-cache.ts");
+      const pruned = pruneStickerCache();
+      console.log(`Pruned ${pruned} stale sticker cache entries.`);
+
+    } else if (subSub === "clear") {
+      const { clearStickerCache } = await import("./plugins/builtin/telegram/sticker-cache.ts");
+      const count = clearStickerCache();
+      console.log(`Cleared ${count} sticker cache entries.`);
+
+    } else {
+      console.log("Usage:");
+      console.log("  pi-gw media sticker-cache stats    Show cache statistics");
+      console.log("  pi-gw media sticker-cache prune    Remove entries with missing files");
+      console.log("  pi-gw media sticker-cache clear    Clear entire cache");
+    }
+
+  } else {
+    console.log("Usage:");
+    console.log("  pi-gw media stats [--channel <ch>]                      Show storage statistics");
+    console.log("  pi-gw media clean [--days N] [--channel <ch>] [--dry-run]  Clean old media files (default: 30 days)");
+    console.log("  pi-gw media sticker-cache [stats|prune|clear]           Manage sticker cache");
+  }
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes === 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB"];
+  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+  const val = bytes / Math.pow(1024, i);
+  return `${val.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
+}
+
 function showHelp(): void {
   console.log(`
 pi-gateway — Local AI Gateway for pi agent
@@ -461,6 +566,9 @@ Usage:
   pi-gw cron list                                         List cron jobs
   pi-gw cron add <id> --schedule <expr> --text <text>     Add a cron job
   pi-gw cron remove <id>                                  Remove a cron job
+  pi-gw media stats [--channel <ch>]                      Show media storage statistics
+  pi-gw media clean [--days N] [--channel <ch>] [--dry-run]  Clean old media files
+  pi-gw media sticker-cache [stats|prune|clear]           Manage sticker cache
   pi-gw install-daemon [--port N]                         Install as system daemon
   pi-gw uninstall-daemon                                  Remove system daemon
   pi-gw help                                              Show this help
@@ -491,6 +599,9 @@ switch (command) {
     break;
   case "cron":
     await runCron();
+    break;
+  case "media":
+    await runMedia();
     break;
   case "install-daemon": {
     const config = loadConfig(getArg("config"));
