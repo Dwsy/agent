@@ -9,7 +9,7 @@
  */
 
 import { Cron } from "croner";
-import { existsSync, readFileSync, writeFileSync, appendFileSync, mkdirSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync, appendFileSync, mkdirSync, renameSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { createLogger, type Logger, type InboundMessage } from "./types.ts";
 import type { CronJob, CronDelivery, Config } from "./config.ts";
@@ -45,7 +45,7 @@ export interface CronRunRecord {
   startedAt: number;
   finishedAt: number;
   durationMs: number;
-  status: "completed" | "timeout" | "error";
+  status: "completed" | "timeout" | "error" | "pending";
   resultPreview?: string;
   error?: string;
 }
@@ -62,9 +62,14 @@ interface ActiveJob {
 
 export class CronEngine {
   private active = new Map<string, ActiveJob>();
+  private running = new Set<string>();
+  private consecutiveErrors = new Map<string, number>();
+  private lastErrorAt = new Map<string, number>();
   private jobsPath: string;
   private runsDir: string;
   private log: Logger;
+
+  private static BACKOFF_TABLE = [30_000, 60_000, 300_000, 900_000, 3_600_000];
 
   constructor(
     private dataDir: string,
@@ -72,7 +77,7 @@ export class CronEngine {
     private config?: Config,
     private announcer?: CronAnnouncer,
     private systemEvents?: SystemEventsQueue,
-    private heartbeatWake?: (agentId: string) => void,
+    private heartbeatWake?: (agentId: string, reason?: string) => void,
   ) {
     this.jobsPath = join(dataDir, "cron", "jobs.json");
     this.runsDir = join(dataDir, "cron", "runs");
@@ -91,6 +96,8 @@ export class CronEngine {
       if (job.enabled === false || job.paused) continue;
       this.scheduleJob(job);
     }
+
+    this.runMissedJobs(jobs);
   }
 
   stop(): void {
@@ -244,20 +251,16 @@ export class CronEngine {
       this.active.set(job.id, { job, cron, timer: null });
       this.log.info(`Scheduled cron job: ${job.id} (${schedule.expr})`);
     } else if (schedule.kind === "at") {
-      // One-shot at specific time
       const targetTime = new Date(schedule.expr).getTime();
       const delay = targetTime - Date.now();
 
       if (delay <= 0) {
-        // Already past, trigger immediately
         this.triggerJob(job);
-        this.removeJob(job.id);
         return;
       }
 
       const timer = setTimeout(() => {
         this.triggerJob(job);
-        this.removeJob(job.id); // One-shot: auto-remove after trigger
       }, delay);
 
       this.active.set(job.id, { job, cron: null, timer });
@@ -280,22 +283,40 @@ export class CronEngine {
   }
 
   private triggerJob(job: CronJob): void {
+    if (this.running.has(job.id)) {
+      this.log.info(`[cron:${job.id}] Skipping — already running`);
+      return;
+    }
+
+    // Error backoff check
+    const errCount = this.consecutiveErrors.get(job.id) ?? 0;
+    if (errCount > 0) {
+      const lastErr = this.lastErrorAt.get(job.id) ?? 0;
+      const idx = Math.min(errCount - 1, CronEngine.BACKOFF_TABLE.length - 1);
+      const backoffMs = CronEngine.BACKOFF_TABLE[idx];
+      if (Date.now() - lastErr < backoffMs) {
+        this.log.info(`[cron:${job.id}] Skipping — in backoff window (${errCount} consecutive errors)`);
+        return;
+      }
+    }
+
+    this.running.add(job.id);
     const agentId = job.agentId ?? this.config?.agents?.default ?? "main";
 
     if (job.mode === "main") {
       this.triggerMainMode(job, agentId);
+      this.running.delete(job.id);
     } else {
       this.triggerIsolatedMode(job, agentId);
-    }
-
-    if (job.deleteAfterRun) {
-      this.removeJob(job.id);
     }
   }
 
   /**
    * Main mode: inject system event into the agent's main session,
    * then wake heartbeat to process it.
+   */
+  /**
+   * @deprecated main mode relies on heartbeat for indirect execution — use isolated + announce (direct delivery) instead.
    */
   private triggerMainMode(job: CronJob, agentId: string): void {
     const mainSessionKey = resolveMainSessionKey(agentId);
@@ -311,7 +332,7 @@ export class CronEngine {
     this.log.info(`[cron:${job.id}] Injected system event for main session ${mainSessionKey}`);
 
     if (this.heartbeatWake) {
-      this.heartbeatWake(agentId);
+      this.heartbeatWake(agentId, `cron:${job.id}`);
     } else {
       this.log.warn(`[cron:${job.id}] main mode without heartbeatWake — falling back to isolated mode`);
       // Fallback: remove injected event and run as isolated
@@ -323,9 +344,9 @@ export class CronEngine {
     this.recordRun({
       jobId: job.id,
       startedAt: Date.now(),
-      finishedAt: Date.now(),
+      finishedAt: 0,
       durationMs: 0,
-      status: "completed",
+      status: "pending",
       resultPreview: "(injected to main session via system event)",
     });
   }
@@ -333,7 +354,7 @@ export class CronEngine {
   /**
    * Isolated mode: dispatch message to a dedicated cron session.
    */
-  private triggerIsolatedMode(job: CronJob, agentId: string): void {
+  private async triggerIsolatedMode(job: CronJob, agentId: string): Promise<void> {
     const sessionKey = job.sessionKey ?? `cron:${job.id}`;
     const text = `[CRON:${job.id}] Execute this task now:\n${job.payload.text}\n\nIMPORTANT: If the task contains a shell command, run it with bash immediately. Do not just describe or acknowledge it.`;
     const startedAt = Date.now();
@@ -345,46 +366,129 @@ export class CronEngine {
 
     const timeoutMs = job.timeoutMs ?? this.config?.delegation?.timeoutMs ?? 120_000;
 
-    const run = async () => {
-      try {
-        await Promise.race([
-          this.dispatcher.dispatch({
-            source: {
-              channel: "cron",
-              chatType: "dm",
-              chatId: job.id,
-              senderId: "cron",
-              senderName: "Cron Scheduler",
-              agentId,
-            },
-            sessionKey,
-            text,
-            respond,
-            setTyping: async () => {},
-          }),
-          new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error("CRON_TIMEOUT")), timeoutMs),
-          ),
-        ]);
+    try {
+      await Promise.race([
+        this.dispatcher.dispatch({
+          source: {
+            channel: "cron",
+            chatType: "dm",
+            chatId: job.id,
+            senderId: "cron",
+            senderName: "Cron Scheduler",
+            agentId,
+          },
+          sessionKey,
+          text,
+          respond,
+          setTyping: async () => {},
+        }),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("CRON_TIMEOUT")), timeoutMs),
+        ),
+      ]);
 
-        const delivery = resolveDelivery(job.delivery);
-        // Skip delivery for HEARTBEAT_OK-only responses (OpenClaw pattern:
-        // strip token, check remaining length — short acks are not worth delivering)
-        const stripped = responseText.replace(/HEARTBEAT_OK/gi, "").trim();
-        const isAckOnly = stripped.length < 300;
-        if (delivery.mode !== "silent" && responseText && !isAckOnly && this.announcer) {
-          await this.announcer.deliver(agentId, `[CRON:${job.id}] ${responseText}`, delivery, sessionKey);
-        }
-
-        this.recordRun({ jobId: job.id, startedAt, finishedAt: Date.now(), durationMs: Date.now() - startedAt, status: "completed", resultPreview: responseText.slice(0, 200) });
-      } catch (err) {
-        const isTimeout = err instanceof Error && err.message === "CRON_TIMEOUT";
-        this.log.error(`Job ${job.id} ${isTimeout ? "timed out" : "failed"}: ${err}`);
-        this.recordRun({ jobId: job.id, startedAt, finishedAt: Date.now(), durationMs: Date.now() - startedAt, status: isTimeout ? "timeout" : "error", error: String(err) });
+      const delivery = resolveDelivery(job.delivery);
+      const stripped = responseText.replace(/HEARTBEAT_OK/gi, "").trim();
+      const isAckOnly = stripped.length === 0;
+      if (delivery.mode !== "silent" && responseText && !isAckOnly && this.announcer) {
+        await this.announcer.deliver(agentId, `[CRON:${job.id}] ${responseText}`, delivery, sessionKey);
       }
-    };
 
-    run();
+      this.notifyOriginSession(job, agentId, "completed", responseText);
+      this.recordRun({ jobId: job.id, startedAt, finishedAt: Date.now(), durationMs: Date.now() - startedAt, status: "completed", resultPreview: responseText.slice(0, 200) });
+
+      // Clear error counters on success
+      this.consecutiveErrors.delete(job.id);
+      this.lastErrorAt.delete(job.id);
+
+      // One-shot / deleteAfterRun: remove on success
+      if (job.schedule.kind === "at" || job.deleteAfterRun) {
+        this.removeJob(job.id);
+      }
+    } catch (err) {
+      const isTimeout = err instanceof Error && err.message === "CRON_TIMEOUT";
+      this.log.error(`Job ${job.id} ${isTimeout ? "timed out" : "failed"}: ${err}`);
+
+      this.notifyOriginSession(job, agentId, isTimeout ? "timeout" : "error", String(err));
+      this.recordRun({ jobId: job.id, startedAt, finishedAt: Date.now(), durationMs: Date.now() - startedAt, status: isTimeout ? "timeout" : "error", error: String(err) });
+
+      // Increment error counters
+      this.consecutiveErrors.set(job.id, (this.consecutiveErrors.get(job.id) ?? 0) + 1);
+      this.lastErrorAt.set(job.id, Date.now());
+
+      // One-shot: disable on failure (don't delete — preserve for inspection)
+      if (job.schedule.kind === "at") {
+        this.disableJob(job.id);
+      }
+    } finally {
+      this.running.delete(job.id);
+    }
+  }
+
+  /**
+   * Inject a completion/failure event back into the agent's main session,
+   * closing the loop between the isolated cron process and the originating agent.
+   */
+  private notifyOriginSession(
+    job: CronJob,
+    agentId: string,
+    status: "completed" | "timeout" | "error",
+    result: string,
+  ): void {
+    if (!this.systemEvents) return;
+    const mainSessionKey = resolveMainSessionKey(agentId);
+    const preview = result.slice(0, 500);
+    let eventText: string;
+    if (status === "completed") {
+      eventText = `[CRON_DONE:${job.id}] Scheduled task "${job.payload.text.slice(0, 80)}" completed. Result:\n${preview}`;
+    } else {
+      eventText = `[CRON_FAIL:${job.id}] Scheduled task "${job.payload.text.slice(0, 80)}" ${status}. Detail:\n${preview}`;
+    }
+    this.systemEvents.inject(mainSessionKey, eventText);
+    this.heartbeatWake?.(agentId, `cron:${job.id}:${status}`);
+    this.log.info(`[cron:${job.id}] Notified origin session ${mainSessionKey} (${status})`);
+  }
+
+  private disableJob(id: string): void {
+    const jobs = this.loadJobs();
+    const job = jobs.find((j) => j.id === id);
+    if (!job) return;
+    job.enabled = false;
+    this.saveJobs(jobs);
+
+    const existing = this.active.get(id);
+    if (existing) {
+      if (existing.cron) existing.cron.stop();
+      if (existing.timer) clearTimeout(existing.timer);
+      this.active.delete(id);
+    }
+    this.log.info(`Job disabled: ${id}`);
+  }
+
+  private runMissedJobs(jobs: CronJob[]): void {
+    const now = Date.now();
+    for (const job of jobs) {
+      if (job.enabled === false || job.paused) continue;
+
+      if (job.schedule.kind === "at") {
+        const targetTime = new Date(job.schedule.expr).getTime();
+        if (targetTime >= now) continue;
+        const runs = this.getRunHistory(job.id, 1);
+        if (runs.length > 0) continue;
+        this.log.info(`[cron:${job.id}] Missed at-job detected, triggering now`);
+        this.triggerJob(job);
+      } else if (job.schedule.kind === "every" || job.schedule.kind === "cron") {
+        const runs = this.getRunHistory(job.id, 1);
+        if (runs.length === 0) continue;
+        const lastRun = runs[runs.length - 1];
+        const intervalMs = job.schedule.kind === "every" ? parseInterval(job.schedule.expr) : null;
+        if (!intervalMs) continue;
+        if (now - lastRun.startedAt > intervalMs * 2) {
+          this.log.info(`[cron:${job.id}] Missed interval detected (last run ${Math.round((now - lastRun.startedAt) / 1000)}s ago), triggering catch-up`);
+          this.triggerJob(job);
+        }
+      }
+    }
   }
 
   // ==========================================================================
@@ -412,6 +516,26 @@ export class CronEngine {
     }
   }
 
+  recordRunUpdate(jobId: string, status: "completed" | "error", resultPreview?: string): void {
+    const filePath = join(this.runsDir, `${jobId}.jsonl`);
+    if (!existsSync(filePath)) return;
+    try {
+      const lines = readFileSync(filePath, "utf-8").trim().split("\n").filter(Boolean);
+      const lastIdx = lines.length - 1;
+      if (lastIdx < 0) return;
+      const last: CronRunRecord = JSON.parse(lines[lastIdx]);
+      if (last.status !== "pending") return;
+      last.status = status;
+      last.finishedAt = Date.now();
+      last.durationMs = last.finishedAt - last.startedAt;
+      if (resultPreview) last.resultPreview = resultPreview.slice(0, 200);
+      lines[lastIdx] = JSON.stringify(last);
+      writeFileSync(filePath, lines.join("\n") + "\n", "utf-8");
+    } catch (err) {
+      this.log.warn(`Failed to update run record for ${jobId}: ${err}`);
+    }
+  }
+
   // ==========================================================================
   // Persistence
   // ==========================================================================
@@ -428,7 +552,9 @@ export class CronEngine {
   private saveJobs(jobs: CronJob[]): void {
     const dir = dirname(this.jobsPath);
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-    writeFileSync(this.jobsPath, JSON.stringify(jobs, null, 2), "utf-8");
+    const tmpPath = this.jobsPath + ".tmp";
+    writeFileSync(tmpPath, JSON.stringify(jobs, null, 2), "utf-8");
+    renameSync(tmpPath, this.jobsPath);
   }
 }
 

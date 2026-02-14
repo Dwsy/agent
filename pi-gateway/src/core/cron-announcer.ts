@@ -21,7 +21,7 @@ export interface CronAnnouncerDeps {
   sessions: SessionStore;
   systemEvents: SystemEventsQueue;
   getChannels: () => Map<string, ChannelPlugin>;
-  heartbeatWake?: (agentId: string) => void;
+  heartbeatWake?: (agentId: string, reason?: string) => void;
 }
 
 /**
@@ -38,12 +38,12 @@ export function buildCronAnnouncer(deps: CronAnnouncerDeps): CronAnnouncer & { m
 
     const retellPrompt = `[CRON_RESULT] The following cron job completed. Summarize the result naturally for the user in 1-2 sentences. Do not mention technical details or that this was a cron job.\n\n${text}`;
     systemEvents.inject(mainKey, retellPrompt);
-    heartbeatWake?.(agentId);
+    heartbeatWake?.(agentId, "cron:announce");
     log.info(`[cron-announcer] injected to ${mainKey} for retelling (${text.length} chars)`);
     return true;
   }
 
-  async function cronDirectSend(agentId: string, text: string, delivery: CronDelivery): Promise<void> {
+  async function cronDirectSend(agentId: string, text: string, delivery: CronDelivery): Promise<boolean> {
     let targetChannel = delivery.channel && delivery.channel !== "last" ? delivery.channel : undefined;
     let targetChatId = delivery.to;
 
@@ -64,20 +64,22 @@ export function buildCronAnnouncer(deps: CronAnnouncerDeps): CronAnnouncer & { m
 
     if (!targetChannel || !targetChatId) {
       log.warn(`[cron-announcer] no bound channel for agent ${agentId}, dropping`);
-      return;
+      return false;
     }
 
     const plugin = getChannels().get(targetChannel);
     if (!plugin?.outbound?.sendText) {
       log.warn(`[cron-announcer] channel ${targetChannel} has no sendText, dropping`);
-      return;
+      return false;
     }
 
     try {
       await plugin.outbound.sendText(targetChatId, text);
       log.info(`[cron-announcer] direct send to ${targetChannel}:${targetChatId} (${text.length} chars)`);
+      return true;
     } catch (err: unknown) {
       log.error(`[cron-announcer] delivery failed: ${(err instanceof Error ? err.message : String(err))}`);
+      return false;
     }
   }
 
@@ -91,8 +93,8 @@ export function buildCronAnnouncer(deps: CronAnnouncerDeps): CronAnnouncer & { m
       selfDelivered.delete(sessionKey);
 
       if (delivery.mode === "announce") {
-        if (tryCronInject(agentId, text)) return;
-        log.info(`[cron-announcer] inject failed for ${agentId}, falling back to direct send`);
+        tryCronInject(agentId, text);
+        return;
       }
       await cronDirectSend(agentId, text, delivery);
     },
