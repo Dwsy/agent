@@ -17,6 +17,12 @@ Channel Plugins (Telegram/Discord/Feishu/WebChat)
   → Message Pipeline (dispatch, queue, backpressure)
     → RPC Pool (pi --mode rpc, session binding)
       → Agent Tools (send_media, send_message, message, cron, gateway, session_status)
+
+Cron Plugin (builtin, sole CronEngine owner)
+  → CronEngine (schedule, trigger, concurrency guard, error backoff)
+    → RPC Pool (isolated session per job)
+    → CronAnnouncer → channel outbound.sendText (direct delivery)
+    → SystemEventsQueue + HeartbeatWake (notify main agent)
 ```
 
 Key modules:
@@ -66,7 +72,7 @@ Key sections:
 - `channels.telegram` — botToken, dmPolicy, allowFrom, streamMode, groups
 - `channels.discord` — token, dmPolicy, guilds
 - `channels.feishu` — appId, appSecret, streamMode
-- `cron` — enabled, jobs
+- `cron` — enabled, jobs (schedule: cron/every/at, delivery: announce/silent, concurrency guard, error backoff)
 - `roles` — workspaceDirs (role → CWD mapping)
 
 Group chat config key = exact `chatId` from Telegram (not always `-100` prefix). Check logs for actual value.
@@ -102,7 +108,9 @@ pi-gateway/
 │   ├── core/                  # Config, RPC pool, session router, types
 │   ├── gateway/               # Message pipeline, dispatch
 │   ├── plugins/               # Channel plugins + plugin API
-│   │   ├── builtin/telegram/  # Telegram (handlers, streaming, outbound, commands, bot)
+│   │   ├── builtin/cron/     # Cron plugin (CronEngine owner, announcer)
+   110→│   │   ├── builtin/heartbeat/ # Heartbeat plugin
+   111→│   │   ├── builtin/telegram/  # Telegram (handlers, streaming, outbound, commands, bot)
 │   │   ├── builtin/discord/
 │   │   ├── builtin/feishu/
 │   │   └── builtin/webchat/
