@@ -4,12 +4,104 @@
  * Extracted from handlers.ts (v3.7) to keep each file < 500 lines.
  */
 
+import { basename } from "node:path";
 import { splitMessage } from "../../../core/utils.ts";
 import { markdownToTelegramHtml } from "./format.ts";
 import { sendTelegramMedia, sendTelegramTextAndMedia, IMAGE_EXTS, AUDIO_EXTS } from "./media-send.ts";
 import { recordSentMessage } from "./sent-message-cache.ts";
+import { isRecoverableTelegramNetworkError } from "./network-errors.ts";
 import type { MediaSendOptions, MediaSendResult, MessageSendResult, MessageActionResult, ReactionOptions, ReadHistoryResult } from "../../types.ts";
 import type { TelegramPluginRuntime } from "./types.ts";
+
+const MEDIA_SEND_RETRY_DELAYS_MS = [600, 1500];
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function supportsHttpFallback(kind: "photo" | "audio" | "file" | "sticker"): kind is "photo" | "audio" | "file" {
+  return kind === "photo" || kind === "audio" || kind === "file";
+}
+
+async function sendViaTelegramHttpApi(params: {
+  token: string;
+  chatId: string;
+  kind: "photo" | "audio" | "file";
+  filePath: string;
+  caption?: string;
+  threadId?: number;
+}): Promise<void> {
+  const method = params.kind === "photo" ? "sendPhoto" : params.kind === "audio" ? "sendAudio" : "sendDocument";
+  const field = params.kind === "photo" ? "photo" : params.kind === "audio" ? "audio" : "document";
+  const form = new FormData();
+  form.set("chat_id", params.chatId);
+  if (params.threadId) form.set("message_thread_id", String(params.threadId));
+  if (params.caption?.trim()) {
+    form.set("caption", markdownToTelegramHtml(params.caption.trim()));
+    form.set("parse_mode", "HTML");
+  }
+  if (/^https?:\/\//i.test(params.filePath)) {
+    form.set(field, params.filePath);
+  } else {
+    const fileName = basename(params.filePath) || "file";
+    form.set(field, Bun.file(params.filePath), fileName);
+  }
+
+  const res = await fetch(`https://api.telegram.org/bot${params.token}/${method}`, {
+    method: "POST",
+    body: form,
+  });
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(`http-fallback ${method} status=${res.status} body=${text.slice(0, 240)}`);
+  }
+  try {
+    const data = JSON.parse(text) as { ok?: boolean; description?: string };
+    if (!data.ok) {
+      throw new Error(`http-fallback ${method} api_error=${data.description ?? "unknown"}`);
+    }
+  } catch (err: unknown) {
+    if (err instanceof Error && err.message.includes("http-fallback")) throw err;
+    throw new Error(`http-fallback ${method} invalid_json`);
+  }
+}
+
+function formatErrorDetail(err: unknown): string {
+  if (err instanceof Error) {
+    const anyErr = err as Error & {
+      code?: string;
+      cause?: unknown;
+      description?: string;
+      error_code?: number;
+      error?: unknown;
+    };
+    const nestedError = anyErr.error as (Error & { code?: string; cause?: unknown }) | undefined;
+    const parts = [
+      `${anyErr.name}: ${anyErr.message}`,
+      anyErr.code ? `code=${anyErr.code}` : "",
+      typeof anyErr.error_code === "number" ? `error_code=${anyErr.error_code}` : "",
+      anyErr.description ? `description=${anyErr.description}` : "",
+      anyErr.cause ? `cause=${String(anyErr.cause)}` : "",
+      nestedError ? `inner=${nestedError.name}: ${nestedError.message}` : (anyErr.error ? `inner=${String(anyErr.error)}` : ""),
+      nestedError?.code ? `inner_code=${nestedError.code}` : "",
+      nestedError?.cause ? `inner_cause=${String(nestedError.cause)}` : "",
+    ].filter(Boolean);
+    if (anyErr.stack) {
+      const stackHead = anyErr.stack.split("\n").slice(0, 6).join(" | ");
+      parts.push(`stack=${stackHead}`);
+    }
+    if (nestedError?.stack) {
+      const innerStackHead = nestedError.stack.split("\n").slice(0, 6).join(" | ");
+      parts.push(`inner_stack=${innerStackHead}`);
+    }
+    return parts.join("; ");
+  }
+  try {
+    return typeof err === "string" ? err : JSON.stringify(err);
+  } catch {
+    return String(err);
+  }
+}
 
 // ============================================================================
 // Target parsing
@@ -119,26 +211,111 @@ export async function sendMediaViaAccount(params: {
     : AUDIO_EXTS.has(ext) ? "audio"
     : "file";
 
-  try {
-    await sendTelegramMedia(account.bot, parsed.chatId, {
-      kind,
-      url: params.filePath,
-      caption: params.opts?.caption,
-    }, {
-      ...(threadId ? { messageThreadId: threadId } : {}),
-      skipPathValidation: true,
-    });
-
-    params.runtime.api.logger.info(
-      `[telegram:${account.accountId}] sendMedia to=${params.target} path=${params.filePath} kind=${kind}`,
-    );
-    return { ok: true };
-  } catch (err: unknown) {
-    params.runtime.api.logger.error(
-      `[telegram:${account.accountId}] sendMedia failed: ${(err instanceof Error ? err.message : String(err))}`,
-    );
-    return { ok: false, error: err instanceof Error ? err.message : "Send failed" };
+  const preferFallback = account.mediaSendMode === "http-fallback" && supportsHttpFallback(kind);
+  if (preferFallback) {
+    try {
+      await sendViaTelegramHttpApi({
+        token: account.token,
+        chatId: parsed.chatId,
+        kind,
+        filePath: params.filePath,
+        caption: params.opts?.caption,
+        threadId,
+      });
+      params.runtime.api.logger.info(
+        `[telegram:${account.accountId}] sendMedia via sticky fallback kind=${kind} path=${params.filePath}`,
+      );
+      return { ok: true };
+    } catch (stickyErr: unknown) {
+      params.runtime.api.logger.warn(
+        `[telegram:${account.accountId}] sticky fallback failed, retrying primary path: ${formatErrorDetail(stickyErr)}`,
+      );
+    }
   }
+
+  let lastErr: unknown;
+  const usePrimaryRetries = !supportsHttpFallback(kind);
+  const totalAttempts = usePrimaryRetries ? (MEDIA_SEND_RETRY_DELAYS_MS.length + 1) : 1;
+  for (let attempt = 1; attempt <= totalAttempts; attempt += 1) {
+    try {
+      await sendTelegramMedia(account.bot, parsed.chatId, {
+        kind,
+        url: params.filePath,
+        caption: params.opts?.caption,
+      }, {
+        ...(threadId ? { messageThreadId: threadId } : {}),
+        skipPathValidation: true,
+      });
+
+      params.runtime.api.logger.info(
+        `[telegram:${account.accountId}] sendMedia to=${params.target} path=${params.filePath} kind=${kind} attempt=${attempt}/${totalAttempts}`,
+      );
+      return { ok: true };
+    } catch (err: unknown) {
+      lastErr = err;
+      const recoverable = isRecoverableTelegramNetworkError(err);
+      const detail = formatErrorDetail(err);
+      params.runtime.api.logger.warn(
+        `[telegram:${account.accountId}] sendMedia attempt ${attempt}/${totalAttempts} failed recoverable=${recoverable}: ${detail}`,
+      );
+      if (!recoverable || attempt >= totalAttempts) break;
+      if (!usePrimaryRetries) break;
+      await sleep(MEDIA_SEND_RETRY_DELAYS_MS[attempt - 1]!);
+    }
+  }
+
+  if (lastErr && isRecoverableTelegramNetworkError(lastErr) && supportsHttpFallback(kind)) {
+    try {
+      await sendViaTelegramHttpApi({
+        token: account.token,
+        chatId: parsed.chatId,
+        kind,
+        filePath: params.filePath,
+        caption: params.opts?.caption,
+        threadId,
+      });
+      account.mediaSendMode = "http-fallback";
+      account.mediaFallbackSince = Date.now();
+      params.runtime.api.logger.warn(
+        `[telegram:${account.accountId}] sendMedia recovered via http fallback kind=${kind}; sticky mode enabled`,
+      );
+      return { ok: true };
+    } catch (fallbackErr: unknown) {
+      const fallbackDetail = formatErrorDetail(fallbackErr);
+      params.runtime.api.logger.warn(
+        `[telegram:${account.accountId}] http fallback failed kind=${kind}: ${fallbackDetail}`,
+      );
+
+      if (kind === "photo") {
+        try {
+          await sendViaTelegramHttpApi({
+            token: account.token,
+            chatId: parsed.chatId,
+            kind: "file",
+            filePath: params.filePath,
+            caption: params.opts?.caption,
+            threadId,
+          });
+          account.mediaSendMode = "http-fallback";
+          account.mediaFallbackSince = Date.now();
+          params.runtime.api.logger.warn(
+            `[telegram:${account.accountId}] sendMedia recovered via document downgrade; sticky mode enabled`,
+          );
+          return { ok: true };
+        } catch (downgradeErr: unknown) {
+          params.runtime.api.logger.warn(
+            `[telegram:${account.accountId}] document downgrade failed: ${formatErrorDetail(downgradeErr)}`,
+          );
+        }
+      }
+    }
+  }
+
+  const detail = formatErrorDetail(lastErr);
+  params.runtime.api.logger.error(
+    `[telegram:${account.accountId}] sendMedia failed: ${detail}`,
+  );
+  return { ok: false, error: detail };
 }
 
 // ============================================================================
