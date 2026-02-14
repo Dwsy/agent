@@ -135,7 +135,6 @@ export function registerCronMethods(
       schedule: cSchedule,
       payload: { text: cTask },
       agentId: params?.agentId as string | undefined,
-      mode: (params?.mode as "isolated" | "main") ?? undefined,
       delivery: (params?.delivery as "announce" | "silent") ?? undefined,
       deleteAfterRun: params?.deleteAfterRun as boolean | undefined,
     };

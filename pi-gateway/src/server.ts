@@ -148,9 +148,7 @@ export class Gateway {
       onHeartbeatSkip: (agentId, reason) => {
         this.log.debug(`Heartbeat skipped for agent ${agentId}: ${reason}`);
       },
-    }, this.systemEvents, (jobId, status, preview) => {
-      getCronEngine()?.recordRunUpdate(jobId, status, preview);
-    }, {
+    }, this.systemEvents, undefined, {
       sessions: this.sessions,
       getChannels: () => this.registry.channels,
       bindings: this.config.agents?.bindings,
