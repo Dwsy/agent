@@ -33,6 +33,7 @@ function buildSource(account: TelegramAccountRuntime, ctx: TelegramContext, mess
     senderId: String(ctx.from?.id ?? msg?.from?.id ?? "unknown"),
     senderName: ctx.from?.username ?? ctx.from?.first_name ?? msg?.from?.username ?? msg?.from?.first_name,
     messageId: msg?.message_id ? String(msg.message_id) : undefined,
+    timestamp: msg?.date,
   };
 }
 
@@ -45,6 +46,35 @@ async function resolveImagesFromMessage(account: TelegramAccountRuntime, msg: Te
   const maxBytes = maxMb * 1024 * 1024;
 
   console.log(`[telegram-media] resolveImages: photo=${msg.photo?.length ?? 0} document=${msg.document?.file_id ? 'yes' : 'no'} sticker=${msg.sticker ? 'yes' : 'no'}`);
+
+  // Sticker: download as image (webp/webm/tgs) and pass to agent
+  if (msg.sticker?.file_id) {
+    const sticker = msg.sticker;
+    console.log(`[telegram-media] downloading sticker: file_id=${sticker.file_id.slice(0, 20)}... emoji=${sticker.emoji ?? ''} set=${sticker.set_name ?? ''} animated=${sticker.is_animated} video=${sticker.is_video}`);
+    const downloaded = await downloadTelegramFile({
+      token: account.token,
+      fileId: sticker.file_id,
+      maxBytes,
+    });
+    if (downloaded) {
+      // Static stickers are webp, video stickers are webm — both viewable as images
+      const mime = downloaded.mimeType.startsWith("image/") || downloaded.mimeType.startsWith("video/")
+        ? downloaded.mimeType
+        : "image/webp";
+      if (mime.startsWith("image/")) {
+        images.push({ type: "image", data: downloaded.data, mimeType: mime });
+      }
+      // Add sticker context (emoji + set name) as document context
+      const parts: string[] = [];
+      if (sticker.emoji) parts.push(`emoji: ${sticker.emoji}`);
+      if (sticker.set_name) parts.push(`set: ${sticker.set_name}`);
+      if (sticker.is_animated) parts.push("animated");
+      if (sticker.is_video) parts.push("video sticker");
+      const stickerMeta = parts.length ? parts.join(", ") : "sticker";
+      documentContext = `[Sticker: ${stickerMeta}]`;
+      console.log(`[telegram-media] sticker resolved: ${mime} ${downloaded.data.length} chars base64, meta=${stickerMeta}`);
+    }
+  }
 
   if (msg.photo?.length) {
     const largest = msg.photo[msg.photo.length - 1];
@@ -485,7 +515,7 @@ export async function setupTelegramHandlers(runtime: TelegramPluginRuntime, acco
   const bot = account.bot;
 
   // 本地命令列表（由 bot.command() 处理）
-  const localCommands = new Set(["new", "stop", "status", "queue", "cron", "help", "media", "photo", "audio", "model", "refresh", "skills"]);
+  const localCommands = new Set(["new", "stop", "status", "queue", "cron", "help", "media", "photo", "audio", "model", "refresh", "skills", "sys"]);
 
   bot.on("message", async (ctx: any) => {
     const updateId = Number((ctx.update as any)?.update_id ?? -1);
