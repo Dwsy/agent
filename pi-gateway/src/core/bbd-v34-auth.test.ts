@@ -120,7 +120,7 @@ describe("v3.4 S1: authenticateRequest", () => {
   const token = "test-token-abc";
 
   function makeReq(path: string, headers: Record<string, string> = {}, query = ""): { req: Request; url: URL } {
-    const urlStr = `http://localhost:18789${path}${query}`;
+    const urlStr = `http://localhost:52134${path}${query}`;
     const req = new Request(urlStr, { headers });
     return { req, url: new URL(urlStr) };
   }

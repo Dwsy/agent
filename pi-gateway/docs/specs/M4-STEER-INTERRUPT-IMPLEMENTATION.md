@@ -258,7 +258,7 @@ describe("M4: steer/interrupt modes", () => {
 ### Integration Tests
 ```bash
 # WebSocket test
-echo '{"type":"req","id":"1","method":"chat.send","params":{"text":"test","mode":"interrupt"}}' | websocat ws://localhost:18789/ws
+echo '{"type":"req","id":"1","method":"chat.send","params":{"text":"test","mode":"interrupt"}}' | websocat ws://localhost:52134/ws
 
 # Telegram test
 # Set messageMode: "interrupt" in config

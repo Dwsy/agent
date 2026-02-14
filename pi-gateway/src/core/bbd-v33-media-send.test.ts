@@ -24,7 +24,7 @@ import type { Config } from "./config.ts";
 
 function makeConfig(overrides?: Partial<Config>): Config {
   return {
-    port: 18789,
+    port: 52134,
     host: "0.0.0.0",
     auth: { mode: "none" },
     channels: {},
@@ -33,7 +33,7 @@ function makeConfig(overrides?: Partial<Config>): Config {
     queue: {},
     agent: {},
     delegation: { timeoutMs: 120_000, maxTimeoutMs: 600_000, onTimeout: "abort", maxDepth: 1, maxConcurrent: 2 },
-    gateway: { port: 18789, bind: "loopback", auth: { mode: "none" } },
+    gateway: { port: 52134, bind: "loopback", auth: { mode: "none" } },
     agents: { default: "main", list: [{ id: "main", workspace: process.cwd() }] },
     ...overrides,
   } as Config;
@@ -80,7 +80,7 @@ function makeCtx(configOverrides?: Partial<Config>): MediaSendContext {
 }
 
 function makeReq(body: Record<string, unknown>): Request {
-  return new Request("http://localhost:18789/api/media/send", {
+  return new Request("http://localhost:52134/api/media/send", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -340,7 +340,7 @@ describe("v3.3 media-send: type inference", () => {
 describe("v3.3 media-send: edge cases", () => {
   test("MS-27: invalid JSON body returns 400", async () => {
     const ctx = makeCtx();
-    const req = new Request("http://localhost:18789/api/media/send", {
+    const req = new Request("http://localhost:52134/api/media/send", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: "not json",

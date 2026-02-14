@@ -16,7 +16,7 @@ import type { ReadHistoryResult } from "../plugins/types.ts";
 
 function makeConfig(): Config {
   return {
-    port: 18789,
+    port: 52134,
     host: "0.0.0.0",
     auth: { mode: "none" },
     channels: {},
@@ -25,7 +25,7 @@ function makeConfig(): Config {
     queue: {},
     agent: {},
     delegation: { timeoutMs: 120_000, maxTimeoutMs: 600_000, onTimeout: "abort", maxDepth: 1, maxConcurrent: 2 },
-    gateway: { port: 18789, bind: "loopback", auth: { mode: "none" } },
+    gateway: { port: 52134, bind: "loopback", auth: { mode: "none" } },
     agents: { default: "main", list: [{ id: "main", workspace: process.cwd() }] },
   } as Config;
 }
@@ -87,7 +87,7 @@ function makeCtx(opts?: { withChannel?: boolean; channelOverrides?: Record<strin
 }
 
 function makeReq(body: Record<string, unknown>): Request {
-  return new Request("http://localhost:18789/api/message/action", {
+  return new Request("http://localhost:52134/api/message/action", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),

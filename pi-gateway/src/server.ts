@@ -4,7 +4,7 @@
  * Aligned with OpenClaw Gateway architecture:
  * - HTTP serves static Web UI + API endpoints + health
  * - WebSocket serves req/res/event protocol
- * - Single port multiplexed (default :18789)
+ * - Single port multiplexed (default :52134)
  */
 
 import type { Server, ServerWebSocket } from "bun";

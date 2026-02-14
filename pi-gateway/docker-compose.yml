@@ -5,7 +5,7 @@ services:
     build: .
     container_name: pi-gateway
     ports:
-      - "18789:18789"
+      - "52134:52134"
     volumes:
       - ${HOME}/.pi/gateway:/root/.pi/gateway
       - ${HOME}/.pi/agent:/root/.pi/agent

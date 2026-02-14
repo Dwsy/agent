@@ -24,7 +24,7 @@ import type { Config } from "./config.ts";
 /** Minimal config with nothing enabled */
 function bareConfig(overrides?: Partial<Config>): Config {
   return {
-    port: 18789,
+    port: 52134,
     host: "0.0.0.0",
     auth: { mode: "none" },
     channels: {},

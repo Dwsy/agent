@@ -235,7 +235,7 @@ These are set automatically by the gateway when spawning pi processes:
 
 | Variable | Description |
 |----------|-------------|
-| `PI_GATEWAY_URL` | Gateway HTTP base URL (e.g., `http://127.0.0.1:18789`) |
+| `PI_GATEWAY_URL` | Gateway HTTP base URL (e.g., `http://127.0.0.1:52134`) |
 | `PI_GATEWAY_INTERNAL_TOKEN` | Shared secret for authenticating back to gateway |
 | `PI_GATEWAY_SESSION_KEY` | Current session key (set dynamically by RPC pool) |
 

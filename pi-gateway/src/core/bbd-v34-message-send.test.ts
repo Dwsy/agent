@@ -8,7 +8,7 @@ import { resetInternalToken, getGatewayInternalToken } from "../api/media-send.t
 
 function makeCtx(overrides: Partial<MessageSendContext> = {}): MessageSendContext {
   const config = {
-    gateway: { port: 18789, bind: "127.0.0.1", auth: { mode: "none" } },
+    gateway: { port: 52134, bind: "127.0.0.1", auth: { mode: "none" } },
     agents: { list: [{ id: "main", workspace: "/tmp/test-workspace" }] },
     agent: {},
   } as any;
@@ -54,7 +54,7 @@ function makeCtx(overrides: Partial<MessageSendContext> = {}): MessageSendContex
 }
 
 function makeReq(body: Record<string, unknown>): Request {
-  return new Request("http://localhost:18789/api/message/send", {
+  return new Request("http://localhost:52134/api/message/send", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -70,7 +70,7 @@ describe("v3.4 T1: POST /api/message/send", () => {
 
   it("T1-1: rejects invalid JSON", async () => {
     const ctx = makeCtx();
-    const req = new Request("http://localhost:18789/api/message/send", {
+    const req = new Request("http://localhost:52134/api/message/send", {
       method: "POST",
       body: "not json",
     });

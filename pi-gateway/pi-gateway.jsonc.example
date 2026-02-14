@@ -3,7 +3,7 @@
   // Copy this file to pi-gateway.jsonc and fill in your actual values
 
   "gateway": {
-    "port": 18789,
+    "port": 52134,
     "bind": "0.0.0.0",
     "auth": {
       "mode": "off"

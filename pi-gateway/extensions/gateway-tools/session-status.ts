@@ -1,9 +1,9 @@
 /** session_status tool — query current session's runtime status. */
 
 import { Type } from "@sinclair/typebox";
-import { toolOk, toolError } from "./helpers.ts";
+import { toolOk, toolError, gatewayHeaders, parseResponseJson } from "./helpers.ts";
 
-export function createSessionStatusTool(gatewayUrl: string, internalToken: string) {
+export function createSessionStatusTool(gatewayUrl: string, internalToken: string, authToken?: string) {
   return {
     name: "session_status",
     label: "Session Status",
@@ -22,10 +22,10 @@ export function createSessionStatusTool(gatewayUrl: string, internalToken: strin
       try {
         const qs = key ? `?sessionKey=${encodeURIComponent(key)}` : "";
         const res = await fetch(`${gatewayUrl}/api/session/status${qs}`, {
-          headers: { Authorization: `Bearer ${internalToken}` },
+          headers: gatewayHeaders(authToken ?? internalToken),
         });
 
-        const data = (await res.json()) as Record<string, unknown>;
+        const data = await parseResponseJson(res);
 
         if (!res.ok) {
           return toolError(String(data.error || res.statusText));

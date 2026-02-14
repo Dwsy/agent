@@ -1,11 +1,11 @@
 /** message tool — react/edit/delete actions on existing messages. */
 
 import { Type } from "@sinclair/typebox";
-import { toolOk, toolError } from "./helpers.ts";
+import { toolOk, toolError, gatewayHeaders, parseResponseJson } from "./helpers.ts";
 
 const MESSAGE_ACTIONS = ["react", "edit", "delete", "pin", "read"] as const;
 
-export function createMessageActionTool(gatewayUrl: string, internalToken: string) {
+export function createMessageActionTool(gatewayUrl: string, internalToken: string, authToken?: string) {
   return {
     name: "message",
     label: "Message Action",
@@ -70,7 +70,7 @@ export function createMessageActionTool(gatewayUrl: string, internalToken: strin
       try {
         const res = await fetch(`${gatewayUrl}/api/message/action`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: gatewayHeaders(authToken ?? internalToken, true),
           body: JSON.stringify({
             token: internalToken,
             pid: process.pid,
@@ -86,7 +86,7 @@ export function createMessageActionTool(gatewayUrl: string, internalToken: strin
           }),
         });
 
-        const data = (await res.json()) as Record<string, unknown>;
+        const data = await parseResponseJson(res);
 
         if (!res.ok) {
           return toolError(String(data.error || res.statusText));

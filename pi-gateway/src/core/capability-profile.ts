@@ -87,6 +87,12 @@ export function buildCapabilityProfile(input: CapabilityProfileInput): Capabilit
   const host = bind === "loopback" ? "127.0.0.1" : "0.0.0.0";
   env.PI_GATEWAY_URL = `http://${host}:${port}`;
   env.PI_GATEWAY_INTERNAL_TOKEN = getGatewayInternalToken(config);
+  if (config.gateway.auth.mode === "token" && config.gateway.auth.token) {
+    env.PI_GATEWAY_AUTH_TOKEN = config.gateway.auth.token;
+  }
+  if (config.gateway.auth.mode === "password" && config.gateway.auth.password) {
+    env.PI_GATEWAY_AUTH_TOKEN = config.gateway.auth.password;
+  }
 
   const piCliPath = config.agent.piCliPath ?? "pi";
   const mergeMode = config.roles.mergeMode ?? "append";
