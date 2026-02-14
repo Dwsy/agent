@@ -227,6 +227,8 @@ export interface MessageSource {
   agentId?: string;
   /** Inbound message ID (platform-specific, for pin/reply/react). */
   messageId?: string;
+  /** Message timestamp (Unix timestamp in seconds, from platform). */
+  timestamp?: number;
 }
 
 /** Inbound message dispatched to the agent */
@@ -245,6 +247,8 @@ export interface InboundMessage {
   onToolStart?: (toolName: string, args?: Record<string, unknown>, toolCallId?: string) => void;
   /** Optional: called on thinking content delta (for live thinking display) */
   onThinkingDelta?: (accumulated: string, delta: string) => void;
+  /** Optional: called when a steer injection occurs — finalize current reply and reset state */
+  onSteerInjected?: () => void;
 }
 
 /** Attachment in outbound message */

@@ -25,6 +25,21 @@ import { isTransient, classifyError } from "../core/model-health.ts";
 // Helpers
 // ============================================================================
 
+/** Format relative time in Chinese (e.g., "2分钟前", "1小时前") */
+function formatRelativeTime(timestamp: number): string {
+  const now = Math.floor(Date.now() / 1000);
+  const diff = now - timestamp;
+
+  if (diff < 0) return "刚刚"; // Future message (clock skew)
+  if (diff < 60) return "刚刚";
+  if (diff < 3600) return `${Math.floor(diff / 60)}分钟前`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}小时前`;
+  if (diff < 604800) return `${Math.floor(diff / 86400)}天前`;
+  if (diff < 2592000) return `${Math.floor(diff / 604800)}周前`;
+  if (diff < 31536000) return `${Math.floor(diff / 2592000)}个月前`;
+  return `${Math.floor(diff / 31536000)}年前`;
+}
+
 /** Coerce unknown values to string safely */
 function normalizeOutgoingText(value: unknown, fallback: string): string {
   if (typeof value === "string") return value;
@@ -111,6 +126,7 @@ export async function processMessage(
   }
   session.rpcProcessId = rpc.id;
   session.isStreaming = true;
+  ctx.activeInboundMessages.set(sessionKey, msg);
 
   // Wire Extension UI forwarding to WebChat clients
   rpc.extensionUIHandler = (data, writeToRpc) =>
@@ -350,9 +366,41 @@ export async function processMessage(
       const parts = [`[group:${source.chatId}`, `from:${sender}`];
       if (source.threadId) parts.push(`thread:${source.threadId}`);
       if (source.messageId) parts.push(`msgId:${source.messageId}`);
+      if (source.timestamp) {
+        const date = new Date(source.timestamp * 1000);
+        const timeStr = date.toLocaleString('zh-CN', {
+          timeZone: 'Asia/Shanghai',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          hour12: false
+        });
+        const relativeTime = formatRelativeTime(source.timestamp);
+        parts.push(`time:${timeStr}`, `${relativeTime}`);
+      }
       promptText = `${parts.join(" | ")}]\n${promptText}`;
-    } else if (source.messageId) {
-      promptText = `[msgId:${source.messageId}]\n${promptText}`;
+    } else if (source.messageId || source.timestamp) {
+      const parts: string[] = [];
+      if (source.messageId) parts.push(`msgId:${source.messageId}`);
+      if (source.timestamp) {
+        const date = new Date(source.timestamp * 1000);
+        const timeStr = date.toLocaleString('zh-CN', {
+          timeZone: 'Asia/Shanghai',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          hour12: false
+        });
+        const relativeTime = formatRelativeTime(source.timestamp);
+        parts.push(`time:${timeStr}`, `${relativeTime}`);
+      }
+      promptText = `[${parts.join(" | ")}]\n${promptText}`;
     }
 
     ctx.log.info(`[processMessage] Sending prompt to ${rpc.id} for ${sessionKey}: "${promptText.slice(0, 80)}"`);
@@ -409,6 +457,7 @@ export async function processMessage(
     clearTimeout(abortTimer);
     unsub();
     session.isStreaming = false;
+    ctx.activeInboundMessages.delete(sessionKey);
     await setTyping(false);
   }
 

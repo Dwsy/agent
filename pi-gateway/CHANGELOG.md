@@ -1,5 +1,31 @@
 # Changelog
 
+## [v3.9] - 2026-02-14
+
+**Focus:** AI Personality & Context Enhancement — human-like assistant behavior, proactive communication, message timestamp injection
+
+### System Prompt Enhancement
+- **AI Personality Layer**: Added "Your Role & Personality" section to gateway identity prompt — proactive, intelligent assistant who thinks ahead, stays aware, communicates naturally with emoji status indicators (✅ ⚠️ ❌ 📊 🔔), takes initiative, remembers context, prioritizes clarity (by Dwsy)
+- **Proactive Communication Guidelines**: Enhanced `send_message` tool with 6 proactive scenarios (task completion, status changes, reports, alerts, suggestions, progress updates) with emoji examples and "don't spam" guidance (by Dwsy)
+- **Message Actions Enhancement**: Added `pin`/`unpin` actions to `message` tool documentation with 4 proactive pin scenarios (critical alerts, announcements, reference info, task summaries) (by Dwsy)
+- **Heartbeat Intelligence**: Enhanced heartbeat protocol with proactive monitoring role — check system state, look for patterns/anomalies, provide insights; added 5 proactive monitoring examples (disk trends, error patterns, deadlines, health indicators, optimization opportunities) (by Dwsy)
+- **Cron Management**: Added proactive cron management guidance — suggest jobs based on patterns, notify on repeated failures, recommend schedule adjustments, auto-cleanup completed one-shots (by Dwsy)
+
+### Message Context Injection
+- **Timestamp Injection**: Added `MessageSource.timestamp` field (Unix timestamp in seconds); Telegram `buildSource` now extracts `msg.date` (by Dwsy)
+- **Absolute Time Display**: Message context now includes formatted timestamp in Chinese timezone — `time:2026/02/14 16:08:50` format (by Dwsy)
+- **Relative Time Display**: Added `formatRelativeTime()` helper with 7 time ranges (刚刚, X分钟前, X小时前, X天前, X周前, X个月前, X年前); injected alongside absolute time for human-readable context (by Dwsy)
+- **Enhanced Context Format**:
+  - Group: `[group:{chatId} | from:{sender} | thread:{threadId} | msgId:{messageId} | time:2026/02/14 16:08:50 | 2分钟前]`
+  - DM: `[msgId:{messageId} | time:2026/02/14 16:08:50 | 刚刚]`
+
+### Benefits
+- AI can now understand time urgency ("刚刚" vs "2小时前" vs "3天前")
+- More natural conversation with time-aware responses ("你5分钟前问的...")
+- Time-based decision making (detect outdated requests, expired reminders)
+- Proactive system monitoring and intelligent suggestions
+- Human-like communication with emoji status indicators
+
 ## [v3.8] - 2026-02-13
 
 **BBD Test Results:** 723/723 pass, 0 fail ✅ (v3.7: 703, v3.8: +20)
