@@ -46,7 +46,7 @@ function makeConfig(agents: AgentDefinition[], defaultAgent = "code"): Config {
       default: defaultAgent,
     },
     // Minimal config stubs
-    gateway: { port: 18789, bind: "0.0.0.0", auth: { mode: "off" } },
+    gateway: { port: 52134, bind: "0.0.0.0", auth: { mode: "off" } },
     agent: { piCliPath: "pi", model: "test", thinkingLevel: "off", pool: { min: 1, max: 4, idleTimeoutMs: 300000 } },
     session: { dmScope: "main" },
     channels: {},

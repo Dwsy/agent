@@ -54,7 +54,7 @@ class MockCronEngine {
 // ── Helpers ─────────────────────────────────────────────────────────────
 
 function makeReq(method: string, path: string, body?: unknown): { req: Request; url: URL } {
-  const base = "http://localhost:18789";
+  const base = "http://localhost:52134";
   const url = new URL(path, base);
   const init: RequestInit = { method };
   if (body !== undefined) {
