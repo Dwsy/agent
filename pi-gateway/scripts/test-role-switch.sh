@@ -3,8 +3,8 @@
 
 set -e
 
-GATEWAY_URL="${GATEWAY_URL:-http://localhost:18789}"
-WS_URL="${WS_URL:-ws://localhost:18789/ws}"
+GATEWAY_URL="${GATEWAY_URL:-http://localhost:52134}"
+WS_URL="${WS_URL:-ws://localhost:52134/ws}"
 
 echo "=== P4 Role Switch Integration Test ==="
 echo "Gateway: $GATEWAY_URL"
