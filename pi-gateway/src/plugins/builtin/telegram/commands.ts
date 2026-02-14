@@ -4,6 +4,7 @@ import { isSenderAllowed, type DmPolicy } from "../../../security/allowlist.ts";
 import { escapeHtml, markdownToTelegramHtml } from "./format.ts";
 import { parseMediaCommandArgs, sendTelegramMedia } from "./media-send.ts";
 import { registerModelCommand, registerCallbackHandler } from "./model-selector.ts";
+import { collectSysInfo } from "./sysinfo.ts";
 import type { TelegramAccountRuntime, TelegramContext, TelegramPluginRuntime } from "./types.ts";
 
 type SessionMessageMode = "steer" | "follow-up" | "interrupt";
@@ -33,6 +34,7 @@ const LOCAL_COMMANDS = [
   { command: "bash", description: "执行 shell 命令" },
   { command: "config", description: "查看运行配置" },
   { command: "restart", description: "重启 gateway" },
+  { command: "sys", description: "系统状态" },
   // { command: "role", description: "切换/查看角色" },
   { command: "cron", description: "定时任务管理" },
   { command: "skills", description: "查看/调用技能" },
@@ -89,10 +91,20 @@ const BASH_OUTPUT_LIMIT = 4096;
 const BASH_TIMEOUT_MS = 30_000;
 
 /** Execute a shell command and reply with output. */
-export async function executeBashCommand(ctx: any, cmd: string, runtime: TelegramPluginRuntime): Promise<void> {
+export async function executeBashCommand(ctx: any, cmd: string, runtime: TelegramPluginRuntime, accountId: string): Promise<void> {
   runtime.api.logger.info(`[bash] Executing: ${cmd.slice(0, 200)}`);
+
+  // Resolve session key to get the correct working directory
+  const source = toSource(accountId, ctx as TelegramContext);
+  const sessionKey = resolveSessionKey(source, runtime.api.config);
+  const rpc = runtime.api.rpcPool?.getForSession(sessionKey);
+  const cwd = rpc?.cwd ?? process.cwd();
+
+  runtime.api.logger.info(`[bash] Working directory: ${cwd}`);
+
   try {
     const proc = Bun.spawn(["sh", "-c", cmd], {
+      cwd,
       stdout: "pipe",
       stderr: "pipe",
       env: { ...process.env, TERM: "dumb" },
@@ -171,6 +183,7 @@ function helpPage(page: number): { text: string; keyboard: { inline_keyboard: Ar
       "/bash &lt;cmd&gt; — 执行 shell 命令",
       "/config [section] — 查看运行配置",
       "/restart — 重启 gateway",
+      "/sys — 系统状态",
       "",
       "<i>需要 allowFrom 授权</i>",
     ],
@@ -471,7 +484,7 @@ export async function setupTelegramCommands(runtime: TelegramPluginRuntime, acco
       await ctx.reply("Usage: /bash <command>");
       return;
     }
-    await executeBashCommand(ctx, cmd, runtime);
+    await executeBashCommand(ctx, cmd, runtime, account.accountId);
   });
 
   // --- /config: read-only config viewer ---
@@ -527,6 +540,16 @@ export async function setupTelegramCommands(runtime: TelegramPluginRuntime, acco
       // Fallback: if SIGUSR1 doesn't restart (no supervisor), exit after 2s
       setTimeout(() => process.exit(0), 2000);
     }, 500);
+  });
+
+  bot.command("sys", async (ctx: any) => {
+    const source = toSource(account.accountId, ctx as TelegramContext);
+    if (!isAuthorizedSender(source.senderId, account)) {
+      await ctx.reply("⛔ Unauthorized.");
+      return;
+    }
+    const info = await collectSysInfo();
+    await ctx.reply(info, { parse_mode: "HTML" });
   });
 
   bot.command("refresh", async (ctx: any) => {

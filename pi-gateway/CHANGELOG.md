@@ -4,6 +4,13 @@
 
 **Focus:** AI Personality & Context Enhancement — human-like assistant behavior, proactive communication, message timestamp injection
 
+### Telegram Bash Command Fix
+- **Working Directory Resolution**: `/bash` command now executes in agent's workspace directory instead of gateway process directory (by Dwsy)
+- **Session-Aware Execution**: Resolves session key from Telegram context, retrieves RPC client from pool, uses client's `cwd` for command execution (by Dwsy)
+- **Fallback Handling**: Falls back to `process.cwd()` if no RPC client found for session (by Dwsy)
+- **Debug Logging**: Added working directory logging to help troubleshoot execution context issues (by Dwsy)
+- **Affected Commands**: Both `/bash <cmd>` and `!<cmd>` shortcut now use correct working directory (by Dwsy)
+
 ### Telegram Sticker Support
 - **Inbound Processing**: Download stickers to disk at `~/.pi/gateway/media/telegram/{chatId}/{YYYY-MM-DD}/`, static WEBP stickers downloaded directly, animated/video stickers use thumbnail fallback (by Dwsy)
 - **Sticker Cache**: Metadata cached in `sticker-cache.json` keyed by `file_unique_id`, cache hit refreshes rotating `file_id`/emoji/setName, avoids redundant downloads (by Dwsy)
