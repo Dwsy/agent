@@ -42,6 +42,29 @@ const PHOTO_EXTS = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp"]);
 const AUDIO_EXTS = new Set(["mp3", "ogg", "wav", "m4a", "flac", "aiff", "aac", "opus", "wma"]);
 const VIDEO_EXTS = new Set(["mp4", "webm", "mov", "avi"]);
 
+function formatErrorDetail(err: unknown): string {
+  if (err instanceof Error) {
+    const anyErr = err as Error & { code?: string; cause?: unknown; description?: string; error_code?: number };
+    const parts = [
+      `${anyErr.name}: ${anyErr.message}`,
+      anyErr.code ? `code=${anyErr.code}` : "",
+      typeof anyErr.error_code === "number" ? `error_code=${anyErr.error_code}` : "",
+      anyErr.description ? `description=${anyErr.description}` : "",
+      anyErr.cause ? `cause=${String(anyErr.cause)}` : "",
+    ].filter(Boolean);
+    if (anyErr.stack) {
+      const stackHead = anyErr.stack.split("\n").slice(0, 6).join(" | ");
+      parts.push(`stack=${stackHead}`);
+    }
+    return parts.join("; ");
+  }
+  try {
+    return typeof err === "string" ? err : JSON.stringify(err);
+  } catch {
+    return String(err);
+  }
+}
+
 export interface MediaSendContext {
   config: Config;
   pool: RpcPool;
@@ -220,8 +243,9 @@ export async function handleMediaSendRequest(
       channel,
     });
   } catch (err: unknown) {
-    ctx.log.error(`[media-send] delivery failed: ${(err instanceof Error ? err.message : String(err))}`);
-    return Response.json({ error: err instanceof Error ? err.message : "Media delivery failed" }, { status: 500 });
+    const detail = formatErrorDetail(err);
+    ctx.log.error(`[media-send] delivery failed: ${detail}`);
+    return Response.json({ error: detail }, { status: 500 });
   }
 }
 

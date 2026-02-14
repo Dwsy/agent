@@ -8,11 +8,27 @@ import { startPollingWithRetry } from "./monitor.ts";
 import { startTelegramWebhook } from "./webhook.ts";
 import type { TelegramAccountRuntime, TelegramPluginRuntime, TelegramResolvedAccount } from "./types.ts";
 
+function redactProxy(raw?: string): string {
+  if (!raw?.trim()) return "(empty)";
+  try {
+    const u = new URL(raw);
+    const auth = u.username || u.password ? "***:***@" : "";
+    const host = u.host || "unknown-host";
+    return `${u.protocol}//${auth}${host}`;
+  } catch {
+    return "(invalid)";
+  }
+}
+
 export async function createAccountRuntime(
   runtime: TelegramPluginRuntime,
   account: TelegramResolvedAccount,
 ): Promise<TelegramAccountRuntime> {
   applyProxyEnv(account.cfg.proxy);
+
+  runtime.api.logger.info(
+    `[telegram:${account.accountId}] proxy cfg=${redactProxy(account.cfg.proxy)} env.HTTP_PROXY=${redactProxy(process.env.HTTP_PROXY)} env.HTTPS_PROXY=${redactProxy(process.env.HTTPS_PROXY)}`,
+  );
 
   const bot = new Bot(account.token);
   bot.catch((err) => {
@@ -36,6 +52,7 @@ export async function createAccountRuntime(
     api: runtime.api,
     started: false,
     startMode: account.cfg.webhookUrl ? "webhook" : "polling",
+    mediaSendMode: "auto",
     botId: String(me.id),
     botUsername: me.username ?? undefined,
     debounceMap: new Map(),
