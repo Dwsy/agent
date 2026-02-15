@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync, appendFileSync, readFileSync, existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { RpcPool } from "./rpc-pool.ts";
 import { buildCapabilityProfile } from "./capability-profile.ts";
 import { DEFAULT_CONFIG, type Config } from "./config.ts";
+import { getSessionDir } from "./session-store.ts";
 
 let tempRoot = "";
 let pool: RpcPool | null = null;

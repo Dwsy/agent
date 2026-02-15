@@ -120,6 +120,7 @@ export class RpcPool {
    */
   async acquire(sessionKey: SessionKey, profile: CapabilityProfile, priority?: number): Promise<RpcClient> {
     const targetCwd = profile.cwd;
+    const shouldResumeFromHistory = this.shouldResumeFromHistory(sessionKey);
 
     // Already bound?
     const existingId = this.sessionBindings.get(sessionKey);
@@ -145,43 +146,49 @@ export class RpcPool {
       }
     }
 
-    // Find an idle process with matching profile (cwd + capability signature)
-    // Find an idle process: prefer exact match, fall back to hard match with soft superset
-    let hardCandidate: RpcClient | null = null;
-    for (const client of this.clients.values()) {
-      if (!client.isIdle || !client.isAlive) continue;
-      if (this.matchesProfile(client, profile)) {
-        // Exact match — best case
-        client.sessionKey = sessionKey;
-        client.lastActivity = Date.now();
-        this.sessionBindings.set(sessionKey, client.id);
-        this.log.debug(`Reusing idle process ${client.id} for ${sessionKey} (exact match)`);
+    // Resume-aware behavior: if session has persisted history and continue is enabled,
+    // do not reuse an unrelated idle process (it would miss --continue).
+    if (!shouldResumeFromHistory) {
+      // Find an idle process with matching profile (cwd + capability signature)
+      // Find an idle process: prefer exact match, fall back to hard match with soft superset
+      let hardCandidate: RpcClient | null = null;
+      for (const client of this.clients.values()) {
+        if (!client.isIdle || !client.isAlive) continue;
+        if (this.matchesProfile(client, profile)) {
+          // Exact match — best case
+          client.sessionKey = sessionKey;
+          client.lastActivity = Date.now();
+          this.sessionBindings.set(sessionKey, client.id);
+          this.log.debug(`Reusing idle process ${client.id} for ${sessionKey} (exact match)`);
+          try {
+            await client.newSession();
+            await this.initializeRpcState(client);
+          } catch (err) {
+            this.log.warn(`Failed to reset session on reuse: ${err}`);
+          }
+          return client;
+        }
+        if (!hardCandidate && this.matchesHardProfile(client, profile)) {
+          hardCandidate = client;
+        }
+      }
+
+      // Hard match with soft superset — acceptable reuse
+      if (hardCandidate) {
+        hardCandidate.sessionKey = sessionKey;
+        hardCandidate.lastActivity = Date.now();
+        this.sessionBindings.set(sessionKey, hardCandidate.id);
+        this.log.debug(`Reusing idle process ${hardCandidate.id} for ${sessionKey} (hard match, soft superset)`);
         try {
-          await client.newSession();
-          await this.initializeRpcState(client);
+          await hardCandidate.newSession();
+          await this.initializeRpcState(hardCandidate);
         } catch (err) {
           this.log.warn(`Failed to reset session on reuse: ${err}`);
         }
-        return client;
+        return hardCandidate;
       }
-      if (!hardCandidate && this.matchesHardProfile(client, profile)) {
-        hardCandidate = client;
-      }
-    }
-
-    // Hard match with soft superset — acceptable reuse
-    if (hardCandidate) {
-      hardCandidate.sessionKey = sessionKey;
-      hardCandidate.lastActivity = Date.now();
-      this.sessionBindings.set(sessionKey, hardCandidate.id);
-      this.log.debug(`Reusing idle process ${hardCandidate.id} for ${sessionKey} (hard match, soft superset)`);
-      try {
-        await hardCandidate.newSession();
-        await this.initializeRpcState(hardCandidate);
-      } catch (err) {
-        this.log.warn(`Failed to reset session on reuse: ${err}`);
-      }
-      return hardCandidate;
+    } else {
+      this.log.debug(`Session ${sessionKey} has persisted history, forcing dedicated spawn for --continue`);
     }
 
     // At capacity?
@@ -192,6 +199,23 @@ export class RpcPool {
         // Instead of throwing, enqueue to waiting list with backpressure
         this.log.info(`Pool at capacity (${this.poolConfig.max}), enqueuing ${sessionKey} to waiting list (priority=${priority ?? 5})`);
         const client = await this.waitingList.enqueue(sessionKey, priority ?? 5);
+
+        // If this session should resume from persisted history, recycle drained client
+        // and spawn a dedicated process with --session-dir + --continue.
+        if (shouldResumeFromHistory) {
+          this.log.debug(`Recycling waited client ${client.id} to resume ${sessionKey} with --continue`);
+          this.clients.delete(client.id);
+          client.stop().catch(() => {});
+          this.metrics?.incProcessKill();
+
+          const resumedClient = await this.spawnClient(profile, sessionKey);
+          resumedClient.sessionKey = sessionKey;
+          resumedClient.lastActivity = Date.now();
+          this.sessionBindings.set(sessionKey, resumedClient.id);
+          await this.initializeRpcState(resumedClient);
+          return resumedClient;
+        }
+
         // Waiting entry resolved — set up the client for this session
         client.clearEventListeners();
         client.sessionKey = sessionKey;
@@ -303,6 +327,19 @@ export class RpcPool {
       role: "default",
       cwd,
     });
+  }
+
+  private shouldResumeFromHistory(sessionKey: SessionKey): boolean {
+    if (this.config.session.continueOnRestart === false) return false;
+
+    const sessionDir = getSessionDir(this.config.session.dataDir, sessionKey);
+    if (!existsSync(sessionDir)) return false;
+
+    try {
+      return readdirSync(sessionDir).some((f) => f.endsWith(".jsonl"));
+    } catch {
+      return false;
+    }
   }
 
   private resolveDefaultCwd(): string {
