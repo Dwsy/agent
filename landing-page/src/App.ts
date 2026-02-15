@@ -2,9 +2,11 @@ import { html, LitElement, css } from "lit";
 import { customElement } from "lit/decorators.js";
 import "./components/Navbar";
 import "./components/HeroSection";
-import "./components/WorkflowSection";
 import "./components/BentoGrid";
+import "./components/GatewaySection";
+import "./components/WorkflowSection";
 import "./components/ExtensionsSection";
+import "./components/ComparisonSection";
 import "./components/UseCasesSection";
 import "./components/TechSpecs";
 import "./components/CTASection";
@@ -17,26 +19,24 @@ export class App extends LitElement {
       display: block;
       min-height: 100vh;
     }
-
     main {
       padding-top: 4.5rem;
     }
-
     @media (max-width: 768px) {
-      main {
-        padding-top: 4rem;
-      }
+      main { padding-top: 4rem; }
     }
   `;
 
   render() {
     return html`
       <pi-navbar></pi-navbar>
-      <main>
+      <main id="main-content">
         <hero-section></hero-section>
         <bento-grid></bento-grid>
+        <gateway-section></gateway-section>
         <workflow-section></workflow-section>
         <extensions-section></extensions-section>
+        <comparison-section></comparison-section>
         <use-cases-section></use-cases-section>
         <tech-specs></tech-specs>
         <cta-section></cta-section>
