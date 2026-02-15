@@ -143,6 +143,7 @@ export class ComparisonSection extends LitElement {
 
   connectedCallback() {
     super.connectedCallback();
+    this.id = "comparison";
     this._unsub = i18n.subscribe(() => { this.locale = i18n.getCurrentLocale(); this.requestUpdate(); });
     this._observer = new IntersectionObserver(
       ([e]) => { if (e.isIntersecting) { this._visible = true; this._observer?.disconnect(); } },
@@ -173,7 +174,7 @@ export class ComparisonSection extends LitElement {
     } as Record<string, boolean[]>;
 
     return html`
-      <section class="cmp-section" id="comparison">
+      <section class="cmp-section">
         <div class="section-header reveal ${this._visible ? "visible" : ""}">
           <p class="section-label">${f("comparison.label")}</p>
           <h2 class="section-title">${f("comparison.title")}</h2>
