@@ -2,7 +2,6 @@ import zhCN from "./locales/zh-CN";
 import enUS from "./locales/en-US";
 
 export type Locale = "zh-CN" | "en-US";
-
 export type Translation = typeof enUS;
 
 const LOCALES: Record<Locale, Translation> = {
@@ -13,78 +12,64 @@ const LOCALES: Record<Locale, Translation> = {
 const STORAGE_KEY = "pi-agent-locale";
 
 class I18nManager {
-  private currentLocale: Locale = "zh-CN";
+  private currentLocale: Locale = "en-US";
   private listeners: Set<() => void> = new Set();
 
   constructor() {
-    this.loadFromStorage();
+    this.detectLocale();
   }
 
-  private loadFromStorage() {
+  private detectLocale() {
     try {
       const saved = localStorage.getItem(STORAGE_KEY) as Locale;
       if (saved && LOCALES[saved]) {
         this.currentLocale = saved;
+        return;
       }
-    } catch {
-      // Ignore storage errors
+    } catch {}
+    // Auto-detect from browser
+    const lang = navigator.language || "";
+    if (lang.startsWith("zh")) {
+      this.currentLocale = "zh-CN";
     }
   }
 
-  private saveToStorage() {
-    try {
-      localStorage.setItem(STORAGE_KEY, this.currentLocale);
-    } catch {
-      // Ignore storage errors
-    }
-  }
-
-  getCurrentLocale(): Locale {
-    return this.currentLocale;
-  }
+  getCurrentLocale(): Locale { return this.currentLocale; }
 
   setLocale(locale: Locale) {
     if (LOCALES[locale] && locale !== this.currentLocale) {
       this.currentLocale = locale;
-      this.saveToStorage();
-      this.notifyListeners();
+      try { localStorage.setItem(STORAGE_KEY, locale); } catch {}
+      document.documentElement.lang = locale === "zh-CN" ? "zh-CN" : "en";
+      this.listeners.forEach(l => l());
     }
   }
 
   t(path: string): string {
     const keys = path.split(".");
     let value: any = LOCALES[this.currentLocale];
-
     for (const key of keys) {
       if (value && typeof value === "object" && key in value) {
         value = value[key];
       } else {
-        return path; // Return key if translation not found
+        return path;
       }
     }
-
     return typeof value === "string" ? value : path;
   }
 
   subscribe(listener: () => void) {
     this.listeners.add(listener);
-    return () => this.listeners.delete(listener);
-  }
-
-  private notifyListeners() {
-    this.listeners.forEach((listener) => listener());
+    return () => { this.listeners.delete(listener); };
   }
 
   getAvailableLocales(): Array<{ code: Locale; label: string }> {
     return [
+      { code: "en-US", label: "EN" },
       { code: "zh-CN", label: "中文" },
-      { code: "en-US", label: "English" },
     ];
   }
 }
 
 export const i18n = new I18nManager();
-
-export function t(path: string): string {
-  return i18n.t(path);
-}
+export function t(path: string): string { return i18n.t(path); }

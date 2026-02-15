@@ -5,6 +5,7 @@ export default defineConfig({
   plugins: [
     tailwindcss()
   ],
+  base: "/agent/",
   build: {
     outDir: "../docs",
     emptyOutDir: true,
