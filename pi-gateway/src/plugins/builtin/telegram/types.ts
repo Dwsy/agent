@@ -151,9 +151,39 @@ export interface TelegramMessage {
   reply_to_message?: TelegramMessage;
   message_thread_id?: number;
   media_group_id?: string;
+  date?: number;
   photo?: Array<{ file_id: string }>;
   document?: { file_id: string; file_name?: string; mime_type?: string };
   voice?: { file_id: string; duration?: number };
+  video?: { file_id: string; file_name?: string; mime_type?: string; duration?: number };
+  video_note?: { file_id: string; duration?: number; length?: number };
+  audio?: { file_id: string; file_name?: string; mime_type?: string; duration?: number; performer?: string; title?: string };
+  animation?: { file_id: string; file_name?: string; mime_type?: string };
+  sticker?: {
+    file_id: string;
+    file_unique_id: string;
+    emoji?: string;
+    set_name?: string;
+    is_animated?: boolean;
+    is_video?: boolean;
+    thumbnail?: { file_id: string };
+  };
+  // Forward fields (Bot API 7.0+ forward_origin, plus legacy fields)
+  forward_origin?: {
+    type: "user" | "hidden_user" | "chat" | "channel";
+    date?: number;
+    sender_user?: { id?: number | string; username?: string; first_name?: string; last_name?: string };
+    sender_user_name?: string;
+    sender_chat?: { id?: number | string; title?: string; username?: string; type?: string };
+    chat?: { id?: number | string; title?: string; username?: string; type?: string };
+    message_id?: number;
+    author_signature?: string;
+  };
+  forward_from?: { id?: number | string; username?: string; first_name?: string; last_name?: string };
+  forward_from_chat?: { id?: number | string; title?: string; username?: string; type?: string };
+  forward_from_message_id?: number;
+  forward_date?: number;
+  forward_sender_name?: string;
   migrate_to_chat_id?: number | string;
   chat: {
     id: number | string;

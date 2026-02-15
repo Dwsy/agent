@@ -41,6 +41,79 @@ function buildSource(account: TelegramAccountRuntime, ctx: TelegramContext, mess
   };
 }
 
+/**
+ * Build rich forward context from Telegram forward_origin (Bot API 7.0+) or legacy fields.
+ * Returns null if the message is not forwarded.
+ */
+function buildForwardContext(msg: TelegramMessage): string | null {
+  const origin = msg.forward_origin;
+  const parts: string[] = [];
+
+  if (origin) {
+    // Bot API 7.0+ forward_origin
+    switch (origin.type) {
+      case "user": {
+        const u = origin.sender_user;
+        const name = [u?.first_name, u?.last_name].filter(Boolean).join(" ") || "unknown";
+        const handle = u?.username ? ` (@${u.username})` : "";
+        parts.push(`from: ${name}${handle}`);
+        break;
+      }
+      case "hidden_user":
+        parts.push(`from: ${origin.sender_user_name ?? "hidden user"}`);
+        break;
+      case "chat": {
+        const c = origin.sender_chat;
+        const title = c?.title ?? "unknown chat";
+        const handle = c?.username ? ` (@${c.username})` : "";
+        parts.push(`from chat: ${title}${handle}`);
+        if (origin.author_signature) parts.push(`author: ${origin.author_signature}`);
+        break;
+      }
+      case "channel": {
+        const ch = origin.chat;
+        const title = ch?.title ?? "unknown channel";
+        const handle = ch?.username ? ` (@${ch.username})` : "";
+        parts.push(`from channel: ${title}${handle}`);
+        if (origin.message_id && ch?.username) {
+          parts.push(`link: https://t.me/${ch.username}/${origin.message_id}`);
+        }
+        if (origin.author_signature) parts.push(`author: ${origin.author_signature}`);
+        break;
+      }
+    }
+    if (origin.date) {
+      parts.push(`date: ${new Date(origin.date * 1000).toISOString()}`);
+    }
+  } else if (msg.forward_from || msg.forward_from_chat || msg.forward_sender_name) {
+    // Legacy forward fields
+    if (msg.forward_from) {
+      const u = msg.forward_from;
+      const name = [u.first_name, u.last_name].filter(Boolean).join(" ") || "unknown";
+      const handle = u.username ? ` (@${u.username})` : "";
+      parts.push(`from: ${name}${handle}`);
+    } else if (msg.forward_from_chat) {
+      const c = msg.forward_from_chat;
+      const title = c.title ?? "unknown";
+      const handle = c.username ? ` (@${c.username})` : "";
+      parts.push(`from ${c.type ?? "chat"}: ${title}${handle}`);
+      if (msg.forward_from_message_id && c.username) {
+        parts.push(`link: https://t.me/${c.username}/${msg.forward_from_message_id}`);
+      }
+    } else if (msg.forward_sender_name) {
+      parts.push(`from: ${msg.forward_sender_name}`);
+    }
+    if (msg.forward_date) {
+      parts.push(`date: ${new Date(msg.forward_date * 1000).toISOString()}`);
+    }
+  } else {
+    return null;
+  }
+
+  if (parts.length === 0) return null;
+  return `[Forwarded | ${parts.join(" | ")}]`;
+}
+
 // dispatchAgentTurn → streaming.ts
 
 async function resolveImagesFromMessage(
@@ -70,7 +143,7 @@ async function resolveImagesFromMessage(
     images.push({ type: "image", data: compressed.data, mimeType: compressed.mimeType });
   };
 
-  console.log(`[telegram-media] resolveImages: photo=${msg.photo?.length ?? 0} document=${msg.document?.file_id ? 'yes' : 'no'} sticker=${msg.sticker ? 'yes' : 'no'}`);
+  console.log(`[telegram-media] resolveImages: photo=${msg.photo?.length ?? 0} document=${msg.document?.file_id ? 'yes' : 'no'} sticker=${msg.sticker ? 'yes' : 'no'} video=${msg.video ? 'yes' : 'no'} audio=${msg.audio ? 'yes' : 'no'} animation=${msg.animation ? 'yes' : 'no'} video_note=${msg.video_note ? 'yes' : 'no'}`);
 
   // ── Sticker handling (reference: openclaw/openclaw) ──
   if (msg.sticker?.file_id) {
@@ -171,7 +244,8 @@ async function resolveImagesFromMessage(
         if (sticker.set_name) parts.push(`from "${sticker.set_name}"`);
         if (isThumbnail) parts.push("(thumbnail — animated/video sticker)");
         const stickerCtx = parts.length ? parts.join(" ") : "";
-        documentContext = `[Sticker${stickerCtx ? ` ${stickerCtx}` : ""}]`;
+        const stickerPathNote = savedPath ? `\nFile saved to: ${savedPath}` : "";
+        documentContext = `[Sticker${stickerCtx ? ` ${stickerCtx}` : ""}${stickerPathNote}]`;
 
         console.log(`[telegram-media] sticker resolved: ${mime} ${downloaded.data.length} chars base64, thumbnail=${isThumbnail}`);
       }
@@ -198,11 +272,30 @@ async function resolveImagesFromMessage(
       console.log(`[telegram-media] photo download result: ${downloaded ? `${downloaded.mimeType} ${downloaded.data.length} chars base64` : 'null'}`);
       if (downloaded && downloaded.mimeType.startsWith("image/")) {
         await pushImageForAgent("photo", downloaded.data, downloaded.mimeType);
+
+        // Save photo to disk for agent file access
+        const ext = downloaded.mimeType === "image/png" ? "png" : downloaded.mimeType === "image/webp" ? "webp" : "jpg";
+        const filename = `photo-${Date.now()}.${ext}`;
+        try {
+          const saved = saveMediaBuffer({
+            channel: "telegram",
+            chatId: chatId ?? "unknown",
+            buffer: Buffer.from(downloaded.data, "base64"),
+            contentType: downloaded.mimeType,
+            filename,
+          });
+          console.log(`[telegram-media] photo saved: ${saved.relativePath}`);
+          if (!documentContext) {
+            documentContext = `[Photo saved to: ${saved.path}]`;
+          }
+        } catch (err) {
+          console.error(`[telegram-media] photo save failed: ${err instanceof Error ? err.message : String(err)}`);
+        }
       }
     }
   }
 
-  if (msg.document?.file_id) {
+  if (msg.document?.file_id && !msg.animation) {
     const downloaded = await downloadTelegramFile({
       token: account.token,
       fileId: msg.document.file_id,
@@ -211,23 +304,146 @@ async function resolveImagesFromMessage(
     if (downloaded) {
       if (downloaded.mimeType.startsWith("image/")) {
         await pushImageForAgent("document-image", downloaded.data, downloaded.mimeType);
+
+        // Save image document to disk
+        const ext = downloaded.mimeType === "image/png" ? "png" : downloaded.mimeType === "image/webp" ? "webp" : "jpg";
+        const docFileName = msg.document.file_name ?? `doc-image-${Date.now()}.${ext}`;
+        try {
+          const saved = saveMediaBuffer({
+            channel: "telegram",
+            chatId: chatId ?? "unknown",
+            buffer: Buffer.from(downloaded.data, "base64"),
+            contentType: downloaded.mimeType,
+            filename: docFileName,
+          });
+          console.log(`[telegram-media] document-image saved: ${saved.relativePath}`);
+          if (!documentContext) {
+            documentContext = `[Image: ${docFileName}, saved to: ${saved.path}]`;
+          }
+        } catch (err) {
+          console.error(`[telegram-media] document-image save failed: ${err instanceof Error ? err.message : String(err)}`);
+        }
       }
-      // Non-image documents: store metadata for text context
+      // Non-image documents: save to disk and attach context
       if (!downloaded.mimeType.startsWith("image/")) {
         const fileName = msg.document.file_name ?? "unknown";
         const mimeType = msg.document.mime_type ?? downloaded.mimeType;
+
+        // Save all documents to disk for agent access
+        let savedPath: string | undefined;
+        try {
+          const saved = saveMediaBuffer({
+            channel: "telegram",
+            chatId: chatId ?? "unknown",
+            buffer: Buffer.from(downloaded.data, "base64"),
+            contentType: mimeType,
+            filename: fileName,
+          });
+          savedPath = saved.path;
+          console.log(`[telegram-media] document saved: ${saved.relativePath}`);
+        } catch (err) {
+          console.error(`[telegram-media] document save failed: ${err instanceof Error ? err.message : String(err)}`);
+        }
+
         // For text-based documents, decode content and attach as context
         if (mimeType.startsWith("text/") || mimeType === "application/json" || mimeType === "application/xml") {
           try {
             const textContent = Buffer.from(downloaded.data, "base64").toString("utf-8");
             const truncated = textContent.length > 10000 ? textContent.slice(0, 10000) + "\n...(truncated)" : textContent;
-            documentContext = `[Document: ${fileName} (${mimeType})]\n\`\`\`\n${truncated}\n\`\`\``;
+            const pathNote = savedPath ? `\nFile saved to: ${savedPath}` : "";
+            documentContext = `[Document: ${fileName} (${mimeType})]${pathNote}\n\`\`\`\n${truncated}\n\`\`\``;
           } catch {
-            documentContext = `[Document: ${fileName} (${mimeType}, ${downloaded.data.length} bytes base64)]`;
+            const pathNote = savedPath ? `, saved to: ${savedPath}` : "";
+            documentContext = `[Document: ${fileName} (${mimeType}, ${downloaded.data.length} bytes base64${pathNote})]`;
           }
         } else {
-          documentContext = `[Document: ${fileName} (${mimeType}, binary file — content not readable)]`;
+          const pathNote = savedPath ? `\nFile saved to: ${savedPath}` : "";
+          documentContext = `[Document: ${fileName} (${mimeType})${pathNote}]`;
         }
+      }
+    }
+  }
+
+  // ── Video handling ──
+  if (msg.video?.file_id) {
+    const downloaded = await downloadTelegramFile({ token: account.token, fileId: msg.video.file_id, maxBytes });
+    if (downloaded) {
+      const fileName = msg.video.file_name ?? `video-${Date.now()}.mp4`;
+      const mimeType = msg.video.mime_type ?? downloaded.mimeType;
+      try {
+        const saved = saveMediaBuffer({
+          channel: "telegram", chatId: chatId ?? "unknown",
+          buffer: Buffer.from(downloaded.data, "base64"), contentType: mimeType, filename: fileName,
+        });
+        console.log(`[telegram-media] video saved: ${saved.relativePath}`);
+        const ctx = `[Video: ${fileName} (${mimeType})\nFile saved to: ${saved.path}]`;
+        documentContext = documentContext ? `${documentContext}\n\n${ctx}` : ctx;
+      } catch (err) {
+        console.error(`[telegram-media] video save failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+  }
+
+  // ── Video note (round video) handling ──
+  if (msg.video_note?.file_id) {
+    const downloaded = await downloadTelegramFile({ token: account.token, fileId: msg.video_note.file_id, maxBytes });
+    if (downloaded) {
+      const fileName = `video-note-${Date.now()}.mp4`;
+      try {
+        const saved = saveMediaBuffer({
+          channel: "telegram", chatId: chatId ?? "unknown",
+          buffer: Buffer.from(downloaded.data, "base64"), contentType: "video/mp4", filename: fileName,
+        });
+        console.log(`[telegram-media] video_note saved: ${saved.relativePath}`);
+        const ctx = `[Video Note (round video)\nFile saved to: ${saved.path}]`;
+        documentContext = documentContext ? `${documentContext}\n\n${ctx}` : ctx;
+      } catch (err) {
+        console.error(`[telegram-media] video_note save failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+  }
+
+  // ── Audio handling ──
+  if (msg.audio?.file_id) {
+    const downloaded = await downloadTelegramFile({ token: account.token, fileId: msg.audio.file_id, maxBytes });
+    if (downloaded) {
+      const fileName = msg.audio.file_name ?? `audio-${Date.now()}.mp3`;
+      const mimeType = msg.audio.mime_type ?? downloaded.mimeType;
+      const titleParts: string[] = [];
+      if (msg.audio.performer) titleParts.push(msg.audio.performer);
+      if (msg.audio.title) titleParts.push(msg.audio.title);
+      const titleInfo = titleParts.length ? ` — ${titleParts.join(" - ")}` : "";
+      try {
+        const saved = saveMediaBuffer({
+          channel: "telegram", chatId: chatId ?? "unknown",
+          buffer: Buffer.from(downloaded.data, "base64"), contentType: mimeType, filename: fileName,
+        });
+        console.log(`[telegram-media] audio saved: ${saved.relativePath}`);
+        const ctx = `[Audio: ${fileName}${titleInfo} (${mimeType})\nFile saved to: ${saved.path}]`;
+        documentContext = documentContext ? `${documentContext}\n\n${ctx}` : ctx;
+      } catch (err) {
+        console.error(`[telegram-media] audio save failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+  }
+
+  // ── Animation (GIF) handling ──
+  // Telegram sends both animation and document for GIFs; document is skipped above when animation exists.
+  if (msg.animation?.file_id) {
+    const downloaded = await downloadTelegramFile({ token: account.token, fileId: msg.animation.file_id, maxBytes });
+    if (downloaded) {
+      const fileName = msg.animation.file_name ?? `animation-${Date.now()}.mp4`;
+      const mimeType = msg.animation.mime_type ?? downloaded.mimeType;
+      try {
+        const saved = saveMediaBuffer({
+          channel: "telegram", chatId: chatId ?? "unknown",
+          buffer: Buffer.from(downloaded.data, "base64"), contentType: mimeType, filename: fileName,
+        });
+        console.log(`[telegram-media] animation saved: ${saved.relativePath}`);
+        const ctx = `[Animation/GIF: ${fileName} (${mimeType})\nFile saved to: ${saved.path}]`;
+        documentContext = documentContext ? `${documentContext}\n\n${ctx}` : ctx;
+      } catch (err) {
+        console.error(`[telegram-media] animation save failed: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
   }
@@ -472,27 +688,38 @@ async function handleMessageCommon(runtime: TelegramPluginRuntime, account: Tele
     text = text ? `${text}\n\n${documentContext}` : documentContext;
   }
 
-  // Forward context
-  const fwd = (msg as any).forward_origin ?? (msg as any).forward_from ?? (msg as any).forward_from_chat;
-  if (fwd) {
-    const fwdName = fwd.sender_user?.first_name
-      ?? fwd.sender_user_name
-      ?? fwd.chat?.title
-      ?? (msg as any).forward_from?.first_name
-      ?? (msg as any).forward_from_chat?.title
-      ?? "unknown";
-    text = `[Forwarded from ${fwdName}]\n${text}`;
+  // Forward context — full metadata injection
+  const forwardMeta = buildForwardContext(msg);
+  if (forwardMeta) {
+    text = `${forwardMeta}\n${text}`;
   }
 
-  // Reply context
-  const replied = (msg.reply_to_message?.text ?? msg.reply_to_message?.caption ?? "").trim();
-  if (replied) {
-    const repliedIsBot = msg.reply_to_message?.from?.is_bot && msg.reply_to_message?.from?.id === account.bot.botInfo?.id;
+  // Reply context — include text and media type hints from the replied message
+  const replyMsg = msg.reply_to_message;
+  if (replyMsg) {
+    const repliedIsBot = replyMsg.from?.is_bot && replyMsg.from?.id === account.bot.botInfo?.id;
     if (!repliedIsBot) {
-      const quoted = replied.length > 300 ? `${replied.slice(0, 300)}...` : replied;
-      text = text ? `[Reply to] ${quoted}\n\n${text}` : `[Reply to] ${quoted}`;
+      const repliedText = (replyMsg.text ?? replyMsg.caption ?? "").trim();
+      const parts: string[] = [];
+
+      // Media type hints for the replied message
+      if (replyMsg.photo?.length) parts.push("[photo]");
+      if (replyMsg.document) parts.push(`[document: ${replyMsg.document.file_name ?? "file"}]`);
+      if (replyMsg.video) parts.push(`[video: ${replyMsg.video.file_name ?? "video"}]`);
+      if (replyMsg.audio) parts.push(`[audio: ${replyMsg.audio.file_name ?? replyMsg.audio.title ?? "audio"}]`);
+      if (replyMsg.voice) parts.push("[voice message]");
+      if (replyMsg.video_note) parts.push("[video note]");
+      if (replyMsg.animation) parts.push("[animation/GIF]");
+      if (replyMsg.sticker) parts.push(`[sticker${replyMsg.sticker.emoji ? ` ${replyMsg.sticker.emoji}` : ""}]`);
+
+      const mediaHint = parts.length ? ` ${parts.join(" ")}` : "";
+      const quoted = repliedText.length > 300 ? `${repliedText.slice(0, 300)}...` : repliedText;
+      const replyContent = quoted ? `${quoted}${mediaHint}` : mediaHint.trim();
+
+      if (replyContent) {
+        text = text ? `[Reply to]${replyContent ? ` ${replyContent}` : ""}\n\n${text}` : `[Reply to] ${replyContent}`;
+      }
     }
-    // Skip quoting bot's own messages — agent already has that context
   }
 
   if (!text && images.length > 0) {
@@ -517,6 +744,24 @@ async function handleMessageCommon(runtime: TelegramPluginRuntime, account: Tele
         return;
       }
       const buffer = Buffer.from(downloaded.data, "base64");
+
+      // Save voice to disk
+      let voiceSavedPath: string | undefined;
+      try {
+        const voiceFilename = `voice-${Date.now()}.ogg`;
+        const saved = saveMediaBuffer({
+          channel: "telegram",
+          chatId,
+          buffer,
+          contentType: downloaded.mimeType || "audio/ogg",
+          filename: voiceFilename,
+        });
+        voiceSavedPath = saved.path;
+        console.log(`[telegram-media] voice saved: ${saved.relativePath}`);
+      } catch (err) {
+        console.error(`[telegram-media] voice save failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+
       const { transcribeAudio } = await import("./audio-transcribe.ts");
       const transcript = await transcribeAudio(buffer, downloaded.mimeType || "audio/ogg", {
         provider: audioCfg.provider ?? "groq",
@@ -526,7 +771,8 @@ async function handleMessageCommon(runtime: TelegramPluginRuntime, account: Tele
         timeoutMs: (audioCfg.timeoutSeconds ?? 30) * 1000,
       });
       if (transcript) {
-        text = text ? `${text}\n\n[Voice message] ${transcript}` : `[Voice message] ${transcript}`;
+        const pathNote = voiceSavedPath ? ` (saved to: ${voiceSavedPath})` : "";
+        text = text ? `${text}\n\n[Voice message${pathNote}] ${transcript}` : `[Voice message${pathNote}] ${transcript}`;
       } else {
         await ctx.reply("语音转录失败，请重试或发送文字。");
         return;
