@@ -154,14 +154,17 @@ if (tmuxSessionExists(config.tmux.tunnelSession)) {
 if (!tmuxSessionExists(config.tmux.webSession)) {
   console.log("🌐 启动 Web 服务器...");
   
-  // 检测可用的 HTTP 服务器
+  // 检测可用的 HTTP 服务器（优先使用系统级工具，减少依赖）
   let serverCmd = "";
-  if (execSilent("which bun")) {
+  if (execSilent("which python3")) {
+    serverCmd = `python3 -m http.server ${config.localPort}`;
+  } else if (execSilent("which bunx")) {
     serverCmd = `bunx serve -p ${config.localPort}`;
   } else if (execSilent("which npx")) {
     serverCmd = `npx serve -p ${config.localPort}`;
   } else {
-    serverCmd = `python3 -m http.server ${config.localPort}`;
+    console.error("❌ 未找到可用的 HTTP 服务器 (python3/bunx/npx)");
+    process.exit(1);
   }
   
   exec(`tmux new-session -d -s ${config.tmux.webSession} -c "${config.webDir}" "${serverCmd}"`);
