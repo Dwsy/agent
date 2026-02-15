@@ -1,5 +1,33 @@
 # Changelog
 
+## [v3.10] - 2026-02-15
+
+**Focus:** Telegram Inbound Media Path Injection & Forward Metadata — all attachment types now save to disk with path injection, forwarded messages carry full origin metadata
+
+### Inbound Media Path Injection
+- **Photo**: Downloaded photos now saved to `~/.pi/gateway/media/telegram/{chatId}/{date}/photo-{ts}.{ext}` with `[Photo saved to: ...]` context injection (by Dwsy)
+- **Document (binary)**: PDF and other binary documents now saved to disk with `[Document: name (mime)\nFile saved to: ...]` instead of the useless `binary file — content not readable` (by Dwsy)
+- **Document (text)**: Text-based documents (json/xml/text) now also include `File saved to: ...` path alongside inline content (by Dwsy)
+- **Document (image)**: Image documents saved to disk with `[Image: name, saved to: ...]` context (by Dwsy)
+- **Video**: New `msg.video` handler — downloads, saves to disk, injects `[Video: name (mime)\nFile saved to: ...]` (by Dwsy)
+- **Video Note**: New `msg.video_note` handler — round video messages saved with `[Video Note (round video)\nFile saved to: ...]` (by Dwsy)
+- **Audio**: New `msg.audio` handler — saves with performer/title metadata, injects `[Audio: name — artist - title (mime)\nFile saved to: ...]` (by Dwsy)
+- **Animation/GIF**: New `msg.animation` handler with dedup guard (`!msg.animation` on document block) to prevent Telegram's dual animation+document from saving twice (by Dwsy)
+- **Voice**: Voice messages now saved to disk before transcription, path injected into `[Voice message (saved to: ...)]` transcript context (by Dwsy)
+- **Sticker**: Existing sticker handler now includes `File saved to: ...` in documentContext (was missing despite saving to disk) (by Dwsy)
+
+### Forward Metadata Enhancement
+- **`buildForwardContext()`**: New dedicated function replacing inline `as any` forward handling, supports Bot API 7.0+ `forward_origin` (user/hidden_user/chat/channel) and legacy fields (`forward_from`/`forward_from_chat`/`forward_sender_name`) (by Dwsy)
+- **Full Metadata**: Injects origin name, @handle, channel link (`https://t.me/{username}/{msgId}`), author signature, and ISO date (by Dwsy)
+- **Format**: `[Forwarded | from channel: Tech News (@technews) | link: https://t.me/technews/1234 | author: Editor | date: 2026-02-15T01:13:55.000Z]` (by Dwsy)
+
+### Reply Context Enhancement
+- **Media Type Hints**: Reply-to messages now include media type indicators — `[photo]`, `[document: file.pdf]`, `[video: clip.mp4]`, `[audio: song.mp3]`, `[voice message]`, `[video note]`, `[animation/GIF]`, `[sticker 😀]` (by Dwsy)
+- **Format**: `[Reply to] 看看这个 [document: 简历.pdf] [photo]` (by Dwsy)
+
+### Type Safety
+- **TelegramMessage**: Added `video`, `video_note`, `audio`, `animation`, `sticker`, `forward_origin`, `forward_from`, `forward_from_chat`, `forward_from_message_id`, `forward_date`, `forward_sender_name`, `date` fields — eliminated all `as any` casts in forward handling (by Dwsy)
+
 ## [v3.9] - 2026-02-14
 
 **Focus:** AI Personality & Context Enhancement — human-like assistant behavior, proactive communication, message timestamp injection
