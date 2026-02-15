@@ -37,6 +37,7 @@ export class TechSpecs extends LitElement {
 
   connectedCallback() {
     super.connectedCallback();
+    this.id = "tech-specs";
     i18n.subscribe(() => { this.locale = i18n.getCurrentLocale(); this.requestUpdate(); });
   }
 
@@ -72,7 +73,7 @@ export class TechSpecs extends LitElement {
   render() {
     const f = i18n.t.bind(i18n);
     return html`
-      <section class="section" id="tech-specs">
+      <section class="section">
         <div class="header">
           <p class="label">${f("techSpecs.label")}</p>
           <h2 class="title">${f("techSpecs.title")}</h2>

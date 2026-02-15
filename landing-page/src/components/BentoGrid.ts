@@ -225,6 +225,7 @@ export class BentoGrid extends LitElement {
 
   connectedCallback() {
     super.connectedCallback();
+    this.id = "features";
     this._unsub = i18n.subscribe(() => {
       this.locale = i18n.getCurrentLocale();
     });
@@ -337,7 +338,7 @@ export class BentoGrid extends LitElement {
   render() {
     void this.locale; // trigger reactivity
     return html`
-      <section class="section" id="features">
+      <section class="section">
         <div class="inner">
           <div class="header">
             <p class="label">${this.t("features.label")}</p>

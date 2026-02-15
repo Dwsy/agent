@@ -169,6 +169,7 @@ export class ExtensionsSection extends LitElement {
 
   connectedCallback() {
     super.connectedCallback();
+    this.id = "extensions";
     i18n.subscribe(() => { this.locale = i18n.getCurrentLocale(); this.requestUpdate(); });
   }
 
@@ -206,7 +207,7 @@ export class ExtensionsSection extends LitElement {
     const f = i18n.t.bind(i18n);
 
     return html`
-      <section class="ext-section" id="extensions">
+      <section class="ext-section">
         <div class="section-header">
           <p class="section-label">${f("extensions.label")}</p>
           <h2 class="section-title">${f("extensions.title")}</h2>

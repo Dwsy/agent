@@ -266,6 +266,7 @@ export class GatewaySection extends LitElement {
 
   connectedCallback() {
     super.connectedCallback();
+    this.id = "gateway";
     this._unsub = i18n.subscribe(() => {
       this.locale = i18n.getCurrentLocale();
     });
@@ -334,7 +335,7 @@ export class GatewaySection extends LitElement {
   render() {
     void this.locale;
     return html`
-      <section class="section" id="gateway">
+      <section class="section">
         <div class="inner">
           <div class="header">
             <p class="label">${this.t("gateway.label")}</p>

@@ -118,6 +118,7 @@ export class WorkflowSection extends LitElement {
 
   connectedCallback() {
     super.connectedCallback();
+    this.id = "workflow";
     i18n.subscribe(() => { this.locale = i18n.getCurrentLocale(); this.requestUpdate(); });
   }
 
@@ -154,7 +155,7 @@ export class WorkflowSection extends LitElement {
     const levels = ["l1", "l2", "l3", "l4"] as const;
 
     return html`
-      <section class="workflow-section" id="workflow">
+      <section class="workflow-section">
         <div class="section-header">
           <p class="section-label">${f("workflow.label")}</p>
           <h2 class="section-title">${f("workflow.title")}</h2>

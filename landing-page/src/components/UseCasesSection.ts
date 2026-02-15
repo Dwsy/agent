@@ -160,6 +160,7 @@ export class UseCasesSection extends LitElement {
 
   connectedCallback() {
     super.connectedCallback();
+    this.id = "use-cases";
     this._unsub = i18n.subscribe(() => { this.locale = i18n.getCurrentLocale(); this.requestUpdate(); });
     this._observer = new IntersectionObserver(
       (entries) => {
@@ -206,7 +207,7 @@ export class UseCasesSection extends LitElement {
   render() {
     const f = i18n.t.bind(i18n);
     return html`
-      <section class="uc-section" id="use-cases">
+      <section class="uc-section">
         <div class="section-header reveal-header ${this._headerVisible ? "visible" : ""}" data-idx="header">
           <p class="section-label">${f("useCases.label")}</p>
           <h2 class="section-title">${f("useCases.title")}</h2>
