@@ -288,5 +288,9 @@ export function createPluginApi(
     releaseSession(sessionKey: SessionKey) {
       ctx.pool.release(sessionKey);
     },
+
+    readTranscript(sessionKey: SessionKey, lastN = 100) {
+      return ctx.transcripts.readTranscript(sessionKey, lastN);
+    },
   };
 }
