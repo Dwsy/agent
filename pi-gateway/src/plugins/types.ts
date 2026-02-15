@@ -143,6 +143,17 @@ export interface ReadHistoryResult {
 // Channel Outbound (CA-1: extracted as named interface)
 // ============================================================================
 
+/** Inline keyboard button for channel-agnostic keyboard interactions */
+export interface InlineKeyboardButton {
+  text: string;
+  callback_data: string;
+}
+
+/** Inline keyboard markup (rows of buttons) */
+export interface InlineKeyboardMarkup {
+  inline_keyboard: InlineKeyboardButton[][];
+}
+
 export interface ChannelOutbound {
   /** Send text to a target in this channel. Returns delivery result. */
   sendText(target: string, text: string, opts?: SendOptions): Promise<MessageSendResult>;
@@ -158,6 +169,10 @@ export interface ChannelOutbound {
   pinMessage?(target: string, messageId: string, unpin?: boolean): Promise<MessageActionResult>;
   /** Read recent messages from a chat (optional — v3.8) */
   readHistory?(target: string, limit?: number, before?: string): Promise<ReadHistoryResult>;
+  /** Send an inline keyboard and return the sent message ID (optional — v3.9) */
+  sendKeyboard?(target: string, text: string, keyboard: InlineKeyboardMarkup): Promise<MessageSendResult>;
+  /** Edit a message's text and optional inline keyboard (optional — v3.9) */
+  editMessageMarkup?(target: string, messageId: string, text: string, keyboard?: InlineKeyboardMarkup): Promise<MessageActionResult>;
   /** Max message length for this channel (for chunking) */
   maxLength?: number;
 }
@@ -502,6 +517,9 @@ export interface GatewayPluginApi {
 
   /** Release an RPC process bound to a session (returns it to pool) */
   releaseSession(sessionKey: SessionKey): void;
+
+  /** Read transcript entries for a session (from gateway JSONL logs) */
+  readTranscript(sessionKey: SessionKey, lastN?: number): import("../core/transcript-logger.ts").TranscriptEntry[];
 }
 
 // ============================================================================

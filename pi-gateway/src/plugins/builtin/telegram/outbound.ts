@@ -424,3 +424,59 @@ export async function readHistoryViaAccount(params: {
   // For now, Telegram bots cannot read arbitrary chat history via Bot API.
   return { ok: false, error: "Telegram Bot API does not support reading chat history" };
 }
+
+// ============================================================================
+// Inline keyboard (v3.9)
+// ============================================================================
+
+export async function sendKeyboardViaAccount(params: {
+  runtime: TelegramPluginRuntime;
+  defaultAccountId: string;
+  target: string;
+  text: string;
+  keyboard: import("../../types.ts").InlineKeyboardMarkup;
+}): Promise<MessageSendResult> {
+  const { account, parsed } = resolveAccount(params.runtime, params.target, params.defaultAccountId);
+  if (!account) return { ok: false, error: "Telegram account not started" };
+
+  const threadId = parsed.topicId ? Number.parseInt(parsed.topicId, 10) : undefined;
+
+  try {
+    const sent = await account.bot.api.sendMessage(parsed.chatId, markdownToTelegramHtml(params.text), {
+      parse_mode: "HTML",
+      reply_markup: params.keyboard,
+      ...(threadId ? { message_thread_id: threadId } : {}),
+    });
+    recordSentMessage(parsed.chatId, sent.message_id);
+    return { ok: true, messageId: String(sent.message_id) };
+  } catch (err: unknown) {
+    return { ok: false, error: err instanceof Error ? err.message : "sendKeyboard failed" };
+  }
+}
+
+export async function editMessageMarkupViaAccount(params: {
+  runtime: TelegramPluginRuntime;
+  defaultAccountId: string;
+  target: string;
+  messageId: string;
+  text: string;
+  keyboard?: import("../../types.ts").InlineKeyboardMarkup;
+}): Promise<MessageActionResult> {
+  const { account, parsed } = resolveAccount(params.runtime, params.target, params.defaultAccountId);
+  if (!account) return { ok: false, error: "Telegram account not started" };
+
+  try {
+    await account.bot.api.editMessageText(
+      parsed.chatId,
+      Number(params.messageId),
+      markdownToTelegramHtml(params.text),
+      {
+        parse_mode: "HTML",
+        ...(params.keyboard ? { reply_markup: params.keyboard } : {}),
+      },
+    );
+    return { ok: true };
+  } catch (err: unknown) {
+    return { ok: false, error: err instanceof Error ? err.message : "editMessageMarkup failed" };
+  }
+}

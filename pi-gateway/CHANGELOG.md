@@ -1,5 +1,46 @@
 # Changelog
 
+## [v3.12] - 2026-02-15
+
+**Focus:** Keyboard Interaction Tool & Resume Enhancement — AI agent can now send inline keyboards to users, /resume gains interactive session picker with preview
+
+### Keyboard Interaction Tool (`keyboard_select`)
+- **New gateway tool** `keyboard_select`: agent sends inline keyboard options to user, blocks until selection or timeout (by Dwsy)
+- **API endpoint** `POST /api/keyboard`: accepts title, options, columns, timeout; resolves session/channel, sends keyboard, waits for callback (by Dwsy)
+- **Pending request store**: in-memory map with auto-timeout cleanup, `resolveKeyboard()` / `cancelKeyboard()` for callback resolution (by Dwsy)
+- **Callback data encoding**: `kb:{requestId}:{optionId}` format, validated against 64-byte Telegram limit (by Dwsy)
+- **Post-selection UX**: message auto-edits to show selected option with ✅, timeout shows ⏰ indicator (by Dwsy)
+
+### Channel Outbound Extensions
+- **`sendKeyboard()`**: new optional method on `ChannelOutbound` — sends text with inline keyboard markup (by Dwsy)
+- **`editMessageMarkup()`**: new optional method — edits message text and optionally replaces keyboard (by Dwsy)
+- **`InlineKeyboardMarkup` / `InlineKeyboardButton`**: channel-agnostic types in plugin types (by Dwsy)
+- **Telegram implementation**: `sendKeyboardViaAccount()` and `editMessageMarkupViaAccount()` in outbound.ts (by Dwsy)
+
+### Resume Command Enhancement
+- **Interactive mode**: `/resume` without args shows paginated session list with inline keyboard (by Dwsy)
+- **Preview (👁)**: `rsm_see:{idx}` callback reads JSONL transcript, extracts first user message via `readTranscript()`, displays in `<blockquote>` (by Dwsy)
+- **Resume (▶)**: `rsm:{idx}` callback switches session, edits original message to show result (by Dwsy)
+- **Pagination**: `rsm_pg:{page}` callback for navigating session pages (5 per page) (by Dwsy)
+- **Backward compat**: `/resume <number|key>` still works as direct switch (by Dwsy)
+
+### Plugin API
+- **`readTranscript()`**: new method on `GatewayPluginApi` — reads JSONL transcript entries for a session (by Dwsy)
+
+## [v3.11] - 2026-02-15
+
+**Focus:** Concise Output Mode — builtin plugin for send_message-only communication
+
+### Concise Mode Plugin
+- **Builtin plugin** `concise-mode`: injects system prompt instructing agent to communicate ONLY via `send_message` tool, suppressing verbose final response (by Dwsy)
+- **Prompt injection** via `message_received` hook: appends concise-mode instructions to inbound messages for configured channels (by Dwsy)
+- **Response suppression** via `after_tool_call` + `message_sending` hooks: tracks `send_message` calls per session, replaces final `outbound.text` with `[NO_REPLY]` when agent already sent via tool (by Dwsy)
+- **Config**: `plugins.config.conciseMode.enabled` (default: false), `plugins.config.conciseMode.channels` (default: ["telegram"]) (by Dwsy)
+- **Loader registration**: added to `builtins` array and `isServicePlugin` check in `loader.ts` to bypass channel config requirement (by Dwsy)
+
+### Pipeline Enhancement
+- **`[NO_REPLY]` universal**: silent token now works for both DM and group chats (previously group-only), enabling concise-mode to suppress duplicate responses in private conversations (by Dwsy)
+
 ## [v3.10] - 2026-02-15
 
 **Focus:** Telegram Inbound Media Path Injection & Forward Metadata — all attachment types now save to disk with path injection, forwarded messages carry full origin metadata

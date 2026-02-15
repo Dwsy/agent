@@ -20,6 +20,7 @@ import { handleApiChat, handleApiChatStream } from "./chat-api.ts";
 import { handleApiSend } from "./send-api.ts";
 import { redactConfig } from "../core/auth.ts";
 import { loadConfig } from "../core/config.ts";
+import { handleKeyboardRequest } from "./keyboard-interact.ts";
 
 /**
  * Route an HTTP request to the appropriate handler.
@@ -189,6 +190,14 @@ export async function routeHttp(req: Request, url: URL, ctx: GatewayContext): Pr
   // Message action API (v3.6: react/edit/delete via channel plugins)
   if (pathname === "/api/message/action" && method === "POST") {
     return handleMessageAction(req, {
+      config: ctx.config, pool: ctx.pool, registry: ctx.registry,
+      sessions: ctx.sessions, log: ctx.log,
+    });
+  }
+
+  // Keyboard interaction API (v3.9: inline keyboard selection via channel plugins)
+  if (pathname === "/api/keyboard" && method === "POST") {
+    return handleKeyboardRequest(req, {
       config: ctx.config, pool: ctx.pool, registry: ctx.registry,
       sessions: ctx.sessions, log: ctx.log,
     });
