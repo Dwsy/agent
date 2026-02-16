@@ -304,7 +304,7 @@ function ensureRoleMapping(cwd: string, role: string, config: Config): void {
   }
 }
 
-function resolveRolesDir(config: Config): string {
+export function resolveRolesDir(config: Config): string {
   const runtimeAgentDir = config.agent.runtime?.agentDir?.trim();
   if (runtimeAgentDir) {
     return join(runtimeAgentDir.replace(/^~/, homedir()), "roles");

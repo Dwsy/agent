@@ -20,6 +20,7 @@
 import type { GatewayContext } from "./types.ts";
 import type { InboundMessage } from "../core/types.ts";
 import type { RpcClient } from "../core/rpc-client.ts";
+import { isSenderAllowed } from "../security/allowlist.ts";
 
 // TUI-dependent commands that hang in RPC mode
 const TUI_COMMANDS = [
@@ -97,6 +98,34 @@ export async function tryHandleCommand(
   return false;
 }
 
+function canManageRole(
+  ctx: GatewayContext,
+  senderId: string,
+  channel: string,
+  accountId?: string,
+): boolean {
+  const channels = ctx.config.channels as Record<string, any>;
+
+  if (channel === "telegram") {
+    const tg = channels.telegram;
+    const accountCfg = accountId ? tg?.accounts?.[accountId] : tg?.accounts?.default;
+    const cfg = accountCfg ?? tg;
+    const policy = cfg?.dmPolicy ?? "allowlist";
+    const allowFrom = cfg?.allowFrom;
+    return isSenderAllowed("telegram", senderId, policy, allowFrom, accountId ?? "default");
+  }
+
+  if (channel === "discord") {
+    const dc = channels.discord;
+    const allowFrom = dc?.dm?.allowFrom ?? dc?.allowFrom;
+    return isSenderAllowed("discord", senderId, "allowlist", allowFrom);
+  }
+
+  const generic = channels[channel];
+  const allowFrom = generic?.allowFrom;
+  return isSenderAllowed(channel, senderId, "allowlist", allowFrom);
+}
+
 /**
  * Register built-in gateway commands.
  *
@@ -111,7 +140,7 @@ export function registerBuiltinCommands(ctx: GatewayContext): void {
 
   ctx.registry.commands.set("role", {
     pluginId: "gateway-core",
-    handler: async ({ sessionKey, args, respond }) => {
+    handler: async ({ sessionKey, senderId, channel, accountId, args, respond }) => {
       const session = ctx.sessions.get(sessionKey);
       if (!session) {
         await respond("No active session. Send a normal message first, then use /role.");
@@ -134,6 +163,11 @@ export function registerBuiltinCommands(ctx: GatewayContext): void {
       }
 
       if (action === "set" || action === "switch") {
+        if (!canManageRole(ctx, senderId, channel, accountId)) {
+          await respond("Unauthorized: /role set requires allowFrom authorization.");
+          return;
+        }
+
         const targetRole = rest.join(" ").trim();
         if (!targetRole) {
           await respond("Usage: /role set <role>");
@@ -183,6 +217,7 @@ async function executeLocalCommand(
       sessionKey: msg.sessionKey,
       senderId: msg.source.senderId,
       channel: msg.source.channel,
+      accountId: msg.source.accountId,
       args: parsed.args,
       respond: sendReply,
     });
