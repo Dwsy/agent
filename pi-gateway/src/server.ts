@@ -9,7 +9,6 @@
 
 import type { Server, ServerWebSocket } from "bun";
 import { existsSync, readdirSync } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
 
 import { resolveAuthConfig, authenticateRequest, buildAuthExemptPrefixes } from "./core/auth.ts";
@@ -19,7 +18,7 @@ import { executeRegisteredTool } from "./gateway/tool-executor.ts";
 import { loadConfig, ensureDataDir, type Config, type CronJob, resolveConfigPath, watchConfig } from "./core/config.ts";
 import { RpcPool } from "./core/rpc-pool.ts";
 import { MessageQueueManager, type PrioritizedWork } from "./core/message-queue.ts";
-import { resolveSessionKey, resolveAgentId, getCwdForRole } from "./core/session-router.ts";
+import { resolveSessionKey, resolveAgentId, getCwdForRole, resolveRolesDir } from "./core/session-router.ts";
 import { createLogger as createConsoleLogger, setLogLevel, type Logger, type InboundMessage, type SessionKey, type SessionState, type WsFrame } from "./core/types.ts";
 import { SessionStore } from "./core/session-store.ts";
 import { initFileLogger, createFileLogger } from "./core/logger-file.ts";
@@ -370,7 +369,7 @@ export class Gateway {
       if (role) roleSet.add(role);
     }
 
-    const rolesDir = this.resolveRolesDir();
+    const rolesDir = resolveRolesDir(this.config);
     if (existsSync(rolesDir)) {
       try {
         for (const entry of readdirSync(rolesDir, { withFileTypes: true })) {
@@ -386,17 +385,13 @@ export class Gateway {
     return Array.from(roleSet).sort((a, b) => a.localeCompare(b));
   }
 
-  private resolveRolesDir(): string {
-    const runtimeAgentDir = this.config.agent.runtime?.agentDir?.trim();
-    if (runtimeAgentDir) {
-      return join(runtimeAgentDir.replace(/^~/, homedir()), "roles");
-    }
-    return join(homedir(), ".pi", "agent", "roles");
-  }
-
   private async setSessionRole(sessionKey: SessionKey, newRole: string): Promise<boolean> {
     const role = newRole.trim();
     if (!role) return false;
+    if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/.test(role)) return false;
+
+    const availableRoles = this.listAvailableRoles();
+    if (!availableRoles.includes(role)) return false;
 
     const session = this.sessions.get(sessionKey);
     if (!session) return false;
@@ -404,15 +399,25 @@ export class Gateway {
     if (session.role === role) return true;
 
     const rpc = this.pool.getForSession(sessionKey);
-    if (rpc && session.isStreaming) {
-      try {
-        await rpc.abort();
-      } catch {
-        // ignore abort failures and continue role switch
-      }
-    }
+    if (rpc) {
+      if (session.isStreaming || !rpc.isIdle) {
+        try {
+          await rpc.abort();
+        } catch (err) {
+          this.log.warn(`[role] abort before switch failed for ${sessionKey}: ${err instanceof Error ? err.message : String(err)}`);
+        }
 
-    this.pool.release(sessionKey);
+        try {
+          await rpc.waitForIdle(5_000);
+        } catch (err) {
+          this.log.warn(`[role] waitForIdle timeout for ${sessionKey}: ${err instanceof Error ? err.message : String(err)}`);
+          return false;
+        }
+      }
+
+      if (!rpc.isIdle) return false;
+      this.pool.release(sessionKey);
+    }
 
     session.role = role;
     session.isStreaming = false;
