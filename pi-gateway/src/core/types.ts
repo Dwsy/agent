@@ -203,6 +203,18 @@ export interface SessionState {
   lastChatId?: string;
   /** Channel name extracted from session key or message source */
   lastChannel?: string;
+  /** Last account id for multi-account channels (e.g. telegram account) */
+  lastAccountId?: string;
+  /** Last chat type for delivery routing (dm/group/channel/thread) */
+  lastChatType?: "dm" | "group" | "channel" | "thread";
+  /** Last sender id bound to this session (user-channel relationship tracking) */
+  lastSenderId?: string;
+  /** Last sender display name (optional) */
+  lastSenderName?: string;
+  /** Last topic id (telegram forum topic) */
+  lastTopicId?: string;
+  /** Last thread id (discord/web thread) */
+  lastThreadId?: string;
   /** Auto-compaction in progress (to prevent message race) */
   isCompacting?: boolean;
 }

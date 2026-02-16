@@ -103,12 +103,13 @@ function resolveDmSessionKey(source: MessageSource, config: Config, agentId: str
  * Priority (most specific first):
  *   1. Discord guild channel-level role
  *   2. Discord guild-level role
- *   3. Telegram group-level role
- *   4. Channel-level default role
- *   5. Global default (null → use default role from role-persona)
+ *   3. Telegram topic-level role
+ *   4. Telegram group-level role
+ *   5. Channel-level default role
+ *   6. Global default (null → use default role from role-persona)
  */
 export function resolveRoleForSession(source: MessageSource, config: Config): string | null {
-  const { channel, accountId, chatType, chatId, guildId } = source;
+  const { channel, accountId, chatType, chatId, guildId, topicId } = source;
 
   // Discord: check guild > channel hierarchy
   if (channel === "discord" && config.channels.discord) {
@@ -125,11 +126,20 @@ export function resolveRoleForSession(source: MessageSource, config: Config): st
     if (dc.role) return dc.role;
   }
 
-  // Telegram: check group > channel hierarchy
+  // Telegram: check topic > group > account > channel hierarchy
   if (channel === "telegram" && config.channels.telegram) {
     const tg = config.channels.telegram as any;
     const accountCfg = accountId ? tg.accounts?.[accountId] : undefined;
     const groups = accountCfg?.groups ?? tg.groups;
+
+    if (chatType === "group" && topicId) {
+      const groupTopicRole = groups?.[chatId]?.topics?.[topicId]?.role;
+      if (groupTopicRole) return groupTopicRole;
+
+      const wildcardGroupTopicRole = groups?.["*"]?.topics?.[topicId]?.role;
+      if (wildcardGroupTopicRole) return wildcardGroupTopicRole;
+    }
+
     if (chatType === "group" && groups?.[chatId]?.role) {
       return groups[chatId].role;
     }

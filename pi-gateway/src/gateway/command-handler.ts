@@ -99,10 +99,60 @@ export async function tryHandleCommand(
 
 /**
  * Register built-in gateway commands.
- * Currently empty — /role handled by role-persona via RPC.
+ *
+ * /role
+ *   - /role                    查看当前 role
+ *   - /role list               列出可用 role
+ *   - /role set <name>         切换当前会话 role
  */
-export function registerBuiltinCommands(_ctx: GatewayContext): void {
-  // All slash commands forward to pi RPC
+export function registerBuiltinCommands(ctx: GatewayContext): void {
+  // Keep plugin priority: don't override if plugin already registered /role.
+  if (ctx.registry.commands.has("role")) return;
+
+  ctx.registry.commands.set("role", {
+    pluginId: "gateway-core",
+    handler: async ({ sessionKey, args, respond }) => {
+      const session = ctx.sessions.get(sessionKey);
+      if (!session) {
+        await respond("No active session. Send a normal message first, then use /role.");
+        return;
+      }
+
+      const raw = (args ?? "").trim();
+      if (!raw) {
+        await respond(`Current role: ${session.role ?? "default"}`);
+        return;
+      }
+
+      const [sub, ...rest] = raw.split(/\s+/);
+      const action = sub.toLowerCase();
+
+      if (action === "list") {
+        const roles = ctx.listAvailableRoles();
+        await respond(roles.length ? `Available roles: ${roles.join(", ")}` : "No roles available.");
+        return;
+      }
+
+      if (action === "set" || action === "switch") {
+        const targetRole = rest.join(" ").trim();
+        if (!targetRole) {
+          await respond("Usage: /role set <role>");
+          return;
+        }
+
+        const ok = await ctx.setSessionRole(sessionKey, targetRole);
+        if (!ok) {
+          await respond(`Failed to switch role to '${targetRole}'.`);
+          return;
+        }
+
+        await respond(`Role switched to: ${targetRole}`);
+        return;
+      }
+
+      await respond("Usage: /role | /role list | /role set <role>");
+    },
+  });
 }
 
 // ============================================================================
