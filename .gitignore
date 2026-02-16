@@ -184,3 +184,6 @@ git/
 
 # Deploy CLI history
 .deploy-cli-history
+
+# Vector memory database (per-role, generated)
+**/.vector-db/
