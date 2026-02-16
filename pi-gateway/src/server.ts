@@ -351,6 +351,13 @@ export class Gateway {
     await this.registry.hooks.dispatch("after_compaction", { sessionKey, summary });
   }
 
+  private reloadConfig(): void {
+    const reloaded = loadConfig();
+    this.config = reloaded;
+    this.pool.setConfig(reloaded);
+    this.log.info("Gateway config reloaded (pool config refreshed)");
+  }
+
   private listAvailableRoles(): string[] {
     const roleSet = new Set<string>();
 
@@ -546,7 +553,7 @@ export class Gateway {
       compactSessionWithHooks: (sk, inst) => this.compactSessionWithHooks(sk, inst),
       listAvailableRoles: () => this.listAvailableRoles(),
       setSessionRole: async (sk, newRole) => this.setSessionRole(sk, newRole),
-      reloadConfig: () => { this.config = loadConfig(); },
+      reloadConfig: () => this.reloadConfig(),
       onCronDelivered: (sk) => {
         markCronSelfDelivered(sk);
       },
