@@ -3,7 +3,7 @@ import type { MessageSource } from "../../../core/types.ts";
 import { isSenderAllowed, type DmPolicy } from "../../../security/allowlist.ts";
 import { escapeHtml, markdownToTelegramHtml } from "./format.ts";
 import { parseMediaCommandArgs, sendTelegramMedia } from "./media-send.ts";
-import { registerModelCommand, registerCallbackHandler } from "./model-selector.ts";
+import { registerModelCommand, registerCallbackHandler, buildResumeView } from "./model-selector.ts";
 import { collectSysInfo } from "./sysinfo.ts";
 import type { TelegramAccountRuntime, TelegramContext, TelegramPluginRuntime } from "./types.ts";
 
@@ -272,6 +272,8 @@ function resolveConfiguredSessionMode(runtime: TelegramPluginRuntime, account: T
 }
 
 // renderModelProviders + renderProviderModels → model-selector.ts
+
+// Resume keyboard UI → model-selector.ts (buildResumeView, handleResumeCallback)
 
 export async function setupTelegramCommands(runtime: TelegramPluginRuntime, account: TelegramAccountRuntime): Promise<void> {
   const bot = account.bot;
@@ -711,61 +713,45 @@ export async function setupTelegramCommands(runtime: TelegramPluginRuntime, acco
 
   bot.command("resume", async (ctx: any) => {
     const arg = String(ctx.match ?? "").trim();
-    if (!arg) {
-      await ctx.reply("Usage: /resume <number|sessionKey>");
-      return;
-    }
-
     const sessions = runtime.api.listSessions();
-    let target: any = null;
-
-    const idx = parseInt(arg, 10);
-    if (!isNaN(idx) && idx >= 1 && idx <= sessions.length) {
-      target = sessions[idx - 1];
-    } else {
-      target = sessions.find((s: any) => s.sessionKey === arg);
-    }
-
-    if (!target) {
-      await ctx.reply(`Session not found: ${escapeHtml(arg)}`, { parse_mode: "HTML" });
-      return;
-    }
-
     const source = toSource(account.accountId, ctx as TelegramContext);
     const currentKey = resolveSessionKey(source, runtime.api.config);
 
-    if (target.sessionKey === currentKey) {
-      await ctx.reply("Already on this session.");
+    // Direct resume by number or key (backward compat)
+    if (arg) {
+      const idx = parseInt(arg, 10);
+      let target: any = null;
+      if (!isNaN(idx) && idx >= 1 && idx <= sessions.length) {
+        target = sessions[idx - 1];
+      } else {
+        target = sessions.find((s: any) => s.sessionKey === arg);
+      }
+      if (!target) {
+        await ctx.reply(`Session not found: ${escapeHtml(arg)}`, { parse_mode: "HTML" });
+        return;
+      }
+      if (target.sessionKey === currentKey) {
+        await ctx.reply("Already on this session.");
+        return;
+      }
+      runtime.api.releaseSession(currentKey);
+      const msgs = target.messageCount ?? 0;
+      const ago = target.lastActivity ? timeSince(target.lastActivity) : "?";
+      await ctx.reply(
+        `✅ Switched to <code>${escapeHtml(target.sessionKey)}</code>\n<b>Messages:</b> ${msgs} · ${ago} ago`,
+        { parse_mode: "HTML" },
+      );
       return;
     }
 
-    // Release current RPC so it returns to pool
-    runtime.api.releaseSession(currentKey);
-
-    // Build status line — context% and model from RPC if available
-    let extra = "";
-    try {
-      const [stats, rpcState] = await Promise.all([
-        runtime.api.getSessionStats(target.sessionKey),
-        runtime.api.getRpcState(target.sessionKey),
-      ]);
-      const s = stats as any;
-      const st = rpcState as any;
-      const contextWindow = st?.model?.contextWindow ?? 0;
-      const inputTokens = s?.tokens?.input ?? 0;
-      const pct = contextWindow > 0 ? ((inputTokens / contextWindow) * 100).toFixed(1) : "?";
-      const model = st?.model?.id ?? "unknown";
-      extra = `\n<b>Model:</b> ${model}\n<b>Context:</b> ${pct}%`;
-    } catch {
-      // RPC not yet bound — will auto-resume via --continue on next message
+    // No arg — show interactive keyboard
+    if (sessions.length === 0) {
+      await ctx.reply("No sessions to resume.");
+      return;
     }
 
-    const msgs = target.messageCount ?? 0;
-    const ago = target.lastActivity ? timeSince(target.lastActivity) : "?";
-    await ctx.reply(
-      `✅ Switched to session <code>${escapeHtml(target.sessionKey)}</code>\n<b>Messages:</b> ${msgs}\n<b>Last active:</b> ${ago} ago${extra}`,
-      { parse_mode: "HTML" },
-    );
+    const view = buildResumeView(sessions, currentKey, 1);
+    await ctx.reply(view.text, { parse_mode: "HTML", reply_markup: { inline_keyboard: view.rows } });
   });
 
   // /model + callback_query:data → model-selector.ts
