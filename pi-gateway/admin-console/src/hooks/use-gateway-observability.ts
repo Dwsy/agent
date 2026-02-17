@@ -20,6 +20,9 @@ export type GatewayObservabilitySummary = {
   byLevel: Record<ObservabilityLevel, number>;
   byCategory: Record<string, number>;
   recentErrors: GatewayObservabilityEvent[];
+  topActions: Array<{ action: string; count: number }>;
+  errorRatePct: number;
+  windowMs: number | null;
 };
 
 type FetchState = {
@@ -30,11 +33,12 @@ type FetchState = {
 
 const API_BASE = '/api';
 
-async function fetchEvents(limit = 100, level?: ObservabilityLevel, category?: string): Promise<GatewayObservabilityEvent[]> {
+async function fetchEvents(limit = 100, level?: ObservabilityLevel, category?: string, window?: string): Promise<GatewayObservabilityEvent[]> {
   const params = new URLSearchParams();
   params.set('limit', String(limit));
   if (level) params.set('level', level);
   if (category) params.set('category', category);
+  if (window) params.set('window', window);
   
   const res = await fetch(`${API_BASE}/observability/events?${params.toString()}`);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -42,8 +46,9 @@ async function fetchEvents(limit = 100, level?: ObservabilityLevel, category?: s
   return data.events ?? [];
 }
 
-async function fetchSummary(): Promise<GatewayObservabilitySummary> {
-  const res = await fetch(`${API_BASE}/observability/summary`);
+async function fetchSummary(window?: string): Promise<GatewayObservabilitySummary> {
+  const suffix = window ? `?window=${encodeURIComponent(window)}` : '';
+  const res = await fetch(`${API_BASE}/observability/summary${suffix}`);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const data = await res.json();
   return data.summary;
@@ -69,8 +74,9 @@ export function useGatewayObservability(options: {
   limit?: number;
   level?: ObservabilityLevel;
   category?: string;
+  window?: '5m' | '15m' | '1h' | '6h' | '24h' | '7d';
 } = {}) {
-  const { pollInterval = 5000, limit = 100, level, category } = options;
+  const { pollInterval = 5000, limit = 100, level, category, window = '24h' } = options;
   
   // 后端数据
   const [events, setEvents] = useState<GatewayObservabilityEvent[]>([]);
@@ -85,8 +91,8 @@ export function useGatewayObservability(options: {
   const fetchBackend = useCallback(async () => {
     try {
       const [evts, sum] = await Promise.all([
-        fetchEvents(limit, level, category),
-        fetchSummary(),
+        fetchEvents(limit, level, category, window),
+        fetchSummary(window),
       ]);
       setEvents(evts);
       setSummary(sum);
@@ -99,7 +105,7 @@ export function useGatewayObservability(options: {
         backendAvailable: false 
       }));
     }
-  }, [limit, level, category]);
+  }, [limit, level, category, window]);
 
   // 初始加载 + 轮询
   useEffect(() => {
@@ -125,6 +131,12 @@ export function useGatewayObservability(options: {
       byLevel[e.level]++;
       byCategory[e.category] = (byCategory[e.category] ?? 0) + 1;
     });
+    const topActions = frontendEvents
+      .reduce((acc, e) => {
+        acc.set(e.message, (acc.get(e.message) ?? 0) + 1);
+        return acc;
+      }, new Map<string, number>());
+
     return {
       total: frontendEvents.length,
       byLevel,
@@ -133,6 +145,9 @@ export function useGatewayObservability(options: {
         .filter((e) => e.level === 'error')
         .slice(0, 10)
         .map(mapFrontendEvent),
+      topActions: [...topActions.entries()].slice(0, 8).map(([action, count]) => ({ action, count })),
+      errorRatePct: frontendEvents.length > 0 ? Math.round((byLevel.error / frontendEvents.length) * 10000) / 100 : 0,
+      windowMs: null,
     };
   }, [summary, frontendEvents, state.backendAvailable]);
 

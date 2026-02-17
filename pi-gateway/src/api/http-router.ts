@@ -20,7 +20,7 @@ import { handleApiChat, handleApiChatStream } from "./chat-api.ts";
 import { handleApiSend } from "./send-api.ts";
 import { redactConfig } from "../core/auth.ts";
 import { loadConfig } from "../core/config.ts";
-import type { ObservabilityLevel, ObservabilityCategory } from "../core/gateway-observability.ts";
+import { parseObservabilityWindow, type ObservabilityLevel, type ObservabilityCategory } from "../core/gateway-observability.ts";
 
 /**
  * Route an HTTP request to the appropriate handler.
@@ -209,11 +209,18 @@ export async function routeHttp(req: Request, url: URL, ctx: GatewayContext): Pr
     const limit = parseInt(url.searchParams.get("limit") ?? "100", 10);
     const level = url.searchParams.get("level") as ObservabilityLevel | null;
     const category = url.searchParams.get("category") as ObservabilityCategory | null;
-    const events = ctx.observability.list({ limit, level: level ?? undefined, category: category ?? undefined });
-    return Response.json({ ok: true, events, count: events.length });
+    const windowMs = parseObservabilityWindow(url.searchParams.get("window"));
+    const events = ctx.observability.list({
+      limit,
+      level: level ?? undefined,
+      category: category ?? undefined,
+      windowMs,
+    });
+    return Response.json({ ok: true, events, count: events.length, windowMs: windowMs ?? null });
   }
   if (pathname === "/api/observability/summary" && method === "GET") {
-    const summary = ctx.observability.summary();
+    const windowMs = parseObservabilityWindow(url.searchParams.get("window"));
+    const summary = ctx.observability.summary(windowMs);
     return Response.json({ ok: true, summary });
   }
 

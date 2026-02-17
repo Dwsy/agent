@@ -187,6 +187,8 @@ export function MetricsPage() {
   }, []);
 
   // 网关观测性数据（优先后端）
+  const [windowRange, setWindowRange] = useState<'5m' | '15m' | '1h' | '6h' | '24h' | '7d'>('24h');
+
   const { 
     events, 
     summary, 
@@ -196,7 +198,7 @@ export function MetricsPage() {
     backendAvailable, 
     refresh, 
     clearEvents 
-  } = useGatewayObservability({ pollInterval: 5000, limit: 100 });
+  } = useGatewayObservability({ pollInterval: 5000, limit: 100, window: windowRange });
 
   // 前端本地指标（保留原有功能）
   const { metrics, metricCount, clearMetrics } = useObservabilityMetrics();
@@ -246,6 +248,18 @@ export function MetricsPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <select
+            value={windowRange}
+            onChange={(e) => setWindowRange(e.target.value as '5m' | '15m' | '1h' | '6h' | '24h' | '7d')}
+            className="rounded bg-slate-800/60 px-2 py-1.5 text-xs text-slate-300 border border-slate-700"
+          >
+            <option value="5m">5m</option>
+            <option value="15m">15m</option>
+            <option value="1h">1h</option>
+            <option value="6h">6h</option>
+            <option value="24h">24h</option>
+            <option value="7d">7d</option>
+          </select>
           <button
             onClick={refresh}
             disabled={loading}
@@ -285,7 +299,7 @@ export function MetricsPage() {
           value={stats.errors}
           icon={XCircle}
           colorClass="text-rose-400"
-          subtitle="Last 24h"
+          subtitle={`Rate ${summary.errorRatePct}%`}
         />
         <StatCard
           title="Warnings"
@@ -387,30 +401,28 @@ export function MetricsPage() {
             </div>
           </div>
 
-          {/* 指标概览 */}
+          {/* 热门动作统计 */}
           <div className="rounded-xl border border-slate-800 bg-card p-4">
             <h2 className="text-sm font-medium text-slate-300 mb-3 flex items-center gap-2">
               <Clock className="h-4 w-4 text-sky-400" />
-              Metric Types ({Object.keys(metricsByName).length})
+              Top Gateway Actions
             </h2>
             <div className="space-y-2 max-h-[150px] overflow-y-auto">
-              {Object.entries(metricsByName).map(([name, items]) => (
-                <div 
-                  key={name} 
+              {summary.topActions.map((item) => (
+                <div
+                  key={item.action}
                   className="flex items-center justify-between text-sm p-2 rounded bg-slate-800/30"
                 >
-                  <span className="text-slate-400">{name}</span>
-                  <div className="flex items-center gap-3">
-                    <span className="text-slate-500 text-xs">{items.length} samples</span>
-                    <span className="text-emerald-400 text-xs">
-                      latest: {Math.round(items[0]?.value ?? 0)}
-                    </span>
-                  </div>
+                  <span className="text-slate-400 font-mono text-xs">{item.action}</span>
+                  <span className="text-emerald-400 text-xs">{item.count}</span>
                 </div>
               ))}
-              {Object.keys(metricsByName).length === 0 && (
-                <p className="text-slate-500 text-sm">No metrics recorded</p>
+              {summary.topActions.length === 0 && (
+                <p className="text-slate-500 text-sm">No action stats</p>
               )}
+              {Object.keys(metricsByName).length > 0 ? (
+                <p className="text-[11px] text-slate-600 pt-1">frontend fallback metrics: {Object.keys(metricsByName).length} types</p>
+              ) : null}
             </div>
           </div>
         </div>
