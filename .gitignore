@@ -184,3 +184,4 @@ git/
 
 # Deploy CLI history
 .deploy-cli-history
+run-history.jsonl
