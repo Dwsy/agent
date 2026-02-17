@@ -6,7 +6,7 @@ import type {
 import type { TelegramChannelConfig } from "../../../core/config.ts";
 import { resolveDefaultAccountId, resolveTelegramAccounts } from "./accounts.ts";
 import { createAccountRuntime, startAccountRuntime, stopAccountRuntime } from "./bot.ts";
-import { sendOutboundViaAccount, sendMediaViaAccount, sendReactionViaAccount, editMessageViaAccount, deleteMessageViaAccount, pinMessageViaAccount, readHistoryViaAccount, parseTelegramTarget } from "./outbound.ts";
+import { sendOutboundViaAccount, sendMediaViaAccount, sendReactionViaAccount, editMessageViaAccount, deleteMessageViaAccount, pinMessageViaAccount, readHistoryViaAccount, sendKeyboardViaAccount, editMessageMarkupViaAccount, parseTelegramTarget } from "./outbound.ts";
 import { markdownToTelegramHtml } from "./format.ts";
 import { recordSentMessage } from "./sent-message-cache.ts";
 import type { TelegramPluginRuntime } from "./types.ts";
@@ -141,6 +141,14 @@ const telegramPlugin: ChannelPlugin = {
     async readHistory(target: string, limit?: number, before?: string) {
       const rt = getRuntime();
       return readHistoryViaAccount({ runtime: rt, defaultAccountId, target, limit, before });
+    },
+    async sendKeyboard(target: string, text: string, keyboard: import("../../types.ts").InlineKeyboardMarkup) {
+      const rt = getRuntime();
+      return sendKeyboardViaAccount({ runtime: rt, defaultAccountId, target, text, keyboard });
+    },
+    async editMessageMarkup(target: string, messageId: string, text: string, keyboard?: import("../../types.ts").InlineKeyboardMarkup) {
+      const rt = getRuntime();
+      return editMessageMarkupViaAccount({ runtime: rt, defaultAccountId, target, messageId, text, keyboard });
     },
   },
 

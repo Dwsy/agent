@@ -2,6 +2,8 @@ import { html, LitElement, css } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { i18n, type Locale } from "../i18n/i18n-manager";
 
+const CASES = ["scout", "crew", "gateway", "selfImprove"] as const;
+
 @customElement("use-cases-section")
 export class UseCasesSection extends LitElement {
   static styles = css`
@@ -9,7 +11,7 @@ export class UseCasesSection extends LitElement {
 
     .uc-section {
       padding: 6rem 1.5rem;
-      background: #0A0F1E;
+      background: #0F172A;
     }
 
     .section-header {
@@ -57,12 +59,24 @@ export class UseCasesSection extends LitElement {
       border: 1px solid rgba(51, 65, 85, 0.4);
       border-radius: 1rem;
       padding: 2rem;
-      transition: border-color 0.2s, box-shadow 0.2s;
+      opacity: 0;
+      transform: translateY(24px);
+      transition: opacity 0.5s ease, transform 0.5s ease, border-color 0.2s, box-shadow 0.2s;
+    }
+
+    .uc-card.visible {
+      opacity: 1;
+      transform: translateY(0);
     }
 
     .uc-card:hover {
       border-color: rgba(34, 211, 238, 0.35);
-      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.2);
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.25);
+      transform: translateY(-4px);
+    }
+
+    .uc-card.visible:hover {
+      transform: translateY(-4px);
     }
 
     .uc-number {
@@ -96,19 +110,38 @@ export class UseCasesSection extends LitElement {
       font-family: "DM Sans", sans-serif;
     }
 
+    .uc-cmd-wrap {
+      display: flex; align-items: center; gap: 0.5rem;
+      background: rgba(15, 23, 42, 0.8); border: 1px solid rgba(51, 65, 85, 0.4);
+      border-radius: 0.375rem; padding: 0.5rem 0.75rem;
+    }
+
     .uc-command {
-      display: inline-block;
-      padding: 0.5rem 0.875rem;
-      background: rgba(15, 23, 42, 0.8);
-      border: 1px solid rgba(51, 65, 85, 0.4);
-      border-radius: 0.375rem;
-      font-family: "JetBrains Mono", monospace;
-      font-size: 0.8rem;
-      color: #60A5FA;
+      flex: 1; font-family: "JetBrains Mono", monospace; font-size: 0.8rem;
+      color: #60A5FA; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+
+    .copy-btn {
+      flex-shrink: 0; background: none; border: none; color: #475569;
+      cursor: pointer; padding: 0.125rem; font-size: 0.85rem; line-height: 1; transition: color 0.15s;
+    }
+    .copy-btn:hover { color: #94A3B8; }
+    .copy-btn.copied { color: #4ADE80; }
+
+    .reveal-header {
+      opacity: 0;
+      transform: translateY(24px);
+      transition: opacity 0.5s ease, transform 0.5s ease;
+    }
+
+    .reveal-header.visible {
+      opacity: 1;
+      transform: translateY(0);
     }
 
     @media (prefers-reduced-motion: reduce) {
-      .uc-card { transition: none; }
+      .uc-card, .reveal-header { opacity: 1; transform: none; transition: none; }
+      .uc-card:hover { transform: none; }
     }
 
     @media (max-width: 768px) {
@@ -118,32 +151,89 @@ export class UseCasesSection extends LitElement {
   `;
 
   @state() locale: Locale = i18n.getCurrentLocale();
+  @state() private _headerVisible = false;
+  @state() private _cardVisible: boolean[] = [false, false, false, false];
+  @state() private _copiedIdx = -1;
+
+  private _unsub?: () => void;
+  private _observer?: IntersectionObserver;
 
   connectedCallback() {
     super.connectedCallback();
-    i18n.subscribe(() => { this.locale = i18n.getCurrentLocale(); this.requestUpdate(); });
+    this.id = "use-cases";
+    this._unsub = i18n.subscribe(() => { this.locale = i18n.getCurrentLocale(); this.requestUpdate(); });
+    this._observer = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) {
+          if (!e.isIntersecting) continue;
+          const el = e.target as HTMLElement;
+          const idx = el.dataset.idx;
+          if (idx === "header") {
+            this._headerVisible = true;
+          } else if (idx !== undefined) {
+            const arr = [...this._cardVisible];
+            arr[Number(idx)] = true;
+            this._cardVisible = arr;
+          }
+          this._observer?.unobserve(el);
+        }
+      },
+      { threshold: 0.15 },
+    );
+  }
+
+  protected updated() {
+    const root = this.renderRoot;
+    const header = root.querySelector<HTMLElement>("[data-idx='header']");
+    if (header && !this._headerVisible) this._observer?.observe(header);
+    root.querySelectorAll<HTMLElement>(".uc-card").forEach((el) => {
+      const i = Number(el.dataset.idx);
+      if (!this._cardVisible[i]) this._observer?.observe(el);
+    });
+  }
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    this._unsub?.();
+    this._observer?.disconnect();
+  }
+
+  private _copy(text: string, idx: number) {
+    navigator.clipboard.writeText(text).catch(() => {});
+    this._copiedIdx = idx;
+    setTimeout(() => { this._copiedIdx = -1; }, 1500);
   }
 
   render() {
     const f = i18n.t.bind(i18n);
-    const cases = ["scout", "brainstorm", "multiAgent", "gateway"];
-
     return html`
-      <section class="uc-section" id="use-cases">
-        <div class="section-header">
+      <section class="uc-section">
+        <div class="section-header reveal-header ${this._headerVisible ? "visible" : ""}" data-idx="header">
           <p class="section-label">${f("useCases.label")}</p>
           <h2 class="section-title">${f("useCases.title")}</h2>
           <p class="section-subtitle">${f("useCases.subtitle")}</p>
         </div>
         <div class="uc-grid">
-          ${cases.map((c, i) => html`
-            <div class="uc-card">
-              <div class="uc-number">${i + 1}</div>
-              <h3 class="uc-title">${f(`useCases.cases.${c}.title`)}</h3>
-              <p class="uc-description">${f(`useCases.cases.${c}.description`)}</p>
-              <code class="uc-command">${f(`useCases.cases.${c}.command`)}</code>
-            </div>
-          `)}
+          ${CASES.map((c, i) => {
+            const cmd = f(`useCases.cases.${c}.command`);
+            return html`
+              <div class="uc-card ${this._cardVisible[i] ? "visible" : ""}"
+                   data-idx="${i}"
+                   style="transition-delay: ${i * 0.1}s">
+                <div class="uc-number">${String(i + 1).padStart(2, "0")}</div>
+                <h3 class="uc-title">${f(`useCases.cases.${c}.title`)}</h3>
+                <p class="uc-description">${f(`useCases.cases.${c}.description`)}</p>
+                <div class="uc-cmd-wrap">
+                  <code class="uc-command">${cmd}</code>
+                  <button class="copy-btn ${this._copiedIdx === i ? "copied" : ""}"
+                          @click=${() => this._copy(cmd, i)}
+                          aria-label="Copy command">
+                    ${this._copiedIdx === i ? "✓" : "⧉"}
+                  </button>
+                </div>
+              </div>
+            `;
+          })}
         </div>
       </section>
     `;

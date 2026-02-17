@@ -6,124 +6,55 @@ import { i18n, type Locale } from "../i18n/i18n-manager";
 export class CTASection extends LitElement {
   static styles = css`
     :host { display: block; }
-
-    .cta-section {
-      padding: 6rem 1.5rem;
-      background: linear-gradient(135deg, #0F172A 0%, #1E293B 100%);
-      position: relative;
-      overflow: hidden;
-    }
-
-    .cta-section::before {
-      content: "";
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      width: 600px;
-      height: 600px;
-      background: radial-gradient(circle, rgba(59, 130, 246, 0.08) 0%, transparent 70%);
-      pointer-events: none;
-    }
-
-    .cta-content {
-      max-width: 36rem;
-      margin: 0 auto;
-      text-align: center;
-      position: relative;
-      z-index: 1;
-    }
-
-    .cta-title {
-      font-size: clamp(2.5rem, 5vw, 3.5rem);
-      font-weight: 700;
-      color: #F1F5F9;
-      margin-bottom: 1.25rem;
-      line-height: 1.1;
-      font-family: "Space Grotesk", sans-serif;
-      letter-spacing: -0.02em;
-    }
-
-    .cta-description {
-      font-size: 1.05rem;
-      color: #94A3B8;
-      margin-bottom: 2.5rem;
-      line-height: 1.7;
-      font-family: "DM Sans", sans-serif;
-    }
-
-    .cta-actions {
-      display: flex;
-      flex-direction: column;
-      gap: 0.75rem;
-      align-items: center;
-    }
-
-    .cta-primary, .cta-secondary {
-      padding: 0.875rem 2.5rem;
-      border-radius: 0.5rem;
-      font-size: 0.95rem;
-      font-weight: 600;
-      font-family: "DM Sans", sans-serif;
-      cursor: pointer;
-      transition: all 0.2s;
-      text-decoration: none;
-      display: inline-flex;
-      align-items: center;
-      gap: 0.625rem;
-      width: fit-content;
-    }
-
-    .cta-primary {
-      background: linear-gradient(135deg, #2563EB 0%, #3B82F6 100%);
-      color: white;
-      border: none;
-    }
-
-    .cta-primary:hover {
-      box-shadow: 0 8px 30px rgba(59, 130, 246, 0.45);
-    }
-
-    .cta-secondary {
-      background: rgba(30, 41, 59, 0.6);
-      color: #F1F5F9;
-      border: 1px solid rgba(51, 65, 85, 0.6);
-    }
-
-    .cta-secondary:hover {
-      border-color: rgba(96, 165, 250, 0.5);
-    }
-
-    @media (max-width: 768px) {
-      .cta-section { padding: 4rem 1rem; }
-      .cta-actions { width: 100%; }
-      .cta-primary, .cta-secondary { width: 100%; justify-content: center; }
-    }
+    .cta { position: relative; padding: 6rem 1.5rem; text-align: center; background: linear-gradient(180deg, #0A0F1E 0%, #0F172A 50%, #0A0F1E 100%); overflow: hidden; }
+    .glow { position: absolute; top: 50%; left: 50%; width: 600px; height: 600px; transform: translate(-50%, -50%); background: radial-gradient(circle, rgba(37,99,235,0.15) 0%, rgba(139,92,246,0.06) 40%, transparent 70%); border-radius: 50%; pointer-events: none; animation: float 8s ease-in-out infinite; }
+    @keyframes float { 0%, 100% { transform: translate(-50%, -50%) scale(1); } 50% { transform: translate(-50%, -52%) scale(1.08); } }
+    .content { position: relative; z-index: 1; max-width: 40rem; margin: 0 auto; }
+    .title { font-size: clamp(2rem, 4vw, 3rem); font-weight: 700; color: #F1F5F9; margin-bottom: 1.25rem; font-family: "Space Grotesk", sans-serif; letter-spacing: -0.01em; }
+    .desc { font-size: 1.05rem; color: #94A3B8; line-height: 1.7; margin-bottom: 2.5rem; font-family: "DM Sans", sans-serif; }
+    .buttons { display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap; }
+    .btn { display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.85rem 2rem; border-radius: 8px; font-size: 0.95rem; font-weight: 600; font-family: "Space Grotesk", sans-serif; text-decoration: none; transition: transform 0.2s, box-shadow 0.2s; cursor: pointer; }
+    .btn:hover { transform: translateY(-2px); }
+    .btn-primary { background: #2563EB; color: #fff; border: none; box-shadow: 0 0 20px rgba(37,99,235,0.3); }
+    .btn-primary:hover { box-shadow: 0 0 30px rgba(37,99,235,0.5); }
+    .btn-secondary { background: transparent; color: #F1F5F9; border: 1px solid rgba(51,65,85,0.6); }
+    .btn-secondary:hover { border-color: #94A3B8; }
+    .reveal { opacity: 0; transform: translateY(20px); transition: opacity 0.6s ease, transform 0.6s ease; }
+    .reveal.visible { opacity: 1; transform: translateY(0); }
   `;
 
   @state() locale: Locale = i18n.getCurrentLocale();
+  private observer?: IntersectionObserver;
 
   connectedCallback() {
     super.connectedCallback();
     i18n.subscribe(() => { this.locale = i18n.getCurrentLocale(); this.requestUpdate(); });
   }
 
+  disconnectedCallback() { super.disconnectedCallback(); this.observer?.disconnect(); }
+
+  protected firstUpdated() {
+    this.observer = new IntersectionObserver(
+      (entries) => entries.forEach((e) => {
+        if (e.isIntersecting) { (e.target as HTMLElement).classList.add("visible"); this.observer!.unobserve(e.target); }
+      }),
+      { threshold: 0.15 },
+    );
+    const el = this.renderRoot.querySelector(".reveal");
+    if (el) this.observer.observe(el);
+  }
+
   render() {
     const f = i18n.t.bind(i18n);
     return html`
-      <section class="cta-section" id="get-started">
-        <div class="cta-content">
-          <h2 class="cta-title">${f("cta.title")}</h2>
-          <p class="cta-description">${f("cta.description")}</p>
-          <div class="cta-actions">
-            <a href="#" class="cta-primary">
-              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-              ${f("cta.primary")}
-            </a>
-            <a href="#docs" class="cta-secondary">
-              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-              ${f("cta.secondary")}
-            </a>
+      <section class="cta">
+        <div class="glow"></div>
+        <div class="content reveal">
+          <h2 class="title">${f("cta.title")}</h2>
+          <p class="desc">${f("cta.description")}</p>
+          <div class="buttons">
+            <a class="btn btn-primary" href="https://github.com/Dwsy/agent" target="_blank" rel="noopener">${f("cta.primary")}</a>
+            <a class="btn btn-secondary" href="https://github.com/Dwsy/agent" target="_blank" rel="noopener">${f("cta.secondary")}</a>
           </div>
         </div>
       </section>
