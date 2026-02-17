@@ -1,8 +1,9 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { MetricCard } from '../components/metric-card';
 import { StatusPill } from '../components/status-pill';
 import { usePageDataSource } from '../hooks/use-data-source';
+import { trackRuntimeEvent } from '../hooks/use-observability';
 import { fetchCronStatus, fetchGatewayHealth, fetchPool, fetchSessions } from '../lib/api';
 
 const trend = [
@@ -16,6 +17,11 @@ const trend = [
 ];
 
 export function OverviewPage() {
+  // 页面挂载埋点
+  useEffect(() => {
+    trackRuntimeEvent('info', 'Page mounted: Overview', { page: 'overview' });
+  }, []);
+
   // 使用 use-data-source 替换直接的 useQuery
   const healthQuery = usePageDataSource('overview', ['health'], fetchGatewayHealth);
   const sessionsQuery = usePageDataSource('overview', ['sessions'], fetchSessions);

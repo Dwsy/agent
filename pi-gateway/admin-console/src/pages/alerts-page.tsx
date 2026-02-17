@@ -1,9 +1,16 @@
+import { useEffect } from 'react';
 import { AlertTriangle, CheckCircle2, Lightbulb } from 'lucide-react';
 import { PermissionGate, PermissionDisabledWrapper } from '../components/permission-gate';
 import { usePageDataSource, useDataMutation } from '../hooks/use-data-source';
+import { trackRuntimeEvent } from '../hooks/use-observability';
 import { fetchCronJobs, pauseCronJob, resumeCronJob } from '../lib/api';
 
 export function AlertsPage() {
+  // 页面挂载埋点
+  useEffect(() => {
+    trackRuntimeEvent('info', 'Page mounted: Alerts', { page: 'alerts' });
+  }, []);
+
   // 使用 use-data-source 替换直接的 useQuery
   const cronQuery = usePageDataSource('alerts', ['cron-jobs'], fetchCronJobs);
 

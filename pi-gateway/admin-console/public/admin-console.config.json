@@ -47,7 +47,7 @@
     "cron": false,
     "audit": false,
     "logs": false,
-    "metrics": false
+    "metrics": true
   },
   "polling": {
     "overview": 5000,

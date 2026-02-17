@@ -3,9 +3,10 @@
  * 根据配置中的 permissions 控制子组件的显示/隐藏
  * 支持 * 通配符，permissions.enabled=false 时放行
  */
-import React, { type ReactNode } from 'react';
+import React, { type ReactNode, useEffect } from 'react';
 import { usePermission, type PermissionResource } from '../hooks/use-permission';
 import type { PermissionAction } from '../config/schema';
+import { trackPermissionEvent } from '../hooks/use-observability';
 
 /**
  * PermissionGate 组件 Props
@@ -55,6 +56,16 @@ export function PermissionGate({
 
   // 检查权限
   const allowed = hasPermission(resource, action);
+
+  // 追踪权限拒绝事件
+  useEffect(() => {
+    if (!allowed && fallback !== null) {
+      trackPermissionEvent('warn', `Permission denied: ${resource}:${action}`, {
+        resource,
+        action,
+      });
+    }
+  }, [allowed, resource, action, fallback]);
 
   if (allowed) {
     return <>{children}</>;

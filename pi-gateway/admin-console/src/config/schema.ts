@@ -58,10 +58,10 @@ export const FeaturesConfigSchema = z.object({
   plugins: z.boolean().default(true),
   alerts: z.boolean().default(true),
   settings: z.boolean().default(true),
+  metrics: z.boolean().default(false),
   cron: z.boolean().default(false),
   audit: z.boolean().default(false),
   logs: z.boolean().default(false),
-  metrics: z.boolean().default(false),
 });
 
 // ==================== Polling 配置 ====================
