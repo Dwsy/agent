@@ -6,6 +6,7 @@ import { AgentsPage } from './pages/agents-page';
 import { PluginsPage } from './pages/plugins-page';
 import { AlertsPage } from './pages/alerts-page';
 import { SettingsPage } from './pages/settings-page';
+import { MetricsPage } from './pages/metrics-page';
 import { useConfig } from './config/config-provider';
 import { NotFoundPlaceholder } from './components/feature-gate';
 import { useMemo } from 'react';
@@ -27,7 +28,7 @@ function FeatureRoute({
   feature,
   children,
 }: {
-  feature: 'overview' | 'agents' | 'plugins' | 'alerts' | 'settings';
+  feature: 'overview' | 'agents' | 'plugins' | 'alerts' | 'settings' | 'metrics';
   children: React.ReactNode;
 }): React.ReactNode {
   const { isFeatureEnabled } = useConfig();
@@ -104,6 +105,14 @@ function AppContent() {
             element: (
               <FeatureRoute feature="settings">
                 <SettingsPage />
+              </FeatureRoute>
+            ),
+          },
+          {
+            path: 'metrics',
+            element: (
+              <FeatureRoute feature="metrics">
+                <MetricsPage />
               </FeatureRoute>
             ),
           },

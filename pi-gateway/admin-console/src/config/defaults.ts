@@ -56,7 +56,7 @@ export const defaultConfig: AdminConfig = {
     cron: false,
     audit: false,
     logs: false,
-    metrics: false,
+    metrics: true,
   },
   polling: {
     overview: 5000,
@@ -176,11 +176,19 @@ export const defaultNavigation: NavItem[] = [
     order: 3,
   },
   {
+    id: 'metrics',
+    path: '/metrics',
+    label: 'Metrics',
+    icon: 'BarChart3',
+    feature: 'metrics',
+    order: 4,
+  },
+  {
     id: 'settings',
     path: '/settings',
     label: 'Settings',
     icon: 'Settings',
     feature: 'settings',
-    order: 4,
+    order: 5,
   },
 ];

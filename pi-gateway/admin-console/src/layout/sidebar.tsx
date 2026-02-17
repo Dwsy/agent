@@ -1,7 +1,8 @@
-import { X, LayoutDashboard, Bot, Plug, Settings, Bell } from 'lucide-react';
+import { X, LayoutDashboard, Bot, Plug, Settings, Bell, BarChart3 } from 'lucide-react';
 import { NavLink } from 'react-router-dom';
 import { useUIStore } from '../store/ui-store';
 import { useConfig } from '../config/config-provider';
+import { trackRuntimeEvent } from '../hooks/use-observability';
 import { cn } from '../lib/cn';
 import type { LucideIcon } from 'lucide-react';
 
@@ -15,6 +16,7 @@ const iconMap: Record<string, LucideIcon> = {
   Plug,
   Bell,
   Settings,
+  BarChart3,
 };
 
 /**
@@ -89,7 +91,14 @@ export function Sidebar() {
             <NavLink
               key={menu.id}
               to={menu.path}
-              onClick={closeMobileNav}
+              onClick={() => {
+                closeMobileNav();
+                trackRuntimeEvent('info', `Nav clicked: ${menu.id}`, { 
+                  navId: menu.id, 
+                  path: menu.path,
+                  feature: menu.feature 
+                });
+              }}
               className={({ isActive }) =>
                 cn(
                   'flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-slate-300 hover:bg-slate-800 transition-colors',

@@ -8,6 +8,7 @@ import { defaultConfig } from './defaults';
 import type { AdminConfig } from './types';
 import type { FeaturesConfig, NavItem } from './schema';
 import { defaultNavigation } from './navigation';
+import { trackConfigEvent } from '../hooks/use-observability';
 
 /**
  * 配置上下文状态
@@ -80,6 +81,7 @@ export function ConfigProvider({
     setIsLoading(true);
     setError(null);
 
+    const startTime = performance.now();
     try {
       const result = await loadConfig({
         localConfigPath,
@@ -90,21 +92,38 @@ export function ConfigProvider({
 
       setConfig(result.config);
       setSources(result.sources);
+      const duration = Math.round(performance.now() - startTime);
 
       if (result.errors.length > 0) {
         log('warn', 'Config loading had errors:', result.errors);
+        trackConfigEvent('warn', 'Config loaded with errors', {
+          duration,
+          sources: result.sources.map((s) => s.type),
+          errors: result.errors.map((e) => e.message),
+        });
       } else {
         log('log', 'Config loaded successfully from:', result.sources.map((s) => s.type).join(', '));
+        trackConfigEvent('info', 'Config loaded successfully', {
+          duration,
+          sources: result.sources.map((s) => s.type),
+        });
       }
     } catch (err) {
       const loadError = err instanceof Error ? err : new Error(String(err));
       setError(loadError);
       log('error', 'Failed to load config:', loadError);
+      trackConfigEvent('error', 'Config loading failed', {
+        error: loadError.message,
+        duration: Math.round(performance.now() - startTime),
+      });
 
       // 出错时回退到同步加载
       const fallback = loadConfigSync();
       setConfig(fallback.config);
       setSources(fallback.sources);
+      trackConfigEvent('info', 'Config fallback loaded', {
+        sources: fallback.sources.map((s) => s.type),
+      });
     } finally {
       setIsLoading(false);
     }

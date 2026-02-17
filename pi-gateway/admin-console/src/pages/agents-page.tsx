@@ -1,7 +1,14 @@
+import { useEffect } from 'react';
 import { usePageDataSource } from '../hooks/use-data-source';
+import { trackRuntimeEvent } from '../hooks/use-observability';
 import { fetchPool, fetchSessions } from '../lib/api';
 
 export function AgentsPage() {
+  // 页面挂载埋点
+  useEffect(() => {
+    trackRuntimeEvent('info', 'Page mounted: Agents', { page: 'agents' });
+  }, []);
+
   // 使用 use-data-source 替换直接的 useQuery
   const sessionsQuery = usePageDataSource('agents', ['sessions'], fetchSessions);
   const poolQuery = usePageDataSource('agents', ['pool'], fetchPool);

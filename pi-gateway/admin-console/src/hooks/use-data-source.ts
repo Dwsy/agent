@@ -7,6 +7,13 @@ import { useCallback, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient, useQueries, type UseQueryOptions } from '@tanstack/react-query';
 import { useConfig } from '../config/config-provider';
 import type { PollingConfig } from '../config/schema';
+import { 
+  trackQueryEvent, 
+  trackMutationEvent, 
+  recordQueryDuration, 
+  recordMutationDuration,
+  recordErrorCount 
+} from './use-observability';
 
 /**
  * 数据源模式
@@ -99,16 +106,49 @@ export function useDataSource<T>(config: DataSourceConfig<T>): UseDataSourceRetu
     return false;
   }, [config.enabled, mode]);
 
-  // TanStack Query 配置
+  // TanStack Query 配置 - 包装 queryFn 以追踪性能
+  const instrumentedQueryFn = useCallback(async (): Promise<T> => {
+    const startTime = performance.now();
+    const queryKeyStr = config.queryKey.join('/');
+    
+    try {
+      const result = await config.queryFn();
+      const duration = Math.round(performance.now() - startTime);
+      
+      trackQueryEvent('info', `Query succeeded: ${queryKeyStr}`, {
+        queryKey: queryKeyStr,
+        page: config.page,
+        duration,
+      });
+      recordQueryDuration(queryKeyStr, duration, { page: config.page, status: 'success' });
+      
+      return result;
+    } catch (err) {
+      const duration = Math.round(performance.now() - startTime);
+      const error = err instanceof Error ? err : new Error(String(err));
+      
+      trackQueryEvent('error', `Query failed: ${queryKeyStr}`, {
+        queryKey: queryKeyStr,
+        page: config.page,
+        duration,
+        error: error.message,
+      });
+      recordQueryDuration(queryKeyStr, duration, { page: config.page, status: 'error' });
+      recordErrorCount('query', { queryKey: queryKeyStr, page: config.page });
+      
+      throw err;
+    }
+  }, [config.queryFn, config.queryKey, config.page]);
+
   const queryOptions: UseQueryOptions<T, Error, T, string[]> = useMemo(
     () => ({
       queryKey: config.queryKey,
-      queryFn: config.queryFn,
+      queryFn: instrumentedQueryFn,
       refetchInterval: isPollingEnabled ? interval : false,
       refetchOnWindowFocus: true,
       retry: config.retry ?? 3,
     }),
-    [config.queryKey, config.queryFn, isPollingEnabled, interval, config.retry]
+    [config.queryKey, instrumentedQueryFn, isPollingEnabled, interval, config.retry]
   );
 
   const query = useQuery(queryOptions);
@@ -200,8 +240,43 @@ export function useDataMutation<TData, TVariables = void>(
 ) {
   const queryClient = useQueryClient();
 
+  // 包装 mutationFn 以追踪性能
+  const instrumentedMutationFn = useCallback(
+    async (variables: TVariables): Promise<TData> => {
+      const startTime = performance.now();
+      const mutationName = config.mutationFn.name || 'unknown';
+      
+      try {
+        const result = await config.mutationFn(variables);
+        const duration = Math.round(performance.now() - startTime);
+        
+        trackMutationEvent('info', `Mutation succeeded: ${mutationName}`, {
+          mutationName,
+          duration,
+        });
+        recordMutationDuration(mutationName, duration, { status: 'success' });
+        
+        return result;
+      } catch (err) {
+        const duration = Math.round(performance.now() - startTime);
+        const error = err instanceof Error ? err : new Error(String(err));
+        
+        trackMutationEvent('error', `Mutation failed: ${mutationName}`, {
+          mutationName,
+          duration,
+          error: error.message,
+        });
+        recordMutationDuration(mutationName, duration, { status: 'error' });
+        recordErrorCount('mutation', { mutationName });
+        
+        throw err;
+      }
+    },
+    [config.mutationFn]
+  );
+
   const mutation = useMutation({
-    mutationFn: config.mutationFn,
+    mutationFn: instrumentedMutationFn,
     onSuccess: (data, variables) => {
       // 自动刷新相关查询
       if (config.invalidateKeys) {
