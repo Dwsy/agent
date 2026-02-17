@@ -33,7 +33,7 @@ export function OverviewPage() {
 
   return (
     <div className="space-y-4">
-      <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <MetricCard label="Gateway Status" value={healthy ? 'Online' : 'Degraded'} delta={`${Math.round(healthQuery.data?.uptime ?? 0)}s uptime`} />
         <MetricCard label="Active Sessions" value={String(healthQuery.data?.sessions ?? 0)} delta={`${sessionsQuery.data?.length ?? 0} loaded`} />
         <MetricCard
@@ -53,7 +53,7 @@ export function OverviewPage() {
           <h2 className="text-sm font-semibold text-white">Traffic Trend (scaffold)</h2>
           <StatusPill status={status} />
         </div>
-        <div className="h-64">
+        <div className="h-56 sm:h-64">
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={trend}>
               <defs>
@@ -74,8 +74,8 @@ export function OverviewPage() {
 
       <section className="rounded-xl border border-slate-800 bg-card p-4">
         <h2 className="mb-3 text-sm font-semibold text-white">Recent Sessions</h2>
-        <div className="overflow-auto">
-          <table className="w-full text-left text-sm">
+        <div className="overflow-x-auto">
+          <table className="min-w-[640px] w-full text-left text-sm">
             <thead className="text-slate-400">
               <tr>
                 <th className="pb-2">Session Key</th>
