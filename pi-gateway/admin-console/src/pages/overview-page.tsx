@@ -1,8 +1,8 @@
 import { useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { MetricCard } from '../components/metric-card';
 import { StatusPill } from '../components/status-pill';
+import { usePageDataSource } from '../hooks/use-data-source';
 import { fetchCronStatus, fetchGatewayHealth, fetchPool, fetchSessions } from '../lib/api';
 
 const trend = [
@@ -16,10 +16,11 @@ const trend = [
 ];
 
 export function OverviewPage() {
-  const healthQuery = useQuery({ queryKey: ['health'], queryFn: fetchGatewayHealth, refetchInterval: 10000 });
-  const sessionsQuery = useQuery({ queryKey: ['sessions'], queryFn: fetchSessions, refetchInterval: 10000 });
-  const poolQuery = useQuery({ queryKey: ['pool'], queryFn: fetchPool, refetchInterval: 10000 });
-  const cronStatusQuery = useQuery({ queryKey: ['cron-status'], queryFn: fetchCronStatus, refetchInterval: 15000 });
+  // 使用 use-data-source 替换直接的 useQuery
+  const healthQuery = usePageDataSource('overview', ['health'], fetchGatewayHealth);
+  const sessionsQuery = usePageDataSource('overview', ['sessions'], fetchSessions);
+  const poolQuery = usePageDataSource('overview', ['pool'], fetchPool);
+  const cronStatusQuery = usePageDataSource('overview', ['cron-status'], fetchCronStatus);
 
   const healthy = healthQuery.data?.status === 'ok';
   const status = healthy ? 'healthy' : healthQuery.isError ? 'warning' : 'healthy';

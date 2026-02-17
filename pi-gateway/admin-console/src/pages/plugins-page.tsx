@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { usePageDataSource } from '../hooks/use-data-source';
 import { fetchPlugins } from '../lib/api';
 
 function Block({ title, items }: { title: string; items: string[] }) {
@@ -18,7 +18,8 @@ function Block({ title, items }: { title: string; items: string[] }) {
 }
 
 export function PluginsPage() {
-  const pluginsQuery = useQuery({ queryKey: ['plugins'], queryFn: fetchPlugins, refetchInterval: 15000 });
+  // 使用 use-data-source 替换直接的 useQuery
+  const pluginsQuery = usePageDataSource('plugins', ['plugins'], fetchPlugins);
   const data = pluginsQuery.data;
 
   return (

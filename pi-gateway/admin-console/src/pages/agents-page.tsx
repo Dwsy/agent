@@ -1,9 +1,10 @@
-import { useQuery } from '@tanstack/react-query';
+import { usePageDataSource } from '../hooks/use-data-source';
 import { fetchPool, fetchSessions } from '../lib/api';
 
 export function AgentsPage() {
-  const sessionsQuery = useQuery({ queryKey: ['sessions'], queryFn: fetchSessions, refetchInterval: 10000 });
-  const poolQuery = useQuery({ queryKey: ['pool'], queryFn: fetchPool, refetchInterval: 10000 });
+  // 使用 use-data-source 替换直接的 useQuery
+  const sessionsQuery = usePageDataSource('agents', ['sessions'], fetchSessions);
+  const poolQuery = usePageDataSource('agents', ['pool'], fetchPool);
 
   const sessions = sessionsQuery.data ?? [];
   const processes = poolQuery.data?.processes ?? [];
