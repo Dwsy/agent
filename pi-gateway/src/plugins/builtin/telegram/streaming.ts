@@ -75,6 +75,95 @@ function formatToolStartLine(toolName: string, args?: Record<string, unknown>): 
 }
 
 // ============================================================================
+// Concise Mode Handler
+// ============================================================================
+
+/**
+ * Concise Mode Handler for Telegram
+ * 
+ * Encapsulates concise-mode logic for streaming:
+ * - Prompt injection
+ * - Stream mode override
+ * - Callback wrapping to suppress output
+ */
+class ConciseModeHandler {
+  // Note: System prompt is injected by buildGatewaySystemPrompt() in system-prompts.ts
+  // This handler only suppresses streaming output in concise-mode
+  private static readonly CONCISE_PROMPT = `\n\n[Concise Output Mode]\n- Use send_message tool for updates\n- Output [NO_REPLY] to suppress replies`;
+
+  constructor(
+    private runtime: TelegramPluginRuntime,
+    private account: TelegramAccountRuntime,
+    private enabled: boolean = true
+  ) {}
+
+  /**
+   * Inject concise-mode prompt into message text
+   */
+  injectPrompt(text: string): string {
+    if (!this.enabled) return text;
+    
+    this.runtime.api.logger.info("[streaming] concise-mode: injecting prompt, disabling stream");
+    return text + ConciseModeHandler.CONCISE_PROMPT;
+  }
+
+  /**
+   * Resolve stream configuration with concise-mode override
+   */
+  resolveStreamConfig(): ReturnType<typeof resolveStreamCompat> {
+    const base = resolveStreamCompat(this.account.cfg);
+    
+    if (!this.enabled) return base;
+    
+    return {
+      ...base,
+      streamMode: "off" as const,
+    };
+  }
+
+  /**
+   * Wrap onStreamDelta to suppress output in concise-mode
+   */
+  wrapStreamDelta(
+    original?: (accumulated: string, delta: string) => void
+  ): typeof original {
+    if (!this.enabled) return original;
+    
+    // In concise-mode, suppress streaming deltas
+    return undefined;
+  }
+
+  /**
+   * Wrap onToolStart to suppress tool hints in concise-mode
+   */
+  wrapToolStart(
+    original?: (toolName: string, args?: Record<string, unknown>, toolCallId?: string) => void
+  ): typeof original {
+    if (!this.enabled) return original;
+    
+    // In concise-mode, suppress tool start notifications
+    return undefined;
+  }
+
+  /**
+   * Check if concise-mode is enabled
+   */
+  isEnabled(): boolean {
+    return this.enabled;
+  }
+}
+
+/**
+ * Factory function to create concise-mode handler
+ */
+function createConciseModeHandler(
+  runtime: TelegramPluginRuntime,
+  account: TelegramAccountRuntime
+): ConciseModeHandler {
+  return new ConciseModeHandler(runtime, account, true);
+}
+
+// ============================================================================
 // Lazy command registration
 // ============================================================================
 
@@ -102,6 +191,13 @@ export async function dispatchAgentTurn(params: {
 }): Promise<void> {
   const { runtime, account, ctx, source, sessionKey, text, images } = params;
 
+  // Concise-mode: inject prompt and disable streaming
+  // Note: message_received hook doesn't reach here, so we inject directly
+  const conciseMode = createConciseModeHandler(runtime, account);
+  const textWithPrompt = conciseMode.injectPrompt(text);
+  const streamCfg = conciseMode.resolveStreamConfig();
+  const isConcise = conciseMode.isEnabled();
+
   // Lazy: refresh pi commands on first real message per account (retry up to 3 times on failure)
   if (!commandsRegistered.get(account.accountId)) {
     const retries = commandsRetryCount.get(account.accountId) ?? 0;
@@ -117,7 +213,6 @@ export async function dispatchAgentTurn(params: {
       }).catch(() => {});
     }
   }
-  const streamCfg = resolveStreamCompat(account.cfg);
   const botClient = account.bot;
   const chatId = String(ctx.chat?.id ?? "");
   const threadId = (ctx.message as any)?.message_thread_id ?? (ctx.update?.edited_message as any)?.message_thread_id;
@@ -295,8 +390,10 @@ export async function dispatchAgentTurn(params: {
   const result = await runtime.api.dispatch({
     source,
     sessionKey,
-    text,
+    text: textWithPrompt,
     images: images.length > 0 ? images : undefined,
+    onStreamDelta: conciseMode.wrapStreamDelta(undefined),
+    onToolStart: conciseMode.wrapToolStart(undefined),
     onSteerInjected: () => {
       if (typingInterval) {
         clearInterval(typingInterval);
@@ -331,6 +428,9 @@ export async function dispatchAgentTurn(params: {
       initialized = false;
     },
     onThinkingDelta: (accumulated: string, _delta: string) => {
+      // In concise-mode, suppress thinking output
+      if (isConcise) return;
+      
       lazyInit();
       sendChatAction();
       if (!hasReceivedContent) {
@@ -346,6 +446,9 @@ export async function dispatchAgentTurn(params: {
       pushLiveUpdate();
     },
     onStreamDelta: (accumulated: string, delta?: string) => {
+      // In concise-mode, suppress streaming output
+      if (isConcise) return;
+      
       lazyInit();
       sendChatAction();
       if (!hasReceivedContent && accumulated) {
@@ -373,6 +476,9 @@ export async function dispatchAgentTurn(params: {
       pushLiveUpdate();
     },
     onToolStart: (toolName: string, args?: Record<string, unknown>, toolCallId?: string) => {
+      // In concise-mode, suppress tool notifications
+      if (isConcise) return;
+      
       lazyInit();
       sendChatAction();
       if (toolCallId) {
@@ -388,6 +494,24 @@ export async function dispatchAgentTurn(params: {
       lazyInit();
       if (replyMsgPromise) await replyMsgPromise;
       const log = runtime.api.logger;
+      
+      // Concise-mode: if reply is [NO_REPLY], skip all output (including thinking/tools)
+      const SILENT_TOKEN = "[NO_REPLY]";
+      if (reply === SILENT_TOKEN || reply?.includes(SILENT_TOKEN)) {
+        log.info(`[telegram:respond] concise-mode: suppressing all output for chatId=${chatId}`);
+        // Clean up streaming state without sending anything
+        if (typingInterval) {
+          clearInterval(typingInterval);
+          typingInterval = null;
+        }
+        stopSpinner();
+        // Optionally delete the placeholder message if it was created
+        if (replyMsgId) {
+          await botClient.api.deleteMessage(chatId, replyMsgId).catch(() => {});
+        }
+        return;
+      }
+      
       log.info(`[telegram:respond] chatId=${chatId} replyLen=${reply?.length ?? 0} replyMsgId=${replyMsgId}`);
       if (typingInterval) {
         clearInterval(typingInterval);

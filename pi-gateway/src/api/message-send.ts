@@ -39,8 +39,8 @@ export async function handleMessageSendRequest(
   let sessionKey = typeof body.sessionKey === "string" ? body.sessionKey.trim() : "";
   const internalToken = typeof body.token === "string" ? body.token.trim() : "";
   const callerPid = typeof body.pid === "number" ? body.pid : 0;
-  const text = typeof body.text === "string" ? body.text : "";
-  const replyTo = typeof body.replyTo === "string" ? body.replyTo.trim() : undefined;
+  let text = typeof body.text === "string" ? body.text : "";
+  let replyTo = typeof body.replyTo === "string" ? body.replyTo.trim() : undefined;
   const parseMode = typeof body.parseMode === "string" ? body.parseMode as "Markdown" | "HTML" | "plain" : undefined;
 
   if (!text) {
@@ -92,6 +92,17 @@ export async function handleMessageSendRequest(
 
   ctx.log.info(`[message-send] channel=${channel} chatId=${chatId} text=${text.length} chars replyTo=${replyTo ?? "none"}`);
 
+  // Tool hook integration for send_message
+  const toolInterceptor = new ToolCallInterceptor(ctx, sessionKey);
+  ctx.log.info(`[message-send] Calling beforeCall hook, sessionKey=${sessionKey}`);
+  await toolInterceptor.beforeCall("send_message", { text, replyTo, parseMode });
+  ctx.log.info(`[message-send] beforeCall hook completed`);
+  
+  // Apply hook modifications
+  text = toolInterceptor.getText();
+  replyTo = toolInterceptor.getReplyTo();
+  replyTo = toolInterceptor.getReplyTo();
+
   try {
     // WebChat: broadcast via WS (sendText is no-op for webchat plugin)
     if (channel === "webchat" && ctx.broadcastToWs) {
@@ -104,10 +115,14 @@ export async function handleMessageSendRequest(
         timestamp: Date.now(),
       });
       ctx.log.info(`[message-send] WebChat message_event broadcast for ${sessionKey}`);
+      
+      await toolInterceptor.afterCall({ ok: true, textLength: text.length }, false);
       return Response.json({ ok: true, channel, textLength: text.length, delivered: true });
     }
 
     await channelPlugin.outbound.sendText(chatId, text, { replyTo, parseMode });
+
+    await toolInterceptor.afterCall({ ok: true, textLength: text.length }, false);
 
     if (sessionKey) ctx.onDelivered?.(sessionKey);
 
@@ -119,6 +134,72 @@ export async function handleMessageSendRequest(
     });
   } catch (err: unknown) {
     ctx.log.error(`[message-send] delivery failed: ${(err instanceof Error ? err.message : String(err))}`);
+    await toolInterceptor.afterCall({ error: err instanceof Error ? err.message : "Unknown error" }, true);
     return Response.json({ error: err instanceof Error ? err.message : "Message delivery failed" }, { status: 500 });
+  }
+}
+
+// ============================================================================
+// Tool Call Interceptor
+// ============================================================================
+
+/**
+ * Tool Call Interceptor
+ * 
+ * Encapsulates before/after hook logic for tool calls.
+ * Provides clean API for hook integration.
+ */
+class ToolCallInterceptor {
+  private modifiedArgs: Record<string, unknown> = {};
+
+  constructor(
+    private ctx: MessageSendContext,
+    private sessionKey: string | undefined
+  ) {}
+
+  /**
+   * Dispatch before_tool_call hook
+   */
+  async beforeCall(toolName: string, args: Record<string, unknown>): Promise<void> {
+    if (!this.sessionKey) return;
+
+    const payload = {
+      sessionKey: this.sessionKey,
+      toolName,
+      args: { ...args },
+    };
+
+    await this.ctx.registry.hooks.dispatch("before_tool_call", payload);
+    
+    // Store modified args for later retrieval
+    this.modifiedArgs = payload.args || args;
+  }
+
+  /**
+   * Dispatch after_tool_call hook
+   */
+  async afterCall(result: unknown, isError: boolean): Promise<void> {
+    if (!this.sessionKey) return;
+
+    await this.ctx.registry.hooks.dispatch("after_tool_call", {
+      sessionKey: this.sessionKey,
+      toolName: "send_message",
+      result,
+      isError,
+    });
+  }
+
+  /**
+   * Get modified text from hooks
+   */
+  getText(): string {
+    return String(this.modifiedArgs?.text ?? "");
+  }
+
+  /**
+   * Get modified replyTo from hooks
+   */
+  getReplyTo(): string | undefined {
+    return this.modifiedArgs?.replyTo as string | undefined;
   }
 }

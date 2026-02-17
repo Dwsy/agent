@@ -468,8 +468,11 @@ export async function processMessage(
   }
 
   const outbound = { channel: source.channel, target: source.chatId, text: fullText };
+  ctx.log.info(`[message-pipeline] before hook: outbound.text length=${outbound.text.length}`);
   await ctx.registry.hooks.dispatch("message_sending", { message: outbound });
+  ctx.log.info(`[message-pipeline] after hook: outbound.text="${outbound.text.slice(0, 50)}..."`);
   outbound.text = normalizeOutgoingText(outbound.text, fullText);
+  ctx.log.info(`[message-pipeline] after normalize: outbound.text="${outbound.text.slice(0, 50)}..."`);
 
   const durationMs = Date.now() - startTime;
   ctx.transcripts.logResponse(sessionKey, outbound.text, durationMs);
