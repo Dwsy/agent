@@ -1,0 +1,81 @@
+{
+  // Admin Console 全功能配置模板（示例）
+  "app": {
+    "name": "Pi Gateway Admin Console",
+    "env": "development",
+    "locale": "zh-CN",
+    "theme": "dark",
+    "timezone": "Asia/Shanghai"
+  },
+  "auth": {
+    "enabled": false,
+    "mode": "bearer", // bearer | cookie | sso
+    "tokenStorage": "memory", // memory | localStorage
+    "refresh": {
+      "enabled": false,
+      "endpoint": "/api/auth/refresh"
+    }
+  },
+  "api": {
+    "baseURL": "/api",
+    "timeout": 10000,
+    "retry": {
+      "count": 1,
+      "backoffMs": 800
+    },
+    "ws": {
+      "enabled": false,
+      "url": "ws://127.0.0.1:3000/ws",
+      "reconnect": true,
+      "heartbeatMs": 20000
+    }
+  },
+  "features": {
+    "overview": true,
+    "agents": true,
+    "plugins": true,
+    "alerts": true,
+    "settings": true,
+    "cronControl": true,
+    "gatewayRestart": true,
+    "liveStream": false,
+    "auditCenter": false,
+    "logCenter": false
+  },
+  "polling": {
+    "healthMs": 10000,
+    "sessionsMs": 10000,
+    "poolMs": 10000,
+    "cronMs": 15000,
+    "pluginsMs": 15000,
+    "configMs": 30000
+  },
+  "permissions": {
+    "roles": ["admin", "operator", "viewer"],
+    "matrix": {
+      "admin": ["*"],
+      "operator": [
+        "view:overview",
+        "view:agents",
+        "view:plugins",
+        "view:alerts",
+        "action:cron.pause",
+        "action:cron.resume",
+        "action:gateway.reload"
+      ],
+      "viewer": [
+        "view:overview",
+        "view:agents",
+        "view:plugins",
+        "view:alerts"
+      ]
+    }
+  },
+  "ui": {
+    "mobileBreakpoint": 768,
+    "defaultSidebarCollapsed": false,
+    "table": {
+      "mobileMode": "scroll" // scroll | cards
+    }
+  }
+}
