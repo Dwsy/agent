@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 import { $ } from 'bun';
+import { searchWithCLI, SkillsCLIResult } from './skills-cli';
 
 const SKILLS_BASE = 'https://skills.sh';
 
@@ -94,6 +95,10 @@ export async function search(keyword: string, options: any = {}) {
     return await searchMarketplace(keyword, limit);
   }
 
+  if (source === 'cli') {
+    return await searchWithCLI(keyword, limit);
+  }
+
   // 默认使用 GitHub 搜索
   console.log(`\n🔍 搜索 GitHub 仓库: ${keyword}`);
   console.log('━'.repeat(60));
@@ -179,22 +184,24 @@ if (import.meta.main) {
 
   if (!keyword) {
     console.log(`
-技能搜索工具 - 支持双数据源
+技能搜索工具 - 支持三数据源
 
 用法:
   bun scripts/search.ts <keyword> [选项]
 
 数据源:
   github          GitHub 仓库搜索（默认）
-  marketplace      skills.sh marketplace
+  marketplace     skills.sh marketplace
+  cli             Skills CLI (npx skills)
 
 选项:
-  --source <type>  数据源类型 (github/marketplace)
+  --source <type>  数据源类型 (github/marketplace/cli)
   --limit <num>    结果数量 (默认: 20)
 
 示例:
   bun scripts/search.ts "react" --source github
   bun scripts/search.ts "react" --source marketplace
+  bun scripts/search.ts "react" --source cli
   bun scripts/search.ts trending
   bun scripts/search.ts stats
     `);

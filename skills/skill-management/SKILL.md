@@ -1,6 +1,6 @@
 ---
 name: skill-management
-description: 技能全生命周期管理系统，使用 LLM 智能分析技能类型、评估质量、审计安全。支持 GitHub 和 skills.sh marketplace 双数据源搜索。当用户需要：（1）发现和评估新技能，（2）审计现有技能安全性，（3）改造技能适配本地环境，（4）测试技能融合效果，（5）收集技能使用反馈时使用。
+description: 技能全生命周期管理系统，使用 LLM 智能分析技能类型、评估质量、审计安全。支持 GitHub、skills.sh marketplace 和 Skills CLI (npx skills) 三数据源搜索。当用户需要：（1）发现和评估新技能，（2）审计现有技能安全性，（3）改造技能适配本地环境，（4）测试技能融合效果，（5）收集技能使用反馈时使用。
 ---
 
 # 技能全生命周期管理系统
@@ -9,9 +9,10 @@ description: 技能全生命周期管理系统，使用 LLM 智能分析技能�
 
 ## 🎯 核心特性
 
-### 1. 双数据源搜索
+### 1. 三数据源搜索
 - **GitHub** - 搜索 GitHub 上的技能仓库
 - **skills.sh marketplace** - 搜索 skills.sh 技能市场
+- **Skills CLI** - 使用 `npx skills` CLI 搜索和安装技能（基于 Vercel 开源方案）
 
 ### 2. 智能技能分类
 - 自动识别技能类型：knowledge、tool、hybrid、process
@@ -26,6 +27,13 @@ description: 技能全生命周期管理系统，使用 LLM 智能分析技能�
 ### 4. 差异化评估
 - 知识型：重点评估内容质量（40%）
 - 工具型：重点评估功能和安全（40%）
+
+### 5. Skills CLI 集成
+基于 [Vercel skills](https://github.com/vercel-labs/skills) 开源方案，提供：
+- **搜索技能** - `npx skills find <keyword>`
+- **安装技能** - `npx skills add <owner/repo@skill>`
+- **检查更新** - `npx skills check`
+- **更新技能** - `npx skills update`
 
 ## 🔄 工作流程
 
@@ -85,6 +93,26 @@ bun ~/.pi/agent/skills/skill-management/scripts/search.ts "claude office"
 bun ~/.pi/agent/skills/skill-management/scripts/search.ts "react" --source marketplace
 ```
 
+#### Skills CLI 搜索
+```bash
+bun ~/.pi/agent/skills/skill-management/scripts/search.ts "react" --source cli
+```
+
+#### 使用 Skills CLI 直接安装
+```bash
+# 搜索技能
+npx skills find react
+
+# 安装特定技能
+npx skills add vercel-labs/agent-skills@vercel-react-best-practices
+
+# 检查更新
+npx skills check
+
+# 更新所有技能
+npx skills update
+```
+
 #### 查看热门技能
 ```bash
 bun ~/.pi/agent/skills/skill-management/scripts/search.ts trending
@@ -138,7 +166,8 @@ bun ~/.pi/agent/skills/skill-management/scripts/pipeline.ts "react" --source mar
 │   ├── audit.ts               # 智能审计（自动分类 + 差异化）
 │   ├── pipeline.ts            # 完整流程脚本
 │   ├── select.ts              # 技能选择脚本
-│   ├── search.ts              # 双数据源搜索（GitHub + marketplace）
+│   ├── search.ts              # 三数据源搜索（GitHub + marketplace + CLI）
+│   ├── skills-cli.ts          # Skills CLI (npx skills) 集成模块
 │   ├── interactive.ts         # 交互式决策脚本
 │   ├── report.ts              # 智能报告生成脚本
 │   └── notify.ts              # 通知脚本
@@ -152,6 +181,7 @@ bun ~/.pi/agent/skills/skill-management/scripts/pipeline.ts "react" --source mar
 |--------|------|------|------|
 | **GitHub** | 代码仓库 | 搜索开源技能项目 | 搜索 GitHub 上的技能仓库 |
 | **skills.sh** | 技能市场 | 技能聚合平台 | 发现热门和社区技能 |
+| **Skills CLI** | 包管理器 | 统一的技能生态 | 搜索、安装、更新技能 |
 
 ## 📝 使用示例
 
@@ -177,7 +207,9 @@ bun ~/.pi/agent/skills/skill-management/scripts/search.ts stats
 
 ## 🎯 最佳实践
 
-1. **先搜索后选择** - 使用双数据源搜索更多技能
+1. **先搜索后选择** - 使用三数据源搜索更多技能
 2. **充分利用 LLM** - LLM 参与全流程分析
 3. **区分技能类型** - 不同类型使用不同评估标准
 4. **定制化报告** - 根据类型生成定制化报告
+5. **优先使用 Skills CLI** - 对于 skills.sh 生态的技能，使用 `npx skills` 进行安装和管理
+6. **技能命名格式** - 使用 `owner/repo@skill-name` 格式引用特定技能
