@@ -29,6 +29,7 @@ import { ExtensionUIForwarder } from "./core/extension-ui-forwarder.ts";
 import { DeduplicationCache } from "./core/dedup-cache.ts";
 import { MetricsCollector, type MetricsDataSource } from "./core/metrics.ts";
 import { DelegateExecutor } from "./core/delegate-executor.ts";
+import { GatewayObservability } from "./core/gateway-observability.ts";
 import { HeartbeatExecutor } from "./core/heartbeat-executor.ts";
 import { SystemEventsQueue } from "./core/system-events.ts";
 import { createWsRouter, dispatchWsFrame } from "./ws/ws-router.ts";
@@ -85,6 +86,7 @@ export class Gateway {
   private wsRouter: Map<string, import("./ws/ws-router.ts").WsMethodFn> | null = null;
   /** 缓存每个 channel 注册时的 api 引用，供 init 调用 */
   private _channelApis = new Map<string, GatewayPluginApi>();
+  private observability: GatewayObservability;
 
   constructor(options: GatewayOptions = {}) {
     this.config = loadConfig(options.configPath);
@@ -130,6 +132,7 @@ export class Gateway {
     this.sessions = new SessionStore(this.config.session.dataDir);
     this.systemEvents = new SystemEventsQueue(30_000, this.config.session.dataDir.replace(/\/sessions$/, ""));
     this.transcripts = new TranscriptLogger(join(this.config.session.dataDir, "transcripts"));
+    this.observability = new GatewayObservability(500);
 
     // Initialize v3 delegate executor if multi-agent config exists
     if (this.config.agents && this.config.agents.list.length > 0) {
@@ -459,6 +462,7 @@ export class Gateway {
       sessionMessageModeOverrides: this.sessionMessageModeOverrides,
       activeInboundMessages: this.activeInboundMessages,
       channelApis: this._channelApis,
+      observability: this.observability,
       resolveTelegramMessageMode: (sk, accountId) => this.resolveTelegramMessageMode(sk, accountId),
       broadcastToWs: (event, payload) => this.broadcastToWs(event, payload),
       buildSessionProfile: (sk, role) => this.buildSessionProfile(sk, role),
