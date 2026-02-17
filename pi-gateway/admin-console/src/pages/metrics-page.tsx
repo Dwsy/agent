@@ -7,20 +7,23 @@ import {
   Trash2, 
   XCircle,
   BarChart3,
-  AlertTriangle
+  AlertTriangle,
+  RefreshCw,
+  Server,
+  Monitor
 } from 'lucide-react';
 import { 
   useObservabilityEvents, 
   useObservabilityMetrics,
   trackRuntimeEvent
 } from '../hooks/use-observability';
+import { useGatewayObservability, type GatewayObservabilityEvent } from '../hooks/use-gateway-observability';
 import { cn } from '../lib/cn';
-import type { ObservabilityEvent, ObservabilityLevel, ObservabilityMetric } from '../store/observability-store';
 
 /**
  * 事件级别图标
  */
-function LevelIcon({ level }: { level: ObservabilityLevel }) {
+function LevelIcon({ level }: { level: GatewayObservabilityEvent['level'] }) {
   const iconClass = 'h-4 w-4';
   switch (level) {
     case 'debug':
@@ -67,7 +70,7 @@ function formatRelativeTime(ts: number): string {
 /**
  * 事件列表项组件
  */
-function EventItem({ event }: { event: ObservabilityEvent }) {
+function EventItem({ event }: { event: GatewayObservabilityEvent }) {
   const [expanded, setExpanded] = useState(false);
   
   return (
@@ -148,7 +151,7 @@ function LevelFilter({
   active, 
   onClick 
 }: { 
-  level: ObservabilityLevel | 'all'; 
+  level: GatewayObservabilityEvent['level'] | 'all'; 
   count: number; 
   active: boolean;
   onClick: () => void;
@@ -183,18 +186,22 @@ export function MetricsPage() {
     trackRuntimeEvent('info', 'Page mounted: Metrics', { page: 'metrics' });
   }, []);
 
-  const { events, eventCount, clearEvents } = useObservabilityEvents();
-  const { metrics, metricCount, clearMetrics } = useObservabilityMetrics();
-  const [levelFilter, setLevelFilter] = useState<ObservabilityLevel | 'all'>('all');
+  // 网关观测性数据（优先后端）
+  const { 
+    events, 
+    summary, 
+    stats, 
+    loading, 
+    error, 
+    backendAvailable, 
+    refresh, 
+    clearEvents 
+  } = useGatewayObservability({ pollInterval: 5000, limit: 100 });
 
-  // 统计
-  const stats = useMemo(() => {
-    const errors = events.filter((e) => e.level === 'error').length;
-    const warnings = events.filter((e) => e.level === 'warn').length;
-    const infos = events.filter((e) => e.level === 'info').length;
-    const debugs = events.filter((e) => e.level === 'debug').length;
-    return { errors, warnings, infos, debugs };
-  }, [events]);
+  // 前端本地指标（保留原有功能）
+  const { metrics, metricCount, clearMetrics } = useObservabilityMetrics();
+  
+  const [levelFilter, setLevelFilter] = useState<GatewayObservabilityEvent['level'] | 'all'>('all');
 
   // 过滤后的事件
   const filteredEvents = useMemo(() => {
@@ -204,10 +211,10 @@ export function MetricsPage() {
 
   // 按类别分组的指标
   const metricsByName = useMemo(() => {
-    const grouped: Record<string, ObservabilityMetric[]> = {};
+    const grouped: Record<string, { name: string; value: number; ts: number }[]> = {};
     metrics.forEach((m) => {
       if (!grouped[m.name]) grouped[m.name] = [];
-      grouped[m.name].push(m);
+      grouped[m.name].push({ name: m.name, value: m.value, ts: m.ts });
     });
     return grouped;
   }, [metrics]);
@@ -224,8 +231,29 @@ export function MetricsPage() {
         <div className="flex items-center gap-2">
           <BarChart3 className="h-5 w-5 text-sky-400" />
           <h1 className="text-lg font-semibold text-slate-200">Observability Metrics</h1>
+          <div className="flex items-center gap-1.5 ml-3">
+            {backendAvailable ? (
+              <span className="flex items-center gap-1 text-xs text-emerald-400 bg-emerald-900/20 px-2 py-0.5 rounded">
+                <Server className="h-3 w-3" />
+                Backend
+              </span>
+            ) : (
+              <span className="flex items-center gap-1 text-xs text-amber-400 bg-amber-900/20 px-2 py-0.5 rounded" title={error || 'Backend unavailable'}>
+                <Monitor className="h-3 w-3" />
+                Local
+              </span>
+            )}
+          </div>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            onClick={refresh}
+            disabled={loading}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-slate-400 hover:text-slate-200 bg-slate-800/50 hover:bg-slate-800 rounded transition-colors disabled:opacity-50"
+          >
+            <RefreshCw className={cn('h-3.5 w-3.5', loading && 'animate-spin')} />
+            Refresh
+          </button>
           <button
             onClick={clearEvents}
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-slate-400 hover:text-slate-200 bg-slate-800/50 hover:bg-slate-800 rounded transition-colors"
@@ -247,7 +275,7 @@ export function MetricsPage() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <StatCard
           title="Total Events"
-          value={eventCount}
+          value={summary.total}
           icon={Activity}
           colorClass="text-sky-400"
           subtitle={`${stats.errors} errors`}
@@ -285,7 +313,7 @@ export function MetricsPage() {
                 <LevelFilter
                   key={level}
                   level={level}
-                  count={level === 'all' ? eventCount : events.filter((e) => e.level === level).length}
+                  count={level === 'all' ? summary.total : summary.byLevel[level] ?? 0}
                   active={levelFilter === level}
                   onClick={() => setLevelFilter(level)}
                 />
@@ -293,7 +321,12 @@ export function MetricsPage() {
             </div>
           </div>
           <div className="max-h-[400px] overflow-y-auto">
-            {filteredEvents.length === 0 ? (
+            {loading ? (
+              <div className="flex h-32 items-center justify-center text-slate-500 text-sm">
+                <RefreshCw className="h-4 w-4 animate-spin mr-2" />
+                Loading...
+              </div>
+            ) : filteredEvents.length === 0 ? (
               <div className="flex h-32 items-center justify-center text-slate-500 text-sm">
                 No events recorded
               </div>
@@ -332,13 +365,35 @@ export function MetricsPage() {
             )}
           </div>
 
-          {/* 指标概览 */}
+          {/* 分类统计 */}
           <div className="rounded-xl border border-slate-800 bg-card p-4">
             <h2 className="text-sm font-medium text-slate-300 mb-3 flex items-center gap-2">
               <BarChart3 className="h-4 w-4 text-emerald-400" />
+              Events by Category
+            </h2>
+            <div className="space-y-2 max-h-[150px] overflow-y-auto">
+              {Object.entries(summary.byCategory).map(([category, count]) => (
+                <div 
+                  key={category} 
+                  className="flex items-center justify-between text-sm p-2 rounded bg-slate-800/30"
+                >
+                  <span className="text-slate-400">{category}</span>
+                  <span className="text-emerald-400 text-xs font-medium">{count}</span>
+                </div>
+              ))}
+              {Object.keys(summary.byCategory).length === 0 && (
+                <p className="text-slate-500 text-sm">No categories recorded</p>
+              )}
+            </div>
+          </div>
+
+          {/* 指标概览 */}
+          <div className="rounded-xl border border-slate-800 bg-card p-4">
+            <h2 className="text-sm font-medium text-slate-300 mb-3 flex items-center gap-2">
+              <Clock className="h-4 w-4 text-sky-400" />
               Metric Types ({Object.keys(metricsByName).length})
             </h2>
-            <div className="space-y-2 max-h-[200px] overflow-y-auto">
+            <div className="space-y-2 max-h-[150px] overflow-y-auto">
               {Object.entries(metricsByName).map(([name, items]) => (
                 <div 
                   key={name} 
