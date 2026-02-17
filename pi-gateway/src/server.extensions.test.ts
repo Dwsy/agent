@@ -127,6 +127,32 @@ describe("gateway extension wiring", () => {
     expect(reply).toBe("hello +out");
   });
 
+  test("[NO_REPLY] suppresses outbound delivery in dm", async () => {
+    const gateway = createTestGateway();
+    const fakeRpc = new FakeRpc();
+
+    gateway.pool = {
+      acquire: async (sk: string) => { fakeRpc.sessionKey = sk; return fakeRpc; },
+      release: () => {},
+      getForSession: () => fakeRpc,
+    };
+
+    gateway.registry.hooks.register("t-silent", ["message_sending"], (payload: any) => {
+      payload.message.text = "[NO_REPLY]";
+    });
+
+    let delivered = false;
+    await gateway.processMessage({
+      source: { channel: "test", chatType: "dm", chatId: "c1", senderId: "u1" },
+      sessionKey: "agent:main:test:dm:u1",
+      text: "ping",
+      respond: async () => { delivered = true; },
+      setTyping: async () => {},
+    });
+
+    expect(delivered).toBe(false);
+  });
+
   test("registered slash command executes via local handler", async () => {
     const gateway = createTestGateway();
     const fakeRpc = new FakeRpc();
