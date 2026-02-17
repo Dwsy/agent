@@ -117,7 +117,7 @@ settings.json
 roles/
 
 # Docs build artifacts
-# docs/assets/ — needed for GitHub Pages deployment
+docs/assets/
 
 # Temporary development files
 .kanban/
