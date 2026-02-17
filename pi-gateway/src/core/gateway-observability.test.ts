@@ -2,7 +2,7 @@
  * GatewayObservability 单元测试
  */
 import { describe, it, expect, beforeEach } from "bun:test";
-import { GatewayObservability } from "./gateway-observability.ts";
+import { GatewayObservability, parseObservabilityWindow } from "./gateway-observability.ts";
 
 describe("GatewayObservability", () => {
   let obs: GatewayObservability;
@@ -80,6 +80,10 @@ describe("GatewayObservability", () => {
       expect(summary.byCategory.gateway).toBe(2);
       expect(summary.byCategory.api).toBe(1);
       expect(summary.byCategory.cron).toBe(1);
+      expect(summary.topActions.length).toBeGreaterThan(0);
+      expect(summary.topActions.some((it) => it.action === "a")).toBe(true);
+      expect(summary.errorRatePct).toBe(25);
+      expect(summary.windowMs).toBeNull();
     });
 
     it("should return recent errors", () => {
@@ -135,6 +139,23 @@ describe("GatewayObservability", () => {
       expect(obs.size()).toBe(1);
       obs.clear();
       expect(obs.size()).toBe(0);
+    });
+  });
+
+  describe("parseObservabilityWindow", () => {
+    it("should parse known windows", () => {
+      expect(parseObservabilityWindow("5m")).toBe(300000);
+      expect(parseObservabilityWindow("1h")).toBe(3600000);
+      expect(parseObservabilityWindow("7d")).toBe(604800000);
+    });
+
+    it("should parse numeric milliseconds", () => {
+      expect(parseObservabilityWindow("120000")).toBe(120000);
+    });
+
+    it("should return undefined for invalid input", () => {
+      expect(parseObservabilityWindow("bad")).toBeUndefined();
+      expect(parseObservabilityWindow(null)).toBeUndefined();
     });
   });
 });
