@@ -20,6 +20,7 @@ import { createCronTool } from "./cron.ts";
 import { createMessageActionTool } from "./message-action.ts";
 import { createGatewayTool } from "./gateway.ts";
 import { createSessionStatusTool } from "./session-status.ts";
+import { createKeyboardSelectTool } from "./keyboard-select.ts";
 
 export default function gatewayTools(pi: ExtensionAPI) {
   const gatewayUrl = process.env.PI_GATEWAY_URL;
@@ -45,6 +46,7 @@ export default function gatewayTools(pi: ExtensionAPI) {
   pi.registerTool(createMessageActionTool(gatewayUrl, internalToken, authToken));
   pi.registerTool(createGatewayTool(gatewayUrl, internalToken, authToken));
   pi.registerTool(createSessionStatusTool(gatewayUrl, internalToken, authToken));
+  pi.registerTool(createKeyboardSelectTool(gatewayUrl, internalToken, authToken));
 
-  console.info("[gateway-tools] registered tools: send_media, send_message, cron, message, gateway, session_status");
+  console.info("[gateway-tools] registered tools: send_media, send_message, cron, message, gateway, session_status, keyboard_select");
 }
