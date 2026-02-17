@@ -3,3 +3,5 @@ scan_interval_seconds = 30
 enable_fts5 = true
 preload_count = 20
 session_paths = ["~/.pi/gateway/sessions"]
+metrics_enabled = false
+metrics_port = 9090
