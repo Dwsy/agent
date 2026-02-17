@@ -71,10 +71,15 @@ bun run admin:dev
 - 趋势图与指标卡骨架
 - 后续可直接接入真实 gateway API
 
+## 规划文档
+
+- 功能清单 + 未来展望：`docs/feature-list-and-roadmap.md`
+- 全功能配置模板：`docs/full-config-template.jsonc`
+
 ## 下一步建议（你确认后我继续）
 
-1. 接入真实 API（session、cron、agents、plugins、logs）
-2. 增加认证层（token / role-based）
-3. 增加实时订阅（WebSocket/SSE）
-4. 加入暗色主题 tokens + 设计系统
-5. 补齐 E2E（Playwright）
+1. 登录鉴权 + RBAC 权限矩阵
+2. WebSocket/SSE 实时态
+3. 移动端表格卡片化（替代横向滚动）
+4. 日志中心 + 审计中心
+5. Playwright E2E 验收
