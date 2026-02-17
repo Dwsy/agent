@@ -1,8 +1,9 @@
+import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { MetricCard } from '../components/metric-card';
 import { StatusPill } from '../components/status-pill';
-import { fetchGatewayHealth } from '../lib/api';
+import { fetchCronStatus, fetchGatewayHealth, fetchPool, fetchSessions } from '../lib/api';
 
 const trend = [
   { day: 'Mon', req: 1200 },
@@ -15,27 +16,41 @@ const trend = [
 ];
 
 export function OverviewPage() {
-  const healthQuery = useQuery({
-    queryKey: ['gateway-health'],
-    queryFn: fetchGatewayHealth,
-    retry: 1,
-    staleTime: 15_000
-  });
+  const healthQuery = useQuery({ queryKey: ['health'], queryFn: fetchGatewayHealth, refetchInterval: 10000 });
+  const sessionsQuery = useQuery({ queryKey: ['sessions'], queryFn: fetchSessions, refetchInterval: 10000 });
+  const poolQuery = useQuery({ queryKey: ['pool'], queryFn: fetchPool, refetchInterval: 10000 });
+  const cronStatusQuery = useQuery({ queryKey: ['cron-status'], queryFn: fetchCronStatus, refetchInterval: 15000 });
 
-  const status = healthQuery.data?.ok ? 'healthy' : healthQuery.isError ? 'warning' : 'healthy';
+  const healthy = healthQuery.data?.status === 'ok';
+  const status = healthy ? 'healthy' : healthQuery.isError ? 'warning' : 'healthy';
+
+  const topSessions = useMemo(() => {
+    const items = sessionsQuery.data ?? [];
+    return [...items]
+      .sort((a, b) => (b.lastActivity ?? 0) - (a.lastActivity ?? 0))
+      .slice(0, 5);
+  }, [sessionsQuery.data]);
 
   return (
     <div className="space-y-4">
       <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <MetricCard label="Gateway Status" value={healthQuery.data?.ok ? 'Online' : 'Checking...'} delta="Realtime health check" />
-        <MetricCard label="Active Sessions" value="128" delta="+12% this week" />
-        <MetricCard label="Cron Jobs" value="16" delta="2 need attention" />
-        <MetricCard label="Error Rate" value="0.21%" delta="-0.08% vs yesterday" />
+        <MetricCard label="Gateway Status" value={healthy ? 'Online' : 'Degraded'} delta={`${Math.round(healthQuery.data?.uptime ?? 0)}s uptime`} />
+        <MetricCard label="Active Sessions" value={String(healthQuery.data?.sessions ?? 0)} delta={`${sessionsQuery.data?.length ?? 0} loaded`} />
+        <MetricCard
+          label="RPC Processes"
+          value={String(poolQuery.data?.stats.totalProcesses ?? poolQuery.data?.processes.length ?? 0)}
+          delta={`running ${poolQuery.data?.stats.running ?? 0} / idle ${poolQuery.data?.stats.idle ?? 0}`}
+        />
+        <MetricCard
+          label="Cron Jobs"
+          value={cronStatusQuery.data ? String(cronStatusQuery.data.total) : '--'}
+          delta={cronStatusQuery.data ? `active ${cronStatusQuery.data.active}, paused ${cronStatusQuery.data.paused}` : 'cron disabled or unavailable'}
+        />
       </section>
 
       <section className="rounded-xl border border-slate-800 bg-card p-4">
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-white">Traffic Trend</h2>
+          <h2 className="text-sm font-semibold text-white">Traffic Trend (scaffold)</h2>
           <StatusPill status={status} />
         </div>
         <div className="h-64">
@@ -54,6 +69,39 @@ export function OverviewPage() {
               <Area type="monotone" dataKey="req" stroke="#38BDF8" fillOpacity={1} fill="url(#req)" />
             </AreaChart>
           </ResponsiveContainer>
+        </div>
+      </section>
+
+      <section className="rounded-xl border border-slate-800 bg-card p-4">
+        <h2 className="mb-3 text-sm font-semibold text-white">Recent Sessions</h2>
+        <div className="overflow-auto">
+          <table className="w-full text-left text-sm">
+            <thead className="text-slate-400">
+              <tr>
+                <th className="pb-2">Session Key</th>
+                <th className="pb-2">Role</th>
+                <th className="pb-2">Messages</th>
+                <th className="pb-2">Streaming</th>
+              </tr>
+            </thead>
+            <tbody className="text-slate-200">
+              {topSessions.map((row) => (
+                <tr key={row.sessionKey} className="border-t border-slate-800">
+                  <td className="py-2 font-mono text-xs text-slate-300">{row.sessionKey}</td>
+                  <td className="py-2">{row.role ?? 'default'}</td>
+                  <td className="py-2">{row.messageCount ?? 0}</td>
+                  <td className="py-2">{row.isStreaming ? 'yes' : 'no'}</td>
+                </tr>
+              ))}
+              {topSessions.length === 0 ? (
+                <tr>
+                  <td colSpan={4} className="py-4 text-center text-slate-500">
+                    no sessions yet
+                  </td>
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
         </div>
       </section>
     </div>
