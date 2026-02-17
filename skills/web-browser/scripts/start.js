@@ -3,40 +3,104 @@
 import { spawn, execSync } from "node:child_process";
 import { writeFileSync, readFileSync, existsSync } from "node:fs";
 import { randomInt } from "node:crypto";
+import { join } from "node:path";
 import puppeteer from "puppeteer-core";
 
-const useChromium = !process.argv.includes("--chrome"); // Default to Chromium
-
+const useChrome = process.argv.includes("--chrome");
 if (process.argv[2] && process.argv[2] !== "--chrome") {
   console.log("Usage: start.js [--chrome]");
   console.log("\nOptions:");
-  console.log("  --chrome    Use Google Chrome instead of Chromium");
-  console.log("\nExamples:");
-  console.log("  start.js              # Start Chromium with persistent storage");
-  console.log("  start.js --chrome     # Start Google Chrome");
+  console.log("  --chrome    Prefer Google Chrome");
   process.exit(1);
 }
 
-// Setup profile directory - use a unique directory name to avoid conflicts
-const profileDir = `${process.env["HOME"]}/.cache/scraping-web-browser`;
-const portFile = `${profileDir}/port.txt`;
+const profileDir = `${process.env.HOME}/.cache/scraping-web-browser`;
+const portFile = join(profileDir, "port.txt");
 
 execSync(`mkdir -p "${profileDir}"`, { stdio: "ignore" });
 
-// Generate or read port
+function cmdExists(cmd) {
+  try {
+    execSync(`command -v ${cmd}`, { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function firstExisting(paths) {
+  for (const p of paths) {
+    if (p && existsSync(p)) return p;
+  }
+  return null;
+}
+
+function resolveBrowserPath() {
+  const envPreferred = process.env.AGENT_BROWSER_EXECUTABLE_PATH || process.env.PUPPETEER_EXECUTABLE_PATH;
+  if (envPreferred && existsSync(envPreferred)) return envPreferred;
+
+  // Linux commands in PATH
+  const linuxCmds = useChrome
+    ? ["google-chrome-stable", "google-chrome", "chromium", "chromium-browser"]
+    : ["chromium", "chromium-browser", "google-chrome-stable", "google-chrome"];
+
+  for (const cmd of linuxCmds) {
+    if (cmdExists(cmd)) {
+      try {
+        return execSync(`command -v ${cmd}`, { encoding: "utf-8" }).trim();
+      } catch {
+        // continue
+      }
+    }
+  }
+
+  // Known absolute paths (Linux/macOS + local workspace)
+  const candidates = useChrome
+    ? [
+        "/usr/bin/google-chrome-stable",
+        "/usr/bin/google-chrome",
+        "/opt/google/chrome/chrome",
+        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+        "/usr/bin/chromium",
+        "/usr/bin/chromium-browser",
+        "/root/.cache/ms-playwright/chromium_headless_shell-1208/chrome-headless-shell-linux64/chrome-headless-shell",
+        "/root/.pi/gateway/workspaces/default/chrome-headless-shell/linux-131.0.6778.204/chrome-headless-shell-linux64/chrome-headless-shell",
+      ]
+    : [
+        "/usr/bin/chromium",
+        "/usr/bin/chromium-browser",
+        "/Applications/Chromium.app/Contents/MacOS/Chromium",
+        "/root/.cache/ms-playwright/chromium_headless_shell-1208/chrome-headless-shell-linux64/chrome-headless-shell",
+        "/root/.pi/gateway/workspaces/default/chrome-headless-shell/linux-131.0.6778.204/chrome-headless-shell-linux64/chrome-headless-shell",
+        "/usr/bin/google-chrome-stable",
+        "/usr/bin/google-chrome",
+        "/opt/google/chrome/chrome",
+        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+      ];
+
+  return firstExisting(candidates);
+}
+
 let port;
 if (existsSync(portFile)) {
-  port = parseInt(readFileSync(portFile, "utf-8").trim());
+  port = Number.parseInt(readFileSync(portFile, "utf-8").trim(), 10);
   console.log(`📖 Using saved port: ${port}`);
 } else {
-  // Generate random port between 9222 and 9999
   port = randomInt(9222, 10000);
-  writeFileSync(portFile, port.toString());
+  writeFileSync(portFile, String(port));
   console.log(`🎲 Generated random port: ${port}`);
 }
 
-// Check if browser is already running on this port
-let existingBrowser = false;
+const browserPath = resolveBrowserPath();
+if (!browserPath) {
+  console.error("❌ No browser executable found!");
+  console.error("   Set AGENT_BROWSER_EXECUTABLE_PATH or install chromium/google-chrome.");
+  process.exit(1);
+}
+
+const browserName = browserPath.includes("chrome") ? "Chrome/Chromium" : "Browser";
+
+// Browser already running?
 try {
   const browser = await puppeteer.connect({
     browserURL: `http://localhost:${port}`,
@@ -44,44 +108,12 @@ try {
     timeout: 2000,
   });
   await browser.disconnect();
-  existingBrowser = true;
   console.log(`✓ ${browserName} already running on :${port}`);
   process.exit(0);
 } catch {
-  // Browser not running, continue
+  // not running
 }
 
-// Determine which browser executable to use
-const chromiumPath = "/Applications/Chromium.app/Contents/MacOS/Chromium";
-const chromePath = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
-
-const chromiumInstalled = existsSync(chromiumPath);
-const chromeInstalled = existsSync(chromePath);
-
-// Use Chromium by default, fallback to Chrome if Chromium not found
-let browserPath;
-if (useChromium && chromiumInstalled) {
-  browserPath = chromiumPath;
-} else if (!useChromium && chromeInstalled) {
-  browserPath = chromePath;
-} else if (chromiumInstalled) {
-  console.log("⚠️  Google Chrome not found, using Chromium instead");
-  browserPath = chromiumPath;
-} else if (chromeInstalled) {
-  console.log("⚠️  Chromium not found, using Google Chrome instead");
-  browserPath = chromePath;
-} else {
-  console.error("❌ No browser found!");
-  console.log("   Please install either Chromium or Google Chrome");
-  console.log("   Install Chromium: brew install --cask chromium");
-  process.exit(1);
-}
-
-const browserName = browserPath.includes("Chromium") ? "Chromium" : "Chrome";
-console.log(`🚀 Starting: ${browserName} (${browserPath})`);
-
-// Start browser in background with unique profile directory
-// Using a separate profile ensures it doesn't interfere with your main browser
 const browserArgs = [
   `--remote-debugging-port=${port}`,
   `--user-data-dir=${profileDir}`,
@@ -95,30 +127,33 @@ const browserArgs = [
   "--disable-features=TranslateUI,BlinkGenPropertyTrees",
   "--disable-web-security",
   "--disable-features=VizDisplayCompositor",
-  "--proxy-server='direct://'",
+  "--proxy-server=direct://",
   "--no-proxy-server",
 ];
 
+if (typeof process.getuid === "function" && process.getuid() === 0) {
+  browserArgs.push("--no-sandbox", "--disable-setuid-sandbox");
+}
+
+console.log(`🚀 Starting: ${browserPath}`);
 console.log(`📂 Profile: ${profileDir}`);
 console.log(`🔌 Port: ${port}`);
-console.log(`📝 Args: ${browserArgs.slice(0, 3).join(" ")} ...`);
 
-const browserProcess = spawn(
-  browserPath,
-  browserArgs,
-  { detached: true, stdio: "ignore" },
-);
+const browserProcess = spawn(browserPath, browserArgs, {
+  detached: true,
+  stdio: "ignore",
+});
 browserProcess.unref();
 
 console.log(`🎯 Process ID: ${browserProcess.pid}`);
 
-// Wait for browser to be ready by attempting to connect
 let connected = false;
-for (let i = 0; i < 30; i++) {
+for (let i = 0; i < 40; i++) {
   try {
     const browser = await puppeteer.connect({
       browserURL: `http://localhost:${port}`,
       defaultViewport: null,
+      timeout: 1500,
     });
     await browser.disconnect();
     connected = true;
@@ -129,8 +164,8 @@ for (let i = 0; i < 30; i++) {
 }
 
 if (!connected) {
-  console.error(`✗ Failed to connect to ${browserName}`);
+  console.error(`✗ Failed to connect to browser on :${port}`);
   process.exit(1);
 }
 
-console.log(`✓ ${browserName} started on :${port}`);
+console.log(`✓ Browser started on :${port}`);
