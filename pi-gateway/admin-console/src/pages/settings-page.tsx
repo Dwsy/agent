@@ -1,20 +1,21 @@
 import { useMemo } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { PermissionGate } from '../components/permission-gate';
+import { usePageDataSource, useDataMutation } from '../hooks/use-data-source';
 import { fetchGatewayConfig, reloadGatewayConfig, restartGateway } from '../lib/api';
 
 export function SettingsPage() {
-  const queryClient = useQueryClient();
-  const configQuery = useQuery({ queryKey: ['gateway-config'], queryFn: fetchGatewayConfig, refetchInterval: 30000 });
+  // 使用 use-data-source 替换直接的 useQuery
+  const configQuery = usePageDataSource('settings', ['gateway-config'], fetchGatewayConfig);
 
-  const reloadMutation = useMutation({
+  // 使用 useDataMutation 替换 useMutation
+  const reloadMutation = useDataMutation({
     mutationFn: reloadGatewayConfig,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['gateway-config'] });
-      queryClient.invalidateQueries({ queryKey: ['health'] });
-    }
+    invalidateKeys: [['gateway-config'], ['health']],
   });
 
-  const restartMutation = useMutation({ mutationFn: restartGateway });
+  const restartMutation = useDataMutation({
+    mutationFn: restartGateway,
+  });
 
   const configText = useMemo(() => JSON.stringify(configQuery.data ?? {}, null, 2), [configQuery.data]);
 
@@ -23,20 +24,55 @@ export function SettingsPage() {
       <h2 className="text-sm font-semibold">Gateway Settings</h2>
 
       <div className="flex gap-2">
-        <button
-          type="button"
-          onClick={() => reloadMutation.mutate()}
-          className="rounded border border-sky-700 px-3 py-1.5 text-xs text-sky-300"
+        {/* Reload 按钮需要 action:gateway.reload 权限 */}
+        <PermissionGate
+          resource="gateway"
+          action="execute"
+          fallback={
+            <button
+              type="button"
+              disabled
+              className="rounded border border-slate-700 bg-slate-800/50 px-3 py-1.5 text-xs text-slate-500 cursor-not-allowed"
+              title="Permission required: gateway:execute"
+            >
+              Reload Config
+            </button>
+          }
         >
-          Reload Config
-        </button>
-        <button
-          type="button"
-          onClick={() => restartMutation.mutate()}
-          className="rounded border border-rose-700 px-3 py-1.5 text-xs text-rose-300"
+          <button
+            type="button"
+            onClick={() => reloadMutation.mutate()}
+            disabled={reloadMutation.isPending}
+            className="rounded border border-sky-700 px-3 py-1.5 text-xs text-sky-300 hover:bg-sky-900/20 disabled:opacity-50"
+          >
+            {reloadMutation.isPending ? 'Reloading...' : 'Reload Config'}
+          </button>
+        </PermissionGate>
+
+        {/* Restart 按钮需要 action:gateway.execute 权限 */}
+        <PermissionGate
+          resource="gateway"
+          action="execute"
+          fallback={
+            <button
+              type="button"
+              disabled
+              className="rounded border border-slate-700 bg-slate-800/50 px-3 py-1.5 text-xs text-slate-500 cursor-not-allowed"
+              title="Permission required: gateway:execute"
+            >
+              Restart Gateway
+            </button>
+          }
         >
-          Restart Gateway
-        </button>
+          <button
+            type="button"
+            onClick={() => restartMutation.mutate()}
+            disabled={restartMutation.isPending}
+            className="rounded border border-rose-700 px-3 py-1.5 text-xs text-rose-300 hover:bg-rose-900/20 disabled:opacity-50"
+          >
+            {restartMutation.isPending ? 'Restarting...' : 'Restart Gateway'}
+          </button>
+        </PermissionGate>
       </div>
 
       <div className="text-xs text-slate-400">

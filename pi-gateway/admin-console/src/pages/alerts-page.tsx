@@ -1,19 +1,21 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, CheckCircle2, Lightbulb } from 'lucide-react';
+import { PermissionGate, PermissionDisabledWrapper } from '../components/permission-gate';
+import { usePageDataSource, useDataMutation } from '../hooks/use-data-source';
 import { fetchCronJobs, pauseCronJob, resumeCronJob } from '../lib/api';
 
 export function AlertsPage() {
-  const queryClient = useQueryClient();
-  const cronQuery = useQuery({ queryKey: ['cron-jobs'], queryFn: fetchCronJobs, refetchInterval: 15000 });
+  // 使用 use-data-source 替换直接的 useQuery
+  const cronQuery = usePageDataSource('alerts', ['cron-jobs'], fetchCronJobs);
 
-  const pauseMutation = useMutation({
+  // 使用 useDataMutation 替换 useMutation
+  const pauseMutation = useDataMutation({
     mutationFn: pauseCronJob,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['cron-jobs'] })
+    invalidateKeys: [['cron-jobs']],
   });
 
-  const resumeMutation = useMutation({
+  const resumeMutation = useDataMutation({
     mutationFn: resumeCronJob,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['cron-jobs'] })
+    invalidateKeys: [['cron-jobs']],
   });
 
   const jobs = cronQuery.data ?? [];
@@ -52,21 +54,43 @@ export function AlertsPage() {
                     <td className="py-2">{job.lastRun?.status ?? 'never'}</td>
                     <td className="py-2">
                       {paused ? (
-                        <button
-                          type="button"
-                          className="rounded border border-emerald-700 px-2 py-1 text-xs text-emerald-300"
-                          onClick={() => resumeMutation.mutate(job.id)}
+                        <PermissionGate
+                          resource="cron"
+                          action="execute"
+                          fallback={
+                            <span className="inline-block rounded border border-slate-700 px-2 py-1 text-xs text-slate-500">
+                              resume
+                            </span>
+                          }
                         >
-                          resume
-                        </button>
+                          <button
+                            type="button"
+                            className="rounded border border-emerald-700 px-2 py-1 text-xs text-emerald-300"
+                            onClick={() => resumeMutation.mutate(job.id)}
+                            disabled={resumeMutation.isPending}
+                          >
+                            {resumeMutation.isPending ? 'resuming...' : 'resume'}
+                          </button>
+                        </PermissionGate>
                       ) : (
-                        <button
-                          type="button"
-                          className="rounded border border-amber-700 px-2 py-1 text-xs text-amber-300"
-                          onClick={() => pauseMutation.mutate(job.id)}
+                        <PermissionGate
+                          resource="cron"
+                          action="execute"
+                          fallback={
+                            <span className="inline-block rounded border border-slate-700 px-2 py-1 text-xs text-slate-500">
+                              pause
+                            </span>
+                          }
                         >
-                          pause
-                        </button>
+                          <button
+                            type="button"
+                            className="rounded border border-amber-700 px-2 py-1 text-xs text-amber-300"
+                            onClick={() => pauseMutation.mutate(job.id)}
+                            disabled={pauseMutation.isPending}
+                          >
+                            {pauseMutation.isPending ? 'pausing...' : 'pause'}
+                          </button>
+                        </PermissionGate>
                       )}
                     </td>
                   </tr>
