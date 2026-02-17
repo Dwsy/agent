@@ -1,0 +1,649 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CF Share 控制台</title>
+  <style>
+    :root {
+      --bg: #0b1020;
+      --bg-grad-1: #3b82f622;
+      --bg-grad-2: #22d3ee1f;
+      --hero-bg: linear-gradient(140deg, rgba(27, 38, 70, 0.88), rgba(14, 21, 42, 0.82));
+      --card: rgba(18, 27, 52, .68);
+      --line: rgba(132, 164, 255, .24);
+      --line-soft: rgba(132, 164, 255, .16);
+      --text: #eef3ff;
+      --muted: #adc0eb;
+      --input-bg: rgba(9, 16, 34, .56);
+      --input-readonly-bg: rgba(7, 14, 30, .62);
+      --btn-ghost-bg: rgba(104, 135, 223, .16);
+      --ok: #30d39d;
+      --warn: #ffb347;
+      --danger: #ff637d;
+      --accent: #6ea8ff;
+      --accent-strong: #4388ff;
+      --shadow: 0 20px 44px rgba(0, 0, 0, .28);
+      --blur: saturate(145%) blur(14px);
+    }
+
+    [data-theme="light"] {
+      --bg: #f2f6ff;
+      --bg-grad-1: #8db8ff33;
+      --bg-grad-2: #8ce6ff33;
+      --hero-bg: linear-gradient(145deg, rgba(255, 255, 255, .95), rgba(242, 247, 255, .92));
+      --card: rgba(255, 255, 255, .78);
+      --line: rgba(126, 154, 224, .26);
+      --line-soft: rgba(126, 154, 224, .17);
+      --text: #1a2747;
+      --muted: #5d72a3;
+      --input-bg: rgba(255, 255, 255, .9);
+      --input-readonly-bg: rgba(248, 251, 255, .95);
+      --btn-ghost-bg: rgba(83, 118, 206, .12);
+      --ok: #188d62;
+      --warn: #b98000;
+      --danger: #be3650;
+      --accent: #2f6fff;
+      --accent-strong: #1f60f4;
+      --shadow: 0 14px 30px rgba(61, 94, 170, .14);
+      --blur: saturate(130%) blur(12px);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: "SF Pro Text", "SF Pro Display", -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", Roboto, sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(1200px 800px at 84% -12%, var(--bg-grad-1), transparent 70%),
+        radial-gradient(920px 720px at -14% 22%, var(--bg-grad-2), transparent 62%),
+        var(--bg);
+      min-height: 100vh;
+      padding: 18px;
+      letter-spacing: .1px;
+    }
+
+    .wrap { max-width: 1220px; margin: 0 auto; display: grid; gap: 14px; }
+
+    .hero {
+      border: 1px solid var(--line);
+      background: var(--hero-bg);
+      border-radius: 22px;
+      padding: 16px 18px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 10px;
+      box-shadow: var(--shadow);
+      backdrop-filter: var(--blur);
+      -webkit-backdrop-filter: var(--blur);
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 22px;
+      font-weight: 700;
+      letter-spacing: .2px;
+    }
+
+    .meta { color: var(--muted); font-size: 12px; }
+
+    .grid {
+      display: grid;
+      gap: 12px;
+      grid-template-columns: repeat(12, 1fr);
+    }
+
+    .card {
+      grid-column: span 12;
+      border: 1px solid var(--line);
+      background: var(--card);
+      border-radius: 20px;
+      padding: 16px;
+      backdrop-filter: var(--blur);
+      -webkit-backdrop-filter: var(--blur);
+      box-shadow: var(--shadow);
+    }
+
+    @media (min-width: 980px) {
+      .status { grid-column: span 4; }
+      .control { grid-column: span 5; }
+      .qrcode { grid-column: span 3; }
+      .history { grid-column: span 6; }
+      .log { grid-column: span 6; }
+    }
+
+    .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+
+    label {
+      font-size: 12px;
+      color: var(--muted);
+      display: grid;
+      gap: 5px;
+      min-width: 190px;
+      font-weight: 500;
+    }
+
+    input, select, button, textarea {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: var(--input-bg);
+      color: var(--text);
+      padding: 10px 12px;
+      font-size: 14px;
+      outline: none;
+      transition: .2s ease;
+    }
+
+    input:focus, select:focus, textarea:focus {
+      border-color: color-mix(in oklab, var(--accent) 65%, white 10%);
+      box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 22%, transparent);
+    }
+
+    button {
+      cursor: pointer;
+      font-weight: 600;
+      letter-spacing: .2px;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.14);
+    }
+
+    button:hover { transform: translateY(-1px); }
+    button:active { transform: translateY(0); }
+
+    .btn-primary {
+      background: linear-gradient(180deg, color-mix(in oklab, var(--accent-strong) 92%, white), var(--accent-strong));
+      border-color: transparent;
+      color: #fff;
+    }
+
+    .btn-danger {
+      background: linear-gradient(180deg, color-mix(in oklab, var(--danger) 90%, white), var(--danger));
+      border-color: transparent;
+      color: #fff;
+    }
+
+    .btn-ghost { background: var(--btn-ghost-bg); }
+    .btn-sm { padding: 6px 10px; font-size: 12px; border-radius: 11px; }
+
+    .pill {
+      border-radius: 999px;
+      padding: 4px 10px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: .3px;
+      border: 1px solid transparent;
+    }
+
+    .ok {
+      background: color-mix(in oklab, var(--ok) 16%, transparent);
+      color: color-mix(in oklab, var(--ok) 78%, white 10%);
+      border-color: color-mix(in oklab, var(--ok) 40%, transparent);
+    }
+
+    .off {
+      background: color-mix(in oklab, var(--danger) 14%, transparent);
+      color: color-mix(in oklab, var(--danger) 74%, white 10%);
+      border-color: color-mix(in oklab, var(--danger) 32%, transparent);
+    }
+
+    .mono { font-family: ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace; }
+    .kvs { display: grid; gap: 8px; margin-top: 10px; }
+    .kv { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; }
+
+    textarea {
+      width: 100%;
+      min-height: 240px;
+      resize: vertical;
+      line-height: 1.45;
+    }
+
+    a { color: color-mix(in oklab, var(--accent) 86%, white 8%); }
+
+    .copy-row { display: flex; gap: 8px; align-items: center; }
+    .copy-row input { flex: 1; background: var(--input-readonly-bg); }
+
+    .toast {
+      position: fixed;
+      top: 16px;
+      right: 16px;
+      padding: 11px 14px;
+      border-radius: 13px;
+      background: color-mix(in oklab, var(--ok) 24%, black 36%);
+      color: #d8ffef;
+      border: 1px solid color-mix(in oklab, var(--ok) 44%, transparent);
+      opacity: 0;
+      transform: translateY(-10px);
+      transition: opacity .25s ease, transform .25s ease;
+      z-index: 100;
+      box-shadow: 0 10px 22px rgba(0,0,0,.22);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+    }
+
+    .toast.show { opacity: 1; transform: translateY(0); }
+
+    .history-list { max-height: 250px; overflow: auto; }
+    .history-item {
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--line-soft);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .history-item:last-child { border-bottom: none; }
+    .history-meta { font-size: 12px; color: var(--muted); }
+    .empty { color: var(--muted); font-size: 13px; padding: 20px; text-align: center; }
+
+    #qrcode { text-align: center; padding: 10px; }
+    #qrcode img {
+      max-width: 186px;
+      border-radius: 16px;
+      background: white;
+      padding: 10px;
+      border: 1px solid var(--line-soft);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.8);
+    }
+
+    @media (max-width: 680px) {
+      body { padding: 10px; }
+      .hero, .card { border-radius: 16px; }
+      label { min-width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <div class="toast" id="toast">已复制到剪贴板</div>
+
+  <div class="wrap">
+    <section class="hero">
+      <div>
+        <h1>Cloudflare 临时暴露控制台</h1>
+        <div class="meta">统一管理端口 / 目录 / 单文件 暴露（trycloudflare）</div>
+      </div>
+      <div class="row">
+        <button class="btn-ghost" id="themeBtn" onclick="toggleTheme()">主题：自动</button>
+        <button class="btn-ghost" onclick="refreshStatus()">刷新</button>
+        <button class="btn-ghost" onclick="loadHistory()">历史</button>
+      </div>
+    </section>
+
+    <section class="grid">
+      <article class="card status">
+        <div class="row" style="justify-content:space-between">
+          <strong>运行状态</strong>
+          <span id="lastUpdate" class="meta">-</span>
+        </div>
+
+        <div class="kvs">
+          <div class="kv"><span>本地服务</span><span id="webState" class="pill off">STOPPED</span></div>
+          <div class="kv"><span>Tunnel</span><span id="tunnelState" class="pill off">STOPPED</span></div>
+          <div class="kv"><span>模式</span><span id="mode" class="mono">-</span></div>
+          <div class="kv"><span>端口</span><span id="port" class="mono">-</span></div>
+        </div>
+
+        <hr style="border-color:var(--line-soft); opacity:.45" />
+        <div class="meta">公网 URL</div>
+        <div class="copy-row" style="margin-top:6px">
+          <input id="publicUrlInput" readonly placeholder="-" />
+          <button class="btn-sm btn-primary" onclick="copy('publicUrlInput')">复制</button>
+          <button class="btn-sm btn-ghost" onclick="openPublic()">打开</button>
+        </div>
+
+        <div class="meta" style="margin-top:10px">文件直达</div>
+        <div class="copy-row" style="margin-top:6px">
+          <input id="fileUrlInput" readonly placeholder="-" />
+          <button class="btn-sm btn-primary" onclick="copy('fileUrlInput')">复制</button>
+        </div>
+      </article>
+
+      <article class="card control">
+        <strong>启动参数</strong>
+        <div class="row" style="margin-top:10px">
+          <label>模式
+            <select id="modeSelect" onchange="syncMode()">
+              <option value="port">port（已有端口）</option>
+              <option value="dir">dir（目录）</option>
+              <option value="file">file（单文件）</option>
+            </select>
+          </label>
+
+          <label>端口（可选）
+            <input id="portInput" type="number" placeholder="如 8766" />
+          </label>
+
+          <label id="dirWrap">目录（dir 模式）
+            <input id="dirInput" placeholder="如 /root/.pi/gateway/workspaces/default/demos/html" />
+          </label>
+
+          <label id="fileWrap" style="display:none">文件（file 模式）
+            <input id="fileInput" placeholder="如 /root/.pi/gateway/workspaces/default/demos/html/index.html" />
+          </label>
+
+          <label id="routeWrap" style="display:none">文件路由（可选）
+            <input id="routeInput" placeholder="如 /index.html" />
+          </label>
+        </div>
+
+        <div class="row" style="margin-top:12px">
+          <button class="btn-primary" onclick="startShare()">启动暴露</button>
+          <button class="btn-danger" onclick="stopShare()">停止暴露</button>
+          <button class="btn-ghost" onclick="autoFillLast()">恢复上次</button>
+        </div>
+
+        <div id="errorBox" style="margin-top:12px; color:var(--danger); font-size:13px; display:none"></div>
+        <pre id="output" class="mono" style="margin-top:10px; white-space:pre-wrap; color:var(--text); font-size:12px; opacity:.92"></pre>
+      </article>
+
+      <article class="card qrcode">
+        <strong>手机扫码访问</strong>
+        <div id="qrcode">
+          <div class="empty">暂无公网链接</div>
+        </div>
+        <div class="meta" style="text-align:center; margin-top:6px">用微信/浏览器扫描</div>
+      </article>
+
+      <article class="card history">
+        <div class="row" style="justify-content:space-between">
+          <strong>最近暴露记录</strong>
+          <button class="btn-ghost btn-sm" onclick="clearHistory()">清空</button>
+        </div>
+        <div id="historyList" class="history-list">
+          <div class="empty">暂无记录</div>
+        </div>
+      </article>
+
+      <article class="card log">
+        <div class="row" style="justify-content:space-between">
+          <strong>隧道日志（实时）</strong>
+          <div class="row">
+            <label style="min-width:auto; display:flex; align-items:center; gap:6px; cursor:pointer">
+              <input type="checkbox" id="autoScroll" checked /> 自动滚动
+            </label>
+            <button class="btn-ghost btn-sm" onclick="loadLogs()">刷新</button>
+          </div>
+        </div>
+        <textarea id="logs" class="mono" readonly></textarea>
+      </article>
+    </section>
+  </div>
+
+  <script>
+    const els = {
+      webState: document.getElementById('webState'),
+      tunnelState: document.getElementById('tunnelState'),
+      mode: document.getElementById('mode'),
+      port: document.getElementById('port'),
+      publicUrlInput: document.getElementById('publicUrlInput'),
+      fileUrlInput: document.getElementById('fileUrlInput'),
+      logs: document.getElementById('logs'),
+      output: document.getElementById('output'),
+      errorBox: document.getElementById('errorBox'),
+      lastUpdate: document.getElementById('lastUpdate'),
+      modeSelect: document.getElementById('modeSelect'),
+      portInput: document.getElementById('portInput'),
+      dirInput: document.getElementById('dirInput'),
+      fileInput: document.getElementById('fileInput'),
+      routeInput: document.getElementById('routeInput'),
+      dirWrap: document.getElementById('dirWrap'),
+      fileWrap: document.getElementById('fileWrap'),
+      routeWrap: document.getElementById('routeWrap'),
+      qrcode: document.getElementById('qrcode'),
+      historyList: document.getElementById('historyList'),
+      autoScroll: document.getElementById('autoScroll'),
+      toast: document.getElementById('toast'),
+      themeBtn: document.getElementById('themeBtn'),
+    };
+
+    let pollTimer = null;
+    const THEME_KEY = 'cfShareThemeMode';
+
+    function resolveAutoTheme() {
+      return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+    }
+
+    function applyTheme(mode) {
+      const realMode = mode === 'auto' ? resolveAutoTheme() : mode;
+      document.documentElement.setAttribute('data-theme', realMode);
+      const labels = { auto: '自动', dark: '深色', light: '浅色' };
+      if (els.themeBtn) els.themeBtn.textContent = `主题：${labels[mode] || '自动'}`;
+    }
+
+    function getThemeMode() {
+      return localStorage.getItem(THEME_KEY) || 'auto';
+    }
+
+    function setThemeMode(mode) {
+      localStorage.setItem(THEME_KEY, mode);
+      applyTheme(mode);
+    }
+
+    function toggleTheme() {
+      const order = ['auto', 'dark', 'light'];
+      const current = getThemeMode();
+      const next = order[(order.indexOf(current) + 1) % order.length];
+      setThemeMode(next);
+      showToast(`主题已切换：${next === 'auto' ? '自动' : next === 'dark' ? '深色' : '浅色'}`);
+    }
+
+    window.toggleTheme = toggleTheme;
+
+    function setStatePill(el, on) {
+      el.className = `pill ${on ? 'ok' : 'off'}`;
+      el.textContent = on ? 'RUNNING' : 'STOPPED';
+    }
+
+    function syncMode() {
+      const mode = els.modeSelect.value;
+      els.dirWrap.style.display = mode === 'dir' ? '' : 'none';
+      els.fileWrap.style.display = mode === 'file' ? '' : 'none';
+      els.routeWrap.style.display = mode === 'file' ? '' : 'none';
+    }
+
+    function showToast(msg) {
+      els.toast.textContent = msg;
+      els.toast.classList.add('show');
+      setTimeout(() => els.toast.classList.remove('show'), 2000);
+    }
+
+    function copy(inputId) {
+      const el = document.getElementById(inputId);
+      if (!el || !el.value) return;
+      navigator.clipboard.writeText(el.value).then(() => showToast('已复制'));
+    }
+
+    function openPublic() {
+      const url = els.publicUrlInput.value;
+      if (url) window.open(url, '_blank');
+    }
+
+    function updateQRCode(url) {
+      if (!url) {
+        els.qrcode.innerHTML = '<div class="empty">暂无公网链接</div>';
+        return;
+      }
+      const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(url)}`;
+      els.qrcode.innerHTML = `<img src="${qrUrl}" alt="QR Code" />`;
+    }
+
+    function renderHistory(list) {
+      if (!list || list.length === 0) {
+        els.historyList.innerHTML = '<div class="empty">暂无记录</div>';
+        return;
+      }
+      els.historyList.innerHTML = list.map((h, idx) => `
+        <div class="history-item">
+          <div>
+            <div class="mono" style="color:var(--text)">${h.tunnelUrl || '-'}</div>
+            <div class="history-meta">${h.mode} • ${h.localPort} • ${new Date(h.startedAt).toLocaleString()}</div>
+          </div>
+          <div class="row">
+            <button class="btn-sm btn-primary" onclick="copyText('${h.tunnelUrl || ''}')">复制</button>
+            <button class="btn-sm btn-ghost" onclick="applyHistory(${idx})">恢复</button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function copyText(text) {
+      if (!text) return;
+      navigator.clipboard.writeText(text).then(() => showToast('已复制'));
+    }
+
+    async function refreshStatus() {
+      try {
+        const res = await fetch('/api/status');
+        const data = await res.json();
+
+        setStatePill(els.webState, data.webRunning);
+        setStatePill(els.tunnelState, data.tunnelRunning);
+
+        els.mode.textContent = data.config?.mode ?? '-';
+        els.port.textContent = data.config?.localPort ?? '-';
+
+        els.publicUrlInput.value = data.tunnelUrl || '';
+        els.fileUrlInput.value = data.fileUrl || '';
+
+        updateQRCode(data.tunnelUrl);
+
+        els.logs.value = data.logTail || '';
+        if (els.autoScroll.checked) els.logs.scrollTop = els.logs.scrollHeight;
+
+        els.lastUpdate.textContent = new Date().toLocaleTimeString();
+        els.errorBox.style.display = 'none';
+      } catch (e) {
+        els.errorBox.textContent = '连接失败: ' + String(e);
+        els.errorBox.style.display = 'block';
+      }
+    }
+
+    async function loadLogs() {
+      try {
+        const res = await fetch('/api/logs');
+        const data = await res.json();
+        els.logs.value = data.logTail || '';
+        if (els.autoScroll.checked) els.logs.scrollTop = els.logs.scrollHeight;
+      } catch {}
+    }
+
+    async function loadHistory() {
+      try {
+        const res = await fetch('/api/history');
+        const data = await res.json();
+        renderHistory(data.history || []);
+      } catch {}
+    }
+
+    async function clearHistory() {
+      try {
+        await fetch('/api/history/clear', { method: 'POST' });
+        loadHistory();
+      } catch {}
+    }
+
+    function autoFillLast() {
+      const saved = localStorage.getItem('cfShareLastConfig');
+      if (!saved) { showToast('没有上次记录'); return; }
+      const cfg = JSON.parse(saved);
+      els.modeSelect.value = cfg.mode || 'port';
+      els.portInput.value = cfg.localPort || '';
+      els.dirInput.value = cfg.webDir || '';
+      els.fileInput.value = cfg.filePath || '';
+      els.routeInput.value = cfg.fileRoute || '';
+      syncMode();
+      showToast('已恢复');
+    }
+
+    function applyHistory(idx) {
+      const saved = localStorage.getItem('cfShareHistory');
+      if (!saved) return;
+      const list = JSON.parse(saved);
+      const h = list[idx];
+      if (!h) return;
+      els.modeSelect.value = h.mode || 'port';
+      els.portInput.value = h.localPort || '';
+      els.dirInput.value = h.webDir || '';
+      els.fileInput.value = h.filePath || '';
+      els.routeInput.value = h.fileRoute || '';
+      syncMode();
+      showToast('已填充');
+    }
+
+    async function startShare() {
+      els.errorBox.style.display = 'none';
+      const mode = els.modeSelect.value;
+      const body = {};
+      if (els.portInput.value) body.port = Number(els.portInput.value);
+      if (mode === 'dir' && els.dirInput.value.trim()) body.dir = els.dirInput.value.trim();
+      if (mode === 'file' && els.fileInput.value.trim()) body.file = els.fileInput.value.trim();
+      if (mode === 'file' && els.routeInput.value.trim()) body.route = els.routeInput.value.trim();
+
+      localStorage.setItem('cfShareLastConfig', JSON.stringify({
+        mode, localPort: body.port, webDir: body.dir, filePath: body.file, fileRoute: body.route,
+      }));
+
+      try {
+        const res = await fetch('/api/start', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const data = await res.json();
+        els.output.textContent = data.output || '(无输出)';
+        if (!data.ok) {
+          els.errorBox.textContent = '启动失败: ' + (data.output || '');
+          els.errorBox.style.display = 'block';
+        }
+        await refreshStatus();
+        await loadHistory();
+      } catch (e) {
+        els.errorBox.textContent = '请求失败: ' + String(e);
+        els.errorBox.style.display = 'block';
+      }
+    }
+
+    async function stopShare() {
+      els.errorBox.style.display = 'none';
+      try {
+        const res = await fetch('/api/stop', { method: 'POST' });
+        const data = await res.json();
+        els.output.textContent = data.output || '(无输出)';
+        await refreshStatus();
+        await loadHistory();
+      } catch (e) {
+        els.errorBox.textContent = '请求失败: ' + String(e);
+        els.errorBox.style.display = 'block';
+      }
+    }
+
+    function saveHistoryToLocal(data) {
+      if (!data.config || !data.tunnelUrl) return;
+      const item = {
+        ...data.config,
+        tunnelUrl: data.tunnelUrl,
+        fileUrl: data.fileUrl,
+        stoppedAt: new Date().toISOString(),
+      };
+      const saved = localStorage.getItem('cfShareHistory');
+      let list = saved ? JSON.parse(saved) : [];
+      list.unshift(item);
+      list = list.slice(0, 20);
+      localStorage.setItem('cfShareHistory', JSON.stringify(list));
+      renderHistory(list);
+    }
+
+    setThemeMode(getThemeMode());
+    window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', () => {
+      if (getThemeMode() === 'auto') applyTheme('auto');
+    });
+
+    syncMode();
+    refreshStatus();
+    loadHistory();
+    pollTimer = setInterval(() => { refreshStatus(); loadHistory(); }, 4000);
+  </script>
+</body>
+</html>
