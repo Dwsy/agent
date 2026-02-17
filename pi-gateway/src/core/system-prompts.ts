@@ -12,6 +12,7 @@
  *   - Media reply syntax
  *   - Delegation protocol
  *   - Channel-specific formatting hints
+ *   - Plugin-provided segments (via registerSystemPromptSegment)
  *
  * Layer 3: Per-Message Context (injected into message body by channel handlers)
  *   - Media notes ([media attached: ...])
@@ -22,6 +23,67 @@
 
 import type { Config } from "./config.ts";
 import { hostname as getHostname } from "node:os";
+
+// ============================================================================
+// Plugin System Prompt Segment Registry
+// ============================================================================
+
+/**
+ * System prompt segment provided by a plugin.
+ * Plugins can register segments to inject custom prompts based on their config.
+ */
+export interface SystemPromptSegment {
+  /** Unique identifier for this segment */
+  id: string;
+  /** The prompt segment text */
+  segment: string;
+  /** Condition function to determine if segment should be included */
+  shouldInclude: (config: Config) => boolean;
+  /** Optional: priority for ordering (higher = later in final prompt) */
+  priority?: number;
+}
+
+/**
+ * Registry for plugin-provided system prompt segments.
+ * Plugins can register segments via registerSystemPromptSegment().
+ */
+const systemPromptSegmentRegistry = new Map<string, SystemPromptSegment>();
+
+/**
+ * Register a system prompt segment from a plugin.
+ * 
+ * @param segment - The segment to register
+ * 
+ * @example
+ * // In a plugin's index.ts:
+ * import { registerSystemPromptSegment } from "../core/system-prompts.ts";
+ * 
+ * registerSystemPromptSegment({
+ *   id: "my-plugin",
+ *   segment: "## My Plugin Mode\n\n...",
+ *   shouldInclude: (config) => config.plugins?.config?.["my-plugin"]?.enabled ?? false,
+ *   priority: 0,
+ * });
+ */
+export function registerSystemPromptSegment(segment: SystemPromptSegment): void {
+  systemPromptSegmentRegistry.set(segment.id, segment);
+}
+
+/**
+ * Get all registered segments that should be included for the current config.
+ */
+export function getRegisteredSegments(config: Config): SystemPromptSegment[] {
+  const segments: SystemPromptSegment[] = [];
+  
+  for (const segment of systemPromptSegmentRegistry.values()) {
+    if (segment.shouldInclude(config)) {
+      segments.push(segment);
+    }
+  }
+  
+  // Sort by priority (higher priority = later in final prompt)
+  return segments.sort((a, b) => (a.priority ?? 0) - (b.priority ?? 0));
+}
 
 // ============================================================================
 // Layer 1: Gateway Identity
@@ -457,6 +519,12 @@ export function buildGatewaySystemPrompt(
   if (channelEnabled) {
     const channelSegment = buildChannelSegment(config);
     if (channelSegment) segments.push(channelSegment);
+  }
+
+  // Plugin-registered segments (Layer 2 Capability Prompts)
+  const registeredSegments = getRegisteredSegments(config);
+  for (const segment of registeredSegments) {
+    segments.push(segment.segment);
   }
 
   return segments.length > 0 ? segments.join("\n\n") : null;
