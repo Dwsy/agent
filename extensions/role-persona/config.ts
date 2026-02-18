@@ -56,6 +56,20 @@ export interface UIConfig {
   viewerDefaultFilter: "all" | "learnings" | "preferences" | "events";
 }
 
+export interface VectorMemoryConfig {
+  enabled: boolean;
+  provider: "openai";
+  model: string;
+  apiKey: string | null;
+  autoRecall: boolean;
+  autoIndex: boolean;
+  recallLimit: number;
+  recallMinScore: number;
+  hybridSearch: boolean;
+  vectorWeight: number;
+  dbPath: string;
+}
+
 export interface AdvancedConfig {
   shutdownFlushTimeoutMs: number;
   forceKeywords: string;
@@ -68,6 +82,7 @@ export interface RolePersonaConfig {
   memory: MemoryConfig;
   ui: UIConfig;
   advanced: AdvancedConfig;
+  vectorMemory: VectorMemoryConfig;
 }
 
 // ============================================================================
@@ -117,6 +132,19 @@ const DEFAULT_CONFIG: RolePersonaConfig = {
     shutdownFlushTimeoutMs: 1500,
     forceKeywords: "结束|总结|退出|收尾|结束会话|final|summary|wrap\\s?up|quit|exit",
     evolutionReminderTurns: 10,
+  },
+  vectorMemory: {
+    enabled: false,
+    provider: "openai",
+    model: "text-embedding-3-small",
+    apiKey: null,
+    autoRecall: true,
+    autoIndex: true,
+    hybridSearch: true,
+    vectorWeight: 1.0,
+    recallLimit: 3,
+    recallMinScore: 0.3,
+    dbPath: ".vector-db",
   },
 };
 
@@ -176,6 +204,19 @@ function applyEnvOverrides(config: RolePersonaConfig): RolePersonaConfig {
   // logging.enabled
   if (process.env.ROLE_LOG !== undefined) {
     result.logging.enabled = process.env.ROLE_LOG !== "0" && process.env.ROLE_LOG !== "false";
+  }
+
+  // vectorMemory.enabled
+  if (process.env.ROLE_VECTOR_MEMORY !== undefined) {
+    result.vectorMemory.enabled = process.env.ROLE_VECTOR_MEMORY !== "0" && process.env.ROLE_VECTOR_MEMORY !== "false";
+  }
+  // vectorMemory.apiKey
+  if (process.env.ROLE_VECTOR_API_KEY) {
+    result.vectorMemory.apiKey = process.env.ROLE_VECTOR_API_KEY;
+  }
+  // 子代理模式强制禁用向量记忆
+  if (process.env.RHO_SUBAGENT === "1") {
+    result.vectorMemory.enabled = false;
   }
 
   return result;
@@ -268,5 +309,8 @@ export const config = {
   },
   get advanced(): AdvancedConfig {
     return getConfig().advanced;
+  },
+  get vectorMemory(): VectorMemoryConfig {
+    return getConfig().vectorMemory;
   },
 };
