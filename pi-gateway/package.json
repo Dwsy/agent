@@ -13,6 +13,7 @@
     "check": "bun run tsc --noEmit"
   },
   "dependencies": {
+    "@clack/prompts": "^0.10.0",
     "@grammyjs/runner": "^2.0.3",
     "@grammyjs/transformer-throttler": "^1.2.1",
     "@larksuiteoapi/node-sdk": "^1.58.0",
