@@ -19,19 +19,55 @@ function generateTraceId(): string {
 	return `00-${traceId}-${spanId}-01`;
 }
 
-// ============ Qwen APIs ============
-
-export async function qwenWebSearch(query: string, page = 1, rows = 10): Promise<string> {
-	const token = await getQwenAccessToken();
+async function fetchWithQwenAuthRetry(
+	url: string,
+	requestInit: {
+		method: string;
+		headers: Record<string, string>;
+		body?: string;
+	}
+): Promise<Response> {
+	let token = await getQwenAccessToken();
 	if (!token) {
 		throw new Error("Qwen access token not found. Please login to Qwen first.");
 	}
 
-	const response = await fetch(QWEN_WEB_SEARCH_URL, {
+	let response = await fetch(url, {
+		...requestInit,
+		headers: {
+			...requestInit.headers,
+			Authorization: `Bearer ${token}`,
+		},
+	});
+
+	if (response.status !== 401) {
+		return response;
+	}
+
+	// Auto refresh once on 401, then retry
+	token = await getQwenAccessToken({ forceRefresh: true });
+	if (!token) {
+		return response;
+	}
+
+	response = await fetch(url, {
+		...requestInit,
+		headers: {
+			...requestInit.headers,
+			Authorization: `Bearer ${token}`,
+		},
+	});
+
+	return response;
+}
+
+// ============ Qwen APIs ============
+
+export async function qwenWebSearch(query: string, page = 1, rows = 10): Promise<string> {
+	const response = await fetchWithQwenAuthRetry(QWEN_WEB_SEARCH_URL, {
 		method: "POST",
 		headers: {
 			"Content-Type": "application/json",
-			"Authorization": `Bearer ${token}`,
 			"User-Agent": "node",
 			"Accept-Encoding": "br, gzip, deflate",
 			"accept-language": "*",
@@ -85,16 +121,10 @@ export async function qwenChat(
 		stream?: boolean;
 	} = {}
 ): Promise<string> {
-	const token = await getQwenAccessToken();
-	if (!token) {
-		throw new Error("Qwen access token not found.");
-	}
-
-	const response = await fetch(QWEN_CHAT_URL, {
+	const response = await fetchWithQwenAuthRetry(QWEN_CHAT_URL, {
 		method: "POST",
 		headers: {
 			"Content-Type": "application/json",
-			"Authorization": `Bearer ${token}`,
 			"User-Agent": "QwenCode/0.10.3 (darwin; arm64)",
 			"Accept": "application/json",
 			"X-Stainless-Lang": "js",
@@ -209,10 +239,5 @@ export async function webFetch(url: string): Promise<string> {
 
 export async function webSearch(query: string, page = 1, rows = 10): Promise<string> {
 	// Use Qwen web search (primary)
-	const qwenToken = await getQwenAccessToken();
-	if (qwenToken) {
-		return await qwenWebSearch(query, page, rows);
-	}
-
-	throw new Error("Web search requires Qwen access token. Please login to Qwen.");
+	return await qwenWebSearch(query, page, rows);
 }

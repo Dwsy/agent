@@ -20,6 +20,12 @@ const ILOW_SETTINGS_PATH = `${process.env.HOME}/.iflow/settings.json`;
 const QWEN_CREDS_PATH = `${process.env.HOME}/.qwen/oauth_creds.json`;
 const CLI_PROXY_API_PATH = `${process.env.HOME}/.cli-proxy-api`;
 
+// Token refresh tuning
+const QWEN_TOKEN_REFRESH_SKEW_MS = 2 * 60 * 1000; // refresh 2m before expiry
+const QWEN_REFRESH_TIMEOUT_MS = 20_000;
+
+let qwenRefreshPromise: Promise<void> | null = null;
+
 // ============ Ilow Key ============
 
 export async function getIlowApiKey(): Promise<string | null> {
@@ -36,18 +42,65 @@ export async function getIlowApiKey(): Promise<string | null> {
 
 // ============ Qwen Key ============
 
-export async function getQwenAccessToken(): Promise<string | null> {
-	// Priority 1: ~/.qwen/oauth_creds.json
+async function readQwenCreds(): Promise<QwenCreds | null> {
+	if (!existsSync(QWEN_CREDS_PATH)) return null;
+	const content = await readFile(QWEN_CREDS_PATH, "utf-8");
+	return JSON.parse(content) as QwenCreds;
+}
+
+function isQwenTokenUsable(creds: QwenCreds | null): boolean {
+	if (!creds?.access_token) return false;
+	if (!creds.expiry_date) return true;
+	return creds.expiry_date - Date.now() > QWEN_TOKEN_REFRESH_SKEW_MS;
+}
+
+async function refreshQwenTokenViaCli(): Promise<void> {
+	if (qwenRefreshPromise) {
+		await qwenRefreshPromise;
+		return;
+	}
+
+	qwenRefreshPromise = (async () => {
+		try {
+			await execAsync('qwen -p "ping" --auth-type qwen-oauth >/dev/null 2>&1', {
+				timeout: QWEN_REFRESH_TIMEOUT_MS,
+				maxBuffer: 1024 * 1024,
+			});
+		} catch (error) {
+			console.error("Failed to refresh Qwen token via CLI:", error);
+		}
+	})();
+
 	try {
-		if (existsSync(QWEN_CREDS_PATH)) {
-			const content = await readFile(QWEN_CREDS_PATH, "utf-8");
-			const creds: QwenCreds = JSON.parse(content);
-			if (creds.expiry_date && creds.expiry_date > Date.now()) {
-				return creds.access_token || null;
+		await qwenRefreshPromise;
+	} finally {
+		qwenRefreshPromise = null;
+	}
+}
+
+export async function getQwenAccessToken(options: { forceRefresh?: boolean } = {}): Promise<string | null> {
+	const forceRefresh = options.forceRefresh === true;
+
+	try {
+		const creds = await readQwenCreds();
+
+		if (!forceRefresh && isQwenTokenUsable(creds)) {
+			return creds!.access_token;
+		}
+
+		// Try refresh when token is expired/near-expiry or when caller forces refresh (e.g. after 401)
+		if ((creds?.refresh_token || forceRefresh) && existsSync(QWEN_CREDS_PATH)) {
+			await refreshQwenTokenViaCli();
+			const refreshed = await readQwenCreds();
+			if (isQwenTokenUsable(refreshed)) {
+				return refreshed!.access_token;
+			}
+			if (refreshed?.access_token && !refreshed.expiry_date) {
+				return refreshed.access_token;
 			}
 		}
 	} catch (error) {
-		console.error("Failed to read Qwen credentials:", error);
+		console.error("Failed to read/refresh Qwen credentials:", error);
 	}
 
 	// Priority 2: ~/.cli-proxy-api/ qwen-*.json
@@ -136,12 +189,13 @@ export async function getAllProviders(): Promise<ProviderInfo[]> {
 
 	// Add ~/.qwen/oauth_creds.json
 	try {
-		if (existsSync(QWEN_CREDS_PATH)) {
-			const content = await readFile(QWEN_CREDS_PATH, "utf-8");
-			const creds2: QwenCreds = JSON.parse(content);
-			if (creds2.expiry_date && creds2.expiry_date > Date.now()) {
-				providers.push({ type: "qwen", email: "direct", expired: new Date(creds2.expiry_date).toISOString() });
-			}
+		const creds2 = await readQwenCreds();
+		if (creds2?.access_token) {
+			providers.push({
+				type: "qwen",
+				email: "direct",
+				expired: creds2.expiry_date ? new Date(creds2.expiry_date).toISOString() : undefined,
+			});
 		}
 	} catch { }
 
