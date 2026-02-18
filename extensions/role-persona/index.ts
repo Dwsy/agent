@@ -55,6 +55,17 @@ import { RoleMemoryViewerComponent, buildRoleMemoryViewerMarkdown } from "./memo
 import { runAutoMemoryExtraction, runLlmMemoryTidy } from "./memory-llm.ts";
 import { getAllTags, buildTagCloudHTML } from "./memory-tags.ts";
 import {
+  initVectorMemory,
+  isVectorActive,
+  queueVectorIndex,
+  flushVectorIndex,
+  disposeVectorMemory,
+  hybridSearch,
+  autoRecall,
+  rebuildVectorIndex,
+  getVectorStats,
+} from "./memory-vector.ts";
+import {
   createRole,
   DEFAULT_ROLE,
   ensureRolesDir,
@@ -259,6 +270,22 @@ export default function rolePersonaExtension(pi: ExtensionAPI) {
       if (extracted) {
         log("checkpoint", `result: ${extracted.storedLearnings}L ${extracted.storedPrefs}P`);
         setMemoryCheckpointResult(ctx, reason, extracted.storedLearnings, extracted.storedPrefs);
+
+        // Auto-index newly extracted memories to vector DB
+        if (isVectorActive() && config.vectorMemory?.autoIndex && (extracted.storedLearnings > 0 || extracted.storedPrefs > 0)) {
+          const data = readRoleMemory(currentRolePath, currentRole);
+          // Index the most recent N learnings (matching storedLearnings count)
+          const recentLearnings = data.learnings.filter(l => l.used === 0).slice(-extracted.storedLearnings);
+          for (const l of recentLearnings) {
+            queueVectorIndex(l.id, l.text, "learning");
+          }
+          // Index recent preferences
+          const recentPrefs = data.preferences.slice(-extracted.storedPrefs);
+          for (const p of recentPrefs) {
+            queueVectorIndex(p.id, p.text, "preference", p.category);
+          }
+        }
+
         // Log individual items from auto-extract
         if (extracted.items) {
           for (const item of extracted.items) {
@@ -460,6 +487,15 @@ export default function rolePersonaExtension(pi: ExtensionAPI) {
     ensureRoleMemoryFiles(rolePath, roleName);
     const repair = repairRoleMemory(rolePath, roleName);
 
+    // Initialize vector memory (async, non-blocking)
+    initVectorMemory(rolePath, ctx).then((ok) => {
+      if (ok && isTuiAvailable(ctx)) {
+        log("vector", `vector memory active for role=${roleName}`);
+      }
+    }).catch((err) => {
+      log("vector", `vector memory init failed: ${err}`);
+    });
+
     if (isTuiAvailable(ctx)) {
       const identity = getRoleIdentity(rolePath);
       const displayName = identity?.name || roleName;
@@ -607,8 +643,29 @@ ${buildMemoryEditInstruction(currentRolePath)}`;
       }
     }
 
+    // Vector auto-recall: inject semantically relevant memories
+    let vectorRecallPrompt = "";
+    if (isVectorActive() && config.vectorMemory?.autoRecall) {
+      const messages = (event as any).messages || [];
+      const lastUserMsg = [...messages].reverse().find((m: any) => m.role === "user");
+      const userText = lastUserMsg?.content?.[0]?.text || lastUserMsg?.content || "";
+      const queryText = typeof userText === "string" ? userText : "";
+
+      if (queryText.length > 10) {
+        const recalled = await autoRecall(
+          queryText,
+          config.vectorMemory.recallLimit,
+          config.vectorMemory.recallMinScore,
+        );
+        if (recalled) {
+          vectorRecallPrompt = `\n\n${recalled}`;
+          log("vector-recall", `injected semantic context for: "${queryText.slice(0, 60)}..."`);
+        }
+      }
+    }
+
     return {
-      systemPrompt: `${event.systemPrompt}\n\n${fileLocationInstruction}\n\n${rolePrompt}${memoryPrompt}`
+      systemPrompt: `${event.systemPrompt}\n\n${fileLocationInstruction}\n\n${rolePrompt}${memoryPrompt}${vectorRecallPrompt}`
     };
   });
 
@@ -747,6 +804,10 @@ Rules for memory extraction:
       ]);
     }
 
+    // Flush pending vector index entries
+    await flushVectorIndex().catch((err) => log("vector", `flush on shutdown failed: ${err}`));
+    disposeVectorMemory();
+
     stopMemoryCheckpointSpinner();
 
     if (isTuiAvailable(ctx)) {
@@ -761,9 +822,9 @@ Rules for memory extraction:
     name: "memory",
     label: "Role Memory",
     description:
-      "Manage role memory in MEMORY.md (markdown sections). Actions: add_learning, add_preference, reinforce, search, list, consolidate, repair, llm_tidy.",
+      "Manage role memory in MEMORY.md (markdown sections). Actions: add_learning, add_preference, reinforce, search, list, consolidate, repair, llm_tidy, vector_rebuild, vector_stats.",
     parameters: Type.Object({
-      action: StringEnum(["add_learning", "add_preference", "reinforce", "search", "list", "consolidate", "repair", "llm_tidy"] as const),
+      action: StringEnum(["add_learning", "add_preference", "reinforce", "search", "list", "consolidate", "repair", "llm_tidy", "vector_rebuild", "vector_stats"] as const),
       content: Type.Optional(Type.String({ description: "Memory text" })),
       category: Type.Optional(Type.String({ description: "Preference category" })),
       query: Type.Optional(Type.String({ description: "Search query" })),
@@ -798,6 +859,10 @@ Rules for memory extraction:
               details: result,
             };
           }
+          // Auto-index to vector DB
+          if (result.id && config.vectorMemory?.autoIndex) {
+            queueVectorIndex(result.id, params.content, "learning");
+          }
           return {
             content: [{ type: "text", text: `Stored learning: ${params.content}${result.tags?.length ? ` [tags: ${result.tags.join(", ")}]` : ""}` }],
             details: result,
@@ -822,6 +887,10 @@ Rules for memory extraction:
               content: [{ type: "text", text: result.duplicate ? "Already stored" : "Not stored" }],
               details: result,
             };
+          }
+          // Auto-index to vector DB
+          if (result.id && config.vectorMemory?.autoIndex) {
+            queueVectorIndex(result.id, params.content, "preference", result.category);
           }
           return {
             content: [{ type: "text", text: `Stored preference [${result.category}]: ${params.content}` }],
@@ -851,18 +920,22 @@ Rules for memory extraction:
           if (!query.trim()) {
             return { content: [{ type: "text", text: "Error: query required" }], details: { error: true } };
           }
-          const matches = searchRoleMemory(currentRolePath, currentRole, query);
-          log("memory-tool", `search: "${query}" -> ${matches.length} matches`);
+          // Use hybrid search if vector memory is active, otherwise keyword-only
+          const matches = (isVectorActive() && config.vectorMemory?.hybridSearch)
+            ? await hybridSearch(currentRolePath, currentRole, query)
+            : searchRoleMemory(currentRolePath, currentRole, query);
+          const searchMode = (isVectorActive() && config.vectorMemory?.hybridSearch) ? "hybrid" : "keyword";
+          log("memory-tool", `search(${searchMode}): "${query}" -> ${matches.length} matches`);
           const text = matches.length
             ? matches
                 .map((m) => {
-                  if (m.kind === "learning") return `[${m.id}] [${m.used}x] ${m.text}`;
+                  if (m.kind === "learning") return `[${m.id}] [${(m as any).used ?? "?"}x] ${m.text}`;
                   if (m.kind === "preference") return `[${m.id}] [${m.category}] ${m.text}`;
                   return `[event] ${m.text}`;
                 })
                 .join("\n")
             : "No matches";
-          return { content: [{ type: "text", text }], details: { count: matches.length } };
+          return { content: [{ type: "text", text }], details: { count: matches.length, mode: searchMode } };
         }
 
         case "list": {
@@ -924,6 +997,42 @@ Rules for memory extraction:
             ],
             details: llm,
           };
+        }
+
+        case "vector_rebuild": {
+          if (!isVectorActive()) {
+            return {
+              content: [{ type: "text", text: "Vector memory is not active. Enable it in pi-role-persona.jsonc and ensure OpenAI API key is available." }],
+              details: { error: true },
+            };
+          }
+          log("memory-tool", "vector_rebuild start");
+          const result = await rebuildVectorIndex(currentRolePath, currentRole);
+          log("memory-tool", `vector_rebuild done: ${result.indexed}/${result.total} indexed, ${result.errors} errors`);
+          return {
+            content: [{
+              type: "text",
+              text: `Vector index rebuilt: ${result.indexed}/${result.total} entries indexed${result.errors > 0 ? `, ${result.errors} errors` : ""}`,
+            }],
+            details: result,
+          };
+        }
+
+        case "vector_stats": {
+          const stats = await getVectorStats();
+          if (!stats) {
+            return { content: [{ type: "text", text: "Vector memory not initialized" }], details: { error: true } };
+          }
+          const lines = [
+            `Vector Memory Status:`,
+            `  Enabled: ${stats.enabled}`,
+            `  Active: ${stats.active}`,
+            `  Model: ${stats.model || "n/a"}`,
+            `  Dimensions: ${stats.dim || "n/a"}`,
+            `  Indexed entries: ${stats.count}`,
+            `  DB path: ${stats.dbPath || "n/a"}`,
+          ];
+          return { content: [{ type: "text", text: lines.join("\n") }], details: stats };
         }
 
         default:
@@ -1183,6 +1292,55 @@ Rules for memory extraction:
 
       notify(ctx, "LLM 记忆整理完成", "success");
       pi.sendMessage({ customType: "memory-tidy-llm", content: summary, display: true }, { triggerTurn: false });
+    },
+  });
+
+  pi.registerCommand("memory-vector", {
+    description: "Vector memory management: /memory-vector rebuild | /memory-vector stats",
+    handler: async (args, ctx) => {
+      if (!currentRole || !currentRolePath) {
+        notify(ctx, "当前目录未映射角色", "warning");
+        return;
+      }
+
+      const subcommand = (args || "").trim().toLowerCase();
+
+      if (subcommand === "rebuild") {
+        if (!isVectorActive()) {
+          notify(ctx, "向量记忆未激活。请在 pi-role-persona.jsonc 中启用 vectorMemory.enabled 并确保 OpenAI API key 可用。", "warning");
+          return;
+        }
+        notify(ctx, "正在重建向量索引...", "info");
+        const result = await rebuildVectorIndex(currentRolePath, currentRole, (indexed, total) => {
+          if (indexed % 10 === 0) {
+            log("vector-rebuild", `progress: ${indexed}/${total}`);
+          }
+        });
+        const msg = `向量索引重建完成: ${result.indexed}/${result.total} 条已索引${result.errors > 0 ? `，${result.errors} 个错误` : ""}`;
+        notify(ctx, msg, result.errors > 0 ? "warning" : "success");
+        return;
+      }
+
+      if (subcommand === "stats" || !subcommand) {
+        const stats = await getVectorStats();
+        if (!stats) {
+          notify(ctx, "向量记忆未初始化", "warning");
+          return;
+        }
+        const lines = [
+          `向量记忆状态 (${currentRole})`,
+          `- 启用: ${stats.enabled}`,
+          `- 激活: ${stats.active}`,
+          `- 模型: ${stats.model || "n/a"}`,
+          `- 维度: ${stats.dim || "n/a"}`,
+          `- 已索引: ${stats.count} 条`,
+          `- 路径: ${stats.dbPath || "n/a"}`,
+        ];
+        pi.sendMessage({ customType: "memory-vector-stats", content: lines.join("\n"), display: true }, { triggerTurn: false });
+        return;
+      }
+
+      notify(ctx, "用法: /memory-vector rebuild | /memory-vector stats", "info");
     },
   });
 

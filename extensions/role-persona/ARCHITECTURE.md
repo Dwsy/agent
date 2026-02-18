@@ -13,6 +13,7 @@ flowchart LR
     MMD["memory-md.ts<br/>MD解析/修复/搜索/整理"]
     MLLM["memory-llm.ts<br/>自动提取 + LLM tidy"]
     MVIEW["memory-viewer.ts<br/>Overlay查看器"]
+    MVEC["memory-vector.ts<br/>向量语义搜索层"]
   end
 
   subgraph E["运行时事件"]

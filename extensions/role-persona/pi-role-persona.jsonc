@@ -120,5 +120,46 @@
 
     // 自动整理：进化提醒间隔（每 N 轮触发一次）
     "evolutionReminderTurns": 5
+  },
+
+  // ==================== 向量记忆配置 ====================
+  "vectorMemory": {
+    // 总开关：是否启用向量语义搜索
+    // 环境变量覆盖：ROLE_VECTOR_MEMORY
+    // 需要 @lancedb/lancedb 依赖和 OpenAI API key
+    "enabled": false,
+
+    // Embedding 提供商（目前仅支持 openai）
+    "provider": "openai",
+
+    // Embedding 模型
+    // text-embedding-3-small (1536维, $0.02/1M tokens)
+    // text-embedding-3-large (3072维, $0.13/1M tokens)
+    "model": "text-embedding-3-small",
+
+    // 显式 API key（默认从 modelRegistry 自动获取 OpenAI key）
+    // 环境变量覆盖：ROLE_VECTOR_API_KEY
+    "apiKey": null,
+
+    // 自动召回：before_agent_start 时语义搜索注入上下文
+    "autoRecall": true,
+
+    // 自动索引：写入记忆时同步生成向量索引
+    "autoIndex": true,
+
+    // 混合搜索：关键词 + 向量 → RRF 融合排序
+    "hybridSearch": true,
+
+    // 向量搜索在 RRF 融合中的权重（1.0 = 等权）
+    "vectorWeight": 1.0,
+
+    // 自动召回：最大返回条数
+    "recallLimit": 3,
+
+    // 自动召回：最低相似度阈值
+    "recallMinScore": 0.3,
+
+    // 向量数据库存储路径（相对于 rolePath）
+    "dbPath": ".vector-db"
   }
 }
