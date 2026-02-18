@@ -21,6 +21,7 @@ import { handleApiSend } from "./send-api.ts";
 import { redactConfig } from "../core/auth.ts";
 import { loadConfig } from "../core/config.ts";
 import { handleKeyboardRequest } from "./keyboard-interact.ts";
+import { parseObservabilityWindow, type ObservabilityLevel, type ObservabilityCategory } from "../core/gateway-observability.ts";
 
 /**
  * Route an HTTP request to the appropriate handler.
@@ -82,7 +83,7 @@ export async function routeHttp(req: Request, url: URL, ctx: GatewayContext): Pr
 
   // --- Cron ---
   if (pathname.startsWith("/api/cron/") && ctx.cron) {
-    const cronResponse = handleCronApi(req, url, ctx.cron, ctx.config);
+    const cronResponse = handleCronApi(req, url, ctx);
     if (cronResponse instanceof Promise) return await cronResponse;
     if (cronResponse) return cronResponse;
   }
@@ -141,18 +142,27 @@ export async function routeHttp(req: Request, url: URL, ctx: GatewayContext): Pr
     return Response.json(redactConfig(ctx.config as unknown as Record<string, any>));
   }
   if (pathname === "/api/gateway/reload" && method === "POST") {
-    if (ctx.reloadConfig) {
-      ctx.reloadConfig();
+    try {
+      if (ctx.reloadConfig) {
+        ctx.reloadConfig();
+      } else {
+        const newConfig = loadConfig();
+        Object.assign(ctx.config, newConfig);
+      }
+      ctx.observability.record("info", "gateway", "reload", "Config reloaded successfully");
       return Response.json({ ok: true, message: "Config reloaded" });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      ctx.observability.record("error", "gateway", "reload", `Config reload failed: ${msg}`);
+      return Response.json({ ok: false, error: msg }, { status: 500 });
     }
-    const newConfig = loadConfig();
-    Object.assign(ctx.config, newConfig);
-    return Response.json({ ok: true, message: "Config reloaded (fallback)" });
   }
   if (pathname === "/api/gateway/restart" && method === "POST") {
     if (!ctx.config.gateway.commands?.restart) {
+      ctx.observability.record("warn", "gateway", "restart", "Restart request rejected: disabled in config");
       return Response.json({ error: "Restart is disabled. Set gateway.commands.restart: true in config." }, { status: 403 });
     }
+    ctx.observability.record("info", "gateway", "restart", "Gateway restart initiated");
     // Respond before exiting — process manager (launchd/systemd/docker) will restart
     const response = Response.json({ ok: true, message: "Gateway restarting..." });
     setTimeout(() => process.exit(0), 500);
@@ -203,11 +213,33 @@ export async function routeHttp(req: Request, url: URL, ctx: GatewayContext): Pr
     });
   }
 
+  // --- Observability API ---
+  if (pathname === "/api/observability/events" && method === "GET") {
+    const limit = parseInt(url.searchParams.get("limit") ?? "100", 10);
+    const level = url.searchParams.get("level") as ObservabilityLevel | null;
+    const category = url.searchParams.get("category") as ObservabilityCategory | null;
+    const windowMs = parseObservabilityWindow(url.searchParams.get("window"));
+    const events = ctx.observability.list({
+      limit,
+      level: level ?? undefined,
+      category: category ?? undefined,
+      windowMs,
+    });
+    return Response.json({ ok: true, events, count: events.length, windowMs: windowMs ?? null });
+  }
+  if (pathname === "/api/observability/summary" && method === "GET") {
+    const windowMs = parseObservabilityWindow(url.searchParams.get("window"));
+    const summary = ctx.observability.summary(windowMs);
+    return Response.json({ ok: true, summary });
+  }
+
   // --- Static files ---
   if (pathname === "/" || pathname.startsWith("/web/")) {
     return serveStaticFile(pathname, ctx.noGui);
   }
 
+  // 404 Not Found
+  ctx.observability.record("warn", "api", "not_found", `API endpoint not found: ${method} ${pathname}`);
   return new Response("Not Found", { status: 404 });
 }
 
