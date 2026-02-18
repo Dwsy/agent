@@ -85,6 +85,12 @@ export async function processMessage(
     rpcProcessId: null,
     lastChatId: source.chatId,
     lastChannel: source.channel,
+    lastAccountId: source.accountId,
+    lastChatType: source.chatType,
+    lastSenderId: source.senderId,
+    lastSenderName: source.senderName,
+    lastTopicId: source.topicId,
+    lastThreadId: source.threadId,
   });
   if (isNew) {
     ctx.transcripts.logMeta(sessionKey, "session_created", { role: session.role });
@@ -92,8 +98,14 @@ export async function processMessage(
   }
   session.lastActivity = Date.now();
   session.messageCount++;
-  if (source.chatId) session.lastChatId = source.chatId;
-  if (source.channel) session.lastChannel = source.channel;
+  session.lastChatId = source.chatId;
+  session.lastChannel = source.channel;
+  session.lastAccountId = source.accountId;
+  session.lastChatType = source.chatType;
+  session.lastSenderId = source.senderId;
+  session.lastSenderName = source.senderName;
+  session.lastTopicId = source.topicId;
+  session.lastThreadId = source.threadId;
 
   // Resolve role → capability profile for RPC process
   const role = session.role ?? "default";
