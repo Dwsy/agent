@@ -1,0 +1,93 @@
+{
+  "app": {
+    "name": "Pi Gateway",
+    "environment": "production",
+    "theme": "dark",
+    "timezone": "UTC",
+    "version": "0.1.0"
+  },
+  "auth": {
+    "enabled": true,
+    "mode": "token",
+    "tokenStorage": "localStorage",
+    "refreshEnabled": true,
+    "refreshInterval": 300000
+  },
+  "api": {
+    "baseURL": "/api",
+    "timeout": 10000,
+    "retry": {
+      "enabled": true,
+      "maxRetries": 3,
+      "retryDelay": 1000
+    }
+  },
+  "realtime": {
+    "mode": "polling",
+    "websocket": {
+      "enabled": false,
+      "reconnectInterval": 3000,
+      "maxReconnectAttempts": 5
+    },
+    "sse": {
+      "enabled": false,
+      "reconnectInterval": 5000
+    },
+    "polling": {
+      "enabled": true,
+      "defaultInterval": 5000
+    }
+  },
+  "features": {
+    "overview": true,
+    "agents": true,
+    "plugins": true,
+    "alerts": true,
+    "settings": true,
+    "cron": false,
+    "audit": false,
+    "logs": false,
+    "metrics": true
+  },
+  "polling": {
+    "overview": 5000,
+    "agents": 10000,
+    "plugins": 30000,
+    "alerts": 5000,
+    "settings": 60000
+  },
+  "permissions": {
+    "enabled": false,
+    "defaultRole": "viewer"
+  },
+  "ui": {
+    "mobileBreakpoint": 768,
+    "table": {
+      "mobileMode": "scroll",
+      "pageSize": 20,
+      "pageSizeOptions": [10, 20, 50, 100]
+    },
+    "sidebar": {
+      "collapsible": true,
+      "defaultCollapsed": false
+    }
+  },
+  "observability": {
+    "logging": {
+      "enabled": true,
+      "level": "info",
+      "console": true
+    },
+    "analytics": {
+      "enabled": false
+    },
+    "errorReporting": {
+      "enabled": false
+    }
+  },
+  "audit": {
+    "enabled": false,
+    "retentionDays": 30,
+    "logActions": ["create", "update", "delete", "execute"]
+  }
+}

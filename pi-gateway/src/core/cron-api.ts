@@ -11,6 +11,8 @@
 
 import type { CronEngine } from "./cron.ts";
 import type { CronJob, Config } from "./config.ts";
+import type { GatewayContext } from "../gateway/types.ts";
+import type { ObservabilityCategory, ObservabilityLevel } from "./gateway-observability.ts";
 
 // ============================================================================
 // Validation
@@ -69,12 +71,48 @@ function validateAddJob(body: unknown, config?: Config): ValidationError | null 
 // Route Handler
 // ============================================================================
 
+type ObservabilityRecorder = {
+  record: (
+    level: ObservabilityLevel,
+    category: ObservabilityCategory,
+    action: string,
+    message: string,
+    meta?: Record<string, unknown>,
+  ) => unknown;
+};
+
+const NOOP_OBSERVABILITY: ObservabilityRecorder = {
+  record: () => undefined,
+};
+
+function resolveCronApiDeps(
+  cronOrCtx: CronEngine | GatewayContext,
+  configMaybe?: Config,
+): { cron: CronEngine; config: Config | undefined; obs: ObservabilityRecorder } {
+  if ("pool" in cronOrCtx) {
+    const cron = cronOrCtx.cron;
+    if (!cron) throw new Error("Cron not enabled");
+    return {
+      cron,
+      config: cronOrCtx.config,
+      obs: cronOrCtx.observability ?? NOOP_OBSERVABILITY,
+    };
+  }
+
+  return {
+    cron: cronOrCtx,
+    config: configMaybe,
+    obs: NOOP_OBSERVABILITY,
+  };
+}
+
 export function handleCronApi(
   req: Request,
   url: URL,
-  cron: CronEngine,
-  config?: Config,
+  cronOrCtx: CronEngine | GatewayContext,
+  configMaybe?: Config,
 ): Response | Promise<Response> | null {
+  const { cron, config, obs } = resolveCronApiDeps(cronOrCtx, configMaybe);
   const path = url.pathname;
 
   // GET /api/cron/jobs
@@ -90,7 +128,7 @@ export function handleCronApi(
 
   // POST /api/cron/jobs
   if (path === "/api/cron/jobs" && req.method === "POST") {
-    return handleAddJob(req, cron, config);
+    return handleAddJob(req, cron, config, obs);
   }
 
   // DELETE /api/cron/jobs/:id
@@ -98,14 +136,18 @@ export function handleCronApi(
   if (deleteMatch && req.method === "DELETE") {
     const id = decodeURIComponent(deleteMatch[1]);
     const removed = cron.removeJob(id);
-    if (!removed) return Response.json({ ok: false, error: "not found" }, { status: 404 });
+    if (!removed) {
+      obs.record("warn", "cron", "remove", `Failed to remove job: ${id} not found`);
+      return Response.json({ ok: false, error: "not found" }, { status: 404 });
+    }
+    obs.record("info", "cron", "remove", `Job removed: ${id}`);
     return Response.json({ ok: true });
   }
 
   // PATCH /api/cron/jobs/:id
   const patchMatch = path.match(/^\/api\/cron\/jobs\/([^/]+)$/);
   if (patchMatch && req.method === "PATCH") {
-    return handlePatchJob(req, patchMatch[1], cron);
+    return handlePatchJob(req, patchMatch[1], cron, obs);
   }
 
   // POST /api/cron/jobs/:id/run
@@ -113,7 +155,11 @@ export function handleCronApi(
   if (runMatch && req.method === "POST") {
     const id = decodeURIComponent(runMatch[1]);
     const triggered = cron.runJob(id);
-    if (!triggered) return Response.json({ ok: false, error: "not found" }, { status: 404 });
+    if (!triggered) {
+      obs.record("warn", "cron", "run", `Failed to trigger job: ${id} not found`);
+      return Response.json({ ok: false, error: "not found" }, { status: 404 });
+    }
+    obs.record("info", "cron", "run", `Job triggered: ${id}`);
     return Response.json({ ok: true, message: "triggered" });
   }
 
@@ -150,23 +196,29 @@ export function handleCronApi(
 async function handleAddJob(
   req: Request,
   cron: CronEngine,
-  config?: Config,
+  config: Config | undefined,
+  obs: ObservabilityRecorder,
 ): Promise<Response> {
   let body: unknown;
   try {
     body = await req.json();
   } catch {
+    obs.record("warn", "cron", "add", "Invalid JSON in add job request");
     return Response.json({ ok: false, error: "invalid JSON" }, { status: 400 });
   }
 
   const err = validateAddJob(body, config);
-  if (err) return Response.json(err, { status: 400 });
+  if (err) {
+    obs.record("warn", "cron", "add", `Validation failed: ${err.error}`);
+    return Response.json(err, { status: 400 });
+  }
 
   const b = body as AddJobInput;
 
   // Check duplicate
   const existing = cron.listJobs().find((j) => j.id === b.id);
   if (existing) {
+    obs.record("warn", "cron", "add", `Job already exists: ${b.id}`);
     return Response.json({ ok: false, error: `job "${b.id}" already exists` }, { status: 409 });
   }
 
@@ -181,6 +233,7 @@ async function handleAddJob(
   };
 
   cron.addJob(job);
+  obs.record("info", "cron", "add", `Job added: ${b.id}`);
   return Response.json({ ok: true, job }, { status: 201 });
 }
 
@@ -188,24 +241,34 @@ async function handlePatchJob(
   req: Request,
   rawId: string,
   cron: CronEngine,
+  obs: ObservabilityRecorder,
 ): Promise<Response> {
   const id = decodeURIComponent(rawId);
   let body: Record<string, unknown>;
   try {
     body = (await req.json()) as Record<string, unknown>;
   } catch {
+    obs.record("warn", "cron", "patch", "Invalid JSON in patch job request");
     return Response.json({ ok: false, error: "invalid JSON" }, { status: 400 });
   }
 
   const action = body.action as string;
   if (action === "pause") {
     const ok = cron.pauseJob(id);
-    if (!ok) return Response.json({ ok: false, error: "not found" }, { status: 404 });
+    if (!ok) {
+      obs.record("warn", "cron", "pause", `Failed to pause job: ${id} not found`);
+      return Response.json({ ok: false, error: "not found" }, { status: 404 });
+    }
+    obs.record("info", "cron", "pause", `Job paused: ${id}`);
     return Response.json({ ok: true, status: "paused" });
   }
   if (action === "resume") {
     const ok = cron.resumeJob(id);
-    if (!ok) return Response.json({ ok: false, error: "not found or not paused" }, { status: 404 });
+    if (!ok) {
+      obs.record("warn", "cron", "resume", `Failed to resume job: ${id} not found or not paused`);
+      return Response.json({ ok: false, error: "not found or not paused" }, { status: 404 });
+    }
+    obs.record("info", "cron", "resume", `Job resumed: ${id}`);
     return Response.json({ ok: true, status: "active" });
   }
 
@@ -218,13 +281,19 @@ async function handlePatchJob(
     if (body.timeoutMs != null) patch.timeoutMs = body.timeoutMs;
 
     if (Object.keys(patch).length === 0) {
+      obs.record("warn", "cron", "update", "No fields to update");
       return Response.json({ ok: false, error: "No fields to update" }, { status: 400 });
     }
 
-    const updated = cron.updateJob(id, patch as any);
-    if (!updated) return Response.json({ ok: false, error: "not found" }, { status: 404 });
+    const updated = cron.updateJob(id, patch as Record<string, unknown>);
+    if (!updated) {
+      obs.record("warn", "cron", "update", `Failed to update job: ${id} not found`);
+      return Response.json({ ok: false, error: "not found" }, { status: 404 });
+    }
+    obs.record("info", "cron", "update", `Job updated: ${id}`);
     return Response.json({ ok: true, job: updated });
   }
 
-  return Response.json({ ok: false, error: 'action: must be "pause" or "resume"' }, { status: 400 });
+  obs.record("warn", "cron", "patch", `Invalid action: ${action}`);
+  return Response.json({ ok: false, error: 'action: must be "pause", "resume", or "update"' }, { status: 400 });
 }
