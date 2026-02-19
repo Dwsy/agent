@@ -72,4 +72,17 @@ export class HookRegistry {
   getRegistered(): Array<{ pluginId: string; event: PluginHookName }> {
     return this.hooks.map(({ pluginId, event }) => ({ pluginId, event }));
   }
+
+  /**
+   * Remove all hooks registered by a specific plugin.
+   * Used during hot reload teardown.
+   */
+  removeByPlugin(pluginId: string): void {
+    const beforeCount = this.hooks.length;
+    this.hooks = this.hooks.filter((h) => h.pluginId !== pluginId);
+    const removed = beforeCount - this.hooks.length;
+    if (removed > 0) {
+      this.log.debug(`Removed ${removed} hook(s) for plugin: ${pluginId}`);
+    }
+  }
 }

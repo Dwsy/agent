@@ -75,9 +75,15 @@ export function createPluginRegistry(): PluginRegistryState {
 // Plugin Loader
 // ============================================================================
 
+export interface LoadedPluginInfo {
+  manifest: PluginManifest;
+  source: string;
+  path?: string;
+}
+
 export class PluginLoader {
   private log: Logger;
-  private loaded = new Map<string, { manifest: PluginManifest; source: string }>();
+  private loaded = new Map<string, LoadedPluginInfo>();
 
   constructor(
     private config: Config,
@@ -85,6 +91,101 @@ export class PluginLoader {
     private apiFactory: (pluginId: string, manifest: PluginManifest) => GatewayPluginApi,
   ) {
     this.log = createLogger("plugins");
+  }
+
+  /**
+   * Get loaded plugin info for hot reload.
+   */
+  getLoadedPlugins(): Map<string, LoadedPluginInfo> {
+    return this.loaded;
+  }
+
+  /**
+   * Get info for a specific loaded plugin.
+   */
+  getPluginInfo(pluginId: string): LoadedPluginInfo | undefined {
+    return this.loaded.get(pluginId);
+  }
+
+  /**
+   * Teardown a plugin: remove its registrations from all registries.
+   * Used during hot reload.
+   */
+  async teardownPlugin(pluginId: string): Promise<void> {
+    const info = this.loaded.get(pluginId);
+    if (!info) {
+      this.log.warn(`Cannot teardown: plugin ${pluginId} not loaded`);
+      return;
+    }
+
+    // Stop background services registered by this plugin
+    for (let i = this.registry.services.length - 1; i >= 0; i--) {
+      const service = this.registry.services[i];
+      if ((service as any).__pluginId === pluginId) {
+        try {
+          await service.stop();
+          this.log.debug(`Stopped service: ${service.name}`);
+        } catch (err) {
+          this.log.error(`Error stopping service ${service.name}:`, err);
+        }
+        this.registry.services.splice(i, 1);
+      }
+    }
+
+    // Remove channels
+    for (const [id, channel] of this.registry.channels) {
+      if ((channel as any).__pluginId === pluginId) {
+        try {
+          await channel.stop();
+          this.log.debug(`Stopped channel: ${id}`);
+        } catch (err) {
+          this.log.error(`Error stopping channel ${id}:`, err);
+        }
+        this.registry.channels.delete(id);
+      }
+    }
+
+    // Remove tools
+    for (const [name, tool] of this.registry.tools) {
+      if ((tool as any).__pluginId === pluginId) {
+        this.registry.tools.delete(name);
+        this.log.debug(`Removed tool: ${name}`);
+      }
+    }
+
+    // Remove commands
+    for (const [name, cmd] of this.registry.commands) {
+      if (cmd.pluginId === pluginId) {
+        this.registry.commands.delete(name);
+        this.log.debug(`Removed command: ${name}`);
+      }
+    }
+
+    // Remove HTTP routes
+    const beforeRoutes = this.registry.httpRoutes.length;
+    this.registry.httpRoutes = this.registry.httpRoutes.filter((r) => r.pluginId !== pluginId);
+    const removedRoutes = beforeRoutes - this.registry.httpRoutes.length;
+    if (removedRoutes > 0) {
+      this.log.debug(`Removed ${removedRoutes} HTTP route(s)`);
+    }
+
+    // Remove WebSocket methods
+    for (const [method, entry] of this.registry.gatewayMethods) {
+      if (entry.pluginId === pluginId) {
+        this.registry.gatewayMethods.delete(method);
+        this.log.debug(`Removed WS method: ${method}`);
+      }
+    }
+
+    // Remove hooks
+    this.registry.hooks.removeByPlugin(pluginId);
+
+    // Remove CLI registrars
+    this.registry.cliRegistrars = this.registry.cliRegistrars.filter((r) => r.pluginId !== pluginId);
+
+    // Remove from loaded map
+    this.loaded.delete(pluginId);
+    this.log.info(`Teardown complete: ${pluginId}`);
   }
 
   /**
@@ -111,7 +212,7 @@ export class PluginLoader {
 
       try {
         await this.loadPlugin(manifest, dir, source);
-        this.loaded.set(manifest.id, { manifest, source });
+        this.loaded.set(manifest.id, { manifest, source, path: dir });
       } catch (err: unknown) {
         const errMsg = err instanceof Error ? err.message : String(err);
         this.log.error(`Failed to load plugin ${manifest.id}: ${errMsg}`);
@@ -164,7 +265,7 @@ export class PluginLoader {
           await factory.register(api);
         }
 
-        this.loaded.set(name, { manifest, source: "builtin" });
+        this.loaded.set(name, { manifest, source: "builtin", path });
         this.log.info(`Loaded builtin plugin: ${name}`);
       } catch (err: unknown) {
         this.log.error(`Failed to load builtin ${name}: ${(err instanceof Error ? err.message : String(err))}`);
