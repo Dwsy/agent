@@ -15,6 +15,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { homedir } from "node:os";
 import type { ThinkingLevel } from "./types.ts";
+import { ConfigValidator, type ValidationOptions, type ValidationResult } from "./config-validator.ts";
 
 // ============================================================================
 // Config Types
@@ -602,7 +603,16 @@ export function resolveConfigPath(): string {
  * Env override:
  * - PI_GATEWAY_PORT: force gateway port (1-65535)
  */
-export function loadConfig(configPath?: string): Config {
+export function loadConfig(configPath?: string): Config;
+/**
+ * Load config with validation.
+ *
+ * @param configPath - Path to config file
+ * @param validateOptions - Validation options
+ * @returns Object with config and validation result
+ */
+export function loadConfig(configPath: string | undefined, validateOptions: ValidationOptions & { validate: true }): Promise<{ config: Config; validation: ValidationResult }>;
+export function loadConfig(configPath?: string, validateOptions?: ValidationOptions & { validate?: boolean }): Config | Promise<{ config: Config; validation: ValidationResult }> {
   const path = configPath ?? resolveConfigPath();
 
   let fileConfig: Partial<Config> = {};
@@ -633,7 +643,32 @@ export function loadConfig(configPath?: string): Config {
   }
 
   validateTelegramConfig(merged);
+
+  // Handle validation if requested
+  if (validateOptions?.validate) {
+    const validator = new ConfigValidator(validateOptions);
+    return validator.validate(merged).then(validation => ({
+      config: merged,
+      validation,
+    }));
+  }
+
   return merged;
+}
+
+/**
+ * Validate a loaded configuration.
+ *
+ * @param config - The configuration to validate
+ * @param options - Validation options
+ * @returns Validation result with issues and stats
+ */
+export async function validateConfig(
+  config: Config,
+  options?: ValidationOptions,
+): Promise<ValidationResult> {
+  const validator = new ConfigValidator(options);
+  return validator.validate(config);
 }
 
 /**
