@@ -94,6 +94,7 @@ function isTokenFormatValid(token: string): boolean {
 }
 
 const PORT_CHECK_TIMEOUT = 5000; // 5 second timeout
+const MAX_PORT_SEARCH = 100; // Max ports to check when finding alternative
 
 async function isPortInUse(port: number, host = "0.0.0.0"): Promise<boolean> {
   return new Promise((resolve) => {
@@ -118,6 +119,18 @@ async function isPortInUse(port: number, host = "0.0.0.0"): Promise<boolean> {
     });
     server.listen(port, host);
   });
+}
+
+/**
+ * Find next available port starting from given port
+ */
+async function findAvailablePort(startPort: number, host = "0.0.0.0"): Promise<number | null> {
+  for (let port = startPort + 1; port <= Math.min(startPort + MAX_PORT_SEARCH, 65535); port++) {
+    if (!await isPortInUse(port, host)) {
+      return port;
+    }
+  }
+  return null;
 }
 
 /**
@@ -212,20 +225,27 @@ export const PortAvailabilityRule: ValidationRule = {
     const issues: ValidationIssue[] = [];
     const port = config.gateway.port;
     const host = config.gateway.bind === "loopback" ? "127.0.0.1" : "0.0.0.0";
-    
+
     if (isValidPort(port)) {
       const inUse = await isPortInUse(port, host);
       if (inUse) {
+        // Find next available port for suggestion
+        const nextPort = await findAvailablePort(port, host);
+        let suggestion = `Stop the process using port ${port} or choose a different port`;
+        if (nextPort) {
+          suggestion += `. Suggested alternative: ${nextPort}`;
+        }
+
         issues.push({
           path: "gateway.port",
           message: `Port ${port} is already in use`,
           severity: "error",
-          suggestion: `Choose a different port or stop the process using port ${port}`,
+          suggestion,
           autoFixable: false,
         });
       }
     }
-    
+
     return issues;
   },
 };
