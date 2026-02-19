@@ -24,10 +24,28 @@ export interface ValidateResponse {
   }>;
 }
 
+const MAX_BODY_SIZE = 100 * 1024; // 100KB limit
+
 /**
  * Handle config validation request
+ * @param req - HTTP request
+ * @param authToken - Optional auth token for validation (from gateway config)
  */
-export async function handleValidateRequest(req: Request): Promise<Response> {
+export async function handleValidateRequest(
+  req: Request,
+  authToken?: string
+): Promise<Response> {
+  // Check auth if token is configured
+  if (authToken) {
+    const reqToken = req.headers.get("authorization")?.replace("Bearer ", "");
+    if (reqToken !== authToken) {
+      return Response.json(
+        { error: "Unauthorized" },
+        { status: 401 }
+      );
+    }
+  }
+
   if (req.method !== "POST" && req.method !== "GET") {
     return Response.json(
       { error: "Method not allowed", allowed: ["GET", "POST"] },
@@ -38,6 +56,15 @@ export async function handleValidateRequest(req: Request): Promise<Response> {
   let config: Config;
 
   if (req.method === "POST") {
+    // Check content length
+    const contentLength = parseInt(req.headers.get("content-length") || "0", 10);
+    if (contentLength > MAX_BODY_SIZE) {
+      return Response.json(
+        { error: "Request body too large", max: MAX_BODY_SIZE },
+        { status: 413 }
+      );
+    }
+
     // Validate provided config
     try {
       const body = await req.json();
@@ -87,11 +114,26 @@ export async function handleValidateRequest(req: Request): Promise<Response> {
 
 /**
  * Handle validate request with context (for use in http-router)
+ * @param req - HTTP request
+ * @param config - Current gateway config
+ * @param authToken - Optional auth token
  */
 export async function handleValidateWithContext(
   req: Request,
-  config: Config
+  config: Config,
+  authToken?: string
 ): Promise<Response> {
+  // Check auth if token is configured
+  if (authToken) {
+    const reqToken = req.headers.get("authorization")?.replace("Bearer ", "");
+    if (reqToken !== authToken) {
+      return Response.json(
+        { error: "Unauthorized" },
+        { status: 401 }
+      );
+    }
+  }
+
   if (req.method === "GET") {
     // Validate the current runtime config
     const result = await validateConfig(config);
@@ -117,7 +159,7 @@ export async function handleValidateWithContext(
   }
 
   if (req.method === "POST") {
-    return handleValidateRequest(req);
+    return handleValidateRequest(req, authToken);
   }
 
   return Response.json(

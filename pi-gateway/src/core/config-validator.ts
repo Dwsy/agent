@@ -11,9 +11,9 @@
 
 import { Value, type ValueError } from "@sinclair/typebox/value";
 import { existsSync, accessSync, constants } from "node:fs";
-import { resolve, isAbsolute } from "node:path";
+import { resolve, isAbsolute, normalize } from "node:path";
 import { homedir } from "node:os";
-import { net } from "node:net";
+import net from "node:net";
 import type { Config } from "./config.ts";
 import { ConfigSchema } from "./config-schema.ts";
 
@@ -93,10 +93,18 @@ function isTokenFormatValid(token: string): boolean {
   return !placeholders.some(p => token.toLowerCase().includes(p));
 }
 
+const PORT_CHECK_TIMEOUT = 5000; // 5 second timeout
+
 async function isPortInUse(port: number, host = "0.0.0.0"): Promise<boolean> {
   return new Promise((resolve) => {
     const server = net.createServer();
+    const timeout = setTimeout(() => {
+      server.close();
+      resolve(false); // Assume port is available if check times out
+    }, PORT_CHECK_TIMEOUT);
+
     server.once("error", (err: NodeJS.ErrnoException) => {
+      clearTimeout(timeout);
       if (err.code === "EADDRINUSE") {
         resolve(true);
       } else {
@@ -104,6 +112,7 @@ async function isPortInUse(port: number, host = "0.0.0.0"): Promise<boolean> {
       }
     });
     server.once("listening", () => {
+      clearTimeout(timeout);
       server.close();
       resolve(false);
     });
@@ -111,9 +120,23 @@ async function isPortInUse(port: number, host = "0.0.0.0"): Promise<boolean> {
   });
 }
 
+/**
+ * Sanitize path to prevent directory traversal attacks
+ */
+function sanitizePath(p: string): string {
+  // Normalize and resolve to absolute path
+  const resolved = normalize(resolvePath(p));
+  // Prevent traversal above home directory
+  const home = homedir();
+  if (!resolved.startsWith(home) && !isAbsolute(resolved)) {
+    return resolve(home, resolved);
+  }
+  return resolved;
+}
+
 function directoryExists(dir: string): boolean {
   try {
-    const resolved = resolvePath(dir);
+    const resolved = sanitizePath(dir);
     if (!existsSync(resolved)) return false;
     accessSync(resolved, constants.R_OK | constants.W_OK);
     return true;
@@ -124,7 +147,7 @@ function directoryExists(dir: string): boolean {
 
 function isDirectoryWritable(dir: string): boolean {
   try {
-    const resolved = resolvePath(dir);
+    const resolved = sanitizePath(dir);
     accessSync(resolved, constants.W_OK);
     return true;
   } catch {
