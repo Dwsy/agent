@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-02-19
+
+### Added
+- **外部只读记忆增强** (`externalReadonly`): 可选接入只读记忆服务（如 pi-session-manager）
+  - `before_agent_start` 调用 `/v1/memory/unified`，按置信度注入跨会话 hints（evidence + next_actions）
+  - `agent_end` 调用 `/v1/experience/extract`，记录候选经验数量（仅日志）
+  - 失败自动降级，不影响原有 MEMORY.md 与向量记忆流程
+- **配置项**: `pi-role-persona.jsonc` 新增 `externalReadonly` 配置段
+  - `enabled` / `baseUrl` / `token` / `timeoutMs` / `topK` / `experienceLimit` / `minConfidence`
+  - 环境变量: `ROLE_EXTERNAL_READONLY`, `ROLE_EXTERNAL_BASE_URL`, `ROLE_EXTERNAL_TOKEN`, `ROLE_EXTERNAL_TIMEOUT_MS`, `ROLE_EXTERNAL_TOP_K`, `ROLE_EXTERNAL_EXP_LIMIT`, `ROLE_EXTERNAL_MIN_CONFIDENCE`
+
 ## 2026-02-16
 
 ### Added
