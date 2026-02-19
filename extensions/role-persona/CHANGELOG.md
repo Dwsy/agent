@@ -1,5 +1,43 @@
 # Changelog
 
+## 2026-02-16
+
+### Added
+- **向量记忆系统** (`memory-vector.ts`): 基于 LanceDB + OpenAI embedding 的语义搜索层
+  - 在现有 Markdown 记忆之上叠加向量索引，不替换原有系统
+  - 自动召回 (auto-recall): `before_agent_start` 时语义搜索注入相关记忆到 system prompt
+  - 自动索引 (auto-index): 写入 learning/preference 时异步生成向量索引
+  - 混合搜索 (hybrid search): 关键词 + 向量 → RRF (Reciprocal Rank Fusion) 融合排序
+  - 全量重建: `vector_rebuild` action 或 `/memory-vector rebuild` 命令
+  - 优雅降级: embedding 不可用时自动回退到纯关键词搜索
+  - 安全: prompt injection 防护，XML 转义，输入长度限制
+- **`/memory-vector` 命令**: 向量记忆管理
+  - `/memory-vector stats` — 查看向量记忆状态
+  - `/memory-vector rebuild` — 从 MEMORY.md 全量重建向量索引
+- **memory tool 新增 actions**: `vector_rebuild`, `vector_stats`
+- **配置**: `pi-role-persona.jsonc` 新增 `vectorMemory` 配置段
+  - `enabled` / `provider` / `model` / `apiKey` / `autoRecall` / `autoIndex` / `hybridSearch` / `vectorWeight` / `recallLimit` / `recallMinScore` / `dbPath`
+  - 环境变量: `ROLE_VECTOR_MEMORY`, `ROLE_VECTOR_API_KEY`
+
+### Changed
+- **search action 升级**: 当向量记忆激活时自动使用混合搜索 (keyword + vector → RRF)
+- **session_shutdown**: 新增向量索引 flush 和资源释放
+- **auto-memory extraction**: 提取后自动将新记忆写入向量索引
+
+### Dependencies
+- `@lancedb/lancedb` — 本地向量数据库 (可选，仅 vectorMemory.enabled=true 时需要)
+- OpenAI Embeddings API — text-embedding-3-small ($0.02/1M tokens)
+
+### Files Added
+- `memory-vector.ts` — 向量记忆核心模块 (VectorDB, EmbeddingProvider, hybrid search, auto-recall)
+
+### Files Modified
+- `index.ts` — 集成向量记忆 init/recall/index/flush/dispose + 新增 tool actions 和命令
+- `config.ts` — 新增 `VectorMemoryConfig` 类型和默认值 + 环境变量覆盖
+- `pi-role-persona.jsonc` — 新增 `vectorMemory` 配置段
+
+---
+
 ## 2026-02-13
 
 ### Added

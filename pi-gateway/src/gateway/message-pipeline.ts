@@ -498,10 +498,10 @@ export async function processMessage(
   ctx.metrics?.recordLatency(durationMs);
 
   try {
-    // Group chat silent mode: if agent responds with [NO_REPLY], skip delivery.
+    // Silent mode: if agent responds with [NO_REPLY], skip delivery.
     const SILENT_TOKEN = "[NO_REPLY]";
-    if (source.chatType !== "dm" && outbound.text.includes(SILENT_TOKEN)) {
-      ctx.log.info(`[processMessage] SILENT: agent declined to reply in group ${sessionKey}`);
+    if (outbound.text.includes(SILENT_TOKEN)) {
+      ctx.log.info(`[processMessage] SILENT: agent declined to reply ${sessionKey}`);
       ctx.transcripts.logMeta(sessionKey, "silent_no_reply", { durationMs });
     } else {
       ctx.log.info(`[processMessage] Calling respond for ${sessionKey}, text=${outbound.text.length} chars`);

@@ -1,0 +1,34 @@
+diff --git a/pi-gateway/src/cli.ts b/pi-gateway/src/cli.ts
+index abc123..def456 100644
+--- a/pi-gateway/src/cli.ts
++++ b/pi-gateway/src/cli.ts
+@@ -45,6 +45,8 @@ import type {
+ import type { InboundMessage, SessionKey } from "./core/types.ts";
+ import type { DispatchResult } from "./gateway/types.ts";
+ import { createLogger } from "./core/types.ts";
+ import { ExecGuard } from "./core/exec-guard.ts";
++import { runSticker } from "./cli/sticker.ts";
+ 
+ // ============================================================================
+ // Argument Parsing
+@@ -534,6 +536,10 @@ function showHelp(): void {
+   pi-gw media clean [--days N] [--channel <ch>] [--dry-run]  Clean old media files
+   pi-gw media sticker-cache [stats|prune|clear]           Manage sticker cache
+   pi-gw install-daemon [--port N]                         Install as system daemon
++  pi-gw sticker list <pack>                             List stickers in pack
++  pi-gw sticker send <chat> <pack> [idx|random]         Send sticker to chat
++  pi-gw sticker download <pack> [dir]                   Download sticker pack
++  pi-gw sticker search <query>                          Search sticker packs
+   pi-gw uninstall-daemon                                  Remove system daemon
+   pi-gw help                                              Show this help
+   pi-gw <plugin-command> [...]                            Run plugin-registered CLI command
+@@ -571,6 +577,9 @@ switch (command) {
+   case "media":
+     await runMedia();
+     break;
++  case "sticker":
++    await runSticker(args, () => loadConfig(getArg("config")));
++    break;
+   case "install-daemon": {
+     const config = loadConfig(getArg("config"));
+     const port = getArg("port") ? parseInt(getArg("port")!, 10) : config.gateway.port;

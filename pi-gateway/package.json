@@ -10,7 +10,11 @@
     "dev": "bun run --watch src/cli.ts gateway",
     "start": "bun run src/cli.ts gateway",
     "build": "bun scripts/embed-web.ts && bun build --compile src/cli.ts --outfile pi-gw",
-    "check": "bun run tsc --noEmit"
+    "check": "bun run tsc --noEmit",
+    "admin:install": "bun install --cwd admin-console",
+    "admin:dev": "bun run --cwd admin-console dev",
+    "admin:build": "bun run --cwd admin-console build",
+    "admin:preview": "bun run --cwd admin-console preview"
   },
   "dependencies": {
     "@clack/prompts": "^0.10.0",

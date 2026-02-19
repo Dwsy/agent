@@ -36,6 +36,7 @@ import type { InboundMessage, SessionKey } from "./core/types.ts";
 import type { DispatchResult } from "./gateway/types.ts";
 import { createLogger } from "./core/types.ts";
 import { ExecGuard } from "./core/exec-guard.ts";
+import { runSticker } from "./cli/sticker.ts";
 
 // ============================================================================
 // Argument Parsing
@@ -614,6 +615,11 @@ Usage:
   pi-gw cron remove <id>                                  Remove a cron job
   pi-gw media stats [--channel <ch>]                      Show media storage statistics
   pi-gw media clean [--days N] [--channel <ch>] [--dry-run]  Clean old media files
+  pi-gw media sticker-cache [stats|prune|clear]           Manage sticker cache
+  pi-gw sticker list <pack>                               List stickers in pack
+  pi-gw sticker send <chat> <pack> [index|random]         Send sticker to chat
+  pi-gw sticker download <pack> [dir]                     Download sticker pack
+  pi-gw sticker search <query>                            Search sticker packs
   pi-gw install-daemon [--port N]                         Install as system daemon
   pi-gw uninstall-daemon                                  Remove system daemon
   pi-gw help                                              Show this help
@@ -660,6 +666,9 @@ switch (command) {
     break;
   case "media":
     await runMedia();
+    break;
+  case "sticker":
+    await runSticker(args, () => loadConfig(getArg("config")));
     break;
   case "install-daemon": {
     const config = loadConfig(getArg("config"));
