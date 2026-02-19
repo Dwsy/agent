@@ -76,6 +76,16 @@ export interface AdvancedConfig {
   evolutionReminderTurns: number;
 }
 
+export interface ExternalReadonlyConfig {
+  enabled: boolean;
+  baseUrl: string;
+  token: string | null;
+  timeoutMs: number;
+  topK: number;
+  experienceLimit: number;
+  minConfidence: number;
+}
+
 export interface RolePersonaConfig {
   autoMemory: AutoMemoryConfig;
   logging: LoggingConfig;
@@ -83,6 +93,7 @@ export interface RolePersonaConfig {
   ui: UIConfig;
   advanced: AdvancedConfig;
   vectorMemory: VectorMemoryConfig;
+  externalReadonly: ExternalReadonlyConfig;
 }
 
 // ============================================================================
@@ -145,6 +156,15 @@ const DEFAULT_CONFIG: RolePersonaConfig = {
     recallLimit: 3,
     recallMinScore: 0.3,
     dbPath: ".vector-db",
+  },
+  externalReadonly: {
+    enabled: false,
+    baseUrl: "http://127.0.0.1:52131",
+    token: null,
+    timeoutMs: 1200,
+    topK: 8,
+    experienceLimit: 8,
+    minConfidence: 0.35,
   },
 };
 
@@ -217,6 +237,41 @@ function applyEnvOverrides(config: RolePersonaConfig): RolePersonaConfig {
   // 子代理模式强制禁用向量记忆
   if (process.env.RHO_SUBAGENT === "1") {
     result.vectorMemory.enabled = false;
+  }
+
+  // externalReadonly
+  if (process.env.ROLE_EXTERNAL_READONLY !== undefined) {
+    result.externalReadonly.enabled = process.env.ROLE_EXTERNAL_READONLY !== "0" && process.env.ROLE_EXTERNAL_READONLY !== "false";
+  }
+  if (process.env.ROLE_EXTERNAL_BASE_URL) {
+    result.externalReadonly.baseUrl = process.env.ROLE_EXTERNAL_BASE_URL;
+  }
+  if (process.env.ROLE_EXTERNAL_TOKEN !== undefined) {
+    result.externalReadonly.token = process.env.ROLE_EXTERNAL_TOKEN || null;
+  }
+  if (process.env.ROLE_EXTERNAL_TIMEOUT_MS) {
+    const val = parseInt(process.env.ROLE_EXTERNAL_TIMEOUT_MS, 10);
+    if (!isNaN(val) && val > 100) {
+      result.externalReadonly.timeoutMs = val;
+    }
+  }
+  if (process.env.ROLE_EXTERNAL_TOP_K) {
+    const val = parseInt(process.env.ROLE_EXTERNAL_TOP_K, 10);
+    if (!isNaN(val) && val > 0) {
+      result.externalReadonly.topK = val;
+    }
+  }
+  if (process.env.ROLE_EXTERNAL_EXP_LIMIT) {
+    const val = parseInt(process.env.ROLE_EXTERNAL_EXP_LIMIT, 10);
+    if (!isNaN(val) && val > 0) {
+      result.externalReadonly.experienceLimit = val;
+    }
+  }
+  if (process.env.ROLE_EXTERNAL_MIN_CONFIDENCE) {
+    const val = parseFloat(process.env.ROLE_EXTERNAL_MIN_CONFIDENCE);
+    if (!isNaN(val) && val >= 0 && val <= 1) {
+      result.externalReadonly.minConfidence = val;
+    }
   }
 
   return result;
@@ -312,5 +367,8 @@ export const config = {
   },
   get vectorMemory(): VectorMemoryConfig {
     return getConfig().vectorMemory;
+  },
+  get externalReadonly(): ExternalReadonlyConfig {
+    return getConfig().externalReadonly;
   },
 };

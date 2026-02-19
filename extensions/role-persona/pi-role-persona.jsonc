@@ -161,5 +161,36 @@
 
     // 向量数据库存储路径（相对于 rolePath）
     "dbPath": ".vector-db"
+  },
+
+  // ==================== 外部只读记忆增强（可选） ====================
+  "externalReadonly": {
+    // 总开关：是否接入外部只读记忆服务
+    // 环境变量覆盖：ROLE_EXTERNAL_READONLY
+    "enabled": false,
+
+    // 服务地址（不带 /api 前缀）
+    // 环境变量覆盖：ROLE_EXTERNAL_BASE_URL
+    "baseUrl": "http://127.0.0.1:52131",
+
+    // 可选鉴权 token
+    // 环境变量覆盖：ROLE_EXTERNAL_TOKEN
+    "token": null,
+
+    // 超时毫秒
+    // 环境变量覆盖：ROLE_EXTERNAL_TIMEOUT_MS
+    "timeoutMs": 1200,
+
+    // unified 查询 top_k
+    // 环境变量覆盖：ROLE_EXTERNAL_TOP_K
+    "topK": 8,
+
+    // experience 抽取 limit
+    // 环境变量覆盖：ROLE_EXTERNAL_EXP_LIMIT
+    "experienceLimit": 8,
+
+    // unified 注入最小置信度
+    // 环境变量覆盖：ROLE_EXTERNAL_MIN_CONFIDENCE
+    "minConfidence": 0.35
   }
 }
