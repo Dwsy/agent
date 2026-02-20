@@ -118,9 +118,11 @@ export class Gateway {
 
     this.metrics = new MetricsCollector(this.execGuard);
 
+    // SessionStore must be created before RpcPool (pool needs it for skipAutoResume check)
+    this.sessions = new SessionStore(this.config.session.dataDir);
     this.pool = new RpcPool(this.config, this.metrics, this.execGuard, (sessionKey) => {
       this.registry.hooks.dispatch("session_end", { sessionKey }).catch(() => {});
-    });
+    }, this.sessions);
     const qc = this.config.queue;
     this.queue = new MessageQueueManager(
       qc.maxPerSession,
@@ -130,7 +132,6 @@ export class Gateway {
     );
     this.dedup = new DeduplicationCache({ cacheSize: qc.dedup.cacheSize, ttlMs: qc.dedup.ttlMs });
     this.registry = createPluginRegistry();
-    this.sessions = new SessionStore(this.config.session.dataDir);
     this.systemEvents = new SystemEventsQueue(30_000, this.config.session.dataDir.replace(/\/sessions$/, ""));
     this.transcripts = new TranscriptLogger(join(this.config.session.dataDir, "transcripts"));
     this.observability = new GatewayObservability(500);
