@@ -22,3 +22,22 @@
 [submodule "skills/pi-extensions"]
 	path = skills/pi-extensions
 	url = https://github.com/dwsy/pi-extensions-skill.git
+
+[submodule "extensions/pi-command-center"]
+	path = extensions/pi-command-center
+	url = https://github.com/w-winter/dot314.git
+[submodule "extensions/pi-context"]
+	path = extensions/pi-context
+	url = https://github.com/ttttmr/pi-context.git
+[submodule "extensions/pi-files"]
+	path = extensions/pi-files
+	url = https://github.com/juanibiapina/pi-files.git
+[submodule "extensions/pi-files-widget"]
+	path = extensions/pi-files-widget
+	url = https://github.com/tmustier/pi-extensions.git
+[submodule "extensions/pi-messenger"]
+	path = extensions/pi-messenger
+	url = https://github.com/nicobailon/pi-messenger.git
+[submodule "extensions/pi-super-curl"]
+	path = extensions/pi-super-curl
+	url = https://github.com/Graffioh/pi-super-curl.git
