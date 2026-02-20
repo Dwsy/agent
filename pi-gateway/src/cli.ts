@@ -451,6 +451,56 @@ async function runCron(): Promise<void> {
   }
 }
 
+async function runPluginCommand(): Promise<void> {
+  const sub = args[1];
+
+  if (sub === "reload") {
+    const pluginId = args[2];
+    if (!pluginId) {
+      console.error("Usage: pi-gw plugin reload <plugin-id>");
+      process.exit(1);
+    }
+
+    const config = loadConfig(getArg("config"));
+    const port = config.gateway.port;
+    const token = config.gateway.auth.token;
+
+    try {
+      const res = await fetch(`http://localhost:${port}/api/plugins/reload`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          ...(token && { authorization: `Bearer ${token}` }),
+        },
+        body: JSON.stringify({ pluginId }),
+      });
+
+      const result = await res.json();
+      if (result.success) {
+        console.log(`✅ Plugin ${pluginId} reloaded successfully`);
+        if (result.durationMs) {
+          console.log(`   Duration: ${result.durationMs}ms`);
+        }
+      } else {
+        console.error(`❌ Failed to reload ${pluginId}: ${result.message || result.error}`);
+        process.exit(1);
+      }
+    } catch (err: unknown) {
+      console.error(`❌ Cannot connect to gateway at :${port}. Is it running?`);
+      process.exit(1);
+    }
+  } else if (sub === "list") {
+    console.log("Plugin management commands:");
+    console.log("  pi-gw plugin reload <plugin-id>     Reload a plugin");
+    console.log("  pi-gw plugin list                   Show this help");
+    console.log("");
+    console.log("Note: Only external plugins can be reloaded.");
+    console.log("Builtin plugins require gateway restart.");
+  } else {
+    console.log("Usage: pi-gw plugin reload <plugin-id> | pi-gw plugin list");
+  }
+}
+
 async function runMedia(): Promise<void> {
   const sub = args[1];
   const channel = getArg("channel");
@@ -621,6 +671,7 @@ Usage:
   pi-gw sticker download <pack> [dir]                     Download sticker pack
   pi-gw sticker search <query>                            Search sticker packs
   pi-gw onboard [--install-daemon]                        Interactive configuration wizard
+  pi-gw plugin reload <plugin-id>                         Hot reload a plugin
   pi-gw install-daemon [--port N]                         Install as system daemon
   pi-gw uninstall-daemon                                  Remove system daemon
   pi-gw help                                              Show this help
@@ -670,6 +721,9 @@ switch (command) {
     break;
   case "sticker":
     await runSticker(args, () => loadConfig(getArg("config")));
+    break;
+  case "plugin":
+    await runPluginCommand();
     break;
   case "install-daemon": {
     const config = loadConfig(getArg("config"));

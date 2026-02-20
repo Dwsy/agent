@@ -51,6 +51,8 @@ export function createPluginApi(
         });
         return;
       }
+      // Attach pluginId for hot reload teardown
+      (channel as any).__pluginId = pluginId;
       ctx.registry.channels.set(channel.id, channel);
       ctx.channelApis.set(channel.id, this);
       pluginLogger.info(`Registered channel: ${channel.id}`);
@@ -65,6 +67,8 @@ export function createPluginApi(
           existingPlugin: "unknown", newPlugin: pluginId, resolution: "overwritten",
         });
       }
+      // Attach pluginId for hot reload teardown
+      (tool as any).__pluginId = pluginId;
       ctx.registry.tools.set(tool.name, tool);
       pluginLogger.info(`Registered tool: ${tool.name}`);
     },
@@ -119,6 +123,8 @@ export function createPluginApi(
     },
 
     registerService(service: BackgroundService) {
+      // Attach pluginId for hot reload teardown
+      (service as any).__pluginId = pluginId;
       ctx.registry.services.push(service);
       pluginLogger.info(`Registered service: ${service.name}`);
     },
