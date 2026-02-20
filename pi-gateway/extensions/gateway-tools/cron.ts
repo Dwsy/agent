@@ -3,6 +3,9 @@
 import { Type } from "@sinclair/typebox";
 import { cronOk, cronError, gatewayHeaders, parseResponseJson } from "./helpers.ts";
 
+// Helper type for API responses
+type ApiResponse = Record<string, unknown>;
+
 export function createCronTool(gatewayUrl: string, internalToken: string, authToken?: string) {
   return {
     name: "cron",
@@ -100,7 +103,7 @@ export function createCronTool(gatewayUrl: string, internalToken: string, authTo
             const res = await fetch(`${gatewayUrl}/api/cron/jobs`, {
               headers: gatewayHeaders(authToken ?? internalToken),
             });
-            const data = await parseResponseJson(res);
+            const data: ApiResponse = await parseResponseJson(res);
             if (!res.ok) return cronError(data.error || res.statusText);
             const jobs = data.jobs ?? [];
             return cronOk(
@@ -127,7 +130,7 @@ export function createCronTool(gatewayUrl: string, internalToken: string, authTo
                 deleteAfterRun: deleteAfterRun ?? false,
               }),
             });
-            const data = await parseResponseJson(res);
+            const data: ApiResponse = await parseResponseJson(res);
             if (!res.ok) return cronError(String(data.error || res.statusText));
             return cronOk(`Job "${id}" created (${schedule.kind}: ${schedule.expr})`);
           }
@@ -138,7 +141,7 @@ export function createCronTool(gatewayUrl: string, internalToken: string, authTo
               method: "DELETE",
               headers: gatewayHeaders(authToken ?? internalToken),
             });
-            const data = await parseResponseJson(res);
+            const data: ApiResponse = await parseResponseJson(res);
             if (!res.ok) return cronError(String(data.error || res.statusText));
             return cronOk(`Job "${id}" removed.`);
           }
@@ -151,7 +154,7 @@ export function createCronTool(gatewayUrl: string, internalToken: string, authTo
               headers: gatewayHeaders(authToken ?? internalToken, true),
               body: JSON.stringify({ action }),
             });
-            const data = await parseResponseJson(res);
+            const data: ApiResponse = await parseResponseJson(res);
             if (!res.ok) return cronError(String(data.error || res.statusText));
             return cronOk(`Job "${id}" ${action}d.`);
           }
@@ -165,7 +168,7 @@ export function createCronTool(gatewayUrl: string, internalToken: string, authTo
                 headers: gatewayHeaders(authToken ?? internalToken),
               },
             );
-            const data = await parseResponseJson(res);
+            const data: ApiResponse = await parseResponseJson(res);
             if (!res.ok) return cronError(String(data.error || res.statusText));
             return cronOk(`Job "${id}" triggered.`);
           }
@@ -180,7 +183,7 @@ export function createCronTool(gatewayUrl: string, internalToken: string, authTo
                 mode: wakeMode || "next-heartbeat",
               }),
             });
-            const data = await parseResponseJson(res);
+            const data: ApiResponse = await parseResponseJson(res);
             if (!res.ok) return cronError(String(data.error || res.statusText));
             const modeLabel = (data.mode || wakeMode || "next-heartbeat") as string;
             return cronOk(
@@ -204,7 +207,7 @@ export function createCronTool(gatewayUrl: string, internalToken: string, authTo
               headers: gatewayHeaders(authToken ?? internalToken, true),
               body: JSON.stringify(patch),
             });
-            const data = await parseResponseJson(res);
+            const data: ApiResponse = await parseResponseJson(res);
             if (!res.ok) return cronError(String(data.error || res.statusText));
             return cronOk(`Job "${id}" updated.`);
           }
@@ -215,7 +218,7 @@ export function createCronTool(gatewayUrl: string, internalToken: string, authTo
             const res = await fetch(`${gatewayUrl}/api/cron/jobs/${encodeURIComponent(id)}/runs?limit=${l}`, {
               headers: gatewayHeaders(authToken ?? internalToken),
             });
-            const data = await parseResponseJson(res);
+            const data: ApiResponse = await parseResponseJson(res);
             if (!res.ok) return cronError(String(data.error || res.statusText));
             const runs = (data.runs as unknown[]) ?? [];
             return cronOk(
@@ -229,7 +232,7 @@ export function createCronTool(gatewayUrl: string, internalToken: string, authTo
             const res = await fetch(`${gatewayUrl}/api/cron/status`, {
               headers: gatewayHeaders(authToken ?? internalToken),
             });
-            const data = await parseResponseJson(res);
+            const data: ApiResponse = await parseResponseJson(res);
             if (!res.ok) return cronError(String(data.error || res.statusText));
             return cronOk(`Cron engine: ${JSON.stringify(data, null, 2)}`);
           }
