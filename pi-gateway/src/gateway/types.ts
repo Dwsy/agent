@@ -25,6 +25,7 @@ import type { ModelHealthTracker } from "../core/model-health.ts";
 import type { Logger, SessionKey, InboundMessage } from "../core/types.ts";
 import type { buildCapabilityProfile } from "../core/capability-profile.ts";
 import type { GatewayPluginApi } from "../plugins/types.ts";
+import type { GatewayObservability } from "../core/gateway-observability.ts";
 
 export type TelegramMessageMode = "steer" | "follow-up" | "interrupt";
 
@@ -94,6 +95,9 @@ export interface GatewayContext {
   channelApis: Map<string, GatewayPluginApi>;
   /** Resolve Telegram message mode for a session (steer/follow-up/interrupt) */
   resolveTelegramMessageMode: (sessionKey: SessionKey, sourceAccountId?: string) => TelegramMessageMode;
+
+  // Gateway observability
+  observability: GatewayObservability;
 
   // Methods (bound from Gateway)
   broadcastToWs: (event: string, payload: unknown) => void;

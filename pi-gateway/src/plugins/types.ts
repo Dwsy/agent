@@ -356,6 +356,7 @@ export interface CommandContext {
   sessionKey: SessionKey;
   senderId: string;
   channel: string;
+  accountId?: string;
   args: string;
   respond: (text: string) => Promise<void>;
 }

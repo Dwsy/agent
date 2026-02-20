@@ -3,6 +3,7 @@
  * CLI entry point for pi-gateway.
  *
  * Commands (aligned with OpenClaw CLI surface):
+ *   pi-gw onboard [--install-daemon]        Interactive configuration wizard
  *   pi-gw gateway [--port N] [--verbose]    Start the gateway
  *   pi-gw doctor                            Health check
  *   pi-gw send --to <target> --message <m>  Send a message
@@ -15,6 +16,8 @@ import { listPendingRequests, approvePairingRequest } from "./security/pairing.t
 import { CronEngine } from "./core/cron.ts";
 import { installDaemon, uninstallDaemon } from "./core/daemon.ts";
 import { createPluginRegistry, PluginLoader } from "./plugins/loader.ts";
+import { runOnboardingWizard } from "./wizard/onboarding";
+import { createClackPrompter } from "./wizard/clack-prompter";
 import type {
   GatewayPluginApi,
   PluginManifest,
@@ -33,6 +36,7 @@ import type { InboundMessage, SessionKey } from "./core/types.ts";
 import type { DispatchResult } from "./gateway/types.ts";
 import { createLogger } from "./core/types.ts";
 import { ExecGuard } from "./core/exec-guard.ts";
+import { runSticker } from "./cli/sticker.ts";
 
 // ============================================================================
 // Argument Parsing
@@ -552,11 +556,54 @@ function formatBytes(bytes: number): string {
   return `${val.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
 }
 
+async function runOnboard(): Promise<void> {
+  const prompter = createClackPrompter();
+
+  try {
+    const result = await runOnboardingWizard(
+      {
+        nonInteractive: getFlag("non-interactive"),
+        acceptRisk: getFlag("accept-risk"),
+        flow: getArg("flow") as "quickstart" | "advanced" | undefined,
+        workspace: getArg("workspace"),
+        port: getArg("port") ? parseInt(getArg("port")!, 10) : undefined,
+        bind: getArg("bind") as "loopback" | "lan" | "auto" | "custom" | undefined,
+        customHost: getArg("custom-host"),
+        auth: getArg("auth") as "token" | "password" | "off" | undefined,
+        token: getArg("token"),
+        password: getArg("password"),
+        telegramToken: getArg("telegram-token"),
+        piCliPath: getArg("pi-cli"),
+        poolMin: getArg("pool-min") ? parseInt(getArg("pool-min")!, 10) : undefined,
+        poolMax: getArg("pool-max") ? parseInt(getArg("pool-max")!, 10) : undefined,
+        installDaemon: getFlag("install-daemon"),
+        configPath: getArg("config"),
+      },
+      prompter,
+    );
+
+    console.log(`\n✅ ${result.message}`);
+
+    if (!getFlag("install-daemon")) {
+      console.log("\nNext steps:");
+      console.log(`  pi-gw gateway              # Start the gateway`);
+      console.log(`  pi-gw install-daemon       # Install as system service`);
+    }
+  } catch (err: unknown) {
+    if (err instanceof Error && err.name === "WizardCancelledError") {
+      console.log("\n❌ Onboarding cancelled.");
+      process.exit(0);
+    }
+    throw err;
+  }
+}
+
 function showHelp(): void {
   console.log(`
 pi-gateway — Local AI Gateway for pi agent
 
 Usage:
+  pi-gw onboard [--install-daemon] [...]                  Interactive configuration wizard
   pi-gw gateway [--port N] [--verbose] [--no-gui] [--config path]   Start the gateway
   pi-gw doctor [--config path]                            Health check
   pi-gw send --to <target> --message <text>               Send a message (telegram:<chatId> or telegram:<accountId>:<chatId>[:topic:<tid>])
@@ -569,10 +616,24 @@ Usage:
   pi-gw media stats [--channel <ch>]                      Show media storage statistics
   pi-gw media clean [--days N] [--channel <ch>] [--dry-run]  Clean old media files
   pi-gw media sticker-cache [stats|prune|clear]           Manage sticker cache
+  pi-gw sticker list <pack>                               List stickers in pack
+  pi-gw sticker send <chat> <pack> [index|random]         Send sticker to chat
+  pi-gw sticker download <pack> [dir]                     Download sticker pack
+  pi-gw sticker search <query>                            Search sticker packs
   pi-gw install-daemon [--port N]                         Install as system daemon
   pi-gw uninstall-daemon                                  Remove system daemon
   pi-gw help                                              Show this help
   pi-gw <plugin-command> [...]                            Run plugin-registered CLI command
+
+Onboarding options:
+  --flow quickstart|advanced      Choose wizard mode
+  --workspace <path>              Set workspace directory
+  --port <n>                      Gateway port
+  --bind loopback|lan|auto|custom Bind address mode
+  --auth token|password|off       Authentication mode
+  --telegram-token <token>        Telegram bot token
+  --install-daemon                Install as system service after config
+  --non-interactive               Non-interactive mode (use with other flags)
 
 Environment:
   PI_GATEWAY_CONFIG   Path to config file (default: ~/.pi/gateway/pi-gateway.jsonc)
@@ -584,6 +645,9 @@ Environment:
 // ============================================================================
 
 switch (command) {
+  case "onboard":
+    await runOnboard();
+    break;
   case "gateway":
   case "start":
     await runGateway();
@@ -602,6 +666,9 @@ switch (command) {
     break;
   case "media":
     await runMedia();
+    break;
+  case "sticker":
+    await runSticker(args, () => loadConfig(getArg("config")));
     break;
   case "install-daemon": {
     const config = loadConfig(getArg("config"));

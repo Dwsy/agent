@@ -8,6 +8,7 @@
  */
 
 import type { Server, ServerWebSocket } from "bun";
+import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 import { resolveAuthConfig, authenticateRequest, buildAuthExemptPrefixes } from "./core/auth.ts";
@@ -17,7 +18,7 @@ import { executeRegisteredTool } from "./gateway/tool-executor.ts";
 import { loadConfig, ensureDataDir, type Config, type CronJob, resolveConfigPath, watchConfig } from "./core/config.ts";
 import { RpcPool } from "./core/rpc-pool.ts";
 import { MessageQueueManager, type PrioritizedWork } from "./core/message-queue.ts";
-import { resolveSessionKey, resolveAgentId, getCwdForRole } from "./core/session-router.ts";
+import { resolveSessionKey, resolveAgentId, getCwdForRole, resolveRolesDir } from "./core/session-router.ts";
 import { createLogger as createConsoleLogger, setLogLevel, type Logger, type InboundMessage, type SessionKey, type SessionState, type WsFrame } from "./core/types.ts";
 import { SessionStore } from "./core/session-store.ts";
 import { initFileLogger, createFileLogger } from "./core/logger-file.ts";
@@ -29,6 +30,7 @@ import { ExtensionUIForwarder } from "./core/extension-ui-forwarder.ts";
 import { DeduplicationCache } from "./core/dedup-cache.ts";
 import { MetricsCollector, type MetricsDataSource } from "./core/metrics.ts";
 import { DelegateExecutor } from "./core/delegate-executor.ts";
+import { GatewayObservability } from "./core/gateway-observability.ts";
 import { HeartbeatExecutor } from "./core/heartbeat-executor.ts";
 import { SystemEventsQueue } from "./core/system-events.ts";
 import { createWsRouter, dispatchWsFrame } from "./ws/ws-router.ts";
@@ -85,6 +87,7 @@ export class Gateway {
   private wsRouter: Map<string, import("./ws/ws-router.ts").WsMethodFn> | null = null;
   /** 缓存每个 channel 注册时的 api 引用，供 init 调用 */
   private _channelApis = new Map<string, GatewayPluginApi>();
+  private observability: GatewayObservability;
 
   constructor(options: GatewayOptions = {}) {
     this.config = loadConfig(options.configPath);
@@ -130,6 +133,7 @@ export class Gateway {
     this.sessions = new SessionStore(this.config.session.dataDir);
     this.systemEvents = new SystemEventsQueue(30_000, this.config.session.dataDir.replace(/\/sessions$/, ""));
     this.transcripts = new TranscriptLogger(join(this.config.session.dataDir, "transcripts"));
+    this.observability = new GatewayObservability(500);
 
     // Initialize v3 delegate executor if multi-agent config exists
     if (this.config.agents && this.config.agents.list.length > 0) {
@@ -350,6 +354,92 @@ export class Gateway {
     await this.registry.hooks.dispatch("after_compaction", { sessionKey, summary });
   }
 
+  private reloadConfig(): void {
+    const reloaded = loadConfig();
+    this.config = reloaded;
+    this.pool.setConfig(reloaded);
+    this.log.info("Gateway config reloaded (pool config refreshed)");
+  }
+
+  private listAvailableRoles(): string[] {
+    const roleSet = new Set<string>();
+
+    roleSet.add("default");
+
+    for (const role of Object.keys(this.config.roles.workspaceDirs ?? {})) {
+      if (role.trim()) roleSet.add(role.trim());
+    }
+
+    for (const role of Object.keys(this.config.roles.capabilities ?? {})) {
+      if (role.trim()) roleSet.add(role.trim());
+    }
+
+    for (const agent of this.config.agents?.list ?? []) {
+      const role = (agent.role ?? agent.id ?? "").trim();
+      if (role) roleSet.add(role);
+    }
+
+    const rolesDir = resolveRolesDir(this.config);
+    if (existsSync(rolesDir)) {
+      try {
+        for (const entry of readdirSync(rolesDir, { withFileTypes: true })) {
+          if (entry.isDirectory() && entry.name.trim()) {
+            roleSet.add(entry.name.trim());
+          }
+        }
+      } catch {
+        // ignore filesystem errors and return collected roles
+      }
+    }
+
+    return Array.from(roleSet).sort((a, b) => a.localeCompare(b));
+  }
+
+  private async setSessionRole(sessionKey: SessionKey, newRole: string): Promise<boolean> {
+    const role = newRole.trim();
+    if (!role) return false;
+    if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/.test(role)) return false;
+
+    const availableRoles = this.listAvailableRoles();
+    if (!availableRoles.includes(role)) return false;
+
+    const session = this.sessions.get(sessionKey);
+    if (!session) return false;
+
+    if (session.role === role) return true;
+
+    const rpc = this.pool.getForSession(sessionKey);
+    if (rpc) {
+      if (session.isStreaming || !rpc.isIdle) {
+        try {
+          await rpc.abort();
+        } catch (err) {
+          this.log.warn(`[role] abort before switch failed for ${sessionKey}: ${err instanceof Error ? err.message : String(err)}`);
+        }
+
+        try {
+          await rpc.waitForIdle(5_000);
+        } catch (err) {
+          this.log.warn(`[role] waitForIdle timeout for ${sessionKey}: ${err instanceof Error ? err.message : String(err)}`);
+          return false;
+        }
+      }
+
+      if (!rpc.isIdle) return false;
+      this.pool.release(sessionKey);
+    }
+
+    session.role = role;
+    session.isStreaming = false;
+    session.rpcProcessId = null;
+    session.lastActivity = Date.now();
+    this.sessions.set(sessionKey, session);
+
+    this.log.info(`[role] session ${sessionKey} switched to role=${role}`);
+    this.broadcastToWs("session.role.changed", { sessionKey, role });
+    return true;
+  }
+
 
   private startServer(): void {
     const self = this;
@@ -459,14 +549,15 @@ export class Gateway {
       sessionMessageModeOverrides: this.sessionMessageModeOverrides,
       activeInboundMessages: this.activeInboundMessages,
       channelApis: this._channelApis,
+      observability: this.observability,
       resolveTelegramMessageMode: (sk, accountId) => this.resolveTelegramMessageMode(sk, accountId),
       broadcastToWs: (event, payload) => this.broadcastToWs(event, payload),
       buildSessionProfile: (sk, role) => this.buildSessionProfile(sk, role),
       dispatch: (msg) => this.dispatch(msg),
       compactSessionWithHooks: (sk, inst) => this.compactSessionWithHooks(sk, inst),
-      listAvailableRoles: () => [],
-      setSessionRole: async () => false,
-      reloadConfig: () => { this.config = loadConfig(); },
+      listAvailableRoles: () => this.listAvailableRoles(),
+      setSessionRole: async (sk, newRole) => this.setSessionRole(sk, newRole),
+      reloadConfig: () => this.reloadConfig(),
       onCronDelivered: (sk) => {
         markCronSelfDelivered(sk);
       },

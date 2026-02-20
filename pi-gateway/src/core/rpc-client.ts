@@ -245,8 +245,8 @@ export class RpcClient {
     this.lastActivity = Date.now();
   }
 
-  async newSession(): Promise<{ cancelled: boolean }> {
-    const res = await this.send({ type: "new_session" });
+  async newSession(parentSession?: string): Promise<{ cancelled: boolean }> {
+    const res = await this.send({ type: "new_session", parentSession });
     return (res.data as { cancelled: boolean }) ?? { cancelled: false };
   }
 

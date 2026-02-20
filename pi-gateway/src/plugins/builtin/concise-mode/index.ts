@@ -1,24 +1,33 @@
 /**
  * Concise Mode Plugin - Hook-Based Implementation
- * 
+ *
  * This plugin:
  * 1. Registers system prompt segment via registerSystemPromptSegment()
  * 2. Uses hooks to suppress automatic replies after send_message
- * 
+ *
  * Architecture:
  * - System prompt injection: Layer 2 Capability Prompt (via registry)
  * - Reply suppression: after_tool_call + message_sending hooks
+ *
+ * Note: This implementation fixes the reliability issue in the original version
+ * by using activeSessions Map instead of relying on sessionStore fields that
+ * may be undefined.
  */
 
 import type { GatewayPluginApi } from "../../types.ts";
 import { registerSystemPromptSegment } from "../../../core/system-prompts.ts";
 
+interface ConciseModeConfig {
+  enabled?: boolean;
+  channels?: string[];
+}
+
+const DEFAULT_CHANNELS = ["telegram"];
 const SILENT_TOKEN = "[NO_REPLY]";
-const suppressRoutes = new Map<string, number>(); // "channel::target" → expiryTimestamp
 
 /**
  * Concise Mode System Prompt Segment
- * 
+ *
  * Injected when concise-mode plugin is enabled.
  * Follows Layer 2 Capability Prompt architecture.
  */
@@ -43,10 +52,24 @@ const CONCISE_MODE_SEGMENT = `## Concise Output Mode
 Output \`[NO_REPLY]\` only when you've already sent the final result via send_message and have nothing more to add.
 `;
 
+function toConfig(raw: Record<string, unknown> | undefined): Required<ConciseModeConfig> {
+  const enabled = typeof raw?.enabled === "boolean" ? raw.enabled : false;
+  const channelsRaw = Array.isArray(raw?.channels) ? raw.channels : DEFAULT_CHANNELS;
+  const channels = channelsRaw.filter((v): v is string => typeof v === "string" && v.trim().length > 0);
+  return {
+    enabled,
+    channels: channels.length > 0 ? channels : [...DEFAULT_CHANNELS],
+  };
+}
+
+function makeRouteKey(channel: string, target: string): string {
+  return `${channel}::${target}`;
+}
+
+const suppressRoutes = new Map<string, number>(); // "channel::target" → expiryTimestamp
+
 export default function register(api: GatewayPluginApi): void {
-  const config = api.pluginConfig as { enabled?: boolean; channels?: string[] } | undefined;
-  const enabled = config?.enabled ?? false;
-  const channels = new Set(config?.channels ?? ["telegram"]);
+  const cfg = toConfig(api.pluginConfig);
 
   // Register system prompt segment (Layer 2 Capability Prompt)
   // This is injected at Gateway startup, not per-message
@@ -57,21 +80,22 @@ export default function register(api: GatewayPluginApi): void {
     priority: 0,
   });
 
-  if (!enabled) {
+  if (!cfg.enabled) {
     api.logger.info("concise-mode disabled");
     return;
   }
 
-  api.logger.info(`concise-mode enabled for channels: ${[...channels].join(", ")}`);
-
-  // Track active sessions
+  const enabledChannels = new Set(cfg.channels);
+  // Track active sessions with their channel info (fixes the undefined lastChannel issue)
   const activeSessions = new Map<string, { channel: string }>();
+
+  api.logger.info(`concise-mode enabled for channels: ${cfg.channels.join(", ")}`);
 
   // Hook 1: message_received - track active sessions
   // Note: System prompt is injected by buildGatewaySystemPrompt(), not here
   api.on("message_received", ({ message }) => {
     const { channel, sessionKey } = message.source;
-    if (channels.has(channel)) {
+    if (enabledChannels.has(channel)) {
       activeSessions.set(sessionKey, { channel });
       api.logger.debug(`[concise] Activated session: ${sessionKey} (${channel})`);
     } else {
@@ -82,7 +106,7 @@ export default function register(api: GatewayPluginApi): void {
   // Hook 2: after_tool_call - add suppress route after send_message
   api.on("after_tool_call", ({ sessionKey, toolName, isError }) => {
     if (isError || toolName !== "send_message") return;
-    
+
     const session = activeSessions.get(sessionKey);
     if (!session) {
       api.logger.debug(`[concise] after_tool_call: session ${sessionKey} not active`);
@@ -91,24 +115,24 @@ export default function register(api: GatewayPluginApi): void {
 
     const sessionState = api.getSessionState(sessionKey);
     const target = sessionState?.lastChatId;
-    
+
     if (!target) {
       api.logger.debug(`[concise] after_tool_call: no target for session ${sessionKey}`);
       return;
     }
 
-    const routeKey = `${session.channel}::${target}`;
+    const routeKey = makeRouteKey(session.channel, target);
     const expiry = Date.now() + 5000; // 5 second TTL
     suppressRoutes.set(routeKey, expiry);
-    
+
     api.logger.info(`[concise] Added suppress route: ${routeKey}`);
   });
 
   // Hook 3: message_sending - suppress automatic replies
   api.on("message_sending", ({ message }) => {
     const { channel, target } = message;
-    const routeKey = `${channel}::${target}`;
-    
+    const routeKey = makeRouteKey(channel, target);
+
     const expiry = suppressRoutes.get(routeKey);
     if (!expiry) {
       api.logger.debug(`[concise] message_sending: no suppress route for ${routeKey}`);
@@ -125,7 +149,7 @@ export default function register(api: GatewayPluginApi): void {
     // Suppress this message
     suppressRoutes.delete(routeKey);
     message.text = SILENT_TOKEN;
-    
+
     api.logger.info(`[concise] SUPPRESSED message to ${target}`);
   });
 
