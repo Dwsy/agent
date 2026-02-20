@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased] - T4-T5 TODO
+
+**Focus:** Plugin Hot Reload Enhancement — Complete background services and channel plugins support
+
+### TODO (Not Started)
+- **T4**: Background services hot reload — graceful stop + state migration + restart
+- **T5**: Channel plugins hot reload — pause message flow + disconnect + reconnect + resume
+
+---
+
 ## [v3.12] - 2026-02-15
 
 **Focus:** Keyboard Interaction Tool & Resume Enhancement — AI agent can now send inline keyboards to users, /resume gains interactive session picker with preview
