@@ -129,7 +129,7 @@ export class PluginLoader {
     const builtinDir = join(import.meta.dir, "builtin");
     if (!existsSync(builtinDir)) return;
 
-    const builtins = ["telegram", "discord", "webchat", "feishu", "cron", "heartbeat", "concise-mode"];
+    const builtins = ["telegram", "discord", "webchat", "feishu", "cron", "heartbeat", "concise-mode", "reload"];
     for (const name of builtins) {
       // Support both single-file (name.ts) and modular (name/index.ts) layouts
       let path = join(builtinDir, `${name}.ts`);
@@ -143,7 +143,7 @@ export class PluginLoader {
 
       // BG-004: Skip unconfigured channels to avoid cold-start SDK import cost.
       // Non-channel builtins (cron, heartbeat) use their own enabled checks.
-      const isServicePlugin = name === "cron" || name === "heartbeat" || name === "concise-mode";
+      const isServicePlugin = name === "cron" || name === "heartbeat" || name === "concise-mode" || name === "reload";
       if (!isServicePlugin && name !== "webchat") {
         const channelConfig = (this.config.channels as Record<string, any>)?.[name];
         if (!channelConfig || channelConfig.enabled === false) {
