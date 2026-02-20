@@ -620,6 +620,7 @@ Usage:
   pi-gw sticker send <chat> <pack> [index|random]         Send sticker to chat
   pi-gw sticker download <pack> [dir]                     Download sticker pack
   pi-gw sticker search <query>                            Search sticker packs
+  pi-gw onboard [--install-daemon]                        Interactive configuration wizard
   pi-gw install-daemon [--port N]                         Install as system daemon
   pi-gw uninstall-daemon                                  Remove system daemon
   pi-gw help                                              Show this help
