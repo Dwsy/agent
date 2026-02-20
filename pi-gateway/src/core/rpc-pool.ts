@@ -356,6 +356,13 @@ export class RpcPool {
   private shouldResumeFromHistory(sessionKey: SessionKey): boolean {
     if (this.config.session.continueOnRestart === false) return false;
 
+    // Check if session was explicitly reset (/new) - skip auto-resume
+    const session = this.sessions.get(sessionKey);
+    if (session?.skipAutoResume) {
+      this.log.debug(`[shouldResumeFromHistory] ${sessionKey}: skipAutoResume=true, not resuming`);
+      return false;
+    }
+
     const sessionDir = getSessionDir(this.config.session.dataDir, sessionKey);
     if (!existsSync(sessionDir)) return false;
 
@@ -448,7 +455,11 @@ export class RpcPool {
       const sessionDir = getSessionDir(this.config.session.dataDir, sessionKey);
       extraArgs.push("--session-dir", sessionDir);
       // Auto-resume: add --continue if session dir has existing JSONL transcripts
-      if (this.config.session.continueOnRestart !== false
+      // But skip if user explicitly reset the session (/new command)
+      const session = this.sessions.get(sessionKey);
+      const shouldSkipResume = session?.skipAutoResume ?? false;
+      if (!shouldSkipResume
+          && this.config.session.continueOnRestart !== false
           && existsSync(sessionDir)
           && readdirSync(sessionDir).some(f => f.endsWith(".jsonl"))) {
         extraArgs.push("--continue");
@@ -475,6 +486,13 @@ export class RpcPool {
     try {
       await client.start();
       this.metrics?.incProcessSpawn();
+      // Clear skipAutoResume after successful spawn (reset for next crash recovery)
+      if (sessionKey) {
+        const session = this.sessions.get(sessionKey);
+        if (session?.skipAutoResume) {
+          session.skipAutoResume = false;
+        }
+      }
     } catch (err) {
       this.clients.delete(id);
 

@@ -217,6 +217,8 @@ export interface SessionState {
   lastThreadId?: string;
   /** Auto-compaction in progress (to prevent message race) */
   isCompacting?: boolean;
+  /** Set to true after /new (reset) to skip --continue on next spawn */
+  skipAutoResume?: boolean;
 }
 
 // ============================================================================
