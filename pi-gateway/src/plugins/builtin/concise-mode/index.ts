@@ -24,8 +24,23 @@ const suppressRoutes = new Map<string, number>(); // "channel::target" → expir
  */
 const CONCISE_MODE_SEGMENT = `## Concise Output Mode
 
-- Use \`send_message\` tool to share progress, thoughts, findings, and reasoning
-- Output \`[NO_REPLY]\` when no user-facing message is needed
+**Core Principle:** Keep the user informed. Do NOT let the user wait in silence.
+
+### How to Communicate
+
+- Use \`send_message\` tool to report: what you're doing, what you found, what you decided
+- For long tasks: report progress, intermediate findings, and final results
+- Keep messages concise but informative
+
+### When to Send Updates
+
+- At the start: tell the user what you're going to do
+- During execution: share key findings and decisions
+- At completion: summarize results and next steps
+
+### When to Use [NO_REPLY]
+
+Output \`[NO_REPLY]\` only when you've already sent the final result via send_message and have nothing more to add.
 `;
 
 export default function register(api: GatewayPluginApi): void {
