@@ -13,7 +13,7 @@
 import { RpcClient, type RpcClientOptions } from "./rpc-client.ts";
 import type { Config } from "./config.ts";
 import { createLogger, type Logger, type SessionKey } from "./types.ts";
-import { getSessionDir } from "./session-store.ts";
+import { getSessionDir, type SessionStore } from "./session-store.ts";
 import { getCwdForRole } from "./session-router.ts";
 import { buildCapabilityProfile, type CapabilityProfile } from "./capability-profile.ts";
 import type { MetricsCollector } from "./metrics.ts";
@@ -56,6 +56,7 @@ export class RpcPool {
     private metrics?: MetricsCollector,
     private execGuard?: ExecGuard,
     private onSessionEnd?: (sessionKey: SessionKey) => void,
+    private sessions?: SessionStore,
   ) {
     this.log = createLogger("rpc-pool");
   }
@@ -357,10 +358,12 @@ export class RpcPool {
     if (this.config.session.continueOnRestart === false) return false;
 
     // Check if session was explicitly reset (/new) - skip auto-resume
-    const session = this.sessions.get(sessionKey);
-    if (session?.skipAutoResume) {
-      this.log.debug(`[shouldResumeFromHistory] ${sessionKey}: skipAutoResume=true, not resuming`);
-      return false;
+    if (this.sessions) {
+      const session = this.sessions.get(sessionKey);
+      if (session?.skipAutoResume) {
+        this.log.debug(`[shouldResumeFromHistory] ${sessionKey}: skipAutoResume=true, not resuming`);
+        return false;
+      }
     }
 
     const sessionDir = getSessionDir(this.config.session.dataDir, sessionKey);
@@ -456,7 +459,7 @@ export class RpcPool {
       extraArgs.push("--session-dir", sessionDir);
       // Auto-resume: add --continue if session dir has existing JSONL transcripts
       // But skip if user explicitly reset the session (/new command)
-      const session = this.sessions.get(sessionKey);
+      const session = this.sessions?.get(sessionKey);
       const shouldSkipResume = session?.skipAutoResume ?? false;
       if (!shouldSkipResume
           && this.config.session.continueOnRestart !== false
@@ -487,7 +490,7 @@ export class RpcPool {
       await client.start();
       this.metrics?.incProcessSpawn();
       // Clear skipAutoResume after successful spawn (reset for next crash recovery)
-      if (sessionKey) {
+      if (sessionKey && this.sessions) {
         const session = this.sessions.get(sessionKey);
         if (session?.skipAutoResume) {
           session.skipAutoResume = false;
