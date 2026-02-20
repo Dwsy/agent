@@ -639,7 +639,11 @@ export async function dispatchAgentTurn(params: {
       }
     },
     setTyping: async (typing) => {
-      if (!typing && typingInterval) {
+      if (typing) {
+        ensureTypingInterval();
+        return;
+      }
+      if (typingInterval) {
         clearInterval(typingInterval);
         typingInterval = null;
       }

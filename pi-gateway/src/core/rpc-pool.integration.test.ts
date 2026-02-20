@@ -181,6 +181,9 @@ describe("rpc pool capability profile isolation", () => {
     config2.agent.skillsGateway = [join(tempRoot, "skills", "gateway")];
     pool.setConfig(config2);
 
+    // Config reload should proactively recycle idle clients so old signatures don't linger.
+    expect(pool.getAllClients().some((c) => c.id === c1.id)).toBeFalse();
+
     const profileAfter = buildCapabilityProfile({
       config: config2,
       role: "default",

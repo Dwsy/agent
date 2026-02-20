@@ -62,6 +62,8 @@ export class RpcPool {
 
   setConfig(config: Config): void {
     this.config = config;
+    this.recycleIdleClients("config-reload");
+    void this.ensureMinProcesses();
   }
 
   // ==========================================================================
@@ -327,6 +329,28 @@ export class RpcPool {
       role: "default",
       cwd,
     });
+  }
+
+  private recycleIdleClients(reason: string): void {
+    for (const [id, client] of this.clients) {
+      if (!client.isAlive || !client.isIdle) continue;
+      this.log.debug(`Recycling idle process ${id} (${reason})`);
+      this.clients.delete(id);
+      client.stop().catch(() => {});
+      this.metrics?.incProcessKill();
+    }
+  }
+
+  private async ensureMinProcesses(): Promise<void> {
+    if (this.maintenanceTimer === null) return;
+    while (this.clients.size < this.poolConfig.min) {
+      try {
+        await this.spawnClient(this.buildDefaultProfile());
+      } catch (err) {
+        this.log.error("Failed to spawn replacement process after config reload:", err);
+        break;
+      }
+    }
   }
 
   private shouldResumeFromHistory(sessionKey: SessionKey): boolean {
