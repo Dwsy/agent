@@ -539,3 +539,14 @@ export type PluginFactory =
       name: string;
       register(api: GatewayPluginApi): void | Promise<void>;
     };
+
+// ============================================================================
+// Hot Reload Types
+// ============================================================================
+
+export interface ReloadResult {
+  success: boolean;
+  pluginId: string;
+  error?: string;
+  timestamp: number;
+}

@@ -78,6 +78,11 @@ function createApiFactory(config: Config, registry: PluginRegistryState) {
     async abortSession(): Promise<void> {},
     async forwardCommand(): Promise<void> {},
     async getPiCommands(): Promise<{ name: string; description?: string }[]> { return []; },
+    async getSessionStats(): Promise<unknown> { return null; },
+    async getRpcState(): Promise<unknown> { return null; },
+    listSessions() { return []; },
+    releaseSession(): void {},
+    readTranscript() { return []; },
   });
 }
 
