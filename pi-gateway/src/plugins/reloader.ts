@@ -8,6 +8,10 @@
  * - WS methods: Map.delete then register
  * - Hooks: removeByPlugin then re-register
  *
+ * TODO (T4-T5): Not yet implemented
+ * - T4: Background services hot reload (graceful stop + state migration + restart)
+ * - T5: Channel plugins hot reload (pause + disconnect + reconnect + resume)
+ *
  * Limitations:
  * - No state preservation across reloads
  * - Background services must be stoppable
