@@ -342,6 +342,11 @@ LLM 自动为每条记忆提取语义标签，存储在 `.log/memory-tags.json`�
 | advanced | `shutdownFlushTimeoutMs` | `15000` | 退出 flush 超时 |
 | advanced | `forceKeywords` | `结束\|总结\|退出...` | 强制触发关键词正则 |
 | logging | `enabled` | `true` | 文件日志开关（`ROLE_LOG`） |
+| externalReadonly | `enabled` | `false` | 外部只读记忆增强开关（`ROLE_EXTERNAL_READONLY`） |
+| externalReadonly | `baseUrl` | `http://127.0.0.1:52131` | 只读服务地址（`ROLE_EXTERNAL_BASE_URL`） |
+| externalReadonly | `topK` | `8` | unified 查询条数（`ROLE_EXTERNAL_TOP_K`） |
+| externalReadonly | `experienceLimit` | `8` | experience 提取条数（`ROLE_EXTERNAL_EXP_LIMIT`） |
+| externalReadonly | `minConfidence` | `0.35` | 注入阈值（`ROLE_EXTERNAL_MIN_CONFIDENCE`） |
 
 详细迁移说明见 [CONFIG-MIGRATION.md](./CONFIG-MIGRATION.md)。
 
