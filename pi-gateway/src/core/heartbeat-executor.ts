@@ -28,7 +28,7 @@ import { resolveDeliveryTarget } from "./channel-resolver.ts";
 export const HEARTBEAT_TOKEN = "HEARTBEAT_OK";
 
 export const DEFAULT_HEARTBEAT_PROMPT =
-  "Read HEARTBEAT.md if it exists. Follow it strictly — do not infer or repeat tasks from prior conversations. If nothing needs attention, reply HEARTBEAT_OK.";
+  "Read core/heartbeat.md if it exists. Follow it strictly — do not infer or repeat tasks from prior conversations. If nothing needs attention, reply HEARTBEAT_OK.";
 
 export const CRON_EVENT_PROMPT =
   "Scheduled tasks have fired and their details are shown above. " +
@@ -61,8 +61,13 @@ export interface HeartbeatDeliveryDeps {
 // Utility Functions
 // ============================================================================
 
+function resolveHeartbeatPath(workspace: string): string | null {
+  const path = join(workspace, "core", "heartbeat.md");
+  return existsSync(path) ? path : null;
+}
+
 /**
- * Check if HEARTBEAT.md content is effectively empty (no actionable items).
+ * Check if HEARTBEAT content is effectively empty (no actionable items).
  * Returns false for null/undefined (missing file) — let agent decide.
  */
 export function isHeartbeatContentEffectivelyEmpty(content: string | null | undefined): boolean {
@@ -312,7 +317,7 @@ export class HeartbeatExecutor {
    * Core heartbeat execution logic.
    *
    * Key behaviors (aligned with OpenClaw heartbeat-runner.ts):
-   * - reason="cron:*" or "exec-event" → use specialized prompt, skip HEARTBEAT.md empty check
+   * - reason="cron:*" or "exec-event" → use specialized prompt, skip heartbeat file empty check
    * - Reuse existing bound RPC process (no newSession) for session continuity
    * - Deliver alerts directly via channel plugin (no external callback dependency)
    */
@@ -348,15 +353,15 @@ export class HeartbeatExecutor {
       this.busyRetries.delete(agentId);
     }
 
-    // Check HEARTBEAT.md — but DON'T skip for cron/exec events (OpenClaw pattern)
+    // Check heartbeat instruction file — but DON'T skip for cron/exec events (OpenClaw pattern)
     const agentDef = this.config.agents?.list.find((a) => a.id === agentId);
     const workspace = agentDef?.workspace ?? process.cwd();
-    const heartbeatPath = join(workspace, "HEARTBEAT.md");
+    const heartbeatPath = resolveHeartbeatPath(workspace);
     let heartbeatContent: string | null = null;
-    if (existsSync(heartbeatPath)) {
+    if (heartbeatPath) {
       heartbeatContent = readFileSync(heartbeatPath, "utf-8");
       if (isHeartbeatContentEffectivelyEmpty(heartbeatContent) && !isEventDriven) {
-        this.log.debug("HEARTBEAT.md effectively empty, skipping");
+        this.log.debug(`${heartbeatPath} effectively empty, skipping`);
         this.events.onHeartbeatSkip?.(agentId, "empty-heartbeat-file");
         return { status: "skipped", error: "empty_heartbeat_md" };
       }
