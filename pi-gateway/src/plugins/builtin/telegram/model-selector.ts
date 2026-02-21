@@ -150,6 +150,49 @@ export function registerCallbackHandler(
       return;
     }
 
+    // Role keyboard callbacks
+    if (data.startsWith("role:")) {
+      const source = toSource(account.accountId, ctx as TelegramContext);
+      const sessionKey = resolveSessionKey(source, runtime.api.config);
+
+      if (data.startsWith("role:set:")) {
+        const role = data.slice("role:set:".length).trim();
+        const ok = await runtime.api.setSessionRole(sessionKey, role);
+        await ctx.answerCallbackQuery?.({ text: ok ? `Switched: ${role}` : "Switch failed" });
+        if (ok) {
+          await ctx.reply(`✅ Role switched to: <b>${role}</b>`, { parse_mode: "HTML" });
+        }
+        return;
+      }
+
+      if (data.startsWith("role:del:")) {
+        const role = data.slice("role:del:".length).trim();
+        const deleted = await runtime.api.deleteRole(role);
+        await ctx.answerCallbackQuery?.({ text: deleted.ok ? `Deleted: ${role}` : "Delete failed" });
+        if (deleted.ok) {
+          await ctx.reply(`🗑 Role deleted: <b>${role}</b>`, { parse_mode: "HTML" });
+        } else {
+          await ctx.reply(`❌ Failed to delete role <b>${role}</b>: ${deleted.error ?? "unknown error"}`, { parse_mode: "HTML" });
+        }
+        return;
+      }
+
+      if (data === "role:hint:create") {
+        await ctx.answerCallbackQuery?.({ text: "Use /role create <name>" });
+        await ctx.reply("Use <code>/role create &lt;name&gt;</code> to create role.", { parse_mode: "HTML" });
+        return;
+      }
+
+      if (data === "role:hint:delete") {
+        await ctx.answerCallbackQuery?.({ text: "Use /role delete <name>" });
+        await ctx.reply("Use <code>/role delete &lt;name&gt;</code> to delete role.", { parse_mode: "HTML" });
+        return;
+      }
+
+      await ctx.answerCallbackQuery?.();
+      return;
+    }
+
     if (data.startsWith("cmd_page:")) {
       const page = Math.max(1, Number.parseInt(data.slice("cmd_page:".length), 10) || 1);
       const view = helpPage(page);

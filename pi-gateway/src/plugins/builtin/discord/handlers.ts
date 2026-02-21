@@ -1,5 +1,5 @@
 import type { Message, Interaction } from "discord.js";
-import { resolveSessionKey, resolveAgentId } from "../../../core/session-router.ts";
+import { resolveSessionKey, resolveAgentRoute } from "../../../core/session-router.ts";
 import { isSenderAllowed, type DmPolicy } from "../../../security/allowlist.ts";
 import { createPairingRequest } from "../../../security/pairing.ts";
 import type { MessageSource } from "../../../core/types.ts";
@@ -50,6 +50,7 @@ export async function handleMessage(rt: DiscordPluginRuntime, message: Message):
   }
   if (!text) return;
 
+  const memberRoleIds = Array.from(message.member?.roles?.cache?.keys?.() ?? []);
   const source: MessageSource = {
     channel: "discord",
     chatType: isDM ? "dm" : isThread ? "thread" : "channel",
@@ -58,13 +59,21 @@ export async function handleMessage(rt: DiscordPluginRuntime, message: Message):
     senderId,
     senderName,
     guildId,
+    memberRoleIds,
+    parentPeer: isThread && parentChannelId ? { kind: "channel", id: parentChannelId } : undefined,
   };
 
   // v3.0 routing: resolve agent via binding/prefix/default
-  const { agentId, text: routedText } = resolveAgentId(source, text, rt.api.config);
-  const sessionKey = resolveSessionKey(source, rt.api.config, agentId);
+  const route = resolveAgentRoute(source, text, rt.api.config);
+  const { agentId, text: routedText } = route;
+  const routedSource: MessageSource = { ...source, agentId };
+  const sessionKey = resolveSessionKey(routedSource, rt.api.config, agentId);
 
-  await dispatchWithStreaming(rt, message, source, sessionKey, routedText);
+  rt.api.logger.info(
+    `[discord] inbound channel=${source.chatId} sender=${source.senderId} type=${source.chatType} agentId=${agentId} agentSource=${route.source}${route.bindingScore !== undefined ? ` bindingScore=${route.bindingScore}` : ""} textLen=${routedText.length}`,
+  );
+
+  await dispatchWithStreaming(rt, message, routedSource, sessionKey, routedText);
 }
 
 // ── Streaming dispatch ──────────────────────────────────────────────
