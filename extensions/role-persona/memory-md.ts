@@ -1,6 +1,6 @@
-import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { log } from "./logger.ts";
 import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { extractTagsWithLLM, updateTagWeights, type TagRegistry } from "./memory-tags.ts";
@@ -26,8 +26,19 @@ export interface MemoryPreferenceRecord {
   tags?: string[];
 }
 
+export interface RoleMemoryMetadata {
+  name: string;
+  version: string;
+  created: string;
+  updated: string;
+  autoConsolidate: boolean;
+  consolidationInterval: string;
+  tags: string[];
+}
+
 export interface RoleMemoryData {
   roleName: string;
+  metadata: RoleMemoryMetadata;
   autoExtracted: boolean;
   lastConsolidated?: string;
   learnings: MemoryLearningRecord[];
@@ -64,16 +75,81 @@ function hashId(type: string, text: string, extra = ""): string {
     .slice(0, 10);
 }
 
+function memoryRootDir(rolePath: string): string {
+  return join(rolePath, "memory");
+}
+
 function memoryFilePath(rolePath: string): string {
-  return join(rolePath, "MEMORY.md");
+  return join(memoryRootDir(rolePath), "consolidated.md");
 }
 
 function dailyMemoryDir(rolePath: string): string {
-  return join(rolePath, "memory");
+  return join(memoryRootDir(rolePath), "daily");
 }
 
 function dailyMemoryPath(rolePath: string, date = today()): string {
   return join(dailyMemoryDir(rolePath), `${date}.md`);
+}
+
+function listDailyMemoryFilesByDate(rolePath: string): Array<{ date: string; path: string }> {
+  const dir = dailyMemoryDir(rolePath);
+  if (!existsSync(dir)) return [];
+
+  const files: Array<{ date: string; path: string }> = [];
+  let names: string[] = [];
+  try {
+    names = readdirSync(dir);
+  } catch {
+    return [];
+  }
+
+  for (const filename of names) {
+    const match = filename.match(/^(\d{4}-\d{2}-\d{2})\.md$/);
+    if (!match) continue;
+    files.push({ date: match[1], path: join(dir, filename) });
+  }
+
+  files.sort((a, b) => b.date.localeCompare(a.date));
+  return files;
+}
+
+function migrateLegacyMemoryLayout(rolePath: string): void {
+  const canonical = memoryFilePath(rolePath);
+  const legacyMemory = join(rolePath, "MEMORY.md");
+
+  if (existsSync(legacyMemory)) {
+    const shouldCopy = !existsSync(canonical) || statSync(legacyMemory).mtimeMs > statSync(canonical).mtimeMs;
+    if (shouldCopy) {
+      copyFileSync(legacyMemory, canonical);
+      log("migrate-memory", `upgraded ${legacyMemory} -> ${canonical}`);
+    }
+  }
+
+  const legacyDailyRoot = memoryRootDir(rolePath);
+  const canonicalDaily = dailyMemoryDir(rolePath);
+
+  if (!existsSync(legacyDailyRoot)) return;
+
+  let names: string[] = [];
+  try {
+    names = readdirSync(legacyDailyRoot);
+  } catch {
+    return;
+  }
+
+  for (const filename of names) {
+    const match = filename.match(/^(\d{4}-\d{2}-\d{2})\.md$/);
+    if (!match) continue;
+
+    const src = join(legacyDailyRoot, filename);
+    const dst = join(canonicalDaily, filename);
+
+    const shouldCopy = !existsSync(dst) || statSync(src).mtimeMs > statSync(dst).mtimeMs;
+    if (!shouldCopy) continue;
+
+    copyFileSync(src, dst);
+    log("migrate-memory", `upgraded ${src} -> ${dst}`);
+  }
 }
 
 function sanitizeCategory(category?: string): string {
@@ -83,15 +159,129 @@ function sanitizeCategory(category?: string): string {
   return found || raw;
 }
 
+function defaultMemoryMetadata(roleName: string): RoleMemoryMetadata {
+  const date = today();
+  return {
+    name: roleName,
+    version: "1.2.0",
+    created: date,
+    updated: date,
+    autoConsolidate: true,
+    consolidationInterval: "7d",
+    tags: [],
+  };
+}
+
+function parseYamlBoolean(value: string): boolean | null {
+  if (/^(true|yes|on)$/i.test(value)) return true;
+  if (/^(false|no|off)$/i.test(value)) return false;
+  return null;
+}
+
+function parseYamlStringArray(value: string): string[] {
+  const trimmed = value.trim();
+  if (!trimmed.startsWith("[") || !trimmed.endsWith("]")) return [];
+  const body = trimmed.slice(1, -1).trim();
+  if (!body) return [];
+  return body
+    .split(",")
+    .map((part) => part.trim())
+    .map((part) => part.replace(/^['\"]|['\"]$/g, ""))
+    .filter(Boolean);
+}
+
+function parseFrontmatter(content: string): { metadata: Partial<RoleMemoryMetadata>; body: string } {
+  const trimmed = content.trimStart();
+  if (!trimmed.startsWith("---\n")) {
+    return { metadata: {}, body: content };
+  }
+
+  const startOffset = content.length - trimmed.length;
+  const endMarker = "\n---";
+  const endIndexInTrimmed = trimmed.indexOf(endMarker, 4);
+  if (endIndexInTrimmed < 0) {
+    return { metadata: {}, body: content };
+  }
+
+  const rawMeta = trimmed.slice(4, endIndexInTrimmed);
+  const afterMeta = trimmed.slice(endIndexInTrimmed + endMarker.length);
+  const body = content.slice(0, startOffset) + afterMeta.replace(/^\s*\n/, "");
+
+  const metadata: Partial<RoleMemoryMetadata> = {};
+  for (const line of rawMeta.split(/\r?\n/)) {
+    const match = line.match(/^([a-zA-Z][a-zA-Z0-9_-]*)\s*:\s*(.*)$/);
+    if (!match) continue;
+    const key = match[1];
+    const value = match[2].trim();
+
+    if (key === "name" || key === "version" || key === "created" || key === "updated" || key === "consolidationInterval") {
+      (metadata as any)[key] = value.replace(/^['\"]|['\"]$/g, "");
+      continue;
+    }
+
+    if (key === "autoConsolidate") {
+      const parsed = parseYamlBoolean(value);
+      if (parsed !== null) metadata.autoConsolidate = parsed;
+      continue;
+    }
+
+    if (key === "tags") {
+      metadata.tags = parseYamlStringArray(value);
+      continue;
+    }
+  }
+
+  return { metadata, body };
+}
+
+function mergeMemoryMetadata(roleName: string, partial?: Partial<RoleMemoryMetadata>): RoleMemoryMetadata {
+  const base = defaultMemoryMetadata(roleName);
+  if (!partial) return base;
+  return {
+    name: partial.name || base.name,
+    version: partial.version || base.version,
+    created: partial.created || base.created,
+    updated: partial.updated || base.updated,
+    autoConsolidate: partial.autoConsolidate ?? base.autoConsolidate,
+    consolidationInterval: partial.consolidationInterval || base.consolidationInterval,
+    tags: Array.isArray(partial.tags) ? partial.tags.filter(Boolean) : base.tags,
+  };
+}
+
+function renderFrontmatter(metadata: RoleMemoryMetadata): string {
+  const quote = (value: string) => `"${value.replace(/\\/g, "\\\\").replace(/\"/g, "\\\"")}"`;
+  const tags = metadata.tags.map((tag) => quote(tag)).join(", ");
+
+  return [
+    "---",
+    `name: ${quote(metadata.name)}`,
+    `version: ${quote(metadata.version)}`,
+    `created: ${quote(metadata.created)}`,
+    `updated: ${quote(metadata.updated)}`,
+    `autoConsolidate: ${metadata.autoConsolidate ? "true" : "false"}`,
+    `consolidationInterval: ${quote(metadata.consolidationInterval)}`,
+    `tags: [${tags}]`,
+    "---",
+    "",
+  ].join("\n");
+}
+
 export function ensureRoleMemoryFiles(rolePath: string, roleName: string): void {
   if (!existsSync(rolePath)) mkdirSync(rolePath, { recursive: true });
-  const memoryDir = dailyMemoryDir(rolePath);
-  if (!existsSync(memoryDir)) mkdirSync(memoryDir, { recursive: true });
+
+  const memoryRoot = memoryRootDir(rolePath);
+  if (!existsSync(memoryRoot)) mkdirSync(memoryRoot, { recursive: true });
+
+  const dailyDir = dailyMemoryDir(rolePath);
+  if (!existsSync(dailyDir)) mkdirSync(dailyDir, { recursive: true });
+
+  migrateLegacyMemoryLayout(rolePath);
 
   const file = memoryFilePath(rolePath);
   if (!existsSync(file)) {
     const initial = renderRoleMemory({
       roleName,
+      metadata: defaultMemoryMetadata(roleName),
       autoExtracted: true,
       lastConsolidated: today(),
       learnings: [],
@@ -180,11 +370,13 @@ function dedupeLearnings(learnings: MemoryLearningRecord[]): MemoryLearningRecor
 }
 
 function parseRoleMemory(content: string, roleName: string): RoleMemoryData {
-  const lines = content.split(/\r?\n/);
+  const { metadata: parsedMetadata, body } = parseFrontmatter(content);
+  const lines = body.split(/\r?\n/);
   const issues: string[] = [];
 
   let autoExtracted = true;
   let lastConsolidated: string | undefined;
+  let roleNameFromHeading = roleName;
 
   const learningHigh: string[] = [];
   const learningNormal: string[] = [];
@@ -207,6 +399,8 @@ function parseRoleMemory(content: string, roleName: string): RoleMemoryData {
       const lower = title.toLowerCase();
 
       if (lower.startsWith("memory:")) {
+        const headingRoleName = title.split(":").slice(1).join(":").trim();
+        if (headingRoleName) roleNameFromHeading = headingRoleName;
         continue;
       }
       if (lower.startsWith("last consolidated:")) {
@@ -351,8 +545,11 @@ function parseRoleMemory(content: string, roleName: string): RoleMemoryData {
     }
   }
 
+  const resolvedRoleName = parsedMetadata.name || roleNameFromHeading || roleName;
+
   return {
-    roleName,
+    roleName: resolvedRoleName,
+    metadata: mergeMemoryMetadata(resolvedRoleName, parsedMetadata),
     autoExtracted,
     lastConsolidated,
     learnings: dedupedLearnings,
@@ -375,6 +572,12 @@ function renderLearningList(learnings: MemoryLearningRecord[], minUsed: number, 
 }
 
 function renderRoleMemory(data: RoleMemoryData): string {
+  const metadata = mergeMemoryMetadata(data.roleName, {
+    ...(data.metadata || {}),
+    name: data.roleName,
+    updated: today(),
+  });
+
   const allCategories = new Set<string>(DEFAULT_MEMORY_CATEGORIES);
   for (const pref of data.preferences) allCategories.add(sanitizeCategory(pref.category));
 
@@ -394,6 +597,7 @@ function renderRoleMemory(data: RoleMemoryData): string {
   ];
 
   const lines: string[] = [
+    renderFrontmatter(metadata).trimEnd(),
     `# Memory: ${data.roleName}`,
     `# Last Consolidated: ${data.lastConsolidated || today()}`,
     `# Auto-Extracted: ${data.autoExtracted ? "true" : "false"}`,
@@ -439,7 +643,11 @@ function readRawMemory(rolePath: string): string {
 }
 
 function writeMemory(rolePath: string, content: string): void {
-  writeFileSync(memoryFilePath(rolePath), content, "utf-8");
+  const file = memoryFilePath(rolePath);
+  const dir = memoryRootDir(rolePath);
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+
+  writeFileSync(file, content, "utf-8");
 }
 
 export function readRoleMemory(rolePath: string, roleName: string): RoleMemoryData {
@@ -458,13 +666,18 @@ export function appendDailyRoleMemory(
   text: string,
   date = today()
 ): void {
-  const dir = dailyMemoryDir(rolePath);
-  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-  const file = dailyMemoryPath(rolePath, date);
-  const exists = existsSync(file);
-  const header = exists ? "" : `# Memory: ${date}\n\n`;
   const section = `## [${nowTime()}] ${category.toUpperCase()}\n\n${normalizeText(text)}\n\n`;
-  writeFileSync(file, header + section, { encoding: "utf-8", flag: exists ? "a" : "w" });
+
+  const writeOne = (file: string) => {
+    const dir = dirname(file);
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+    const exists = existsSync(file);
+    const header = exists ? "" : `# Memory: ${date}\n\n`;
+    writeFileSync(file, header + section, { encoding: "utf-8", flag: exists ? "a" : "w" });
+  };
+
+  writeOne(dailyMemoryPath(rolePath, date));
+
   log("daily-memory", `[${category}] ${text.slice(0, 120)}`);
 }
 
@@ -640,7 +853,7 @@ export function searchRoleMemory(
 
   const data = readRoleMemory(rolePath, roleName);
 
-  // Search MEMORY.md learnings
+  // Search consolidated memory learnings
   for (const learning of data.learnings) {
     const s = scoreMatch(q, queryTokens, learning.text.toLowerCase());
     if (s >= minScore) {
@@ -648,7 +861,7 @@ export function searchRoleMemory(
     }
   }
 
-  // Search MEMORY.md preferences
+  // Search consolidated memory preferences
   for (const pref of data.preferences) {
     const combined = `${pref.category} ${pref.text}`.toLowerCase();
     const s = scoreMatch(q, queryTokens, combined);
@@ -657,7 +870,7 @@ export function searchRoleMemory(
     }
   }
 
-  // Search MEMORY.md events
+  // Search consolidated memory events
   for (const event of data.events) {
     const s = scoreMatch(q, queryTokens, event.toLowerCase());
     if (s >= minScore) {
@@ -667,34 +880,35 @@ export function searchRoleMemory(
 
   // Search recent daily memory files (last 7 days)
   if (options?.includeDailyMemory !== false) {
-    const dailyDir = join(rolePath, "memory");
-    if (existsSync(dailyDir)) {
-      const now = new Date();
-      for (let i = 0; i < 7; i++) {
-        const d = new Date(now);
-        d.setDate(d.getDate() - i);
-        const dateStr = d.toISOString().split("T")[0];
-        const dailyFile = join(dailyDir, `${dateStr}.md`);
-        if (!existsSync(dailyFile)) continue;
+    const byDate = new Map(listDailyMemoryFilesByDate(rolePath).map((entry) => [entry.date, entry.path]));
+    const now = new Date();
 
-        try {
-          const content = readFileSync(dailyFile, "utf-8");
-          // Split by ## headings (each is a memory entry)
-          const sections = content.split(/^## /m).filter(Boolean);
-          for (const section of sections) {
-            const text = normalizeText(section).slice(0, 500);
-            if (!text) continue;
-            const s = scoreMatch(q, queryTokens, text.toLowerCase());
-            if (s >= minScore) {
-              const firstLine = section.split("\n")[0]?.trim() ?? "";
-              scored.push({
-                kind: "event",
-                text: `[${dateStr}] ${firstLine}: ${text.slice(0, 200)}`,
-                score: s * 0.9, // Slight penalty for daily (less curated)
-              });
-            }
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(now);
+      d.setDate(d.getDate() - i);
+      const dateStr = d.toISOString().split("T")[0];
+      const dailyFile = byDate.get(dateStr);
+      if (!dailyFile) continue;
+
+      try {
+        const content = readFileSync(dailyFile, "utf-8");
+        // Split by ## headings (each is a memory entry)
+        const sections = content.split(/^## /m).filter(Boolean);
+        for (const section of sections) {
+          const text = normalizeText(section).slice(0, 500);
+          if (!text) continue;
+          const s = scoreMatch(q, queryTokens, text.toLowerCase());
+          if (s >= minScore) {
+            const firstLine = section.split("\n")[0]?.trim() ?? "";
+            scored.push({
+              kind: "event",
+              text: `[${dateStr}] ${firstLine}: ${text.slice(0, 200)}`,
+              score: s * 0.9, // Slight penalty for daily (less curated)
+            });
           }
-        } catch { /* skip */ }
+        }
+      } catch {
+        // Skip unreadable daily files
       }
     }
   }
@@ -905,22 +1119,10 @@ export function repairRoleMemory(
   repaired: boolean;
   issues: number;
   backupPath?: string;
-  skippedLegacy?: boolean;
 } {
   ensureRoleMemoryFiles(rolePath, roleName);
   const file = memoryFilePath(rolePath);
   const raw = readRawMemory(rolePath);
-
-  const hasCanonicalMarkers = /#\s+Learnings\s*\(/i.test(raw) || /#\s+Preferences:/i.test(raw);
-  const hasLegacyMarkers =
-    /##\s+Significant Events/i.test(raw) ||
-    /##\s+Lessons Learned/i.test(raw) ||
-    /##\s+Preferences\s*&\s*Boundaries/i.test(raw);
-
-  // Don't rewrite legacy curated memory automatically; require explicit force.
-  if (!options?.force && !hasCanonicalMarkers && hasLegacyMarkers) {
-    return { repaired: false, issues: 0, skippedLegacy: true };
-  }
 
   const parsed = parseRoleMemory(raw, roleName);
   const canonical = renderRoleMemory(parsed);
@@ -946,28 +1148,9 @@ export function repairRoleMemory(
  * Returns array of {date, path} sorted by date descending (newest first).
  */
 function getRecentDailyMemoryFiles(rolePath: string, count: number = 2): Array<{ date: string; path: string }> {
-  const dailyDir = dailyMemoryDir(rolePath);
-  if (!existsSync(dailyDir)) return [];
-
-  const { readdirSync } = require("node:fs") as typeof import("node:fs");
-  
-  try {
-    const files = readdirSync(dailyDir)
-      .filter((f: string) => f.endsWith(".md"))
-      .map((f: string) => {
-        // Extract date from filename: YYYY-MM-DD.md
-        const date = f.replace(/\.md$/, "");
-        const path = join(dailyDir, f);
-        return { date, path, exists: existsSync(path) };
-      })
-      .filter((item: { date: string; path: string; exists: boolean }) => item.exists)
-      .sort((a: { date: string }, b: { date: string }) => b.date.localeCompare(a.date)) // Descending
-      .slice(0, count);
-
-    return files.map((f: { date: string; path: string }) => ({ date: f.date, path: f.path }));
-  } catch {
-    return [];
-  }
+  return listDailyMemoryFilesByDate(rolePath)
+    .slice(0, count)
+    .map((item) => ({ date: item.date, path: item.path }));
 }
 
 export function readMemoryPromptBlocks(rolePath: string): string[] {
@@ -1056,7 +1239,7 @@ export function loadMemoryOnDemand(
 }
 
 export function buildMemoryEditInstruction(rolePath: string): string {
-  return `## 🧠 MEMORY.md EDIT SPEC (STRICT)\n\nMEMORY file: ${memoryFilePath(rolePath)}\n\nWhen you update memory, follow this format exactly:\n\n1) Learning sections\n- # Learnings (High Priority)  -> used >= 3\n- # Learnings (Normal)         -> used 1-2\n- # Learnings (New)            -> used = 0\n- Learning line format: - [Nx] concise text\n\n2) Preference sections\n- # Preferences: Communication | Code | Tools | Workflow | General\n- Preference line format: - concise text\n\n3) Event section\n- # Events\n- Event format:\n  ## [YYYY-MM-DD] Title\n  Details...\n\nRules:\n- Keep items durable and reusable across sessions.\n- Avoid one-off tasks and noisy logs.\n- Do not delete valid memory entries unless clearly duplicated.\n- If file looks malformed, normalize to canonical heading structure.\n- Never use free-form paragraphs under learning/preference sections; use bullet lines.\n- Keep learning/preference lines under 120 chars when possible.`;
+  return `## 🧠 Memory Edit Spec (STRICT)\n\nMemory file: ${memoryFilePath(rolePath)}\n\nWhen you update memory, follow this format exactly:\n\n1) Learning sections\n- # Learnings (High Priority)  -> used >= 3\n- # Learnings (Normal)         -> used 1-2\n- # Learnings (New)            -> used = 0\n- Learning line format: - [Nx] concise text\n\n2) Preference sections\n- # Preferences: Communication | Code | Tools | Workflow | General\n- Preference line format: - concise text\n\n3) Event section\n- # Events\n- Event format:\n  ## [YYYY-MM-DD] Title\n  Details...\n\nRules:\n- Keep items durable and reusable across sessions.\n- Avoid one-off tasks and noisy logs.\n- Do not delete valid memory entries unless clearly duplicated.\n- If file looks malformed, normalize to canonical heading structure.\n- Never use free-form paragraphs under learning/preference sections; use bullet lines.\n- Keep learning/preference lines under 120 chars when possible.`;
 }
 
 export function extractMemoryFacts(rolePath: string, roleName: string): { learnings: string[]; preferences: string[] } {
@@ -1091,14 +1274,7 @@ export function getMemoryStats(rolePath: string, roleName: string): MemoryStats 
     categories[pref.category] = (categories[pref.category] || 0) + 1;
   }
 
-  let dailyFiles = 0;
-  const dailyDir = join(rolePath, "memory");
-  if (existsSync(dailyDir)) {
-    try {
-      const { readdirSync } = require("node:fs") as typeof import("node:fs");
-      dailyFiles = readdirSync(dailyDir).filter((f: string) => f.endsWith(".md")).length;
-    } catch { /* ignore */ }
-  }
+  const dailyFiles = listDailyMemoryFilesByDate(rolePath).length;
 
   return {
     roleName,

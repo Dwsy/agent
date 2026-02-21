@@ -22,26 +22,26 @@ export function resolveTemplateLanguage(locale?: string): TemplateLanguage {
 
 function zhPrompts(): Record<string, string> {
   return {
-    "AGENTS.md": `# AGENTS.md - 你的工作空间
+    "AGENTS.md": `# core/agents.md - 你的工作空间
 
-> 何时更新：工作规则变化、安全边界调整、用户明确说"更新 AGENTS.md"时。
+> 何时更新：工作规则变化、安全边界调整、用户明确说"更新 core/agents.md"时。
 > 如何更新：使用 write 或 edit 工具直接修改。
 
 这个目录就是家。把它当作长期工作环境来维护。
 
 ## 每次会话开始前
 
-1. 先读 SOUL.md（你是谁）
-2. 再读 USER.md（你在帮助谁）
-3. 读 memory/YYYY-MM-DD.md（今天和昨天）
-4. 在主会话中额外读 MEMORY.md
+1. 先读 core/soul.md（你是谁）
+2. 再读 core/user.md（你在帮助谁）
+3. 读 memory/daily/YYYY-MM-DD.md（今天和昨天）
+4. 在主会话中额外读 memory/consolidated.md
 
 不要形式化寒暄，直接做事。
 
 ## 记忆原则
 
-- 每日记忆：memory/YYYY-MM-DD.md，记录原始上下文
-- 长期记忆：MEMORY.md，记录可复用结论
+- 每日记忆：memory/daily/YYYY-MM-DD.md，记录原始上下文
+- 长期记忆：memory/consolidated.md，记录可复用结论
 - 用户说“记住这个”时，必须写入文件，不要“记在脑子里”
 
 ## 安全边界
@@ -65,16 +65,16 @@ function zhPrompts(): Record<string, string> {
 
 - 询问并确认你的名字、风格、边界
 - 询问并确认用户偏好（沟通、代码、流程）
-- 将结果写入 IDENTITY.md / USER.md / SOUL.md
+- 将结果写入 core/identity.md / core/user.md / core/soul.md
 
 ## 完成后
 
 完成初始化后删除本文件。
 `,
 
-    "IDENTITY.md": `# IDENTITY.md
+    "IDENTITY.md": `# core/identity.md
 
-> 何时更新：身份定义调整、名字/风格变化、用户明确说"更新 IDENTITY.md"时。
+> 何时更新：身份定义调整、名字/风格变化、用户明确说"更新 core/identity.md"时。
 > 如何更新：使用 write 或 edit 工具直接修改。
 
 - **名字：**
@@ -86,9 +86,9 @@ function zhPrompts(): Record<string, string> {
 > 这是身份定义，不是能力清单。
 `,
 
-    "USER.md": `# USER.md
+    "USER.md": `# core/user.md
 
-> 何时更新：用户信息变化、偏好调整、禁忌明确、用户明确说"更新 USER.md"时。
+> 何时更新：用户信息变化、偏好调整、禁忌明确、用户明确说"更新 core/user.md"时。
 > 如何更新：使用 write 或 edit 工具直接修改。
 
 - **名字：**
@@ -102,9 +102,9 @@ function zhPrompts(): Record<string, string> {
 记录长期有效的信息，不要记录一次性噪音。
 `,
 
-    "SOUL.md": `# SOUL.md - 你是谁
+    "SOUL.md": `# core/soul.md - 你是谁
 
-> 何时更新：核心原则变化、风格调整、用户明确说"更新 SOUL.md"时。
+> 何时更新：核心原则变化、风格调整、用户明确说"更新 core/soul.md"时。
 > 如何更新：使用 write 或 edit 工具直接修改，完成后告知用户。
 
 ## 核心原则
@@ -126,15 +126,15 @@ function zhPrompts(): Record<string, string> {
 - 复杂问题要给结构化方案
 `,
 
-    "HEARTBEAT.md": `# HEARTBEAT.md
+    "HEARTBEAT.md": `# core/heartbeat.md
 
-> 何时更新：检查项调整、主动任务变化、用户明确说"更新 HEARTBEAT.md"时。
+> 何时更新：检查项调整、主动任务变化、用户明确说"更新 core/heartbeat.md"时。
 > 如何更新：使用 write 或 edit 工具直接修改。
 
 ## 检查清单
 
 - [ ] 是否有未处理的重要上下文
-- [ ] 是否需要整理 MEMORY.md
+- [ ] 是否需要整理 memory/consolidated.md
 - [ ] 是否存在阻塞任务
 
 ## 何时安静
@@ -142,7 +142,7 @@ function zhPrompts(): Record<string, string> {
 无新信息且无阻塞时，保持安静。
 `,
 
-    "TOOLS.md": `# TOOLS.md
+    "TOOLS.md": `# core/tools.md
 
 > 何时更新：工具偏好变化、新路径/命令、环境变量调整、用户明确说"记住这个工具配置"时。
 > 如何更新：使用 write 或 edit 工具直接修改。
@@ -156,7 +156,7 @@ function zhPrompts(): Record<string, string> {
 - 特殊环境变量
 `,
 
-    "MEMORY.md": `# Memory: default
+    "memory/consolidated.md": `# Memory: default
 # Last Consolidated: 1970-01-01
 # Auto-Extracted: true
 
@@ -194,26 +194,26 @@ function zhPrompts(): Record<string, string> {
 
 function enPrompts(): Record<string, string> {
   return {
-    "AGENTS.md": `# AGENTS.md - Your Workspace
+    "AGENTS.md": `# core/agents.md - Your Workspace
 
-> When to update: When work rules change, safety boundaries shift, or user explicitly says "update AGENTS.md".
+> When to update: When work rules change, safety boundaries shift, or user explicitly says "update core/agents.md".
 > How to update: Use write or edit tool to modify directly.
 
 This directory is home. Maintain it as long-term operating context.
 
 ## At session start
 
-1. Read SOUL.md
-2. Read USER.md
-3. Read memory/YYYY-MM-DD.md (today + yesterday)
-4. In main session, also read MEMORY.md
+1. Read core/soul.md
+2. Read core/user.md
+3. Read memory/daily/YYYY-MM-DD.md (today + yesterday)
+4. In main session, also read memory/consolidated.md
 
 Skip filler. Do useful work.
 
 ## Memory policy
 
-- Daily memory: raw context in memory/YYYY-MM-DD.md
-- Long-term memory: reusable conclusions in MEMORY.md
+- Daily memory: raw context in memory/daily/YYYY-MM-DD.md
+- Long-term memory: reusable conclusions in memory/consolidated.md
 - If user says "remember this", write it to disk
 
 ## Safety boundaries
@@ -237,16 +237,16 @@ You just started. Establish identity and collaboration baseline.
 
 - Confirm your name/style/boundaries
 - Confirm user preferences
-- Write outcomes to IDENTITY.md / USER.md / SOUL.md
+- Write outcomes to core/identity.md / core/user.md / core/soul.md
 
 ## Finish
 
 Delete this file after initialization.
 `,
 
-    "IDENTITY.md": `# IDENTITY.md
+    "IDENTITY.md": `# core/identity.md
 
-> When to update: When identity definition changes, name/style shifts, or user explicitly says "update IDENTITY.md".
+> When to update: When identity definition changes, name/style shifts, or user explicitly says "update core/identity.md".
 > How to update: Use write or edit tool to modify directly.
 
 - **Name:**
@@ -258,9 +258,9 @@ Delete this file after initialization.
 > Identity, not capability list.
 `,
 
-    "USER.md": `# USER.md
+    "USER.md": `# core/user.md
 
-> When to update: When user info changes, preferences shift, boundaries clarified, or user explicitly says "update USER.md".
+> When to update: When user info changes, preferences shift, boundaries clarified, or user explicitly says "update core/user.md".
 > How to update: Use write or edit tool to modify directly.
 
 - **Name:**
@@ -274,9 +274,9 @@ Delete this file after initialization.
 Store durable context only.
 `,
 
-    "SOUL.md": `# SOUL.md - Who You Are
+    "SOUL.md": `# core/soul.md - Who You Are
 
-> When to update: When core principles change, style adjusts, or user explicitly says "update SOUL.md".
+> When to update: When core principles change, style adjusts, or user explicitly says "update core/soul.md".
 > How to update: Use write or edit tool to modify directly, then notify user.
 
 ## Core principles
@@ -298,15 +298,15 @@ Store durable context only.
 - Structured for complex issues
 `,
 
-    "HEARTBEAT.md": `# HEARTBEAT.md
+    "HEARTBEAT.md": `# core/heartbeat.md
 
-> When to update: When check items change, proactive tasks shift, or user explicitly says "update HEARTBEAT.md".
+> When to update: When check items change, proactive tasks shift, or user explicitly says "update core/heartbeat.md".
 > How to update: Use write or edit tool to modify directly.
 
 ## Checklist
 
 - [ ] Any important unresolved context?
-- [ ] Need MEMORY.md tidy?
+- [ ] Need memory/consolidated.md tidy?
 - [ ] Any blocked tasks?
 
 ## Stay quiet when
@@ -314,7 +314,7 @@ Store durable context only.
 No new signal and no blockers.
 `,
 
-    "TOOLS.md": `# TOOLS.md
+    "TOOLS.md": `# core/tools.md
 
 > When to update: When tool preferences change, new paths/commands added, env vars adjusted, or user explicitly says "remember this tool config".
 > How to update: Use write or edit tool to modify directly.
@@ -328,7 +328,7 @@ Examples:
 - Special env vars
 `,
 
-    "MEMORY.md": `# Memory: default
+    "memory/consolidated.md": `# Memory: default
 # Last Consolidated: 1970-01-01
 # Auto-Extracted: true
 

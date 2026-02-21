@@ -1,13 +1,137 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 
 import { ensureRoleMemoryFiles } from "./memory-md.ts";
 import { getDefaultPrompts, resolveTemplateLanguage } from "./role-template.ts";
 
-export const ROLES_DIR = join(homedir(), ".pi", "agent", "roles");
+function resolveRolesDir(): string {
+  const envPath = process.env.PI_AGENT_ROLES_DIR?.trim();
+  return envPath || join(homedir(), ".pi", "agent", "roles");
+}
+
+export const ROLES_DIR = resolveRolesDir();
 export const ROLE_CONFIG_FILE = join(ROLES_DIR, "config.json");
 export const DEFAULT_ROLE = "default";
+
+const CORE_DIR = "core";
+
+const PROMPT_FILE_MAP = [
+  { legacy: "AGENTS.md", core: "agents.md" },
+  { legacy: "IDENTITY.md", core: "identity.md" },
+  { legacy: "SOUL.md", core: "soul.md" },
+  { legacy: "USER.md", core: "user.md" },
+  { legacy: "TOOLS.md", core: "tools.md" },
+  { legacy: "HEARTBEAT.md", core: "heartbeat.md" },
+] as const;
+
+function coreFilePath(rolePath: string, filename: string): string {
+  return join(rolePath, CORE_DIR, filename);
+}
+
+function ensureRoleStructure(rolePath: string): void {
+  mkdirSync(join(rolePath, CORE_DIR), { recursive: true });
+  mkdirSync(join(rolePath, "memory", "daily"), { recursive: true });
+  mkdirSync(join(rolePath, "context"), { recursive: true });
+  mkdirSync(join(rolePath, "skills"), { recursive: true });
+  mkdirSync(join(rolePath, "archive"), { recursive: true });
+}
+
+function migrateLegacyPromptFiles(rolePath: string): number {
+  ensureRoleStructure(rolePath);
+
+  let migrated = 0;
+  for (const mapping of PROMPT_FILE_MAP) {
+    const canonicalPath = coreFilePath(rolePath, mapping.core);
+    const legacyPath = join(rolePath, mapping.legacy);
+    if (!existsSync(legacyPath)) continue;
+
+    const shouldCopy = !existsSync(canonicalPath) || statSync(legacyPath).mtimeMs > statSync(canonicalPath).mtimeMs;
+    if (!shouldCopy) continue;
+
+    copyFileSync(legacyPath, canonicalPath);
+    migrated += 1;
+  }
+
+  const legacyConstraints = join(rolePath, "CONSTRAINTS.md");
+  const canonicalConstraints = coreFilePath(rolePath, "constraints.md");
+  if (existsSync(legacyConstraints)) {
+    const shouldCopy = !existsSync(canonicalConstraints) || statSync(legacyConstraints).mtimeMs > statSync(canonicalConstraints).mtimeMs;
+    if (shouldCopy) {
+      copyFileSync(legacyConstraints, canonicalConstraints);
+      migrated += 1;
+    }
+  } else if (!existsSync(canonicalConstraints)) {
+    writeFileSync(canonicalConstraints, defaultConstraintsTemplate(), "utf-8");
+  }
+
+  return migrated;
+}
+
+function cleanupLegacyRoleFiles(rolePath: string): number {
+  let removed = 0;
+
+  const legacyRootFiles = [
+    "AGENTS.md",
+    "IDENTITY.md",
+    "SOUL.md",
+    "USER.md",
+    "TOOLS.md",
+    "HEARTBEAT.md",
+    "MEMORY.md",
+    "CONSTRAINTS.md",
+  ];
+
+  for (const filename of legacyRootFiles) {
+    const file = join(rolePath, filename);
+    if (!existsSync(file)) continue;
+    try {
+      unlinkSync(file);
+      removed += 1;
+    } catch {
+      // ignore cleanup failure
+    }
+  }
+
+  const memoryRoot = join(rolePath, "memory");
+  if (existsSync(memoryRoot)) {
+    let names: string[] = [];
+    try {
+      names = readdirSync(memoryRoot);
+    } catch {
+      names = [];
+    }
+
+    for (const name of names) {
+      if (!/^\d{4}-\d{2}-\d{2}\.md$/.test(name)) continue;
+      const file = join(memoryRoot, name);
+      if (!existsSync(file)) continue;
+      try {
+        unlinkSync(file);
+        removed += 1;
+      } catch {
+        // ignore cleanup failure
+      }
+    }
+  }
+
+  return removed;
+}
+
+function promptPath(rolePath: string, coreName: string): string {
+  return coreFilePath(rolePath, coreName);
+}
+
+function languageForRole(): "zh" | "en" {
+  return resolveTemplateLanguage();
+}
+
+function defaultConstraintsTemplate(): string {
+  if (languageForRole() === "zh") {
+    return `# constraints.md - Hard Boundaries\n\n- 不泄露隐私和密钥\n- 外部动作前先确认\n- 避免破坏性操作，优先可回滚\n`;
+  }
+  return `# constraints.md - Hard Boundaries\n\n- Never leak private data or secrets\n- Ask before external actions\n- Prefer reversible operations over destructive ones\n`;
+}
 
 export interface RoleConfig {
   mappings: Record<string, string>;
@@ -39,14 +163,62 @@ export function getRoles(): string[] {
   }
 }
 
+export function migrateAllRolesToStructuredLayout(): { roles: number; migratedFiles: number; removedFiles: number } {
+  ensureRolesDir();
+  const roles = getRoles();
+  let migratedFiles = 0;
+  let removedFiles = 0;
+
+  for (const roleName of roles) {
+    const rolePath = join(ROLES_DIR, roleName);
+    migratedFiles += migrateLegacyPromptFiles(rolePath);
+    ensureRoleMemoryFiles(rolePath, roleName);
+    removedFiles += cleanupLegacyRoleFiles(rolePath);
+  }
+
+  return { roles: roles.length, migratedFiles, removedFiles };
+}
+
 export function createRole(roleName: string): string {
   const rolePath = join(ROLES_DIR, roleName);
   mkdirSync(rolePath, { recursive: true });
-  mkdirSync(join(rolePath, "memory"), { recursive: true });
+  ensureRoleStructure(rolePath);
 
   const prompts = getDefaultPrompts();
-  for (const [filename, content] of Object.entries(prompts)) {
-    writeFileSync(join(rolePath, filename), content, "utf-8");
+
+  for (const mapping of PROMPT_FILE_MAP) {
+    const content = prompts[mapping.legacy] || "";
+    if (!content) continue;
+
+    const canonicalPath = coreFilePath(rolePath, mapping.core);
+    if (!existsSync(canonicalPath)) {
+      writeFileSync(canonicalPath, content, "utf-8");
+    }
+  }
+
+  const bootstrap = prompts["BOOTSTRAP.md"];
+  if (bootstrap && !existsSync(join(rolePath, "BOOTSTRAP.md"))) {
+    writeFileSync(join(rolePath, "BOOTSTRAP.md"), bootstrap, "utf-8");
+  }
+
+  const constraintsPath = coreFilePath(rolePath, "constraints.md");
+  if (!existsSync(constraintsPath)) {
+    writeFileSync(constraintsPath, defaultConstraintsTemplate(), "utf-8");
+  }
+
+  const activeProjectPath = join(rolePath, "context", "active-project.md");
+  if (!existsSync(activeProjectPath)) {
+    writeFileSync(activeProjectPath, "# Active Project\n\n- (none)\n", "utf-8");
+  }
+
+  const sessionStatePath = join(rolePath, "context", "session-state.md");
+  if (!existsSync(sessionStatePath)) {
+    writeFileSync(sessionStatePath, "# Session State\n\n- (empty)\n", "utf-8");
+  }
+
+  const skillsPath = join(rolePath, "skills", "active.json");
+  if (!existsSync(skillsPath)) {
+    writeFileSync(skillsPath, JSON.stringify({ enabled: [] }, null, 2), "utf-8");
   }
 
   ensureRoleMemoryFiles(rolePath, roleName);
@@ -58,7 +230,9 @@ export function isFirstRun(rolePath: string): boolean {
 }
 
 export function getRoleIdentity(rolePath: string): { name?: string; emoji?: string } | null {
-  const identityPath = join(rolePath, "IDENTITY.md");
+  migrateLegacyPromptFiles(rolePath);
+
+  const identityPath = promptPath(rolePath, "identity.md");
   if (!existsSync(identityPath)) return null;
 
   const content = readFileSync(identityPath, "utf-8");
@@ -179,31 +353,36 @@ export function isRoleDisabledForCwd(cwd: string, config?: RoleConfig): boolean 
 }
 
 export function loadRolePrompts(rolePath: string): string {
+  migrateLegacyPromptFiles(rolePath);
+
   const parts: string[] = [];
   const lang = resolveTemplateLanguage();
 
   const files =
     lang === "zh"
       ? [
-          { name: "AGENTS.md", header: "AGENTS.md - 工作空间规则" },
-          { name: "IDENTITY.md", header: "IDENTITY.md - 身份" },
-          { name: "SOUL.md", header: "SOUL.md - 核心人格" },
-          { name: "USER.md", header: "USER.md - 用户画像" },
-          { name: "TOOLS.md", header: "TOOLS.md - 工具偏好" },
+          { core: "agents.md", header: "core/agents.md - 工作空间规则" },
+          { core: "identity.md", header: "core/identity.md - 身份" },
+          { core: "soul.md", header: "core/soul.md - 核心人格" },
+          { core: "user.md", header: "core/user.md - 用户画像" },
+          { core: "tools.md", header: "core/tools.md - 工具偏好" },
+          { core: "heartbeat.md", header: "core/heartbeat.md - 主动任务" },
+          { core: "constraints.md", header: "core/constraints.md - 硬约束" },
         ]
       : [
-          { name: "AGENTS.md", header: "AGENTS.md - Workspace Rules" },
-          { name: "IDENTITY.md", header: "IDENTITY.md - Identity" },
-          { name: "SOUL.md", header: "SOUL.md - Personality" },
-          { name: "USER.md", header: "USER.md - User Profile" },
-          { name: "TOOLS.md", header: "TOOLS.md - Tool Preferences" },
+          { core: "agents.md", header: "core/agents.md - Workspace Rules" },
+          { core: "identity.md", header: "core/identity.md - Identity" },
+          { core: "soul.md", header: "core/soul.md - Personality" },
+          { core: "user.md", header: "core/user.md - User Profile" },
+          { core: "tools.md", header: "core/tools.md - Tool Preferences" },
+          { core: "heartbeat.md", header: "core/heartbeat.md - Heartbeat" },
+          { core: "constraints.md", header: "core/constraints.md - Hard Constraints" },
         ];
 
-  for (const { name, header } of files) {
-    const path = join(rolePath, name);
-    if (existsSync(path)) {
-      parts.push(`## ${header}\n\n${readFileSync(path, "utf-8")}`);
-    }
+  for (const file of files) {
+    const path = promptPath(rolePath, file.core);
+    if (!existsSync(path)) continue;
+    parts.push(`## ${file.header}\n\n${readFileSync(path, "utf-8")}`);
   }
 
   return parts.join("\n\n---\n\n");

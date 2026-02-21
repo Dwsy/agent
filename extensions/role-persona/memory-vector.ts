@@ -5,7 +5,7 @@
  * It does NOT replace memory-md.ts; it indexes the same data for semantic recall.
  *
  * Architecture:
- *   memory-md.ts (source of truth) → MEMORY.md / daily/*.md
+ *   memory-md.ts (source of truth) → memory/consolidated.md + memory/daily/*.md
  *   memory-vector.ts (this file)   → .vector-db/ (LanceDB index)
  *
  * Features:
@@ -14,7 +14,7 @@
  *   - Hybrid search: vector + keyword → RRF fusion
  *   - Auto-index on learning/preference writes
  *   - Auto-recall on before_agent_start (semantic context injection)
- *   - Full rebuild from existing MEMORY.md
+ *   - Full rebuild from existing memory/consolidated.md
  *   - Graceful degradation: falls back to keyword search if embedding unavailable
  */
 
@@ -552,11 +552,11 @@ export async function autoRecall(
 }
 
 // ============================================================================
-// Rebuild (index existing MEMORY.md into vector DB)
+// Rebuild (index existing memory/consolidated.md into vector DB)
 // ============================================================================
 
 /**
- * Rebuild the vector index from existing MEMORY.md data.
+ * Rebuild the vector index from existing memory/consolidated.md data.
  * Clears the existing index and re-indexes all learnings and preferences.
  */
 export async function rebuildVectorIndex(

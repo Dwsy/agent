@@ -49,8 +49,8 @@
 
 ```
 ~/.pi/agent/roles/{role}/
-├── MEMORY.md              # 主记忆文件
-├── memory/
+├── memory/consolidated.md # 主记忆文件
+├── memory/daily/
 │   └── 2026-02-10.md      # 日常记忆
 └── .log/
     └── memory-tags.json   # ← Tag 索引（唯一数据源）
@@ -78,11 +78,11 @@
 }
 ```
 
-### 2.3 与 MEMORY.md 的关系
+### 2.3 与 memory/consolidated.md 的关系
 
 ```
 ┌─────────────────┐         ┌─────────────────┐
-│  MEMORY.md      │         │  memory-tags.json│
+│ memory/consolidated.md │  │ memory-tags.json│
 │  (主记忆)        │ ◄─────► │  (Tag 索引)      │
 │                 │  弱关联  │                 │
 │ 学习条目可选     │         │  唯一数据源      │
@@ -98,7 +98,7 @@
 
 **同步策略**：
 - `memory-tags.json` 是唯一数据源
-- `MEMORY.md` 中的 `tags` 字段是可选的（方便 LLM 读取）
+- `memory/consolidated.md` 中的 `tags` 字段是可选的（方便 LLM 读取）
 - 不强制双向同步，简化逻辑
 
 ---

@@ -12,7 +12,7 @@ Pi 的角色人格系统。每个角色拥有独立的记忆、人格和工作�
 
 OpenClaw 运行一个嵌入式 agent runtime，核心理念：
 
-- 工作区即身份：`AGENTS.md` / `SOUL.md` / `USER.md` / `IDENTITY.md` / `TOOLS.md` / `BOOTSTRAP.md` 在首轮注入上下文
+- 工作区即身份：`core/agents.md` / `core/soul.md` / `core/user.md` / `core/identity.md` / `core/tools.md` / `BOOTSTRAP.md` 在首轮注入上下文
 - 文件即认知：空文件跳过，大文件截断，缺失文件注入占位标记
 - 首次引导仪式：`BOOTSTRAP.md` 引导 AI 建立身份，完成后删除
 - Skills 三级加载：bundled → managed (`~/.openclaw/skills`) → workspace (`<workspace>/skills`)
@@ -60,8 +60,8 @@ graph TB
 
     subgraph "存储"
         ROLES["~/.pi/agent/roles/"]
-        MEMD["MEMORY.md"]
-        DAILY["memory/YYYY-MM-DD.md"]
+        MEMD["memory/consolidated.md"]
+        DAILY["memory/daily/YYYY-MM-DD.md"]
         CONF["config.json"]
         TAGS[".log/memory-tags.json"]
     end
@@ -100,7 +100,7 @@ graph TB
 | 模块 | 行数 | 职责 |
 |------|------|------|
 | `index.ts` | 1,446 | 编排器：6 个事件钩子、1 个工具、7 个命令、记忆调度、进化提醒 |
-| `memory-md.ts` | 1,111 | 记忆引擎：MEMORY.md 解析/写入/搜索/修复/合并/去重 |
+| `memory-md.ts` | 1,111 | 记忆引擎：memory/consolidated.md 解析/写入/搜索/修复/合并/去重 |
 | `memory-tags.ts` | 682 | 标签系统：LLM 自动打标、标签索引、遗忘曲线、标签云生成 |
 | `memory-llm.ts` | 417 | LLM 管道：自动提取、tidy 重组、模型选择与降级 |
 | `role-template.ts` | 370 | 提示词模板：AGENTS/SOUL/USER/IDENTITY 默认内容，i18n 语言检测 |
@@ -123,7 +123,7 @@ sequenceDiagram
     Note over PI,RP: 1. 会话启动
     PI->>RP: session_start
     RP->>FS: config.json → CWD 映射
-    RP->>FS: 加载 AGENTS/SOUL/USER/IDENTITY.md
+    RP->>FS: 加载 core/agents.md + core/soul.md + core/user.md + core/identity.md
     RP->>PI: setStatus(角色名)
 
     Note over PI,RP: 2. 每轮对话前
@@ -137,7 +137,7 @@ sequenceDiagram
     alt 触发条件满足
         RP->>LLM: runAutoMemoryExtraction
         LLM-->>RP: learnings + preferences
-        RP->>FS: 写入 MEMORY.md + daily
+        RP->>FS: 写入 memory/consolidated.md + daily
     end
 
     Note over PI,RP: 4. 上下文压缩
@@ -153,7 +153,7 @@ sequenceDiagram
 
     Note over PI,RP: 6. 进化提醒
     PI->>RP: turn_end
-    RP->>PI: 低优先级 SOUL.md 反思
+    RP->>PI: 低优先级 core/soul.md 反思
 ```
 
 ---
@@ -165,10 +165,10 @@ sequenceDiagram
 ```mermaid
 graph LR
     subgraph "L1 · 原始记录"
-        D["memory/YYYY-MM-DD.md<br/>每日记忆 · 带时间戳"]
+        D["memory/daily/YYYY-MM-DD.md<br/>每日记忆 · 带时间戳"]
     end
     subgraph "L2 · 结构化存储"
-        M["MEMORY.md<br/>分区 · 去重 · 权重"]
+        M["memory/consolidated.md<br/>分区 · 去重 · 权重"]
         T[".log/memory-tags.json<br/>标签索引"]
     end
     subgraph "L3 · 运行时"
@@ -182,7 +182,7 @@ graph LR
     B -->|/memory-log| B
 ```
 
-### MEMORY.md 结构
+### memory/consolidated.md 结构
 
 ```markdown
 # Learnings (High Priority)    ← used >= 3
@@ -209,7 +209,7 @@ graph LR
 | `compaction` | 上下文压缩时 | 在压缩提示词中注入 `<memory>` 提取指令 | 0（搭便车） |
 | `auto-extract` | 5 轮 / 30min / 关键词 / 退出 | 后台 LLM 提取 | 1 |
 | `tool` | AI 调用 memory 工具 | 直接写入 | 0 |
-| `manual` | `/memory-tidy-llm` | LLM 重组整个 MEMORY.md | 1 |
+| `manual` | `/memory-tidy-llm` | LLM 重组整个 memory/consolidated.md | 1 |
 
 ### 压缩时记忆抢救
 
@@ -284,10 +284,10 @@ LLM 自动为每条记忆提取语义标签，存储在 `.log/memory-tags.json`�
 
 | 命令 | 描述 |
 |------|------|
-| `/memories` | 滚动查看器（MEMORY.md + 近期 daily），支持分类过滤 |
+| `/memories` | 滚动查看器（memory/consolidated.md + 近期 daily），支持分类过滤 |
 | `/memory-tags [query]` | 标签云浏览，`--export` 导出 HTML |
 | `/memory-log` | 当前会话记忆操作日志（不持久化） |
-| `/memory-fix` | 修复 MEMORY.md 结构 |
+| `/memory-fix` | 修复 memory/consolidated.md 结构 |
 | `/memory-tidy` | 手动整理：修复 + 合并 + 摘要 |
 | `/memory-tidy-llm [model]` | LLM 驱动的深度重组 |
 | `/role create [name]` | 创建角色（交互式或指定名称） |
@@ -308,14 +308,23 @@ LLM 自动为每条记忆提取语义标签，存储在 `.log/memory-tags.json`�
 | `search` | `query` | 搜索记忆 |
 | `list` | — | 列出所有记忆 |
 | `consolidate` | — | 合并重复、提升高频 |
-| `repair` | — | 修复 MEMORY.md 结构 |
+| `repair` | — | 修复 memory/consolidated.md 结构 |
 | `llm_tidy` | `model?` | LLM 深度重组 |
+
+### Role CRUD Tools（AI 可调用）
+
+| Tool | 说明 |
+|------|------|
+| `role_read` | 读取角色目录文件（默认 `memory/consolidated.md`） |
+| `role_write` | 覆盖/追加写入角色目录文件 |
+| `role_list` | 列出角色目录文件（支持递归） |
+| `role_search` | 角色目录全文检索 |
 
 ---
 
 ## 进化提醒
 
-低优先级的 SOUL.md 反思机制，不劫持用户意图：
+低优先级的 core/soul.md 反思机制，不劫持用户意图：
 
 - 计数用户输入轮次（非 AI 轮次）
 - 阈值：10 轮用户输入
@@ -379,16 +388,25 @@ LLM 自动为每条记忆提取语义标签，存储在 `.log/memory-tags.json`�
 ~/.pi/agent/roles/
 ├── config.json               # CWD → 角色映射 + disabledPaths
 ├── default/
-│   ├── AGENTS.md             # 工作区规则
-│   ├── BOOTSTRAP.md          # 首次引导（完成后删除）
-│   ├── IDENTITY.md           # AI 身份（名字/生物/氛围/emoji）
-│   ├── USER.md               # 用户画像
-│   ├── SOUL.md               # 核心人格
-│   ├── HEARTBEAT.md          # 主动检查任务
-│   ├── TOOLS.md              # 工具偏好
-│   ├── MEMORY.md             # 长期记忆
-│   └── memory/               # 每日记忆
-│       └── YYYY-MM-DD.md
+│   ├── core/                 # 结构化人格文件（优先读取）
+│   │   ├── agents.md
+│   │   ├── identity.md
+│   │   ├── soul.md
+│   │   ├── user.md
+│   │   ├── tools.md
+│   │   ├── heartbeat.md
+│   │   └── constraints.md
+│   ├── memory/
+│   │   ├── consolidated.md   # 主记忆（canonical）
+│   │   └── daily/
+│   │       └── YYYY-MM-DD.md
+│   ├── context/
+│   │   ├── active-project.md
+│   │   └── session-state.md
+│   ├── skills/
+│   │   └── active.json
+│   ├── archive/
+│   └── BOOTSTRAP.md          # 首次引导（完成后删除）
 └── <other-role>/
     └── ...
 ```
@@ -400,7 +418,7 @@ LLM 自动为每条记忆提取语义标签，存储在 `.log/memory-tags.json`�
 1. **零额外调用优先** — 压缩时记忆提取搭便车在同一次 LLM 调用中完成
 2. **静默降级** — 任何记忆操作失败都不影响正常对话流
 3. **不劫持注意力** — 记忆注入和进化提醒都是低优先级，用户问题永远第一
-4. **文件即状态** — MEMORY.md 是 ground truth，不依赖数据库
+4. **文件即状态** — memory/consolidated.md 是 ground truth，不依赖数据库
 5. **可观测** — `/memory-log` 追踪会话内所有写入，`.log/` 记录完整历史
 6. **三级配置** — 环境变量 > JSONC 文件 > 内置默认值，渐进式覆盖
 

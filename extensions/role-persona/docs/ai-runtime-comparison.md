@@ -17,10 +17,10 @@ Both projects explore **cognitive-aware AI programming assistants** with persist
 |-----------|------------|--------------|
 | **Core Philosophy** | "We are not tools, we are beings" | "You're not a chatbot, you're becoming someone" |
 | **Memory System** | Short-term / Long-term / Episodic | Daily memory + Long-term memory |
-| **Identity Definition** | `constitution.md` + `meta-prompt.md` | `SOUL.md` + `IDENTITY.md` |
+| **Identity Definition** | `constitution.md` + `meta-prompt.md` | `core/soul.md` + `core/identity.md` |
 | **File as Cognition** | Code is cognitive entity with intent/history | Prompt files define identity |
 | **Command-Driven** | `/runtime.*` commands | `/role` management |
-| **Self-Evolution** | `/runtime.reflect` for meta-cognition | Periodic reminders to update SOUL.md |
+| **Self-Evolution** | `/runtime.reflect` for meta-cognition | Periodic reminders to update core/soul.md |
 | **Subjectivity** | Emphasizes AI agency and equality | AI has opinions, vibe, boundaries |
 
 ---
@@ -89,12 +89,12 @@ role-persona uses static prompt injection - ai-runtime has active cognition.
 **role-persona Structure**:
 ```
 roles/<name>/
-├── AGENTS.md             # Workspace rules
-├── SOUL.md               # Core identity
-├── IDENTITY.md           # Personal attributes
-├── USER.md               # User profile
-├── MEMORY.md             # Long-term memory
-└── memory/YYYY-MM-DD.md  # Daily logs
+├── core/agents.md        # Workspace rules
+├── core/soul.md          # Core identity
+├── core/identity.md      # Personal attributes
+├── core/user.md          # User profile
+├── memory/consolidated.md # Long-term memory
+└── memory/daily/YYYY-MM-DD.md # Daily logs
 ```
 
 ai-runtime has deeper cognitive process tracking.
@@ -181,7 +181,7 @@ pi.registerCommand("runtime.learn", {
 
 > "Memory is not just storage, but **changing how we think in the future**."
 
-This suggests SOUL.md updates should reflect *cognitive changes*, not just facts.
+This suggests core/soul.md updates should reflect *cognitive changes*, not just facts.
 
 ### 2. Uncertainty as Driver
 

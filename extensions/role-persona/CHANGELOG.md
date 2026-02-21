@@ -1,5 +1,28 @@
 # Changelog
 
+## 2026-02-21
+
+### Added
+- **结构化角色目录（v2）**
+  - 新建角色默认生成 `core/`、`memory/daily/`、`context/`、`skills/`、`archive/` 层级
+  - 新增 `core/constraints.md`、`context/active-project.md`、`context/session-state.md`、`skills/active.json`
+- **Role CRUD 工具（可编程操作角色文件）**
+  - `role_read`：读取角色文件（默认 `memory/consolidated.md`）
+  - `role_write`：覆盖/追加写入角色文件
+  - `role_list`：列出角色文件（支持递归）
+  - `role_search`：跨文件全文检索
+
+### Changed
+- **Memory 存储升级为单一路径（无旧版回退）**
+  - 使用 `memory/consolidated.md` + `memory/daily/YYYY-MM-DD.md`
+  - 启动时自动迁移历史 `MEMORY.md` 与旧 daily 文件到新结构
+- **MEMORY 元数据升级**
+  - 支持 YAML frontmatter（name/version/created/updated/autoConsolidate/consolidationInterval/tags）
+  - 写入时自动更新 `updated`
+- **Gateway 只读访问切换到新路径** (`pi-gateway/src/core/memory-access.ts`)
+  - 仅读取 `core/identity.md` / `core/soul.md` 与 `memory/consolidated.md`
+  - 日记仅读取 `memory/daily/`
+
 ## 2026-02-19
 
 ### Added

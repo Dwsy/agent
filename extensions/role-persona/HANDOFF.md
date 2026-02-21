@@ -28,18 +28,19 @@ Implemented OpenClaw-style persona system for pi coding agent. The extension pro
 
 1. **Role Directory Structure** (`~/.pi/agent/roles/`)
    - `config.json` - CWD to role mappings
-   - `<role-name>/` - Each role's isolated space
-   - `memory/` - Daily memory files
+   - `<role-name>/core/*.md` - persona core files
+   - `<role-name>/memory/consolidated.md` - long-term memory
+   - `<role-name>/memory/daily/YYYY-MM-DD.md` - daily memory files
 
-2. **OpenClaw Prompt Files** (auto-created for new roles)
-   - `AGENTS.md` - Workspace rules
+2. **Prompt Files** (auto-created for new roles)
+   - `core/agents.md` - Workspace rules
    - `BOOTSTRAP.md` - First-run guidance
-   - `IDENTITY.md` - AI identity (name, creature, vibe)
-   - `USER.md` - User profile
-   - `SOUL.md` - Core truths and personality
-   - `HEARTBEAT.md` - Proactive tasks
-   - `TOOLS.md` - Tool preferences
-   - `MEMORY.md` - Long-term memory
+   - `core/identity.md` - AI identity (name, creature, vibe)
+   - `core/user.md` - User profile
+   - `core/soul.md` - Core truths and personality
+   - `core/heartbeat.md` - Proactive tasks
+   - `core/tools.md` - Tool preferences
+   - `memory/consolidated.md` - Long-term memory
 
 3. **Commands**
    - `/role info` - Show current role status
@@ -55,15 +56,15 @@ Implemented OpenClaw-style persona system for pi coding agent. The extension pro
 
 5. **Prompt Injection**
    - `before_agent_start` injects file locations
-   - Loads AGENTS, IDENTITY, SOUL, USER md files
-   - Auto-loads today's and yesterday's memories
-   - Loads MEMORY.md long-term memory
+   - Loads `core/agents.md`, `core/identity.md`, `core/soul.md`, `core/user.md`
+   - Auto-loads today's and yesterday's daily memories
+   - Loads `memory/consolidated.md` long-term memory
 
 6. **Self Evolution**
-   - AGENTS.md includes evolution guidelines
-   - HEARTBEAT.md includes self-check checklist
+   - `core/agents.md` includes evolution guidelines
+   - `core/heartbeat.md` includes self-check checklist
    - Code triggers daily reminder after 5 turns
-   - AI encouraged to update SOUL.md as it evolves
+   - AI encouraged to update `core/soul.md` as it evolves
 
 ---
 
@@ -101,7 +102,7 @@ Implemented OpenClaw-style persona system for pi coding agent. The extension pro
 # 3. Work - prompts auto-injected
 # AI knows its identity and remembers past interactions
 
-# 4. AI evolves SOUL.md over time based on interactions
+# 4. AI evolves core/soul.md over time based on interactions
 ```
 
 ---
@@ -146,7 +147,7 @@ If continuing work:
 
 3. **Enhance evolution**:
    - Automatic memory summarization
-   - SOUL.md diff tracking
+   - core/soul.md diff tracking
    - Evolution timeline visualization
 
 ---
