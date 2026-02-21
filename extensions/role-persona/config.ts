@@ -120,7 +120,7 @@ const DEFAULT_CONFIG: RolePersonaConfig = {
   },
   memory: {
     defaultCategories: ["Communication", "Code", "Tools", "Workflow", "General"],
-    dailyPathTemplate: "{rolePath}/memory/{date}.md",
+    dailyPathTemplate: "{rolePath}/memory/daily/{date}.md",
     dedupeThreshold: 0.9,
     onDemandSearch: {
       enabled: true,
@@ -173,17 +173,130 @@ const DEFAULT_CONFIG: RolePersonaConfig = {
 // ============================================================================
 
 function stripJsoncComments(jsonc: string): string {
-  // 移除单行注释
-  let result = jsonc.replace(/\/\/.*$/gm, "");
-  // 移除多行注释
-  result = result.replace(/\/\*[\s\S]*?\*\//g, "");
-  // 移除尾部逗号（JSONC 允许）
-  result = result.replace(/,(\s*[}\]])/g, "$1");
-  return result;
+  let out = "";
+  let i = 0;
+  let inString = false;
+  let quote = '"';
+  let escaped = false;
+  let inLineComment = false;
+  let inBlockComment = false;
+
+  while (i < jsonc.length) {
+    const ch = jsonc[i];
+    const next = jsonc[i + 1];
+
+    if (inLineComment) {
+      if (ch === "\n") {
+        inLineComment = false;
+        out += ch;
+      }
+      i += 1;
+      continue;
+    }
+
+    if (inBlockComment) {
+      if (ch === "*" && next === "/") {
+        inBlockComment = false;
+        i += 2;
+        continue;
+      }
+      // 保留换行，避免错误行号漂移
+      if (ch === "\n") out += ch;
+      i += 1;
+      continue;
+    }
+
+    if (inString) {
+      out += ch;
+      if (escaped) {
+        escaped = false;
+      } else if (ch === "\\") {
+        escaped = true;
+      } else if (ch === quote) {
+        inString = false;
+      }
+      i += 1;
+      continue;
+    }
+
+    if (ch === '"' || ch === "'") {
+      inString = true;
+      quote = ch;
+      out += ch;
+      i += 1;
+      continue;
+    }
+
+    if (ch === "/" && next === "/") {
+      inLineComment = true;
+      i += 2;
+      continue;
+    }
+
+    if (ch === "/" && next === "*") {
+      inBlockComment = true;
+      i += 2;
+      continue;
+    }
+
+    out += ch;
+    i += 1;
+  }
+
+  return out;
+}
+
+function stripTrailingCommas(json: string): string {
+  let out = "";
+  let i = 0;
+  let inString = false;
+  let quote = '"';
+  let escaped = false;
+
+  while (i < json.length) {
+    const ch = json[i];
+
+    if (inString) {
+      out += ch;
+      if (escaped) {
+        escaped = false;
+      } else if (ch === "\\") {
+        escaped = true;
+      } else if (ch === quote) {
+        inString = false;
+      }
+      i += 1;
+      continue;
+    }
+
+    if (ch === '"' || ch === "'") {
+      inString = true;
+      quote = ch;
+      out += ch;
+      i += 1;
+      continue;
+    }
+
+    if (ch === ",") {
+      let j = i + 1;
+      while (j < json.length && /\s/.test(json[j])) j += 1;
+      const next = json[j];
+      if (next === "}" || next === "]") {
+        i += 1;
+        continue;
+      }
+    }
+
+    out += ch;
+    i += 1;
+  }
+
+  return out;
 }
 
 function parseJsonc(content: string): unknown {
-  const clean = stripJsoncComments(content);
+  const noComments = stripJsoncComments(content);
+  const clean = stripTrailingCommas(noComments);
   return JSON.parse(clean);
 }
 

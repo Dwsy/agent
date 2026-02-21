@@ -35,9 +35,9 @@ flowchart LR
 
   subgraph D["数据层"]
     F1["~/.pi/agent/roles/config.json"]
-    F2["~/.pi/agent/roles/&lt;role&gt;/*.md<br/>AGENTS/IDENTITY/SOUL/USER/HEARTBEAT/TOOLS"]
-    F3["~/.pi/agent/roles/&lt;role&gt;/MEMORY.md"]
-    F4["~/.pi/agent/roles/&lt;role&gt;/memory/YYYY-MM-DD.md"]
+    F2["~/.pi/agent/roles/&lt;role&gt;/core/*.md<br/>agents/identity/soul/user/heartbeat/tools"]
+    F3["~/.pi/agent/roles/&lt;role&gt;/memory/consolidated.md"]
+    F4["~/.pi/agent/roles/&lt;role&gt;/memory/daily/YYYY-MM-DD.md"]
     F5["MEMORY.backup-*.md"]
   end
 
@@ -123,9 +123,9 @@ flowchart LR
     { "id": "cmd", "type": "text", "x": -320, "y": 180, "width": 260, "height": 220, "text": "命令/工具入口\n- /role ...\n- /memories\n- /memory-fix\n- /memory-tidy\n- /memory-tidy-llm [model]\n- memory tool(...)" },
 
     { "id": "cfg", "type": "text", "x": 960, "y": -140, "width": 260, "height": 100, "text": "roles/config.json\ncwd -> role mapping" },
-    { "id": "rolefiles", "type": "text", "x": 960, "y": -20, "width": 260, "height": 120, "text": "roles/<role>/*.md\nAGENTS/IDENTITY/SOUL/USER/..." },
-    { "id": "mem", "type": "text", "x": 960, "y": 140, "width": 260, "height": 120, "text": "roles/<role>/MEMORY.md\n结构化记忆区" },
-    { "id": "daily", "type": "text", "x": 960, "y": 280, "width": 260, "height": 100, "text": "roles/<role>/memory/YYYY-MM-DD.md\n每日记忆" },
+    { "id": "rolefiles", "type": "text", "x": 960, "y": -20, "width": 260, "height": 120, "text": "roles/<role>/core/*.md\nagents/identity/soul/user/..." },
+    { "id": "mem", "type": "text", "x": 960, "y": 140, "width": 260, "height": 120, "text": "roles/<role>/memory/consolidated.md\n结构化记忆区" },
+    { "id": "daily", "type": "text", "x": 960, "y": 280, "width": 260, "height": 100, "text": "roles/<role>/memory/daily/YYYY-MM-DD.md\n每日记忆" },
     { "id": "bak", "type": "text", "x": 960, "y": 400, "width": 260, "height": 80, "text": "MEMORY.backup-*.md\n修复/整理备份" }
   ],
   "edges": [

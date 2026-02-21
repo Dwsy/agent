@@ -9,26 +9,29 @@
  * - First-run bootstrap guidance
  *
  * Directory structure:
- * ~/.pi/roles/
- *   ├── default/
- *   │   ├── AGENTS.md      # Workspace rules
- *   │   ├── BOOTSTRAP.md   # First-run guidance (deleted after init)
- *   │   ├── IDENTITY.md    # AI identity (name, creature, vibe, emoji)
- *   │   ├── USER.md        # User profile
- *   │   ├── SOUL.md        # Core truths and personality
- *   │   ├── HEARTBEAT.md   # Proactive check tasks
- *   │   ├── TOOLS.md       # Tool preferences
- *   │   ├── MEMORY.md      # Long-term curated memory
- *   │   └── memory/        # Daily memory files
- *   │       └── YYYY-MM-DD.md
- *   └── other-role/
- *       └── ...
+ * ~/.pi/agent/roles/
+ *   ├── <role>/
+ *   │   ├── core/
+ *   │   │   ├── agents.md
+ *   │   │   ├── identity.md
+ *   │   │   ├── soul.md
+ *   │   │   ├── user.md
+ *   │   │   ├── tools.md
+ *   │   │   ├── heartbeat.md
+ *   │   │   └── constraints.md
+ *   │   ├── memory/
+ *   │   │   ├── consolidated.md
+ *   │   │   └── daily/YYYY-MM-DD.md
+ *   │   ├── context/
+ *   │   ├── skills/
+ *   │   └── BOOTSTRAP.md
+ *   └── ...
  */
 
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { compact as piCompact } from "@mariozechner/pi-coding-agent";
-import { existsSync, readFileSync } from "node:fs";
-import { basename, join } from "node:path";
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { basename, dirname, join, relative, resolve } from "node:path";
 import { StringEnum } from "@mariozechner/pi-ai";
 import { Type } from "@sinclair/typebox";
 import { log } from "./logger.ts";
@@ -75,6 +78,7 @@ import {
   isRoleDisabledForCwd,
   loadRoleConfig,
   loadRolePrompts,
+  migrateAllRolesToStructuredLayout,
   resolveRoleForCwd,
   ROLES_DIR,
   saveRoleConfig,
@@ -150,6 +154,65 @@ export default function rolePersonaExtension(pi: ExtensionAPI) {
   }
 
   const normalizePath = (path: string) => path.replace(/\/$/, "");
+
+  function resolveRoleScopedPath(baseRolePath: string, relativePath: string): { ok: true; absolutePath: string; normalizedRelative: string } | { ok: false; error: string } {
+    const requested = (relativePath || "").trim().replace(/^\/+/, "");
+    if (!requested) {
+      return { ok: false as const, error: "Path is required" };
+    }
+
+    const roleRoot = resolve(baseRolePath);
+    const absolutePath = resolve(roleRoot, requested);
+    const rel = relative(roleRoot, absolutePath);
+    const relParts = rel.split(/[\\/]/).filter(Boolean);
+    if (rel.startsWith("..") || relParts.includes("..")) {
+      return { ok: false as const, error: "Path escapes role directory" };
+    }
+
+    return {
+      ok: true as const,
+      absolutePath,
+      normalizedRelative: rel || ".",
+    };
+  }
+
+  function walkFiles(dir: string, recursive: boolean, maxEntries: number): string[] {
+    const entries: string[] = [];
+
+    const visit = (current: string) => {
+      if (entries.length >= maxEntries) return;
+
+      let children: string[] = [];
+      try {
+        children = readdirSync(current);
+      } catch {
+        return;
+      }
+
+      children.sort((a, b) => a.localeCompare(b));
+
+      for (const child of children) {
+        if (entries.length >= maxEntries) break;
+        const full = join(current, child);
+        let st: ReturnType<typeof statSync>;
+        try {
+          st = statSync(full);
+        } catch {
+          continue;
+        }
+
+        if (st.isDirectory()) {
+          if (recursive) visit(full);
+          continue;
+        }
+
+        if (st.isFile()) entries.push(full);
+      }
+    };
+
+    visit(dir);
+    return entries;
+  }
 
   /** Check if running in RPC mode */
   function isRpcMode(): boolean {
@@ -562,7 +625,7 @@ export default function rolePersonaExtension(pi: ExtensionAPI) {
       ctx.ui.setStatus("memory-checkpoint", undefined);
 
       if (repair.repaired) {
-        notify(ctx, `MEMORY.md 已规范化修复 (${repair.issues} issues)`, "info");
+        notify(ctx, `memory/consolidated.md 已规范化修复 (${repair.issues} issues)`, "info");
       }
 
       if (isFirstRun(rolePath)) {
@@ -577,6 +640,21 @@ export default function rolePersonaExtension(pi: ExtensionAPI) {
   // 1. Session start - auto-load role based on cwd mapping
   pi.on("session_start", async (_event, ctx) => {
     ensureRolesDir();
+
+    const migration = migrateAllRolesToStructuredLayout();
+    if (migration.migratedFiles > 0 || migration.removedFiles > 0) {
+      log(
+        "role-migration",
+        `upgraded ${migration.migratedFiles} files, removed ${migration.removedFiles} legacy files across ${migration.roles} roles`
+      );
+      if (isTuiAvailable(ctx)) {
+        notify(
+          ctx,
+          `Role data upgraded (${migration.migratedFiles} migrated, ${migration.removedFiles} legacy files removed)`,
+          "info"
+        );
+      }
+    }
     
     // Reset first message flag for on-demand memory search
     isFirstUserMessage = true;
@@ -589,7 +667,7 @@ export default function rolePersonaExtension(pi: ExtensionAPI) {
     if (roleName) {
       const rolePath = join(ROLES_DIR, roleName);
 
-      // 默认角色缺失时自动创建，保证 fallback 可用
+      // 默认角色缺失时自动创建，保证默认角色可用
       if (!existsSync(rolePath) && resolution.source === "default") {
         createRole(roleName);
       }
@@ -623,12 +701,13 @@ export default function rolePersonaExtension(pi: ExtensionAPI) {
 IMPORTANT: All persona files are stored in the role directory:
 **${currentRolePath}**
 
-When creating or editing these files, ALWAYS use the full path:
-- IDENTITY.md → ${currentRolePath}/IDENTITY.md
-- USER.md → ${currentRolePath}/USER.md
-- SOUL.md → ${currentRolePath}/SOUL.md
-- MEMORY.md → ${currentRolePath}/MEMORY.md
-- Daily memories → ${currentRolePath}/memory/YYYY-MM-DD.md
+Structured paths (v2):
+- identity → ${currentRolePath}/core/identity.md
+- user → ${currentRolePath}/core/user.md
+- soul → ${currentRolePath}/core/soul.md
+- constraints → ${currentRolePath}/core/constraints.md
+- memory consolidated → ${currentRolePath}/memory/consolidated.md
+- daily memories → ${currentRolePath}/memory/daily/${today}.md
 
 ## 📝 MEMORY
 
@@ -786,7 +865,7 @@ ${buildMemoryEditInstruction(currentRolePath)}`;
 
   // 3.5 Intercept compaction to extract memories before context is lost.
   // Piggybacks on the default compaction LLM call by injecting a <memory> extraction
-  // instruction into customInstructions. Parses the JSON output and writes to MEMORY.md
+  // instruction into customInstructions. Parses the JSON output and writes to memory/consolidated.md
   // + daily memory, then strips the <memory> block from the summary.
   pi.on("session_before_compact", async (event, ctx) => {
     if (!AUTO_MEMORY_ENABLED || !currentRole || !currentRolePath) return;
@@ -922,7 +1001,7 @@ Rules for memory extraction:
     name: "memory",
     label: "Role Memory",
     description:
-      "Manage role memory in MEMORY.md (markdown sections). Actions: add_learning, add_preference, reinforce, search, list, consolidate, repair, llm_tidy, vector_rebuild, vector_stats.",
+      "Manage role memory in memory/consolidated.md (markdown sections). Actions: add_learning, add_preference, reinforce, search, list, consolidate, repair, llm_tidy, vector_rebuild, vector_stats.",
     parameters: Type.Object({
       action: StringEnum(["add_learning", "add_preference", "reinforce", "search", "list", "consolidate", "repair", "llm_tidy", "vector_rebuild", "vector_stats"] as const),
       content: Type.Optional(Type.String({ description: "Memory text" })),
@@ -1069,8 +1148,8 @@ Rules for memory extraction:
               {
                 type: "text",
                 text: result.repaired
-                  ? `MEMORY.md repaired (${result.issues} issues).`
-                  : "MEMORY.md is healthy.",
+                  ? `memory/consolidated.md repaired (${result.issues} issues).`
+                  : "memory/consolidated.md is healthy.",
               },
             ],
             details: result,
@@ -1138,6 +1217,214 @@ Rules for memory extraction:
         default:
           return { content: [{ type: "text", text: "Unknown action" }], details: { error: true } };
       }
+    },
+  });
+
+  // Structured role file CRUD tools (pi-memory-md style)
+  pi.registerTool({
+    name: "role_read",
+    label: "Role Read",
+    description: "Read a file from the active role directory (core/*, memory/*, context/*).",
+    parameters: Type.Object({
+      path: Type.Optional(Type.String({ description: "Relative path inside role directory. Default: memory/consolidated.md" })),
+      maxChars: Type.Optional(Type.Number({ description: "Max chars to return (default 12000)", minimum: 1000, maximum: 100000 })),
+    }),
+    async execute(_toolCallId, params) {
+      if (!currentRolePath) {
+        return { content: [{ type: "text", text: "No active role mapped in current directory." }], details: { error: true } };
+      }
+
+      const target = resolveRoleScopedPath(currentRolePath, params.path || "memory/consolidated.md");
+      if (!target.ok) {
+        const error = "error" in target ? target.error : "invalid path";
+        return { content: [{ type: "text", text: `Invalid path: ${error}` }], details: { error: true } };
+      }
+
+      if (!existsSync(target.absolutePath)) {
+        return { content: [{ type: "text", text: `File not found: ${target.normalizedRelative}` }], details: { error: true } };
+      }
+
+      let content = "";
+      try {
+        content = readFileSync(target.absolutePath, "utf-8");
+      } catch (err) {
+        return { content: [{ type: "text", text: `Read failed: ${String(err)}` }], details: { error: true } };
+      }
+
+      const maxChars = Math.max(1000, Math.min(100000, Math.floor(params.maxChars || 12000)));
+      const truncated = content.length > maxChars;
+      const output = truncated ? `${content.slice(0, maxChars)}\n\n...[truncated ${content.length - maxChars} chars]` : content;
+
+      return {
+        content: [{ type: "text", text: output || "(empty file)" }],
+        details: {
+          path: target.normalizedRelative,
+          bytes: content.length,
+          truncated,
+        },
+      };
+    },
+  });
+
+  pi.registerTool({
+    name: "role_write",
+    label: "Role Write",
+    description: "Create or update a file inside the active role directory.",
+    parameters: Type.Object({
+      path: Type.String({ description: "Relative path inside role directory" }),
+      content: Type.String({ description: "File content to write" }),
+      mode: Type.Optional(StringEnum(["overwrite", "append"] as const)),
+    }),
+    async execute(_toolCallId, params) {
+      if (!currentRolePath) {
+        return { content: [{ type: "text", text: "No active role mapped in current directory." }], details: { error: true } };
+      }
+
+      const target = resolveRoleScopedPath(currentRolePath, params.path);
+      if (!target.ok) {
+        const error = "error" in target ? target.error : "invalid path";
+        return { content: [{ type: "text", text: `Invalid path: ${error}` }], details: { error: true } };
+      }
+
+      const mode = params.mode || "overwrite";
+
+      try {
+        mkdirSync(dirname(target.absolutePath), { recursive: true });
+
+        if (mode === "append") {
+          const exists = existsSync(target.absolutePath);
+          const prefix = exists ? "\n" : "";
+          writeFileSync(target.absolutePath, `${prefix}${params.content}`, { encoding: "utf-8", flag: "a" });
+        } else {
+          writeFileSync(target.absolutePath, params.content, "utf-8");
+        }
+      } catch (err) {
+        return { content: [{ type: "text", text: `Write failed: ${String(err)}` }], details: { error: true } };
+      }
+
+      return {
+        content: [{ type: "text", text: `Saved ${target.normalizedRelative}` }],
+        details: { path: target.normalizedRelative, mode },
+      };
+    },
+  });
+
+  pi.registerTool({
+    name: "role_list",
+    label: "Role List",
+    description: "List files under the active role directory.",
+    parameters: Type.Object({
+      path: Type.Optional(Type.String({ description: "Relative directory path. Default: ." })),
+      recursive: Type.Optional(Type.Boolean({ description: "Whether to list recursively" })),
+      maxEntries: Type.Optional(Type.Number({ description: "Max files to return", minimum: 1, maximum: 500 })),
+    }),
+    async execute(_toolCallId, params) {
+      if (!currentRolePath) {
+        return { content: [{ type: "text", text: "No active role mapped in current directory." }], details: { error: true } };
+      }
+
+      const target = resolveRoleScopedPath(currentRolePath, params.path || ".");
+      if (!target.ok) {
+        const error = "error" in target ? target.error : "invalid path";
+        return { content: [{ type: "text", text: `Invalid path: ${error}` }], details: { error: true } };
+      }
+      if (!existsSync(target.absolutePath)) {
+        return { content: [{ type: "text", text: `Path not found: ${target.normalizedRelative}` }], details: { error: true } };
+      }
+
+      const recursive = params.recursive ?? false;
+      const maxEntries = Math.max(1, Math.min(500, Math.floor(params.maxEntries || 200)));
+
+      let files: string[] = [];
+      try {
+        const st = statSync(target.absolutePath);
+        if (st.isFile()) {
+          files = [target.absolutePath];
+        } else {
+          files = walkFiles(target.absolutePath, recursive, maxEntries);
+        }
+      } catch (err) {
+        return { content: [{ type: "text", text: `List failed: ${String(err)}` }], details: { error: true } };
+      }
+
+      const roleRoot = resolve(currentRolePath);
+      const relFiles = files.slice(0, maxEntries).map((p) => relative(roleRoot, p) || ".");
+
+      return {
+        content: [{ type: "text", text: relFiles.length > 0 ? relFiles.join("\n") : "(no files)" }],
+        details: { count: relFiles.length, recursive, base: target.normalizedRelative },
+      };
+    },
+  });
+
+  pi.registerTool({
+    name: "role_search",
+    label: "Role Search",
+    description: "Full-text search across role files.",
+    parameters: Type.Object({
+      query: Type.String({ description: "Search keyword" }),
+      path: Type.Optional(Type.String({ description: "Relative path scope. Default: ." })),
+      maxResults: Type.Optional(Type.Number({ description: "Max hits", minimum: 1, maximum: 200 })),
+    }),
+    async execute(_toolCallId, params) {
+      if (!currentRolePath) {
+        return { content: [{ type: "text", text: "No active role mapped in current directory." }], details: { error: true } };
+      }
+
+      const query = params.query.trim();
+      if (!query) {
+        return { content: [{ type: "text", text: "query is required" }], details: { error: true } };
+      }
+
+      const target = resolveRoleScopedPath(currentRolePath, params.path || ".");
+      if (!target.ok) {
+        const error = "error" in target ? target.error : "invalid path";
+        return { content: [{ type: "text", text: `Invalid path: ${error}` }], details: { error: true } };
+      }
+      if (!existsSync(target.absolutePath)) {
+        return { content: [{ type: "text", text: `Path not found: ${target.normalizedRelative}` }], details: { error: true } };
+      }
+
+      const maxResults = Math.max(1, Math.min(200, Math.floor(params.maxResults || 30)));
+      const roleRoot = resolve(currentRolePath);
+      const queryLower = query.toLowerCase();
+
+      const textLike = /\.(md|txt|json|jsonc|ya?ml)$/i;
+      const files: string[] = [];
+      try {
+        const st = statSync(target.absolutePath);
+        if (st.isFile()) files.push(target.absolutePath);
+        else files.push(...walkFiles(target.absolutePath, true, 1000));
+      } catch (err) {
+        return { content: [{ type: "text", text: `Search failed: ${String(err)}` }], details: { error: true } };
+      }
+
+      const hits: string[] = [];
+      for (const file of files) {
+        if (hits.length >= maxResults) break;
+        if (!textLike.test(file)) continue;
+
+        let content = "";
+        try {
+          content = readFileSync(file, "utf-8");
+        } catch {
+          continue;
+        }
+
+        const lines = content.split(/\r?\n/);
+        for (let i = 0; i < lines.length; i++) {
+          if (hits.length >= maxResults) break;
+          const line = lines[i];
+          if (!line.toLowerCase().includes(queryLower)) continue;
+          const rel = relative(roleRoot, file) || ".";
+          hits.push(`${rel}:${i + 1}: ${line.trim()}`);
+        }
+      }
+
+      return {
+        content: [{ type: "text", text: hits.length > 0 ? hits.join("\n") : "No matches" }],
+        details: { query, count: hits.length, scope: target.normalizedRelative },
+      };
     },
   });
 
@@ -1325,7 +1612,7 @@ Rules for memory extraction:
   });
 
   pi.registerCommand("memory-fix", {
-    description: "Repair current role MEMORY.md into canonical markdown structure",
+    description: "Repair current role memory/consolidated.md into canonical markdown structure",
     handler: async (_args, ctx) => {
       if (!currentRole || !currentRolePath) {
         notify(ctx, "当前目录未映射角色", "warning");
@@ -1333,9 +1620,9 @@ Rules for memory extraction:
       }
       const result = repairRoleMemory(currentRolePath, currentRole, { force: true });
       if (result.repaired) {
-        notify(ctx, `MEMORY.md 已修复 (${result.issues} issues)`, "success");
+        notify(ctx, `memory/consolidated.md 已修复 (${result.issues} issues)`, "success");
       } else {
-        notify(ctx, "MEMORY.md 无需修复", "info");
+        notify(ctx, "memory/consolidated.md 无需修复", "info");
       }
     },
   });
@@ -1359,7 +1646,7 @@ Rules for memory extraction:
         `- total: ${summary.learnings} learnings, ${summary.preferences} preferences`,
       ].join("\n");
 
-      notify(ctx, "MEMORY.md 已手动整理", "success");
+      notify(ctx, "memory/consolidated.md 已手动整理", "success");
       pi.sendMessage({ customType: "memory-tidy", content: msg, display: true }, { triggerTurn: false });
     },
   });
@@ -1479,8 +1766,8 @@ Rules for memory extraction:
           info += `- \`/role map [role]\` - 映射目录到角色（不填则上下选择）\n`;
           info += `- \`/role unmap\` - 取消映射并禁用本目录角色（含默认角色）\n`;
           info += `- \`/role list\` - 列出所有角色和映射\n`;
-          info += `- \`/memories\` - 查看 MEMORY.md 与最近 daily memory\n`;
-          info += `- \`/memory-fix\` - 强制修复 MEMORY.md 结构\n`;
+          info += `- \`/memories\` - 查看 memory/consolidated.md 与最近 daily memory\n`;
+          info += `- \`/memory-fix\` - 强制修复 memory/consolidated.md 结构\n`;
           info += `- \`/memory-tidy\` - 手动整理记忆（修复+去重+汇总）\n`;
           info += `- \`/memory-tidy-llm [provider/model]\` - LLM整理记忆（可指定模型）\n`;
 
@@ -1712,8 +1999,8 @@ Rules for memory extraction:
       pi.sendMessage({
         customType: "evolution-reminder",
         content: `[Low-priority note] When you have a natural pause, consider a brief daily reflection:
-- Skim ${currentRolePath}/memory/ for today's notes
-- Optionally update MEMORY.md with durable insights
+- Skim ${currentRolePath}/memory/daily/ for today's notes
+- Optionally update memory/consolidated.md with durable insights
 This is background housekeeping — always prioritize the user's current question first.`,
         display: false
       }, {

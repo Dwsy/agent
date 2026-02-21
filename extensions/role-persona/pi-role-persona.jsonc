@@ -72,7 +72,7 @@
 
     // 每日记忆文件路径模板
     // 变量: {rolePath}, {date}
-    "dailyPathTemplate": "{rolePath}/memory/{date}.md",
+    "dailyPathTemplate": "{rolePath}/memory/daily/{date}.md",
 
     // 记忆去重相似度阈值（0-1，Jaccard 系数）
     "dedupeThreshold": 0.9,
