@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState, useCallback } from 'react';
 import { Activity, Trash2, BarChart3 } from 'lucide-react';
 import { PermissionGate } from '../components/permission-gate';
 import { usePageDataSource, useDataMutation } from '../hooks/use-data-source';
@@ -75,6 +75,67 @@ function ObservabilityPanel() {
   );
 }
 
+/**
+ * API Token 配置组件
+ */
+function ApiTokenConfig() {
+  const [token, setToken] = useState(() => localStorage.getItem('gateway_api_token') || '');
+  const [saved, setSaved] = useState(false);
+
+  const handleSave = useCallback(() => {
+    localStorage.setItem('gateway_api_token', token);
+    setSaved(true);
+    trackRuntimeEvent('info', 'API token saved', { hasToken: !!token });
+    setTimeout(() => setSaved(false), 2000);
+  }, [token]);
+
+  const handleClear = useCallback(() => {
+    localStorage.removeItem('gateway_api_token');
+    setToken('');
+    setSaved(false);
+    trackRuntimeEvent('info', 'API token cleared');
+  }, []);
+
+  return (
+    <div className="rounded-xl border border-slate-800 bg-card p-4">
+      <h2 className="text-sm font-semibold text-slate-200 mb-3">API Authentication</h2>
+      <div className="space-y-3">
+        <div>
+          <label className="block text-xs text-slate-400 mb-1">
+            Gateway API Token
+          </label>
+          <input
+            type="password"
+            value={token}
+            onChange={(e) => setToken(e.target.value)}
+            placeholder="Enter your gateway token (e.g., 5213)"
+            className="w-full rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-200 placeholder-slate-600 focus:border-sky-600 focus:outline-none"
+          />
+          <p className="text-xs text-slate-500 mt-1">
+            Token is stored in localStorage and attached to all API requests.
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={handleSave}
+            disabled={!token}
+            className="rounded border border-emerald-700 px-3 py-1.5 text-xs text-emerald-300 hover:bg-emerald-900/20 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {saved ? '✓ Saved' : 'Save Token'}
+          </button>
+          <button
+            onClick={handleClear}
+            disabled={!token}
+            className="rounded border border-slate-700 px-3 py-1.5 text-xs text-slate-400 hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Clear
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function SettingsPage() {
   // 页面挂载埋点
   useEffect(() => {
@@ -98,6 +159,9 @@ export function SettingsPage() {
 
   return (
     <div className="space-y-4">
+      {/* API Token 配置 */}
+      <ApiTokenConfig />
+      
       {/* 观测面板 */}
       <ObservabilityPanel />
       

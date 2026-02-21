@@ -1,8 +1,17 @@
 import axios from 'axios';
 
 export const api = axios.create({
-  baseURL: '/api',
+  baseURL: 'http://127.0.0.1:52134/api',
   timeout: 10000
+});
+
+// 请求拦截器：自动附加认证 token
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem('gateway_api_token');
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
 });
 
 export type HealthResponse = {
