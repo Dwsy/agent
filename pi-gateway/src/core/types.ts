@@ -237,6 +237,10 @@ export interface MessageSource {
   senderId: string;
   senderName?: string;
   guildId?: string;
+  /** Discord member role IDs, used for guild+roles routing. */
+  memberRoleIds?: string[];
+  /** Parent peer context (e.g. thread parent channel) for inheritance routing. */
+  parentPeer?: { kind: "group" | "channel"; id: string };
   /** Target agent ID for routing (cron/delegation). */
   agentId?: string;
   /** Inbound message ID (platform-specific, for pin/reply/react). */
@@ -305,6 +309,10 @@ export type GatewayMethod =
   | "sessions.get"
   | "sessions.compact"
   | "sessions.delete"
+  | "roles.list"
+  | "roles.set"
+  | "roles.create"
+  | "roles.delete"
   | "plugins.list"
   | "tools.list"
   | "tools.call"

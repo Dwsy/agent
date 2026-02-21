@@ -356,6 +356,7 @@ export interface CommandContext {
   sessionKey: SessionKey;
   senderId: string;
   channel: string;
+  chatId?: string;
   accountId?: string;
   args: string;
   respond: (text: string) => Promise<void>;
@@ -521,6 +522,18 @@ export interface GatewayPluginApi {
 
   /** Read transcript entries for a session (from gateway JSONL logs) */
   readTranscript(sessionKey: SessionKey, lastN?: number): import("../core/transcript-logger.ts").TranscriptEntry[];
+
+  /** List available roles from gateway + role directory + agent roles */
+  listAvailableRoles(): string[];
+
+  /** Set role for a specific session */
+  setSessionRole(sessionKey: SessionKey, role: string): Promise<boolean>;
+
+  /** Create role directory scaffold */
+  createRole(role: string): Promise<{ ok: boolean; error?: string }>;
+
+  /** Delete role directory and cleanup mappings */
+  deleteRole(role: string): Promise<{ ok: boolean; error?: string }>;
 }
 
 // ============================================================================

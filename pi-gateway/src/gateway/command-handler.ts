@@ -140,7 +140,7 @@ export function registerBuiltinCommands(ctx: GatewayContext): void {
 
   ctx.registry.commands.set("role", {
     pluginId: "gateway-core",
-    handler: async ({ sessionKey, senderId, channel, accountId, args, respond }) => {
+    handler: async ({ sessionKey, senderId, channel, chatId, accountId, args, respond }) => {
       const session = ctx.sessions.get(sessionKey);
       if (!session) {
         await respond("No active session. Send a normal message first, then use /role.");
@@ -149,7 +149,27 @@ export function registerBuiltinCommands(ctx: GatewayContext): void {
 
       const raw = (args ?? "").trim();
       if (!raw) {
-        await respond(`Current role: ${session.role ?? "default"}`);
+        const currentRole = session.role ?? "default";
+        if (channel === "telegram" && chatId) {
+          const ch = ctx.registry.channels.get(channel);
+          const roles = ctx.listAvailableRoles();
+          if (ch?.outbound.sendKeyboard && roles.length > 0) {
+            const topRoles = roles.slice(0, 12);
+            const rows = topRoles.map((role) => {
+              const row: Array<{ text: string; callback_data: string }> = [
+                { text: role === currentRole ? `✅ ${role}` : role, callback_data: `role:set:${role}` },
+              ];
+              if (role !== "default") {
+                row.push({ text: `🗑 ${role}`, callback_data: `role:del:${role}` });
+              }
+              return row;
+            });
+            rows.push([{ text: "➕ Create role (use /role create <name>)", callback_data: "role:hint:create" }]);
+            await ch.outbound.sendKeyboard(chatId, `Current role: ${currentRole}\nSelect / Delete role:`, { inline_keyboard: rows });
+            return;
+          }
+        }
+        await respond(`Current role: ${currentRole}`);
         return;
       }
 
@@ -184,7 +204,54 @@ export function registerBuiltinCommands(ctx: GatewayContext): void {
         return;
       }
 
-      await respond("Usage: /role | /role list | /role set <role>");
+      if (action === "create") {
+        if (!canManageRole(ctx, senderId, channel, accountId)) {
+          await respond("Unauthorized: /role create requires allowFrom authorization.");
+          return;
+        }
+        const targetRole = rest.join(" ").trim();
+        if (!targetRole) {
+          await respond("Usage: /role create <role>");
+          return;
+        }
+        const created = await ctx.createRole(targetRole);
+        if (!created.ok) {
+          await respond(`Failed to create role '${targetRole}': ${created.error ?? "unknown error"}`);
+          return;
+        }
+        await respond(`Role created: ${targetRole}`);
+        return;
+      }
+
+      if (action === "delete") {
+        if (!canManageRole(ctx, senderId, channel, accountId)) {
+          await respond("Unauthorized: /role delete requires allowFrom authorization.");
+          return;
+        }
+        const targetRole = rest.join(" ").trim();
+        if (!targetRole) {
+          if (channel === "telegram" && chatId) {
+            const ch = ctx.registry.channels.get(channel);
+            const roles = ctx.listAvailableRoles().filter((r) => r !== "default");
+            if (ch?.outbound.sendKeyboard && roles.length > 0) {
+              const rows = roles.slice(0, 20).map((role) => ([{ text: `🗑 ${role}`, callback_data: `role:del:${role}` }]));
+              await ch.outbound.sendKeyboard(chatId, "Select role to delete:", { inline_keyboard: rows });
+              return;
+            }
+          }
+          await respond("Usage: /role delete <role>");
+          return;
+        }
+        const deleted = await ctx.deleteRole(targetRole);
+        if (!deleted.ok) {
+          await respond(`Failed to delete role '${targetRole}': ${deleted.error ?? "unknown error"}`);
+          return;
+        }
+        await respond(`Role deleted: ${targetRole}`);
+        return;
+      }
+
+      await respond("Usage: /role | /role list | /role set <role> | /role create <role> | /role delete <role>");
     },
   });
 }
@@ -217,6 +284,7 @@ async function executeLocalCommand(
       sessionKey: msg.sessionKey,
       senderId: msg.source.senderId,
       channel: msg.source.channel,
+      chatId: msg.source.chatId,
       accountId: msg.source.accountId,
       args: parsed.args,
       respond: sendReply,

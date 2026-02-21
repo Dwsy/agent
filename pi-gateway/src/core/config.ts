@@ -147,8 +147,15 @@ export interface AgentBinding {
     channel?: string;
     accountId?: string;
     guildId?: string;  // Discord specific
+    /** Discord member roles constraint (all listed roles must match at least one in source roles set). */
+    roles?: string[];
     peer?: {
-      kind?: "dm" | "group";
+      kind?: "dm" | "group" | "channel" | "thread";
+      id?: string;
+    };
+    /** Parent peer inheritance (e.g. thread parent channel/topic). */
+    parentPeer?: {
+      kind?: "group" | "channel";
       id?: string;
     };
   };
@@ -230,7 +237,7 @@ export interface AgentConfig {
 }
 
 export interface SessionConfig {
-  dmScope: "main" | "per-peer" | "per-channel-peer";
+  dmScope: "main" | "per-peer" | "per-channel-peer" | "per-account-channel-peer";
   dataDir: string;
   /** Auto-resume sessions on restart via --continue. Default: true */
   continueOnRestart?: boolean;

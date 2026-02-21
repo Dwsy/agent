@@ -41,6 +41,7 @@ export const DmScopeSchema = Type.Union([
   Type.Literal("main"),
   Type.Literal("per-peer"),
   Type.Literal("per-channel-peer"),
+  Type.Literal("per-account-channel-peer"),
 ]);
 
 export const MessageModeSchema = Type.Union([
@@ -482,8 +483,18 @@ export const AgentBindingSchema = Type.Object({
     channel: Type.Optional(Type.String()),
     accountId: Type.Optional(Type.String()),
     guildId: Type.Optional(Type.String()),
+    roles: Type.Optional(Type.Array(Type.String())),
     peer: Type.Optional(Type.Object({
-      kind: Type.Optional(Type.Union([Type.Literal("dm"), Type.Literal("group")])),
+      kind: Type.Optional(Type.Union([
+        Type.Literal("dm"),
+        Type.Literal("group"),
+        Type.Literal("channel"),
+        Type.Literal("thread"),
+      ])),
+      id: Type.Optional(Type.String()),
+    })),
+    parentPeer: Type.Optional(Type.Object({
+      kind: Type.Optional(Type.Union([Type.Literal("group"), Type.Literal("channel")])),
       id: Type.Optional(Type.String()),
     })),
   }),

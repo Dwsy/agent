@@ -127,6 +127,48 @@ describe("v3 routing real: Layer 1 static binding", () => {
     expect(result.agentId).toBe("ops"); // peer wins
   });
 
+  test("parentPeer binding matches thread inherited parent", () => {
+    const config = makeConfig(threeAgents, "code", [
+      {
+        agentId: "docs",
+        match: { channel: "discord", parentPeer: { kind: "channel", id: "parent-1" } },
+      },
+    ]);
+
+    const result = resolveAgentId(
+      makeSource({
+        channel: "discord",
+        chatType: "thread",
+        chatId: "thread-1",
+        parentPeer: { kind: "channel", id: "parent-1" },
+      }),
+      "hello",
+      config,
+    );
+
+    expect(result.agentId).toBe("docs");
+  });
+
+  test("guild+roles binding matches when member has role", () => {
+    const config = makeConfig(threeAgents, "code", [
+      { agentId: "ops", match: { channel: "discord", guildId: "g1", roles: ["r1"] } },
+    ]);
+
+    const result = resolveAgentId(
+      makeSource({
+        channel: "discord",
+        chatType: "channel",
+        chatId: "c1",
+        guildId: "g1",
+        memberRoleIds: ["r1", "r2"],
+      }),
+      "hello",
+      config,
+    );
+
+    expect(result.agentId).toBe("ops");
+  });
+
   test("unmatched source skips to next layer", () => {
     const config = makeConfig(threeAgents, "code", [
       { agentId: "ops", match: { channel: "telegram", peer: { kind: "group", id: "-100ops" } } },
