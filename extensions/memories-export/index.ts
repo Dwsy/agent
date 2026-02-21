@@ -13,6 +13,12 @@ import { promisify } from "util";
 
 const execAsync = promisify(exec);
 
+function getRolesDir(): string {
+  const envPath = process.env.PI_AGENT_ROLES_DIR?.trim();
+  if (envPath) return envPath;
+  return path.join(os.homedir(), ".pi", "agent", "roles");
+}
+
 interface MemoryItem {
   id: string;
   type: "learning" | "preference" | "event" | "daily";
@@ -91,7 +97,7 @@ function parseMemoryMd(filePath: string): MemoryItem[] {
         content: contentText,
         tags: extractTags(contentText),
         date: "—",
-        source: "MEMORY.md",
+        source: "memory/consolidated.md",
       });
       continue;
     }
@@ -99,7 +105,7 @@ function parseMemoryMd(filePath: string): MemoryItem[] {
     const prefMatch = line.match(/^-\s*(.+)$/);
     if (prefMatch && currentCategory.includes("Preferences") && !line.startsWith("#")) {
       const contentText = prefMatch[1].trim();
-      if (contentText && !contentText.startsWith("[")) {
+      if (contentText && contentText !== "(none)" && !contentText.startsWith("[")) {
         memories.push({
           id: generateId("pref", indices.preference++),
           type: "preference",
@@ -110,7 +116,7 @@ function parseMemoryMd(filePath: string): MemoryItem[] {
           content: contentText,
           tags: extractTags(contentText),
           date: "—",
-          source: "MEMORY.md",
+          source: "memory/consolidated.md",
         });
       }
       continue;
@@ -130,7 +136,7 @@ function parseMemoryMd(filePath: string): MemoryItem[] {
         content: title,
         tags: extractTags(title),
         date,
-        source: "MEMORY.md",
+        source: "memory/consolidated.md",
       });
     }
   }
@@ -695,39 +701,48 @@ export default function (pi: ExtensionAPI) {
       try {
         ctx.ui.setWorkingMessage("导出记忆...");
         
-        // 从 role-persona 配置中读取当前角色
-        const roleConfigPath = path.join(os.homedir(), ".pi/agent/roles/.config.json");
-        let currentRole = "zero";
+        // 读取 role-persona 配置并解析当前角色（新版结构）
+        const rolesDir = getRolesDir();
+        const roleConfigPath = path.join(rolesDir, "config.json");
+        const cwd = ctx.cwd || process.cwd();
+
+        let currentRole = "default";
         if (fs.existsSync(roleConfigPath)) {
           try {
-            const config = JSON.parse(fs.readFileSync(roleConfigPath, "utf-8"));
-            // 尝试获取当前工作目录对应的角色映射
-            const cwd = process.cwd();
-            if (config.mappings) {
-              for (const [mappedPath, role] of Object.entries(config.mappings)) {
-                if (cwd.startsWith(mappedPath)) {
-                  currentRole = role as string;
-                  break;
-                }
-              }
-            }
-            // 如果没有映射，使用默认角色
-            if (currentRole === "zero" && config.defaultRole) {
-              currentRole = config.defaultRole;
+            const config = JSON.parse(fs.readFileSync(roleConfigPath, "utf-8")) as {
+              mappings?: Record<string, string>;
+              defaultRole?: string;
+            };
+
+            const mappings = Object.entries(config.mappings || {})
+              .map(([mappedPath, role]) => ({ mappedPath: mappedPath.replace(/\/$/, ""), role }))
+              .filter((entry) => entry.mappedPath && entry.role)
+              .sort((a, b) => b.mappedPath.length - a.mappedPath.length);
+
+            const normalizedCwd = cwd.replace(/\/$/, "");
+            const matched = mappings.find(({ mappedPath }) =>
+              normalizedCwd === mappedPath || normalizedCwd.startsWith(`${mappedPath}/`)
+            );
+
+            if (matched?.role) {
+              currentRole = matched.role;
+            } else if (config.defaultRole && config.defaultRole.trim()) {
+              currentRole = config.defaultRole.trim();
             }
           } catch {
-            // 解析失败时使用默认 zero
+            // ignore config parse errors, fall back to default
           }
         }
-        
-        const rolePath = path.join(os.homedir(), ".pi/agent/roles", currentRole);
+
+        const rolePath = path.join(rolesDir, currentRole);
         const items: MemoryItem[] = [];
-        
-        if (fs.existsSync(path.join(rolePath, "MEMORY.md"))) {
-          items.push(...parseMemoryMd(path.join(rolePath, "MEMORY.md")));
+
+        const consolidatedPath = path.join(rolePath, "memory", "consolidated.md");
+        if (fs.existsSync(consolidatedPath)) {
+          items.push(...parseMemoryMd(consolidatedPath));
         }
-        
-        const dailyPath = path.join(rolePath, "memory");
+
+        const dailyPath = path.join(rolePath, "memory", "daily");
         if (fs.existsSync(dailyPath)) {
           fs.readdirSync(dailyPath)
             .filter(f => f.endsWith(".md") && !f.includes("backup"))
