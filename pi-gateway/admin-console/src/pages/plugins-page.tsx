@@ -3,16 +3,27 @@ import { usePageDataSource } from '../hooks/use-data-source';
 import { trackRuntimeEvent } from '../hooks/use-observability';
 import { fetchPlugins } from '../lib/api';
 
-function Block({ title, items }: { title: string; items: string[] }) {
+type HookItem = string | { pluginId?: string; event?: string };
+
+function Block({ title, items, formatItem }: { 
+  title: string; 
+  items: readonly (string | HookItem)[];
+  formatItem?: (item: HookItem, index: number) => string;
+}) {
   return (
     <article className="rounded-xl border border-slate-800 bg-card p-4">
       <h3 className="text-sm font-semibold text-white">{title}</h3>
       <ul className="mt-2 space-y-1 text-xs text-slate-300">
-        {items.slice(0, 12).map((name) => (
-          <li key={name} className="rounded bg-slate-900 px-2 py-1 font-mono">
-            {name}
-          </li>
-        ))}
+        {items.slice(0, 12).map((item, index) => {
+          const display = formatItem 
+            ? formatItem(item as HookItem, index)
+            : String(item);
+          return (
+            <li key={String(item) + index} className="rounded bg-slate-900 px-2 py-1 font-mono">
+              {display}
+            </li>
+          );
+        })}
         {items.length === 0 ? <li className="text-slate-500">empty</li> : null}
       </ul>
     </article>
@@ -38,7 +49,14 @@ export function PluginsPage() {
         <Block title="Channels" items={data?.channels ?? []} />
         <Block title="Tools" items={data?.tools ?? []} />
         <Block title="Commands" items={data?.commands ?? []} />
-        <Block title="Hooks" items={data?.hooks ?? []} />
+        <Block 
+          title="Hooks" 
+          items={data?.hooks ?? []}
+          formatItem={(hook) => {
+            if (typeof hook === 'string') return hook;
+            return `${hook.pluginId} → ${hook.event}`;
+          }}
+        />
         <Block title="Services" items={data?.services ?? []} />
       </div>
     </div>
