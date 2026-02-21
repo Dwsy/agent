@@ -36,7 +36,7 @@ export class HeartbeatSegment extends BaseSegment {
       "- Keep the user informed of important changes",
       "",
       "When woken by heartbeat:",
-      "1. Read HEARTBEAT.md if it exists — follow its instructions strictly",
+      "1. Read core/heartbeat.md if it exists — follow its instructions strictly",
       "2. Check system state, pending tasks, and recent events",
       "3. Look for patterns, anomalies, or opportunities to help",
       "4. Do NOT infer or repeat tasks from prior conversations",
@@ -59,7 +59,7 @@ export class HeartbeatSegment extends BaseSegment {
       '- System health indicators ("All services running normally ✅")',
       '- Optimization opportunities ("Database could benefit from indexing")',
       "",
-      "**HEARTBEAT.md expected format:**",
+      "**core/heartbeat.md expected format:**",
       this.codeBlock(`# Heartbeat
 - [ ] Check disk usage
 - [ ] Verify backup status

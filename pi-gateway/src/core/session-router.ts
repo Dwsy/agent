@@ -305,6 +305,9 @@ function ensureRoleMapping(cwd: string, role: string, config: Config): void {
 }
 
 export function resolveRolesDir(config: Config): string {
+  const envRolesDir = process.env.PI_AGENT_ROLES_DIR?.trim();
+  if (envRolesDir) return envRolesDir;
+
   const runtimeAgentDir = config.agent.runtime?.agentDir?.trim();
   if (runtimeAgentDir) {
     return join(runtimeAgentDir.replace(/^~/, homedir()), "roles");
