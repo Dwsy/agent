@@ -455,6 +455,19 @@ export class Gateway {
       async fetch(req, server) {
         const url = new URL(req.url);
 
+        // CORS preflight bypass — skip auth for OPTIONS
+        if (req.method === "OPTIONS") {
+          return new Response(null, {
+            status: 204,
+            headers: {
+              "Access-Control-Allow-Origin": "*",
+              "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, PATCH, OPTIONS",
+              "Access-Control-Allow-Headers": "Content-Type, Authorization",
+              "Access-Control-Max-Age": "86400",
+            },
+          });
+        }
+
         // Auth check — fail-closed (v3.4 S1)
         const authDenied = authenticateRequest(req, url, self.config.gateway.auth, self.resolvedToken, self.authExemptPrefixes);
         if (authDenied) return authDenied;
@@ -505,7 +518,32 @@ export class Gateway {
 
 
   private async handleHttp(req: Request, url: URL): Promise<Response> {
-    return routeHttp(req, url, this.ctx);
+    // CORS preflight
+    if (req.method === "OPTIONS") {
+      return new Response(null, {
+        status: 204,
+        headers: {
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, PATCH, OPTIONS",
+          "Access-Control-Allow-Headers": "Content-Type, Authorization",
+          "Access-Control-Max-Age": "86400",
+        },
+      });
+    }
+
+    const response = await routeHttp(req, url, this.ctx);
+
+    // Add CORS headers to all responses
+    const headers = new Headers(response.headers);
+    headers.set("Access-Control-Allow-Origin", "*");
+    headers.set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS");
+    headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
+
+    return new Response(response.body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers,
+    });
   }
 
 
