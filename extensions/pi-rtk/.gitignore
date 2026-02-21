@@ -1,0 +1,4 @@
+node_modules/
+*.bak
+.debug.log
+*.tgz
