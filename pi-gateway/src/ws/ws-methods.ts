@@ -101,7 +101,37 @@ export function registerSessionMethods(
     await ctx.compactSessionWithHooks(cKey, params?.instructions as string);
     return { ok: true };
   });
-  // Role management handled by role-persona extension via RPC
+
+  // Role management for gateway-side RPC integrations
+  methods.set("roles.list", async () => {
+    return { roles: ctx.listAvailableRoles() };
+  });
+
+  methods.set("roles.set", async (params) => {
+    const sKey = params?.sessionKey as string;
+    const role = String(params?.role ?? "").trim();
+    if (!sKey) throw new Error("sessionKey required");
+    if (!role) throw new Error("role required");
+    const ok = await ctx.setSessionRole(sKey, role);
+    if (!ok) throw new Error("failed to set role");
+    return { ok: true, sessionKey: sKey, role };
+  });
+
+  methods.set("roles.create", async (params) => {
+    const role = String(params?.role ?? "").trim();
+    if (!role) throw new Error("role required");
+    const result = await ctx.createRole(role);
+    if (!result.ok) throw new Error(result.error ?? "failed to create role");
+    return { ok: true, role };
+  });
+
+  methods.set("roles.delete", async (params) => {
+    const role = String(params?.role ?? "").trim();
+    if (!role) throw new Error("role required");
+    const result = await ctx.deleteRole(role);
+    if (!result.ok) throw new Error(result.error ?? "failed to delete role");
+    return { ok: true, role };
+  });
 }
 
 // ============================================================================

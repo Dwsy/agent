@@ -1,41 +1,49 @@
 {
-  // Pi Gateway Configuration Example
-  // Copy this file to pi-gateway.jsonc and fill in your actual values
+  // Production-ready example: role-workspace-channel mapping + multi-agent routing
+  // Copy to: pi-gateway.jsonc
 
   "gateway": {
     "port": 52134,
     "bind": "0.0.0.0",
     "auth": {
-      "mode": "off"
+      "mode": "token",
+      "token": "${PI_GATEWAY_TOKEN}",
+      "allowUnauthenticated": false
+    },
+    "commands": {
+      "restart": false
     }
   },
 
   "agent": {
     "piCliPath": "pi",
-    "model": "anthropic/claude-sonnet-4",
-    "thinkingLevel": "off",
+    "model": "openai-codex/gpt-5.3-codex",
+    "thinkingLevel": "medium",
     "pool": {
       "min": 1,
-      "max": 4,
+      "max": 6,
       "idleTimeoutMs": 300000
     },
     "tools": {
-      "profile": "coding"
+      "profile": "coding",
+      "allow": ["read", "edit", "write", "grep", "bash"]
     },
-    // Model failover: automatic fallback when primary model fails
-    // "modelFailover": {
-    //   "primary": "anthropic/claude-sonnet-4",
-    //   "fallbacks": ["openai/gpt-4o", "moonshot/kimi-k2-0711"],
-    //   "cooldownMs": 60000    // cooldown per model after failure (default: 60s)
-    // }
+    "sandbox": {
+      "mode": "off",
+      "scope": "session"
+    },
+    "messageMode": "steer",
+    "timeoutMs": 900000,
+    "extensions": [
+      "~/.pi/agent/extensions/role-persona/index.ts"
+    ]
   },
 
   "session": {
-    // dmScope: "main" | "per-peer" | "per-channel-peer"
-    // - main: all DMs share one session (default)
-    // - per-peer: each user gets their own session
-    // - per-channel-peer: each channel+user combo gets a session
-    "dmScope": "main"
+    // main | per-peer | per-channel-peer | per-account-channel-peer
+    "dmScope": "per-account-channel-peer",
+    "dataDir": "~/.pi/gateway/sessions",
+    "continueOnRestart": true
   },
 
   "channels": {
@@ -43,73 +51,170 @@
       "enabled": true,
       "botToken": "${TELEGRAM_BOT_TOKEN}",
       "dmPolicy": "allowlist",
-      "allowFrom": [YOUR_TELEGRAM_USER_ID],
-      "mediaMaxMb": 10,
+      "allowFrom": [1050271633],
+      "mediaMaxMb": 256,
       "streamMode": "partial",
-      // Streaming edit throttle (ms). Lower = faster updates, higher = fewer 429s.
-      // Adaptive backoff on 429: reads Telegram retry_after, recovers gradually.
-      "editThrottleMs": 500,
-
-      // Group chat configuration
-      // Key: Telegram chat ID (supergroup format: -100xxxxxxxxxx)
-      // Use "*" as wildcard for all unconfigured groups
       "groups": {
-        "-100123456789": {
-          // requireMention: true (default) — bot only responds when @mentioned
-          // Set false for always-on mode (agent replies to every message)
-          "requireMention": true,
-          // groupPolicy: "open" | "disabled" | "allowlist"
+        "-5106685069": {
+          "requireMention": false,
           "groupPolicy": "open",
-          // Optional: bind a role to this group (uses role-persona for personality)
-          // "role": "code-reviewer",
-          // Optional: restrict who can interact in this group
-          // "allowFrom": [123456789, "*"],
-          // Optional: override system prompt for this group
-          // "systemPrompt": "You are a helpful coding assistant."
+          "role": "ops"
         },
-        // Wildcard: disable all unconfigured groups
-        "*": { "enabled": false }
+        "-5211232825": {
+          "requireMention": false,
+          "groupPolicy": "open",
+          "role": "architect"
+        },
+        "-1003835388833": {
+          "requireMention": false,
+          "groupPolicy": "open",
+          "role": "research"
+        },
+        "*": {
+          "enabled": false
+        }
       }
     },
+
     "discord": {
-      "enabled": false,
+      "enabled": true,
       "token": "${DISCORD_BOT_TOKEN}",
-      "dmPolicy": "pairing",
-      // "dm": { "allowFrom": ["USER_ID_1"] },
-      // Per-guild config: requireMention (default true), role binding
-      // "guilds": {
-      //   "GUILD_ID": { "requireMention": true, "role": "default" }
-      // },
-      "streaming": {
+      "dmPolicy": "allowlist",
+      "dm": {
         "enabled": true,
-        // Edit throttle (ms). Discord is more lenient than Telegram.
-        "editThrottleMs": 500,
-        // Stop editing after this many chars; send full reply on completion.
-        "editCutoffChars": 1800,
-        "placeholder": "⏳ Processing..."
+        "allowFrom": ["123456789012345678"]
+      },
+      "guilds": {
+        "guild-001": {
+          "requireMention": false,
+          "role": "architect",
+          "channels": {
+            "channel-ops": { "role": "ops" },
+            "channel-docs": { "role": "docs" }
+          }
+        }
       }
     }
   },
 
-  "plugins": {
-    "dirs": [],
-    "disabled": []
-  },
-
   "roles": {
-    "workspaceDirs": {}
+    "mergeMode": "append",
+    "workspaceDirs": {
+      "default": "~/.pi/gateway/workspaces/default",
+      "ops": "~/projects/ops-workspace",
+      "docs": "~/projects/docs-workspace",
+      "architect": "~/projects/architecture-workspace",
+      "research": "~/projects/research-workspace"
+    },
+    "capabilities": {
+      "ops": {
+        "skills": ["~/.pi/agent/skills/server-status-push"],
+        "extensions": []
+      },
+      "docs": {
+        "skills": ["~/.pi/agent/skills/workhub"]
+      }
+    }
   },
 
-  "hooks": {
-    "enabled": false
+  "agents": {
+    "default": "main",
+    "list": [
+      {
+        "id": "main",
+        "workspace": "~/projects/main-workspace",
+        "model": "openai-codex/gpt-5.3-codex",
+        "role": "default"
+      },
+      {
+        "id": "ops",
+        "workspace": "~/projects/ops-workspace",
+        "model": "openai/gpt-4.1",
+        "role": "ops"
+      },
+      {
+        "id": "docs",
+        "workspace": "~/projects/docs-workspace",
+        "model": "anthropic/claude-sonnet-4",
+        "role": "docs"
+      },
+      {
+        "id": "architect",
+        "workspace": "~/projects/architecture-workspace",
+        "model": "anthropic/claude-sonnet-4",
+        "role": "architect"
+      }
+    ],
+
+    "bindings": [
+      {
+        "agentId": "ops",
+        "match": {
+          "channel": "telegram",
+          "peer": { "kind": "group", "id": "-5106685069" }
+        }
+      },
+      {
+        "agentId": "docs",
+        "match": {
+          "channel": "telegram",
+          "peer": { "kind": "group", "id": "-5211232825" }
+        }
+      },
+      {
+        "agentId": "architect",
+        "match": {
+          "channel": "discord",
+          "guildId": "guild-001",
+          "roles": ["role-architect", "role-lead"]
+        }
+      },
+      {
+        // thread inherit example: child thread follows parent channel binding
+        "agentId": "ops",
+        "match": {
+          "channel": "discord",
+          "parentPeer": { "kind": "channel", "id": "channel-ops" }
+        }
+      }
+    ]
+  },
+
+  "delegation": {
+    "timeoutMs": 120000,
+    "maxTimeoutMs": 600000,
+    "onTimeout": "abort",
+    "maxDepth": 1,
+    "maxConcurrent": 2
   },
 
   "cron": {
-    "enabled": false,
+    "enabled": true,
     "jobs": []
   },
 
-  // Message queue & backpressure (all values are defaults, override as needed)
+  "hooks": {
+    "enabled": false,
+    "path": "/hooks"
+  },
+
+  "plugins": {
+    "dirs": [],
+    "disabled": [],
+    "config": {
+      "concise-mode": {
+        "enabled": true,
+        "channels": ["telegram", "discord"]
+      }
+    }
+  },
+
+  "logging": {
+    "file": false,
+    "level": "info",
+    "retentionDays": 7
+  },
+
   "queue": {
     "maxPerSession": 15,
     "globalMaxPending": 100,
@@ -127,77 +232,6 @@
       "group": 5,
       "webhook": 3,
       "allowlistBonus": 2
-    }
-  },
-
-  // Multi-agent configuration (v3)
-  // Define multiple specialized agents and their delegation constraints
-  "agents": {
-    // Default agent when no binding matches
-    "default": "main",
-    // Available agents list
-    "list": [
-      {
-        "id": "main",
-        "workspace": "~/workspace/main",
-        "model": "claude-sonnet-4",
-        "role": "coding"
-      },
-      {
-        "id": "docs",
-        "workspace": "~/workspace/docs",
-        "model": "claude-haiku-4",
-        "role": "documentation",
-        // Delegation constraints: which agents can delegate to this agent
-        "delegation": {
-          "allowAgents": ["main", "code"],
-          "maxConcurrent": 2,
-          "maxDepth": 1
-        }
-      },
-      {
-        "id": "code",
-        "workspace": "~/workspace/code",
-        "model": "claude-sonnet-4",
-        "role": "coding",
-        "extensions": ["~/.pi/agent/extensions/code-review.ts"],
-        "skills": ["~/.pi/agent/skills/ast-grep"],
-        "delegation": {
-          "allowAgents": ["main", "docs"],
-          "maxConcurrent": 3,
-          "maxDepth": 1
-        }
-      }
-    ],
-    // Static routing bindings (optional)
-    "bindings": [
-      {
-        "agentId": "code",
-        "match": {
-          "channel": "telegram",
-          "peer": {
-            "kind": "group",
-            "id": "-1001234567890"
-          }
-        }
-      },
-      {
-        "agentId": "docs",
-        "match": {
-          "channel": "discord",
-          "guildId": "1234567890"
-        }
-      }
-    ]
-  },
-
-  // Role workspace mapping
-  // Each role gets its own CWD + role-persona files (SOUL.md, IDENTITY.md, etc.)
-  // Groups can bind to roles via groups[chatId].role
-  "roles": {
-    "workspaceDirs": {
-      // "code-reviewer": "~/workspace/reviewer",
-      // "translator": "~/workspace/translator"
     }
   }
 }

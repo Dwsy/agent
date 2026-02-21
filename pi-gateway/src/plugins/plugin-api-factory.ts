@@ -292,5 +292,21 @@ export function createPluginApi(
     readTranscript(sessionKey: SessionKey, lastN = 100) {
       return ctx.transcripts.readTranscript(sessionKey, lastN);
     },
+
+    listAvailableRoles() {
+      return ctx.listAvailableRoles();
+    },
+
+    async setSessionRole(sessionKey: SessionKey, role: string) {
+      return ctx.setSessionRole(sessionKey, role);
+    },
+
+    async createRole(role: string) {
+      return ctx.createRole(role);
+    },
+
+    async deleteRole(role: string) {
+      return ctx.deleteRole(role);
+    },
   };
 }

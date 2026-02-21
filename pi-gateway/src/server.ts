@@ -8,7 +8,7 @@
  */
 
 import type { Server, ServerWebSocket } from "bun";
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { resolveAuthConfig, authenticateRequest, buildAuthExemptPrefixes } from "./core/auth.ts";
@@ -18,7 +18,7 @@ import { executeRegisteredTool } from "./gateway/tool-executor.ts";
 import { loadConfig, ensureDataDir, type Config, type CronJob, resolveConfigPath, watchConfig } from "./core/config.ts";
 import { RpcPool } from "./core/rpc-pool.ts";
 import { MessageQueueManager, type PrioritizedWork } from "./core/message-queue.ts";
-import { resolveSessionKey, resolveAgentId, getCwdForRole, resolveRolesDir } from "./core/session-router.ts";
+import { resolveSessionKey, resolveAgentId, getCwdForRole, resolveRolesDir, extractAgentIdFromSessionKey } from "./core/session-router.ts";
 import { createLogger as createConsoleLogger, setLogLevel, type Logger, type InboundMessage, type SessionKey, type SessionState, type WsFrame } from "./core/types.ts";
 import { SessionStore } from "./core/session-store.ts";
 import { initFileLogger, createFileLogger } from "./core/logger-file.ts";
@@ -331,7 +331,8 @@ export class Gateway {
   }
 
   private buildSessionProfile(sessionKey: SessionKey, role: string) {
-    const cwd = getCwdForRole(role, this.config);
+    const agentId = extractAgentIdFromSessionKey(sessionKey) ?? undefined;
+    const cwd = getCwdForRole(role, this.config, agentId);
     return buildCapabilityProfile({
       config: this.config,
       role,
@@ -438,6 +439,76 @@ export class Gateway {
     this.log.info(`[role] session ${sessionKey} switched to role=${role}`);
     this.broadcastToWs("session.role.changed", { sessionKey, role });
     return true;
+  }
+
+  private async createRole(roleName: string): Promise<{ ok: boolean; error?: string }> {
+    const role = roleName.trim();
+    if (!role) return { ok: false, error: "role is required" };
+    if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/.test(role)) {
+      return { ok: false, error: "invalid role name" };
+    }
+
+    const rolesDir = resolveRolesDir(this.config);
+    const roleDir = join(rolesDir, role);
+    if (existsSync(roleDir)) return { ok: false, error: "role already exists" };
+
+    try {
+      mkdirSync(roleDir, { recursive: true });
+      mkdirSync(join(roleDir, "memory"), { recursive: true });
+      writeFileSync(join(roleDir, "IDENTITY.md"), `# IDENTITY.md\n\n- **名字：** ${role}\n- **定位：** 角色助手\n`, "utf-8");
+      writeFileSync(join(roleDir, "SOUL.md"), "# SOUL.md\n\n简洁、直接、可执行。\n", "utf-8");
+      writeFileSync(join(roleDir, "USER.md"), "# USER.md\n\n- **如何称呼：** 你\n", "utf-8");
+      writeFileSync(join(roleDir, "MEMORY.md"), "# Learnings (High Priority)\n\n# Learnings (Normal)\n\n# Learnings (New)\n\n# Preferences: Communication\n\n# Preferences: Code\n\n# Preferences: Tools\n\n# Preferences: Workflow\n\n# Preferences: General\n\n# Events\n", "utf-8");
+      this.broadcastToWs("role.created", { role });
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  }
+
+  private async deleteRole(roleName: string): Promise<{ ok: boolean; error?: string }> {
+    const role = roleName.trim();
+    if (!role) return { ok: false, error: "role is required" };
+    if (role === "default") return { ok: false, error: "default role cannot be deleted" };
+
+    const rolesDir = resolveRolesDir(this.config);
+    const roleDir = join(rolesDir, role);
+    if (!existsSync(roleDir)) return { ok: false, error: "role not found" };
+
+    try {
+      rmSync(roleDir, { recursive: true, force: true });
+      const cfgPath = join(rolesDir, "config.json");
+      if (existsSync(cfgPath)) {
+        const raw = readFileSync(cfgPath, "utf-8");
+        const parsed = JSON.parse(raw || "{}") as { mappings?: Record<string, string> };
+        const mappings = parsed.mappings ?? {};
+        for (const [cwd, mappedRole] of Object.entries(mappings)) {
+          if (mappedRole === role) {
+            delete mappings[cwd];
+          }
+        }
+        parsed.mappings = mappings;
+        writeFileSync(cfgPath, JSON.stringify(parsed, null, 2), "utf-8");
+      }
+
+      // Reset sessions using deleted role back to default
+      for (const s of this.sessions.toArray()) {
+        if (s.role === role) {
+          s.role = "default";
+          s.rpcProcessId = null;
+          s.isStreaming = false;
+          s.lastActivity = Date.now();
+          this.sessions.set(s.sessionKey, s);
+          this.pool.release(s.sessionKey);
+          this.broadcastToWs("session.role.changed", { sessionKey: s.sessionKey, role: "default" });
+        }
+      }
+
+      this.broadcastToWs("role.deleted", { role });
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
   }
 
 
@@ -557,6 +628,8 @@ export class Gateway {
       compactSessionWithHooks: (sk, inst) => this.compactSessionWithHooks(sk, inst),
       listAvailableRoles: () => this.listAvailableRoles(),
       setSessionRole: async (sk, newRole) => this.setSessionRole(sk, newRole),
+      createRole: async (role) => this.createRole(role),
+      deleteRole: async (role) => this.deleteRole(role),
       reloadConfig: () => this.reloadConfig(),
       onCronDelivered: (sk) => {
         markCronSelfDelivered(sk);
