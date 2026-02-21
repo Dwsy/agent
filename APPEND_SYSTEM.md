@@ -60,11 +60,11 @@
 **法则 3：工具决策**
 | 场景 | 工具 | 命令示例 |
 |-----|------|---------|
-| 找文件/目录 | fd | `fd "config.ts"` / `fd -e ts` / `fd "pattern" -t d` |
+| 找文件/目录 | fd | `fd "config.ts"` / `fd -e ts` |
 | 找代码/符号/文本 | rg | `rg "function foo"` / `rg "class User"` |
 | 找语法结构 | ast-grep | `ast-grep -p "console.log($$$)"` |
-| 找逻辑/架构 | ace | `ace search "auth logic"` / `ace s "payment flow"` |
-| 增强提示词 | ace | `ace enhance "Add login page"` / `ace e "Add login"` |
+| 找逻辑/架构 | ace | `ace search "auth logic"` |
+| 增强提示词 | ace | `ace enhance "Add login page"` |
 
 **决策口诀：** 有具体名字 → fd/rg/ast-grep；只有描述 → ace
 </critical>
@@ -147,22 +147,18 @@ trash <directory>/
 **L1 - 简单（单点修改）**
 - 单文件 <50 行，需求明确，无跨模块影响
 - → Phase 1（检索）→ Phase 4（实现）→ Phase 5（审计）
-- 示例："修改 utils.ts 中的 formatDate 函数格式"
 
 **L2 - 中等（模块级）**
 - 2-5 文件，50-200 行，需求基本明确
 - → Phase 1 → Phase 2（分析）→ Phase 4 → Phase 5
-- 示例："在 user 模块添加邮箱验证功能"
 
 **L3 - 复杂（跨模块）**
 - 6-10 文件，200-500 行，需求部分模糊
 - → 创建 Issue → Phase 1-5 全流程 → tmux + subagent
-- 示例："重构认证系统，从 JWT 迁移到 OAuth2"
 
 **L4 - 严重复杂（系统级）**
 - 10+ 文件，500+ 行，需求/技术方案不确定
 - → Workhub（Issue + PR）→ ADR → 拆分 5+ 子任务 → Phase 1-5 全流程
-- 示例："设计并实现微服务架构的电商系统"
 </instruction>
 
 <conditions>
@@ -178,7 +174,7 @@ trash <directory>/
 
 **L3+ 开始前必须完成：**
 - [ ] 复杂度评估（使用上述表格）
-- [ ] 创建 Workhub Issue
+- [ ] 创建 Workhub Issue（加载 skill: `workhub`）
 - [ ] 制定分步计划（记录在 Issue）
 - [ ] 确认验收标准
 
@@ -187,38 +183,6 @@ trash <directory>/
 - [ ] 设计数据流图/架构图
 - [ ] 评估回滚方案
 </important>
-
-<instruction>
-### 状态与风险管理
-
-- 每完成里程碑更新 Issue Notes，阻塞问题记录 Issue Errors
-- Phase 2 必须识别：技术可行性、时间估算、依赖风险、回滚成本
-- L3 拆分 2-4 子任务，L4 拆分 5+ 子任务，每个可独立验收
-</instruction>
-
-<instruction>
-### 决策流程
-
-```
-用户需求 → 复杂度评估（7维度）
-┌───────┬───────┬───────┬───────┐
-│  L1   │  L2   │  L3   │  L4   │
-└───┬───┴───┬───┴───┬───┴───┬───┘
-    ↓       ↓       ↓       ↓
-直接执行  +分析  +Issue   +Workhub+ADR
-                  +子任务  +Design
-                  +tmux
-```
-</instruction>
-
-<prohibited>
-### 禁止行为
-
-- 将 L3/L4 当 L1/L2 处理
-- 跳过 Phase 2（分析）直接实现
-- L3+ 不创建 Workhub Issue
-- 不拆分不计划直接执行
-</prohibited>
 
 ---
 
@@ -251,31 +215,18 @@ for file in path1 path2 path3; do cat "$file"; done
 ### 1.2 搜索工具
 
 <instruction>
-**工具选择（参见 §0 黄金法则 - 法则 3）**
+**工具选择（黄金法则 - 法则 3）**
 
 | 需求 | 工具 | 命令示例 |
 |------|------|---------|
-| 找文件/目录 | **fd** | `fd "config.ts"` / `fd -e ts` / `fd "pattern" -t d` |
-| 找代码/符号/文本 | **rg** | `rg "function foo"` / `rg "class User"` / `rg "TODO\|FIXME"` |
+| 找文件/目录 | **fd** | `fd "config.ts"` / `fd -e ts` |
+| 找代码/符号/文本 | **rg** | `rg "function foo"` / `rg "class User"` |
 | 找语法结构 | **ast-grep** | `ast-grep -p "console.log($$$)"` |
-| 语义理解/自然语言 | **ace** | `ace search "auth logic"` / `ace s "payment flow"` |
+| 语义理解/自然语言 | **ace** | `ace search "auth logic"` |
 
-**并行检索策略（提高成功率）：**
-```bash
-# fd: 同时搜索多个模式
-fd "(config|settings)"           # 多关键词或匹配
-fd "(router|controller|service)" # 多文件类型模式
-
-# rg: 同时搜索多个模式
-rg "(UserService\|UserController\|UserMapper)"   # 多符号
-rg "TODO\|FIXME\|XXX\|HACK"                       # 多标签
-rg "(function\|const\|class).*Auth"              # 多语法模式
-```
-
-**Ace 局限性：**
-- 不适合精确符号搜索（用 rg/ast-grep）
-- 不适合已知路径定位（用 fd）
-- 语义结果可能不精确，需人工判断
+**详细用法参考 Skills：**
+- `~/.pi/agent/skills/ast-grep/SKILL.md`
+- `~/.pi/agent/skills/ace-tool/SKILL.md`
 </instruction>
 
 <avoid>
@@ -294,79 +245,13 @@ rg "(function\|const\|class).*Auth"              # 多语法模式
 |------|------|
 | 代理任务（pi/claude/gemini） | `interactive_shell` |
 | 编译/测试/数据处理 | `interactive_shell` dispatch |
-| 长时间任务需监控 | `interactive_shell` hands-free |
 | Python REPL/gdb/数据库 CLI | `tmux` |
 | Dev server/守护进程 | `tmux` service |
-| 需要用户直接控制 | `interactive_shell` interactive |
+
+**详细用法参考 Skills：**
+- `~/.pi/agent/skills/tmux/SKILL.md`
+- `~/.pi/agent/skills/pi-interactive-shell/SKILL.md`
 </critical>
-
-<instruction>
-### Interactive Shell（推荐优先）
-
-**Dispatch 模式（快速任务，立即返回）：**
-```typescript
-interactive_shell({
-  command: 'pi "Compile project and run tests"',
-  mode: "dispatch",
-  reason: "Build and test"
-})
-```
-
-**Hands-Free 模式（长时间任务，可监控）：**
-```typescript
-interactive_shell({
-  command: 'pi "Refactor codebase"',
-  mode: "hands-free",
-  reason: "Large refactoring"
-})
-```
-
-**会话管理：**
-```typescript
-interactive_shell({ listBackground: true })                      // 列出后台
-interactive_shell({ attach: "session-id", mode: "hands-free" })  // 重新附加
-interactive_shell({ sessionId: "session-id", outputLines: 50 })  // 查询输出
-interactive_shell({ sessionId: "session-id", input: "/compact\n" }) // 发送输入
-interactive_shell({ dismissBackground: "session-id" })           // 清理单个
-interactive_shell({ dismissBackground: true })                   // 清理全部
-```
-</instruction>
-
-<instruction>
-### Tmux Skill（交互式工具专用）
-
-```bash
-# 创建（category: task/service/agent）
-bun ~/.pi/agent/skills/tmux/lib.ts create <name> <command> [category]
-
-# 观测
-bun ~/.pi/agent/skills/tmux/lib.ts list
-bun ~/.pi/agent/skills/tmux/lib.ts capture <id> [lines]
-bun ~/.pi/agent/skills/tmux/lib.ts status <id>
-bun ~/.pi/agent/skills/tmux/tui.ts
-
-# 交互
-bun ~/.pi/agent/skills/tmux/lib.ts send <id> "<keys>"
-
-# 清理
-bun ~/.pi/agent/skills/tmux/lib.ts kill <id>
-bun ~/.pi/agent/skills/tmux/lib.ts cleanup [hours]
-```
-
-**创建后必须输出：**
-```
-tmux -S /tmp/pi-tmux-sockets/pi.sock attach -t {session-id}
-```
-
-**Python REPL 示例：**
-```bash
-bun ~/.pi/agent/skills/tmux/lib.ts create python "PYTHON_BASIC_REPL=1 python3 -q" task
-bun ~/.pi/agent/skills/tmux/lib.ts send pi-task-python-* "print('Hello')"
-bun ~/.pi/agent/skills/tmux/lib.ts capture pi-task-python-* 50
-```
-
-**Category 选择：** `task`（编译/测试）/ `service`（dev server/数据库）/ `agent`（训练/数据处理）
-</instruction>
 
 <instruction>
 ### 决策树
@@ -377,15 +262,6 @@ bun ~/.pi/agent/skills/tmux/lib.ts capture pi-task-python-* 50
   └─ NO → 交互式工具？
       ├─ YES → tmux（task/service）
       └─ NO → tmux 后台运行
-```
-
-**混合使用示例：**
-```typescript
-// dev server（tmux 持久化）
-bun ~/.pi/agent/skills/tmux/lib.ts create dev-server "npm run dev" service
-
-// 测试任务（interactive_shell 异步）
-interactive_shell({ command: 'pi "Run integration tests"', mode: "dispatch" })
 ```
 </instruction>
 
@@ -417,8 +293,6 @@ EOF
 3. 分块读取：`read <log-path> --offset 1 --limit 100`
 
 **禁止**重新执行原始命令（可能再次被截断）。
-
-**机制说明：** 2000 行或 50KB 限制，bash 尾部截断，read 头部截断。
 </critical>
 
 ### 1.6 网络搜索
@@ -430,7 +304,8 @@ EOF
 cd ~/.pi/agent/skills/tavily-search-free && python3 scripts/tavily_search.py --query "关键词"
 ```
 
-**备用**：Tavily 不可用时用 `web-browser` skill。
+**详细用法参考：** `~/.pi/agent/skills/tavily-search-free/SKILL.md`
+
 **排除**：搜索本地代码 → fd/rg/ace。
 </instruction>
 
@@ -441,13 +316,13 @@ cd ~/.pi/agent/skills/tavily-search-free && python3 scripts/tavily_search.py --q
 ### Phase 1：上下文检索
 
 <critical>
-**遵循 §0 黄金法则。** 以下场景必须先执行代码检索：
+**遵循黄金法则。** 以下场景必须先执行代码检索：
 
 - 理解架构 / 定位定义 / 查找调用链
 - 修改前分析 / 代码编写 / 调试调查
 - 重构重组 / 生成建议
 
-**工具选择参见 §0 法则 3 和 §1.2 搜索工具。**
+**工具选择参见 §1.2 搜索工具。**
 
 **检索策略：**
 - 递归检索完整定义，追踪调用链与依赖
@@ -499,140 +374,43 @@ cd ~/.pi/agent/skills/tavily-search-free && python3 scripts/tavily_search.py --q
 |---|---|---|
 | Pi Agent | `~/.pi/agent/skills/` | `.pi/skills/` |
 | Claude Agent | `~/.claude/skills/` | `.claude/skills/` |
+
+### 3.2 常用 Skills 速查
+
+| 场景 | Skill | 路径 |
+|------|-------|------|
+| 文档管理/Issue/PR | workhub | `~/.pi/agent/skills/workhub/SKILL.md` |
+| tmux 会话管理 | tmux | `~/.pi/agent/skills/tmux/SKILL.md` |
+| 交互式 Shell | pi-interactive-shell | `~/.pi/agent/skills/pi-interactive-shell/SKILL.md` |
+| AST 代码搜索 | ast-grep | `~/.pi/agent/skills/ast-grep/SKILL.md` |
+| 语义代码搜索 | ace-tool | `~/.pi/agent/skills/ace-tool/SKILL.md` |
+| 网络搜索 | tavily-search-free | `~/.pi/agent/skills/tavily-search-free/SKILL.md` |
+
+**加载方式：** `read ~/.pi/agent/skills/<name>/SKILL.md`
 </instruction>
 
 <instruction>
-### 3.2 路径规则
+### 3.3 路径规则
 
 | 类型 | 示例 | 基准 |
 |---|---|---|
 | 绝对路径 | `/Users/xxx/.pi/agent/skills/...` | 文件系统根 |
 | HOME 简写 | `~/.pi/agent/skills/...` | 用户主目录 |
 | 项目根 | `.` / `process.cwd()` | 当前工作目录 |
-| 相对路径 | `./docs/config.md` | 当前工作目录 |
 
 **规则：**
 1. 使用绝对路径或先 `cd` 到目录
-2. 用户级 `~/.pi/agent/skills/`，项目级 `.pi/skills/`
-3. `~` 仅在 shell 中展开，代码需显式绝对路径
-4. 安全做法：`cd <dir> && <command>` 或绝对路径
-5. **Workhub 必须在项目根执行**（`process.cwd()` 决定文档位置）
-</instruction>
-
-<avoid>
-### 常见路径错误
-
-```bash
-# ❌ 错误
-cd /path/to/project && bun run lib.ts tree
-cd ~/.pi/agent/skills/workhub && bun run lib.ts create issue "task"
-~/.pi/agent/skills/workhub/lib.ts tree
-
-# ✅ 正确
-cd /path/to/project && bun ~/.pi/agent/skills/workhub/lib.ts tree
-cd /path/to/project && ./.pi/skills/custom/script.sh args
-```
-</avoid>
-
-<instruction>
-### 3.3 扩展注册表
-
-| 扩展 | 功能 | 文档 |
-|---|---|---|
-| `answer` | 交互式问答 TUI（Ctrl+.） | `~/.pi/agent/extensions/answer.ts` |
-| `qna` | 编辑器问答提取（Ctrl+,） | `~/.pi/agent/extensions/qna.ts` |
-| `subagent` | 委派给专门子代理（隔离上下文） | `~/.pi/agent/extensions/subagent/index.ts` |
-</instruction>
-
-<instruction>
-### 3.4 资源矩阵
-
-| 阶段 | 功能 | 工具 | 约束 |
-|---|---|---|---|
-| 0 | 网络搜索 | Tavily Search | 用户要求时使用 |
-| 1 | 上下文检索 | fd/rg/ace/ast-grep | 精确优先，改代码前必检索 |
-| 2（可选） | 分析/规划 | Gemini | 仅复杂任务 |
-| 3A | 前端原型 | Gemini | Unified Diff，禁止写文件 |
-| 3B | 后端原型 | Gemini | Unified Diff，禁止写文件 |
-| 4 | 重构实现 | Pi（自身） | 简洁高效 |
-| 5 | 审计/QA | Gemini | 强制 |
+2. 安全做法：`cd <dir> && <command>` 或绝对路径
 </instruction>
 
 ---
 
-## 4. Workhub 协议
+## 附录：变更日志
 
-<important>
-复杂任务（L3+）必须使用 workhub 技能。
-</important>
+### 2026-02-21 精简重构
 
-<instruction>
-### 4.1 核心原则
-
-1. **SSOT**：每个知识领域只有一个权威文档
-2. **文件系统即记忆**：大内容存文件，上下文只保路径
-3. **状态管理**：决策前读 Issue，执行后更新 Issue
-4. **变更可追溯**：每个 PR 必须关联 Issue
-</instruction>
-
-<critical>
-### 4.2 执行规则
-
-**唯一正确方式：在项目根目录执行。**
-
-```bash
-cd /path/to/project
-bun ~/.pi/agent/skills/workhub/lib.ts create issue "task"
-```
-
-**原因：** `lib.ts` 使用 `process.cwd()` 判断文档位置。
-**验证：** 执行后检查 `ls -la docs/issues/`。
-</critical>
-
-<instruction>
-### 4.3 文档结构
-
-```
-docs/
-├── adr/              # Architecture Decision Records
-│   └── yyyymmdd-[decision].md
-├── architecture/     # Architecture design docs
-│   ├── boundaries.md
-│   └── data-flow.md
-├── issues/           # Task tracking（可按模块分子目录）
-│   └── yyyymmdd-[description].md
-├── pr/               # Change records
-│   └── yyyymmdd-[description].md
-└── guides/           # Usage guides
-    └── [topic].md
-```
-</instruction>
-
-<instruction>
-### 4.4 常用命令（必须在项目根执行）
-
-```bash
-bun ~/.pi/agent/skills/workhub/lib.ts init
-bun ~/.pi/agent/skills/workhub/lib.ts tree
-bun ~/.pi/agent/skills/workhub/lib.ts audit
-bun ~/.pi/agent/skills/workhub/lib.ts create issue "description" [category]
-bun ~/.pi/agent/skills/workhub/lib.ts create pr "description" [category]
-bun ~/.pi/agent/skills/workhub/lib.ts read issues/filename.md
-bun ~/.pi/agent/skills/workhub/lib.ts list issues|prs
-bun ~/.pi/agent/skills/workhub/lib.ts status
-bun ~/.pi/agent/skills/workhub/lib.ts search "keyword"
-```
-</instruction>
-
-<instruction>
-### 4.5 模板与最佳实践
-
-**Issue 模板要素：** 标题 + 状态 + 优先级 + 描述 + 验收标准 + 实施计划 + 备注 + 错误
-**PR 模板要素：** 标题 + 状态 + 关联 Issue + 总结 + 变更明细 + 测试 + 评审意见
-
-**最佳实践：**
-- 日期前缀 `yyyymmdd-description`，写清需求与验收标准
-- 执行前读 Issue，执行后更新 Notes/Errors
-- PR 关联 Issue，列出变更与测试
-- 失败时检查 `docs/issues/`，确认项目根执行，必要时阅读 `~/.pi/agent/skills/workhub/SKILL.md`
-</instruction>
+- 移除重复内容，改为引用 Skills
+- 保留核心协议（标签、黄金法则、禁止行为）
+- 简化工具规范，保留决策表
+- 简化工作流，保留阶段定义
+- 添加 Skills 速查表
