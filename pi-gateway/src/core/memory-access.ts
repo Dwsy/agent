@@ -5,18 +5,23 @@
  * from disk that role-persona writes, providing API/WS access for
  * external tools and Web UI.
  *
- * Files read:
- *   ~/.pi/agent/roles/{role}/MEMORY.md
- *   ~/.pi/agent/roles/{role}/memory/YYYY-MM-DD.md
- *   ~/.pi/agent/roles/{role}/IDENTITY.md
- *   ~/.pi/agent/roles/{role}/SOUL.md
+ * Files read (v2):
+ *   ~/.pi/agent/roles/{role}/memory/consolidated.md
+ *   ~/.pi/agent/roles/{role}/memory/daily/YYYY-MM-DD.md
+ *   ~/.pi/agent/roles/{role}/core/identity.md
+ *   ~/.pi/agent/roles/{role}/core/soul.md
  */
 
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 
-const ROLES_DIR = join(homedir(), ".pi", "agent", "roles");
+function resolveRolesDir(): string {
+  const envPath = process.env.PI_AGENT_ROLES_DIR?.trim();
+  return envPath || join(homedir(), ".pi", "agent", "roles");
+}
+
+const ROLES_DIR = resolveRolesDir();
 
 // ============================================================================
 // Types
@@ -56,6 +61,42 @@ function rolePath(role: string): string {
   return join(ROLES_DIR, role);
 }
 
+function memoryFileForRole(rp: string): string | null {
+  const path = join(rp, "memory", "consolidated.md");
+  return existsSync(path) ? path : null;
+}
+
+function identityFileForRole(rp: string): string | null {
+  const path = join(rp, "core", "identity.md");
+  return existsSync(path) ? path : null;
+}
+
+function soulFileForRole(rp: string): string | null {
+  const path = join(rp, "core", "soul.md");
+  return existsSync(path) ? path : null;
+}
+
+function listDailyMemoryByDate(rp: string): Map<string, string> {
+  const byDate = new Map<string, string>();
+  const dir = join(rp, "memory", "daily");
+  if (!existsSync(dir)) return byDate;
+
+  let names: string[] = [];
+  try {
+    names = readdirSync(dir);
+  } catch {
+    return byDate;
+  }
+
+  for (const name of names) {
+    const match = name.match(/^(\d{4}-\d{2}-\d{2})\.md$/);
+    if (!match) continue;
+    byDate.set(match[1], join(dir, name));
+  }
+
+  return byDate;
+}
+
 export function listRoles(): string[] {
   if (!existsSync(ROLES_DIR)) return [];
   try {
@@ -71,8 +112,8 @@ export function getRoleInfo(role: string): RoleInfo | null {
   if (!existsSync(rp)) return null;
 
   let identity: RoleInfo["identity"] = null;
-  const idFile = join(rp, "IDENTITY.md");
-  if (existsSync(idFile)) {
+  const idFile = identityFileForRole(rp);
+  if (idFile) {
     const content = readFileSync(idFile, "utf-8");
     identity = {
       name: content.match(/\*\*(?:Name|名字).*?\*\*\s*[:：]?\s*(.+)/m)?.[1]?.trim(),
@@ -83,8 +124,8 @@ export function getRoleInfo(role: string): RoleInfo | null {
   }
 
   let soulPreview: string | null = null;
-  const soulFile = join(rp, "SOUL.md");
-  if (existsSync(soulFile)) {
+  const soulFile = soulFileForRole(rp);
+  if (soulFile) {
     soulPreview = readFileSync(soulFile, "utf-8").slice(0, 500);
   }
 
@@ -92,8 +133,8 @@ export function getRoleInfo(role: string): RoleInfo | null {
     role,
     identity,
     soulPreview,
-    hasMemory: existsSync(join(rp, "MEMORY.md")),
-    hasDailyMemory: existsSync(join(rp, "memory")),
+    hasMemory: Boolean(memoryFileForRole(rp)),
+    hasDailyMemory: listDailyMemoryByDate(rp).size > 0,
   };
 }
 
@@ -101,10 +142,10 @@ export function getMemoryStats(role: string): MemoryStats | null {
   const rp = rolePath(role);
   if (!existsSync(rp)) return null;
 
-  const memFile = join(rp, "MEMORY.md");
+  const memFile = memoryFileForRole(rp);
   let content = "";
   let fileSize = 0;
-  if (existsSync(memFile)) {
+  if (memFile) {
     content = readFileSync(memFile, "utf-8");
     fileSize = Buffer.byteLength(content);
   }
@@ -131,11 +172,7 @@ export function getMemoryStats(role: string): MemoryStats | null {
   const events = (content.match(/^## \[\d{4}-\d{2}-\d{2}\]/gm) || []).length;
 
   // Count daily files
-  let dailyFiles = 0;
-  const dailyDir = join(rp, "memory");
-  if (existsSync(dailyDir)) {
-    try { dailyFiles = readdirSync(dailyDir).filter((f) => f.endsWith(".md")).length; } catch {}
-  }
+  const dailyFiles = listDailyMemoryByDate(rp).size;
 
   return {
     role,
@@ -195,9 +232,9 @@ export function searchMemory(
   const minScore = options?.minScore ?? 0.1;
   const results: MemorySearchResult[] = [];
 
-  // Search MEMORY.md
-  const memFile = join(rp, "MEMORY.md");
-  if (existsSync(memFile)) {
+  // Search consolidated memory
+  const memFile = memoryFileForRole(rp);
+  if (memFile) {
     const content = readFileSync(memFile, "utf-8");
     const lines = content.split("\n");
     for (const line of lines) {
@@ -211,15 +248,15 @@ export function searchMemory(
   }
 
   // Search daily memory (last 7 days)
-  const dailyDir = join(rp, "memory");
-  if (existsSync(dailyDir)) {
+  const dailyByDate = listDailyMemoryByDate(rp);
+  if (dailyByDate.size > 0) {
     const now = new Date();
     for (let i = 0; i < 7; i++) {
       const d = new Date(now);
       d.setDate(d.getDate() - i);
       const dateStr = d.toISOString().split("T")[0];
-      const file = join(dailyDir, `${dateStr}.md`);
-      if (!existsSync(file)) continue;
+      const file = dailyByDate.get(dateStr);
+      if (!file) continue;
       try {
         const content = readFileSync(file, "utf-8");
         const sections = content.split(/^## /m).filter(Boolean);
