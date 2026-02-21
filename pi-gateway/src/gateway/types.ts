@@ -106,6 +106,8 @@ export interface GatewayContext {
   compactSessionWithHooks: (sessionKey: SessionKey, instructions?: string) => Promise<void>;
   listAvailableRoles: () => string[];
   setSessionRole: (sessionKey: SessionKey, newRole: string) => Promise<boolean>;
+  createRole: (role: string) => Promise<{ ok: boolean; error?: string }>;
+  deleteRole: (role: string) => Promise<{ ok: boolean; error?: string }>;
   reloadConfig?: () => void;
   /** Track cron sessions that self-delivered messages (skip announce). */
   onCronDelivered?: (sessionKey: string) => void;

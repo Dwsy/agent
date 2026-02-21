@@ -1,4 +1,4 @@
-import { resolveSessionKey, resolveAgentId } from "../../../core/session-router.ts";
+import { resolveSessionKey, resolveAgentRoute } from "../../../core/session-router.ts";
 import type { ImageContent, MessageSource } from "../../../core/types.ts";
 import { isSenderAllowed, type DmPolicy } from "../../../security/allowlist.ts";
 import { createPairingRequest } from "../../../security/pairing.ts";
@@ -582,21 +582,22 @@ async function dispatchInbound(params: {
     if (!combinedText && entry.images.length === 0) return;
 
     // v3.0 routing: resolve agent via binding/prefix/default
-    const { agentId, text: routedText } = resolveAgentId(entry.source, combinedText, runtime.api.config);
+    const route = resolveAgentRoute(entry.source, combinedText, runtime.api.config);
+    const { agentId, text: routedText } = route;
     const sessionKey = resolveSessionKey(entry.source, runtime.api.config, agentId);
 
     void dispatchAgentTurn({
       runtime,
       account,
       ctx: entry.ctx,
-      source: entry.source,
+      source: { ...entry.source, agentId },
       sessionKey,
       text: routedText || "(image)",
       images: entry.images,
       inboundMessageId: entry.ctx.message?.message_id,
     });
     params.runtime.api.logger.info(
-      `[telegram:${account.accountId}] inbound chat=${chatId} sender=${entry.source.senderId} type=${entry.source.chatType} agentId=${agentId} textLen=${routedText.length} images=${entry.images.length}`,
+      `[telegram:${account.accountId}] inbound chat=${chatId} sender=${entry.source.senderId} type=${entry.source.chatType} agentId=${agentId} agentSource=${route.source}${route.bindingScore !== undefined ? ` bindingScore=${route.bindingScore}` : ""} textLen=${routedText.length} images=${entry.images.length}`,
     );
   };
 

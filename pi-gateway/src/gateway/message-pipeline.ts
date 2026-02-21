@@ -16,7 +16,7 @@
 import type { InboundMessage, SessionKey } from "../core/types.ts";
 import type { GatewayContext } from "./types.ts";
 import type { PrioritizedWork } from "../core/message-queue.ts";
-import { resolveRoleForSession } from "../core/session-router.ts";
+import { extractAgentIdFromSessionKey, resolveRoleForSessionAndAgent } from "../core/session-router.ts";
 import { isTuiCommand, tryHandleCommand } from "./command-handler.ts";
 import { getAssistantMessageEvent, getAmePartial } from "../core/rpc-events.ts";
 import { isTransient, classifyError } from "../core/model-health.ts";
@@ -77,8 +77,10 @@ export async function processMessage(
 
   // Hook: session_start (if new session)
   const isNew = !ctx.sessions.has(sessionKey);
+  const agentId = source.agentId ?? extractAgentIdFromSessionKey(sessionKey) ?? undefined;
+  const roleResolution = resolveRoleForSessionAndAgent(source, ctx.config, agentId);
   const session = ctx.sessions.getOrCreate(sessionKey, {
-    role: resolveRoleForSession(source, ctx.config),
+    role: roleResolution.role,
     isStreaming: false,
     lastActivity: Date.now(),
     messageCount: 0,
@@ -93,7 +95,10 @@ export async function processMessage(
     lastThreadId: source.threadId,
   });
   if (isNew) {
-    ctx.transcripts.logMeta(sessionKey, "session_created", { role: session.role });
+    ctx.transcripts.logMeta(sessionKey, "session_created", {
+      role: session.role,
+      roleSource: roleResolution.source,
+    });
     await ctx.registry.hooks.dispatch("session_start", { sessionKey });
   }
   session.lastActivity = Date.now();
