@@ -2,7 +2,7 @@
  * System Prompts - Legacy Entry Point
  *
  * @deprecated This file is kept for backward compatibility.
- * Please import from "./system-prompts/index.ts" instead.
+ * Please import from "./interface/plugins/system-prompts/index.ts" instead.
  *
  * Migration Guide:
  * - `buildGatewaySystemPrompt` → unchanged, still exported
@@ -14,7 +14,7 @@
  */
 
 // Re-export everything from the new modular architecture
-export * from "./system-prompts/index.ts";
+export * from "./interface/plugins/system-prompts/index.ts";
 
 // Additional legacy exports for compatibility
-export type { Config } from "./config.ts";
+export type { ConfigEntity as Config } from "./domain/config/entities.ts";

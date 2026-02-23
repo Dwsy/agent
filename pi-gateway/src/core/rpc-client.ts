@@ -7,7 +7,7 @@
 
 import { appendFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import type { RpcCommand, RpcResponse, AgentEvent, AssistantMessageEvent, ImageContent } from "./types.ts";
+import type { RpcCommand, RpcResponse, AgentEvent, AssistantMessageEvent, ImageContent, RpcWireEvent } from "./types.ts";
 import { createLogger, type Logger } from "./types.ts";
 
 // ── RPC file logger ────────────────────────────────────────────────────────
@@ -47,7 +47,7 @@ interface PipedSubprocess {
 // Types
 // ============================================================================
 
-export type RpcEventListener = (event: AgentEvent) => void;
+export type RpcEventListener = (event: RpcWireEvent) => void;
 
 export interface RpcClientOptions {
   /** Path to pi CLI binary. Default: "pi" */
