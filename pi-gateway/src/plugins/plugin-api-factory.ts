@@ -21,8 +21,8 @@ import type {
   CommandHandler,
   HttpHandler,
   WsMethodHandler,
-} from "./types.ts";
-import type { SessionKey } from "../core/types.ts";
+  SessionKey,
+} from "../core/index.ts";
 
 export function createPluginApi(
   pluginId: string,

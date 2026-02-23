@@ -11,7 +11,7 @@
  */
 
 import { Gateway } from "./server.ts";
-import { loadConfig, resolveConfigPath, type CronJob } from "./core/config.ts";
+import { loadConfig, resolveConfigPath, type CronJob, type Config } from "./core/config.ts";
 import { listPendingRequests, approvePairingRequest } from "./security/pairing.ts";
 import { CronEngine } from "./core/cron.ts";
 import { installDaemon, uninstallDaemon } from "./core/daemon.ts";
@@ -86,7 +86,7 @@ interface RegisteredCliEntry {
 }
 
 function createCliOnlyPluginApi(
-  config: ReturnType<typeof loadConfig>,
+  config: Config,
   pluginId: string,
   manifest: PluginManifest,
   registry: ReturnType<typeof createPluginRegistry>,
@@ -137,6 +137,32 @@ function createCliOnlyPluginApi(
     },
     async getPiCommands(_sessionKey: SessionKey): Promise<{ name: string; description?: string }[]> {
       return [];
+    },
+
+    async getSessionStats(_sessionKey: SessionKey): Promise<unknown> {
+      return {};
+    },
+    async getRpcState(_sessionKey: SessionKey): Promise<unknown> {
+      return {};
+    },
+    listSessions(): import("./core/types.ts").SessionState[] {
+      return [];
+    },
+    releaseSession(_sessionKey: SessionKey): void {},
+    readTranscript(_sessionKey: SessionKey, _lastN?: number): import("./core/transcript-logger.ts").TranscriptEntry[] {
+      return [];
+    },
+    listAvailableRoles(): string[] {
+      return [];
+    },
+    async setSessionRole(_sessionKey: SessionKey, _role: string): Promise<boolean> {
+      return false;
+    },
+    async createRole(_role: string): Promise<{ ok: boolean; error?: string }> {
+      return { ok: false, error: "Not available in CLI context" };
+    },
+    async deleteRole(_role: string): Promise<{ ok: boolean; error?: string }> {
+      return { ok: false, error: "Not available in CLI context" };
     },
   };
 }
@@ -475,7 +501,7 @@ async function runPluginCommand(): Promise<void> {
         body: JSON.stringify({ pluginId }),
       });
 
-      const result = await res.json();
+      const result = await res.json() as { success: boolean; durationMs?: number; message?: string; error?: string };
       if (result.success) {
         console.log(`✅ Plugin ${pluginId} reloaded successfully`);
         if (result.durationMs) {

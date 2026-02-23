@@ -37,6 +37,9 @@ export type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 /** Agent event types from the RPC stream */
 export type { AgentEvent, AgentMessage } from "@mariozechner/pi-agent-core";
 
+// Local type alias for use in this file
+type AgentEvent_ = import("@mariozechner/pi-agent-core").AgentEvent;
+
 /** Assistant message streaming event (text_delta, toolcall_delta, etc.) */
 export type { AssistantMessageEvent } from "@mariozechner/pi-ai";
 
@@ -180,7 +183,7 @@ export type RpcSessionEvent =
  * Full RPC wire event — union of AgentEvent (agent loop level) + RpcSessionEvent (session level).
  * This is what actually comes over stdout in `pi --mode rpc`.
  */
-export type RpcWireEvent = AgentEvent | RpcSessionEvent;
+export type RpcWireEvent = AgentEvent_ | RpcSessionEvent;
 
 // ============================================================================
 // Session Types (aligned with OpenClaw session key format)
