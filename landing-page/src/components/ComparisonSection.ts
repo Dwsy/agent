@@ -72,8 +72,10 @@ export class ComparisonSection extends LitElement {
 
     .row {
       display: grid;
-      grid-template-columns: 1.5fr 1fr 1fr;
+      grid-template-columns: 2fr 1.25fr 1.25fr;
       border-bottom: 1px solid #27272a;
+      align-items: center;
+      min-height: 56px;
     }
 
     .row:last-child {
@@ -87,6 +89,9 @@ export class ComparisonSection extends LitElement {
     .cell {
       padding: 1rem 1.5rem;
       font-size: 0.9375rem;
+      display: flex;
+      align-items: center;
+      min-height: 56px;
     }
 
     .cell.feature {
@@ -108,12 +113,17 @@ export class ComparisonSection extends LitElement {
       text-transform: uppercase;
       letter-spacing: 0.05em;
       color: #71717a;
+      min-height: 48px;
     }
 
     @media (max-width: 640px) {
+      .row {
+        min-height: auto;
+      }
       .cell {
         padding: 0.875rem 1rem;
         font-size: 0.8125rem;
+        min-height: auto;
       }
     }
   `;

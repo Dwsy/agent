@@ -2542,8 +2542,10 @@
 
     .row {
       display: grid;
-      grid-template-columns: 1.5fr 1fr 1fr;
+      grid-template-columns: 2fr 1.25fr 1.25fr;
       border-bottom: 1px solid #27272a;
+      align-items: center;
+      min-height: 56px;
     }
 
     .row:last-child {
@@ -2557,6 +2559,9 @@
     .cell {
       padding: 1rem 1.5rem;
       font-size: 0.9375rem;
+      display: flex;
+      align-items: center;
+      min-height: 56px;
     }
 
     .cell.feature {
@@ -2578,12 +2583,17 @@
       text-transform: uppercase;
       letter-spacing: 0.05em;
       color: #71717a;
+      min-height: 48px;
     }
 
     @media (max-width: 640px) {
+      .row {
+        min-height: auto;
+      }
       .cell {
         padding: 0.875rem 1rem;
         font-size: 0.8125rem;
+        min-height: auto;
       }
     }
   `;Ue([b()],V.prototype,"locale",2);V=Ue([f("comparison-section")],V);var Ot=Object.defineProperty,Lt=Object.getOwnPropertyDescriptor,je=(t,e,a,i)=>{for(var s=i>1?void 0:i?Lt(e,a):e,r=t.length-1,n;r>=0;r--)(n=t[r])&&(s=(i?n(e,a,s):n(s))||s);return i&&s&&Ot(e,a,s),s};let q=class extends m{constructor(){super(...arguments),this.locale=o.getCurrentLocale()}connectedCallback(){super.connectedCallback(),this._unsub=o.subscribe(()=>{this.locale=o.getCurrentLocale()})}disconnectedCallback(){var t;super.disconnectedCallback(),(t=this._unsub)==null||t.call(this)}render(){const t=o.getCurrentLocale()==="zh-CN";return d`
