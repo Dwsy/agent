@@ -3,8 +3,8 @@ import { customElement, state } from "lit/decorators.js";
 import { i18n, type Locale } from "../i18n/i18n-manager";
 
 /**
- * Tech Specs - Detailed System Specifications
- * Grid layout with animated counters and specs
+ * Tech Specs - Interactive System Architecture
+ * Animated data flow with hover interactions
  */
 @customElement("tech-specs")
 export class TechSpecs extends LitElement {
@@ -43,11 +43,11 @@ export class TechSpecs extends LitElement {
       letter-spacing: -0.02em;
     }
 
-    /* Specs Grid */
     .specs-grid {
       display: grid;
       grid-template-columns: repeat(2, 1fr);
       gap: 1.5rem;
+      margin-bottom: 4rem;
     }
 
     .spec-category {
@@ -123,14 +123,14 @@ export class TechSpecs extends LitElement {
       color: #10b981;
     }
 
-    /* Architecture Diagram */
+    /* Architecture Diagram - Interactive */
     .arch-diagram {
-      margin-top: 4rem;
-      padding: 2rem;
       background: #18181b;
       border: 1px solid #27272a;
       border-radius: 1.25rem;
+      padding: 2rem;
       overflow-x: auto;
+      position: relative;
     }
 
     .arch-title {
@@ -144,51 +144,239 @@ export class TechSpecs extends LitElement {
     .arch-svg {
       width: 100%;
       min-width: 800px;
-      height: 300px;
+      height: 350px;
     }
 
+    /* Nodes */
     .arch-node {
       fill: #27272a;
       stroke: #3f3f46;
-      stroke-width: 1;
+      stroke-width: 1.5;
+      transition: all 0.3s ease;
+      cursor: pointer;
     }
 
+    .arch-node:hover {
+      fill: #3f3f46;
+      stroke: #10b981;
+      filter: drop-shadow(0 0 8px rgba(16, 185, 129, 0.3));
+    }
+
+    .arch-node.active {
+      fill: #1e293b;
+      stroke: #10b981;
+      filter: drop-shadow(0 0 12px rgba(16, 185, 129, 0.4));
+    }
+
+    /* Node Labels */
     .arch-label {
       fill: #a1a1aa;
-      font-size: 11px;
+      font-size: 12px;
       font-family: 'JetBrains Mono', monospace;
       text-anchor: middle;
+      pointer-events: none;
+      transition: all 0.3s ease;
     }
 
+    .arch-node:hover + .arch-label,
+    .arch-node.active + .arch-label {
+      fill: #fafafa;
+      font-weight: 600;
+    }
+
+    /* Connection Lines */
     .arch-connector {
       stroke: #3f3f46;
-      stroke-width: 1;
+      stroke-width: 1.5;
       fill: none;
-      stroke-dasharray: 4 2;
+      stroke-dasharray: 4 4;
+      transition: all 0.3s ease;
+    }
+
+    .arch-connector.active {
+      stroke: #10b981;
+      stroke-width: 2;
+      animation: flow 1s linear infinite;
+    }
+
+    @keyframes flow {
+      to { stroke-dashoffset: -8; }
+    }
+
+    /* Data Flow Animation */
+    .data-packet {
+      fill: #10b981;
+      filter: drop-shadow(0 0 4px #10b981);
+    }
+
+    /* Pulse Effect */
+    .pulse-ring {
+      fill: none;
+      stroke: #10b981;
+      stroke-width: 2;
+      opacity: 0;
+    }
+
+    .pulse-ring.animating {
+      animation: pulse-ring 2s ease-out infinite;
+    }
+
+    @keyframes pulse-ring {
+      0% { r: 30; opacity: 0.6; stroke-width: 2; }
+      100% { r: 50; opacity: 0; stroke-width: 0; }
+    }
+
+    /* Node Info Panel */
+    .node-info {
+      position: absolute;
+      bottom: 1.5rem;
+      left: 1.5rem;
+      right: 1.5rem;
+      padding: 1rem 1.25rem;
+      background: rgba(24, 24, 27, 0.95);
+      border: 1px solid #27272a;
+      border-radius: 0.75rem;
+      opacity: 0;
+      transform: translateY(10px);
+      transition: all 0.3s ease;
+      pointer-events: none;
+    }
+
+    .node-info.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .node-info-title {
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: #10b981;
+      margin-bottom: 0.375rem;
+    }
+
+    .node-info-desc {
+      font-size: 0.8125rem;
+      color: #71717a;
+    }
+
+    /* Traffic Counter */
+    .traffic-counter {
+      position: absolute;
+      top: 1.5rem;
+      right: 1.5rem;
+      padding: 0.5rem 0.875rem;
+      background: rgba(16, 185, 129, 0.1);
+      border: 1px solid rgba(16, 185, 129, 0.2);
+      border-radius: 0.5rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.75rem;
+      color: #10b981;
+    }
+
+    .traffic-counter span {
+      font-weight: 600;
     }
 
     @media (max-width: 768px) {
       .specs-grid { grid-template-columns: 1fr; }
+      .arch-svg { min-width: 600px; height: 280px; }
     }
   `;
 
   @state() private locale: Locale = i18n.getCurrentLocale();
+  @state() private activeNode: string | null = null;
+  @state() private packetCount = 0;
   private _unsub?: () => void;
+  private _counterInterval?: number;
 
   connectedCallback() {
     super.connectedCallback();
     this._unsub = i18n.subscribe(() => {
       this.locale = i18n.getCurrentLocale();
     });
+    
+    // Simulate packet counter
+    this._counterInterval = window.setInterval(() => {
+      this.packetCount += Math.floor(Math.random() * 5) + 1;
+    }, 1000);
   }
 
   disconnectedCallback() {
     super.disconnectedCallback();
     this._unsub?.();
+    if (this._counterInterval) clearInterval(this._counterInterval);
+  }
+
+  private _handleNodeHover(nodeId: string) {
+    this.activeNode = nodeId;
+  }
+
+  private _handleNodeLeave() {
+    this.activeNode = null;
+  }
+
+  private _getNodeInfo(nodeId: string, isZh: boolean): { title: string; desc: string } {
+    const info: Record<string, { zh: string; en: string; descZh: string; descEn: string }> = {
+      core: { 
+        zh: 'Pi Core', 
+        en: 'Pi Core', 
+        descZh: '核心编排引擎，管理扩展生命周期', 
+        descEn: 'Core orchestration engine managing extension lifecycle' 
+      },
+      extensions: { 
+        zh: '扩展系统', 
+        en: 'Extensions', 
+        descZh: '插件化架构，支持命令、工具、钩子', 
+        descEn: 'Plugin architecture supporting commands, tools, hooks' 
+      },
+      skills: { 
+        zh: '技能系统', 
+        en: 'Skills', 
+        descZh: '42+ 可复用技能单元', 
+        descEn: '42+ reusable capability units' 
+      },
+      subagents: { 
+        zh: '子代理网格', 
+        en: 'Subagents', 
+        descZh: '25+ 专用代理通过 Crew 协议协调', 
+        descEn: '25+ specialized agents coordinated via Crew protocol' 
+      },
+      gateway: { 
+        zh: '网关', 
+        en: 'Gateway', 
+        descZh: '多通道接入，16 个生命周期钩子', 
+        descEn: 'Multi-channel access with 16 lifecycle hooks' 
+      },
+      rpc: { 
+        zh: 'RPC 池', 
+        en: 'RPC Pool', 
+        descZh: '进程池管理，会话路由', 
+        descEn: 'Process pool management, session routing' 
+      },
+      channels: { 
+        zh: '通道', 
+        en: 'Channels', 
+        descZh: 'Telegram / Discord / WebChat / API', 
+        descEn: 'Telegram / Discord / WebChat / API' 
+      },
+      memory: { 
+        zh: '记忆系统', 
+        en: 'Memory', 
+        descZh: '三层记忆栈：L3 运行时 + L2 合并 + L1 日志', 
+        descEn: '3-layer memory: L3 runtime + L2 consolidated + L1 logs' 
+      },
+    };
+    
+    const node = info[nodeId];
+    return {
+      title: isZh ? node.zh : node.en,
+      desc: isZh ? node.descZh : node.descEn
+    };
   }
 
   render() {
     const isZh = i18n.getCurrentLocale() === 'zh-CN';
+    const nodeInfo = this.activeNode ? this._getNodeInfo(this.activeNode, isZh) : null;
 
     return html`
       <section class="section" id="specs">
@@ -206,22 +394,10 @@ export class TechSpecs extends LitElement {
                 <span class="spec-title">${isZh ? '运行时' : 'Runtime'}</span>
               </div>
               <div class="spec-list">
-                <div class="spec-item">
-                  <span class="spec-label">${isZh ? '语言' : 'Language'}</span>
-                  <span class="spec-value">TypeScript 5.3</span>
-                </div>
-                <div class="spec-item">
-                  <span class="spec-label">${isZh ? '引擎' : 'Engine'}</span>
-                  <span class="spec-value">Node.js 20+</span>
-                </div>
-                <div class="spec-item">
-                  <span class="spec-label">${isZh ? '打包' : 'Bundler'}</span>
-                  <span class="spec-value">Vite 5</span>
-                </div>
-                <div class="spec-item">
-                  <span class="spec-label">TUI</span>
-                  <span class="spec-value highlight">React + Ink</span>
-                </div>
+                <div class="spec-item"><span class="spec-label">${isZh ? '语言' : 'Language'}</span><span class="spec-value">TypeScript 5.3</span></div>
+                <div class="spec-item"><span class="spec-label">${isZh ? '引擎' : 'Engine'}</span><span class="spec-value">Node.js 20+</span></div>
+                <div class="spec-item"><span class="spec-label">${isZh ? '打包' : 'Bundler'}</span><span class="spec-value">Vite 5</span></div>
+                <div class="spec-item"><span class="spec-label">TUI</span><span class="spec-value highlight">React + Ink</span></div>
               </div>
             </div>
 
@@ -232,22 +408,10 @@ export class TechSpecs extends LitElement {
                 <span class="spec-title">${isZh ? '网关' : 'Gateway'}</span>
               </div>
               <div class="spec-list">
-                <div class="spec-item">
-                  <span class="spec-label">${isZh ? '协议' : 'Protocol'}</span>
-                  <span class="spec-value">WebSocket + HTTP/2</span>
-                </div>
-                <div class="spec-item">
-                  <span class="spec-label">${isZh ? '并发' : 'Concurrency'}</span>
-                  <span class="spec-value highlight">1000+ sessions</span>
-                </div>
-                <div class="spec-item">
-                  <span class="spec-label">${isZh ? '延迟' : 'Latency'}</span>
-                  <span class="spec-value">&lt; 10ms p99</span>
-                </div>
-                <div class="spec-item">
-                  <span class="spec-label">RPC</span>
-                  <span class="spec-value">JSON-RPC 2.0</span>
-                </div>
+                <div class="spec-item"><span class="spec-label">${isZh ? '协议' : 'Protocol'}</span><span class="spec-value">WebSocket + HTTP/2</span></div>
+                <div class="spec-item"><span class="spec-label">${isZh ? '并发' : 'Concurrency'}</span><span class="spec-value highlight">1000+ sessions</span></div>
+                <div class="spec-item"><span class="spec-label">${isZh ? '延迟' : 'Latency'}</span><span class="spec-value">&lt; 10ms p99</span></div>
+                <div class="spec-item"><span class="spec-label">RPC</span><span class="spec-value">JSON-RPC 2.0</span></div>
               </div>
             </div>
 
@@ -258,22 +422,10 @@ export class TechSpecs extends LitElement {
                 <span class="spec-title">${isZh ? '记忆' : 'Memory'}</span>
               </div>
               <div class="spec-list">
-                <div class="spec-item">
-                  <span class="spec-label">${isZh ? '向量维度' : 'Vector Dim'}</span>
-                  <span class="spec-value">768 (Gemma)</span>
-                </div>
-                <div class="spec-item">
-                  <span class="spec-label">${isZh ? '检索' : 'Retrieval'}</span>
-                  <span class="spec-value highlight">Vector + BM25</span>
-                </div>
-                <div class="spec-item">
-                  <span class="spec-label">${isZh ? '数据库' : 'Database'}</span>
-                  <span class="spec-value">LanceDB</span>
-                </div>
-                <div class="spec-item">
-                  <span class="spec-label">${isZh ? '存储' : 'Storage'}</span>
-                  <span class="spec-value">Markdown + SQLite</span>
-                </div>
+                <div class="spec-item"><span class="spec-label">${isZh ? '向量维度' : 'Vector Dim'}</span><span class="spec-value">768 (Gemma)</span></div>
+                <div class="spec-item"><span class="spec-label">${isZh ? '检索' : 'Retrieval'}</span><span class="spec-value highlight">Vector + BM25</span></div>
+                <div class="spec-item"><span class="spec-label">${isZh ? '数据库' : 'Database'}</span><span class="spec-value">LanceDB</span></div>
+                <div class="spec-item"><span class="spec-label">${isZh ? '存储' : 'Storage'}</span><span class="spec-value">Markdown + SQLite</span></div>
               </div>
             </div>
 
@@ -284,67 +436,129 @@ export class TechSpecs extends LitElement {
                 <span class="spec-title">${isZh ? '安全' : 'Security'}</span>
               </div>
               <div class="spec-list">
-                <div class="spec-item">
-                  <span class="spec-label">${isZh ? '认证' : 'Auth'}</span>
-                  <span class="spec-value highlight">HMAC-SHA256</span>
-                </div>
-                <div class="spec-item">
-                  <span class="spec-label">${isZh ? '沙箱' : 'Sandbox'}</span>
-                  <span class="spec-value">Unified Diff</span>
-                </div>
-                <div class="spec-item">
-                  <span class="spec-label">${isZh ? '网络' : 'Network'}</span>
-                  <span class="spec-value">SSRF Guard</span>
-                </div>
-                <div class="spec-item">
-                  <span class="spec-label">${isZh ? '执行' : 'Execution'}</span>
-                  <span class="spec-value">Allowlist</span>
-                </div>
+                <div class="spec-item"><span class="spec-label">${isZh ? '认证' : 'Auth'}</span><span class="spec-value highlight">HMAC-SHA256</span></div>
+                <div class="spec-item"><span class="spec-label">${isZh ? '沙箱' : 'Sandbox'}</span><span class="spec-value">Unified Diff</span></div>
+                <div class="spec-item"><span class="spec-label">${isZh ? '网络' : 'Network'}</span><span class="spec-value">SSRF Guard</span></div>
+                <div class="spec-item"><span class="spec-label">${isZh ? '执行' : 'Execution'}</span><span class="spec-value">Allowlist</span></div>
               </div>
             </div>
           </div>
 
-          <!-- Architecture Diagram -->
+          <!-- Interactive Architecture Diagram -->
           <div class="arch-diagram">
-            <h3 class="arch-title">${isZh ? '数据流架构' : 'Data Flow Architecture'}</h3>
-            <svg class="arch-svg" viewBox="0 0 800 300">
-              <!-- Core -->
-              <rect class="arch-node" x="350" y="120" width="100" height="60" rx="8" />
-              <text class="arch-label" x="400" y="155">Pi Core</text>
+            <h3 class="arch-title">${isZh ? '数据流架构 (悬停查看详情)' : 'Data Flow Architecture (hover for details)'}</h3>
+            
+            <div class="traffic-counter">
+              ${isZh ? '数据包' : 'Packets'}: <span>${this.packetCount.toLocaleString()}</span>
+            </div>
 
-              <!-- Extensions -->
-              <rect class="arch-node" x="150" y="50" width="80" height="40" rx="6" />
+            <svg class="arch-svg" viewBox="0 0 900 380">
+              <defs>
+                <linearGradient id="line-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                  <stop offset="0%" style="stop-color:#3f3f46;stop-opacity:1" />
+                  <stop offset="50%" style="stop-color:#10b981;stop-opacity:1" />
+                  <stop offset="100%" style="stop-color:#3f3f46;stop-opacity:1" />
+                </linearGradient>
+                <filter id="node-glow">
+                  <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+                  <feMerge>
+                    <feMergeNode in="coloredBlur"/>
+                    <feMergeNode in="SourceGraphic"/>
+                  </feMerge>
+                </filter>
+              </defs>
+
+              <!-- Connection Lines - Extensions to Core -->
+              <path class="arch-connector ${this.activeNode === 'extensions' || this.activeNode === 'core' ? 'active' : ''}" d="M 230 70 L 350 190" />
+              <path class="arch-connector ${this.activeNode === 'skills' || this.activeNode === 'core' ? 'active' : ''}" d="M 230 160 L 350 190" />
+              <path class="arch-connector ${this.activeNode === 'subagents' || this.activeNode === 'core' ? 'active' : ''}" d="M 230 250 L 350 190" />
+              
+              <!-- Connection Lines - Core to Gateway -->
+              <path class="arch-connector ${this.activeNode === 'core' || this.activeNode === 'gateway' ? 'active' : ''}" d="M 450 190 L 570 70" />
+              <path class="arch-connector ${this.activeNode === 'core' || this.activeNode === 'rpc' ? 'active' : ''}" d="M 450 190 L 570 160" />
+              <path class="arch-connector ${this.activeNode === 'core' || this.activeNode === 'channels' ? 'active' : ''}" d="M 450 190 L 570 250" />
+              
+              <!-- Connection Line - Core to Memory -->
+              <path class="arch-connector ${this.activeNode === 'core' || this.activeNode === 'memory' ? 'active' : ''}" d="M 400 230 L 400 290" />
+
+              <!-- Pulse Rings -->
+              <circle class="pulse-ring ${this.activeNode === 'core' ? 'animating' : ''}" cx="400" cy="190" />
+
+              <!-- Extension Nodes -->
+              <rect class="arch-node ${this.activeNode === 'extensions' ? 'active' : ''}" 
+                x="150" y="50" width="80" height="40" rx="6" 
+                @mouseenter="${() => this._handleNodeHover('extensions')}" 
+                @mouseleave="${this._handleNodeLeave}" />
               <text class="arch-label" x="190" y="75">Extensions</text>
 
-              <rect class="arch-node" x="150" y="120" width="80" height="40" rx="6" />
-              <text class="arch-label" x="190" y="145">Skills</text>
+              <rect class="arch-node ${this.activeNode === 'skills' ? 'active' : ''}" 
+                x="150" y="140" width="80" height="40" rx="6" 
+                @mouseenter="${() => this._handleNodeHover('skills')}" 
+                @mouseleave="${this._handleNodeLeave}" />
+              <text class="arch-label" x="190" y="165">Skills</text>
 
-              <rect class="arch-node" x="150" y="190" width="80" height="40" rx="6" />
-              <text class="arch-label" x="190" y="215">Subagents</text>
+              <rect class="arch-node ${this.activeNode === 'subagents' ? 'active' : ''}" 
+                x="150" y="230" width="80" height="40" rx="6" 
+                @mouseenter="${() => this._handleNodeHover('subagents')}" 
+                @mouseleave="${this._handleNodeLeave}" />
+              <text class="arch-label" x="190" y="255">Subagents</text>
 
-              <!-- Gateway -->
-              <rect class="arch-node" x="570" y="50" width="80" height="40" rx="6" />
+              <!-- Core Node -->
+              <rect class="arch-node ${this.activeNode === 'core' ? 'active' : ''}" 
+                x="350" y="160" width="100" height="70" rx="8" 
+                @mouseenter="${() => this._handleNodeHover('core')}" 
+                @mouseleave="${this._handleNodeLeave}" />
+              <text class="arch-label" x="400" y="200" style="font-size: 14px; font-weight: 600;">Pi Core</text>
+
+              <!-- Gateway Nodes -->
+              <rect class="arch-node ${this.activeNode === 'gateway' ? 'active' : ''}" 
+                x="570" y="50" width="80" height="40" rx="6" 
+                @mouseenter="${() => this._handleNodeHover('gateway')}" 
+                @mouseleave="${this._handleNodeLeave}" />
               <text class="arch-label" x="610" y="75">Gateway</text>
 
-              <rect class="arch-node" x="570" y="120" width="80" height="40" rx="6" />
-              <text class="arch-label" x="610" y="145">RPC Pool</text>
+              <rect class="arch-node ${this.activeNode === 'rpc' ? 'active' : ''}" 
+                x="570" y="140" width="80" height="40" rx="6" 
+                @mouseenter="${() => this._handleNodeHover('rpc')}" 
+                @mouseleave="${this._handleNodeLeave}" />
+              <text class="arch-label" x="610" y="165">RPC Pool</text>
 
-              <rect class="arch-node" x="570" y="190" width="80" height="40" rx="6" />
-              <text class="arch-label" x="610" y="215">Channels</text>
+              <rect class="arch-node ${this.activeNode === 'channels' ? 'active' : ''}" 
+                x="570" y="230" width="80" height="40" rx="6" 
+                @mouseenter="${() => this._handleNodeHover('channels')}" 
+                @mouseleave="${this._handleNodeLeave}" />
+              <text class="arch-label" x="610" y="255">Channels</text>
 
-              <!-- Memory -->
-              <rect class="arch-node" x="360" y="240" width="80" height="40" rx="6" />
-              <text class="arch-label" x="400" y="265">Memory</text>
+              <!-- Memory Node -->
+              <rect class="arch-node ${this.activeNode === 'memory' ? 'active' : ''}" 
+                x="360" y="290" width="80" height="40" rx="6" 
+                @mouseenter="${() => this._handleNodeHover('memory')}" 
+                @mouseleave="${this._handleNodeLeave}" />
+              <text class="arch-label" x="400" y="315">Memory</text>
 
-              <!-- Connections -->
-              <path class="arch-connector" d="M 230 70 L 350 150" />
-              <path class="arch-connector" d="M 230 140 L 350 150" />
-              <path class="arch-connector" d="M 230 210 L 350 150" />
-              <path class="arch-connector" d="M 450 150 L 570 70" />
-              <path class="arch-connector" d="M 450 150 L 570 140" />
-              <path class="arch-connector" d="M 450 150 L 570 210" />
-              <path class="arch-connector" d="M 400 180 L 400 240" />
+              <!-- Data Packets -->
+              <circle class="data-packet" cx="290" cy="130" r="4">
+                <animate attributeName="cx" values="230;350" dur="1.5s" repeatCount="indefinite" />
+                <animate attributeName="cy" values="70;190" dur="1.5s" repeatCount="indefinite" />
+              </circle>
+              <circle class="data-packet" cx="290" cy="175" r="4">
+                <animate attributeName="cx" values="350;570" dur="1.2s" repeatCount="indefinite" />
+                <animate attributeName="cy" values="190;70" dur="1.2s" repeatCount="indefinite" />
+              </circle>
+              <circle class="data-packet" cx="400" cy="260" r="4">
+                <animate attributeName="cy" values="190;290" dur="2s" repeatCount="indefinite" />
+              </circle>
             </svg>
+
+            <div class="node-info ${this.activeNode ? 'visible' : ''}">
+              ${nodeInfo ? html`
+                <div class="node-info-title">${nodeInfo.title}</div>
+                <div class="node-info-desc">${nodeInfo.desc}</div>
+              ` : html`
+                <div class="node-info-title">${isZh ? '悬停节点查看详情' : 'Hover nodes for details'}</div>
+                <div class="node-info-desc">${isZh ? '数据包在节点间实时流动' : 'Data packets flow between nodes in real-time'}</div>
+              `}
+            </div>
           </div>
         </div>
       </section>
