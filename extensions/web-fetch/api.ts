@@ -51,11 +51,11 @@ export async function qwenWebSearch(query: string, page = 1, rows = 10): Promise
 
 	const data = await response.json() as QwenSearchResult;
 
-	if (!data.success && !data.data?.list) {
+	if (!data.success && !data.data?.docs) {
 		throw new Error(data.message || "Search failed");
 	}
 
-	const results = data.data?.list || [];
+	const results = data.data?.docs || [];
 	if (results.length === 0) {
 		return "No results found.";
 	}
@@ -68,9 +68,8 @@ export async function qwenWebSearch(query: string, page = 1, rows = 10): Promise
 	for (const item of results) {
 		if (item.title) parts.push(`## ${item.title}`);
 		if (item.url) parts.push(`URL: ${item.url}`);
-		if (item.site) parts.push(`Site: ${item.site}`);
-		if (item.date) parts.push(`Date: ${item.date}`);
-		if (item.content) parts.push(`\n${item.content}`);
+		if (item.hostname) parts.push(`Site: ${item.hostname}`);
+		if (item.snippet) parts.push(`\n${item.snippet}`);
 		parts.push("\n---\n");
 	}
 

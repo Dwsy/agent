@@ -1,10 +1,10 @@
 /**
  * Provider credential management
  *
- * Scans and manages API keys from:
- * - ~/.qwen/oauth_creds.json
- * - ~/.iflow/settings.json
- * - ~/.cli-proxy-api/*.json
+ * Credential priority (search order):
+ * 1. ~/.cli-proxy-api/*.json (proxy service, preferred)
+ * 2. ~/.qwen/oauth_creds.json (official OAuth, fallback)
+ * 3. ~/.iflow/settings.json (iflow API key)
  */
 
 import { exec } from "node:child_process";
@@ -37,7 +37,11 @@ export async function getIlowApiKey(): Promise<string | null> {
 // ============ Qwen Key ============
 
 export async function getQwenAccessToken(): Promise<string | null> {
-	// Priority 1: ~/.qwen/oauth_creds.json
+	// Priority 1: ~/.cli-proxy-api/ qwen-*.json (代理服务优先)
+	const cliProxyToken = await getCliProxyToken("qwen");
+	if (cliProxyToken) return cliProxyToken;
+
+	// Priority 2: ~/.qwen/oauth_creds.json (官方 OAuth 备用)
 	try {
 		if (existsSync(QWEN_CREDS_PATH)) {
 			const content = await readFile(QWEN_CREDS_PATH, "utf-8");
@@ -49,10 +53,6 @@ export async function getQwenAccessToken(): Promise<string | null> {
 	} catch (error) {
 		console.error("Failed to read Qwen credentials:", error);
 	}
-
-	// Priority 2: ~/.cli-proxy-api/ qwen-*.json
-	const cliProxyToken = await getCliProxyToken("qwen");
-	if (cliProxyToken) return cliProxyToken;
 
 	return null;
 }
