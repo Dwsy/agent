@@ -127,7 +127,7 @@
     // 总开关：是否启用向量语义搜索
     // 环境变量覆盖：ROLE_VECTOR_MEMORY
     // 需要 @lancedb/lancedb 依赖和 OpenAI API key
-    "enabled": false,
+    "enabled": true,
 
     // Embedding 提供商（目前仅支持 openai）
     "provider": "openai",

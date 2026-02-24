@@ -14,11 +14,11 @@
  *   - Hybrid search: vector + keyword → RRF fusion
  *   - Auto-index on learning/preference writes
  *   - Auto-recall on before_agent_start (semantic context injection)
- *   - Full rebuild from existing memory/consolidated.md
+ *   - Full rebuild from existing memory/consolidated.md + memory/daily/*.md
  *   - Graceful degradation: falls back to keyword search if embedding unavailable
  */
 
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { log } from "./logger.ts";
 import { config } from "./config.ts";
@@ -556,8 +556,10 @@ export async function autoRecall(
 // ============================================================================
 
 /**
- * Rebuild the vector index from existing memory/consolidated.md data.
- * Clears the existing index and re-indexes all learnings and preferences.
+ * Rebuild the vector index from existing memory files.
+ * Clears the existing index and re-indexes:
+ * - memory/consolidated.md (learnings, preferences)
+ * - memory/daily/*.md (lessons, preferences, events, context, decisions)
  */
 export async function rebuildVectorIndex(
   rolePath: string,
@@ -569,13 +571,45 @@ export async function rebuildVectorIndex(
   }
 
   const data = readRoleMemory(rolePath, roleName);
-  const items: Array<{ id: string; text: string; kind: "learning" | "preference"; category: string }> = [];
+  const items: Array<{ id: string; text: string; kind: "learning" | "preference"; category: string; source: string }> = [];
 
+  // Index consolidated.md learnings
   for (const l of data.learnings) {
-    items.push({ id: l.id, text: l.text, kind: "learning", category: "" });
+    items.push({ id: l.id, text: l.text, kind: "learning", category: "", source: "consolidated" });
   }
+  // Index consolidated.md preferences
   for (const p of data.preferences) {
-    items.push({ id: p.id, text: p.text, kind: "preference", category: p.category });
+    items.push({ id: p.id, text: p.text, kind: "preference", category: p.category, source: "consolidated" });
+  }
+
+  // Index daily/*.md entries
+  const dailyDir = join(rolePath, "memory", "daily");
+  if (existsSync(dailyDir)) {
+    const dailyFiles = readdirSync(dailyDir)
+      .filter(f => f.match(/^\d{4}-\d{2}-\d{2}\.md$/))
+      .sort()
+      .reverse(); // Newest first
+
+    for (const filename of dailyFiles) {
+      const date = filename.replace(".md", "");
+      const content = readFileSync(join(dailyDir, filename), "utf-8");
+      
+      // Parse daily memory entries: ## [HH:MM] CATEGORY
+      const entries = content.match(/##\s*\[\d{2}:\d{2}\]\s*\w+[\s\S]*?(?=##\s*\[|$)/g) || [];
+      
+      for (let i = 0; i < entries.length; i++) {
+        const entry = entries[i].trim();
+        const headerMatch = entry.match(/##\s*\[\d{2}:\d{2}\]\s*(\w+)/);
+        const category = headerMatch ? headerMatch[1].toLowerCase() : "unknown";
+        const text = entry.replace(/##\s*\[\d{2}:\d{2}\]\s*\w+/, "").trim();
+        
+        if (!text) continue;
+        
+        const id = `daily-${date}-${i}`;
+        const kind = category === "preference" ? "preference" : "learning";
+        items.push({ id, text, kind, category, source: `daily/${date}` });
+      }
+    }
   }
 
   const total = items.length;

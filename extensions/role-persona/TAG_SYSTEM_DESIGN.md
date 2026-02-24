@@ -16,7 +16,10 @@
 
 ### 1.2 如何使用 Tag
 
-**唯一出口：融合到 `/memories` 导出**
+**两个出口：**
+
+1. **融合到 `/memories` 导出** - 记忆条目旁显示 `[🏷️ tag1, tag2]`
+2. **`/memory-tags` 命令** - 标签云浏览（超出原始设计，但已实现）
 
 ```
 /memories 命令输出结构：
@@ -24,22 +27,14 @@
 │  ## Memory: {role}                  │
 │                                     │
 │  ### Learnings...                   │
-│  - [3x] xxx [🏷️ tag1, tag2]         │
+│  - [3x] xxx [🏷️ vue, reactivity]    │
 │                                     │
-│  ### Tag Cloud                      │  ← 新增
-│  vue(5) react(3) code-style(4)      │  ← Top 20 标签
+│  ### Tag Cloud                      │
+│  vue(5) react(3) code-style(4)      │
 │                                     │
-│  [导出 HTML 包含标签云可视化]         │  ← 新增
+│  [导出 HTML 包含标签云可视化]         │
 └─────────────────────────────────────┘
 ```
-
-### 1.3 不做什么（边界）
-
-- ❌ 不新增 `/memory-tags` 命令
-- ❌ 不新增 `/memory-search` 命令
-- ❌ 不做 TUI 交互界面
-- ❌ 不做标签编辑/删除功能
-- ❌ 不做复杂的遗忘曲线
 
 ---
 
@@ -49,11 +44,11 @@
 
 ```
 ~/.pi/agent/roles/{role}/
-├── memory/consolidated.md # 主记忆文件
+├── memory/consolidated.md    # 主记忆文件
 ├── memory/daily/
-│   └── 2026-02-10.md      # 日常记忆
+│   └── 2026-02-10.md         # 日常记忆
 └── .log/
-    └── memory-tags.json   # ← Tag 索引（唯一数据源）
+    └── memory-tags.json      # ← Tag 索引（唯一数据源）
 ```
 
 ### 2.2 数据结构
@@ -93,7 +88,7 @@
         └──────────┬─────────────────┘
                    │
               /memories 导出
-              （显示标签云）
+              /memory-tags 浏览
 ```
 
 **同步策略**：
@@ -105,65 +100,36 @@
 
 ## 3. Implementation（实现要点）
 
-### 3.1 修复清单
-
-| 文件 | 修复点 | 优先级 |
-|-----|--------|--------|
-| `memory-md.ts` | 修复 `extractTagsWithLLM(text, ctx, model)` 参数顺序 | P0 |
-| `memory-md.ts` | `addRoleLearningWithTags` 正确调用 tag 提取 | P0 |
-| `memory-llm.ts` | `runAutoMemoryExtraction` 提取记忆时同步提取 tag | P0 |
-| `memory-tags.ts` | 简化 `updateTagIndex`，只保留核心字段 | P1 |
-| `memory-viewer.ts` | `/memories` 导出时附加 Tag Cloud | P1 |
-
-### 3.2 核心函数
+### 3.1 核心函数
 
 ```typescript
+// memory-tags.ts
+
 // 统一入口：保存记忆时提取 tag
-async function saveMemoryWithTags(
+export async function saveMemoryWithTags(
   ctx: ExtensionContext,
   rolePath: string,
   memory: { id: string; text: string }
-): Promise<void> {
-  // 1. 保存记忆（已有逻辑）
-  await saveMemory(rolePath, memory);
-  
-  // 2. 提取 tag（异步，不阻塞）
-  const result = await extractTagsWithLLM(memory.text, ctx).catch(() => null);
-  if (!result || result.tags.length === 0) return;
-  
-  // 3. 更新索引
-  await updateTagIndex(rolePath, memory.id, result.tags);
-}
+): Promise<void>
 
 // 更新 tag 索引
-function updateTagIndex(
+export function updateTagIndex(
   rolePath: string,
   memoryId: string,
   tags: Array<{ tag: string; confidence: number }>
-): void {
-  const index = loadTagsIndex(rolePath);
-  
-  for (const { tag, confidence } of tags) {
-    if (!index.tags[tag]) {
-      index.tags[tag] = { count: 0, confidence: 0, lastUsed: "", memories: [] };
-    }
-    index.tags[tag].count++;
-    index.tags[tag].confidence = Math.max(index.tags[tag].confidence, confidence);
-    index.tags[tag].lastUsed = new Date().toISOString();
-    if (!index.tags[tag].memories.includes(memoryId)) {
-      index.tags[tag].memories.push(memoryId);
-    }
-  }
-  
-  index.memoryIndex[memoryId] = tags.map(t => t.tag);
-  saveTagsIndex(rolePath, index);
-}
+): void
+
+// 获取所有标签
+export function getAllTags(rolePath: string): TagIndex
+
+// 构建标签云
+export function buildTagCloudHTML(rolePath: string, maxTags?: number): string
 ```
 
-### 3.3 Tag Cloud 生成
+### 3.2 Tag Cloud 生成
 
 ```typescript
-// 用于 /memories 导出的 HTML
+// 用于 /memories 导出和 /memory-tags
 function generateTagCloudHTML(rolePath: string): string {
   const index = loadTagsIndex(rolePath);
   const sorted = Object.entries(index.tags)
@@ -182,6 +148,35 @@ function generateTagCloudHTML(rolePath: string): string {
 }
 ```
 
+### 3.3 命令实现
+
+**`/memory-tags [query]`** - 标签云浏览
+
+```typescript
+// index.ts 命令注册
+pi.registerCommand("memory-tags", {
+  handler: async (args, ctx) => {
+    const query = args._[0];
+    const tags = getAllTags(rolePath);
+    
+    if (query) {
+      // 过滤显示含关键词的标签
+      const filtered = filterTags(tags, query);
+      ctx.ui.showMarkdown(buildTagCloudMarkdown(filtered));
+    } else {
+      // 显示全部标签云
+      ctx.ui.showMarkdown(buildTagCloudMarkdown(tags));
+    }
+    
+    // --export 选项导出 HTML
+    if (args.export) {
+      const html = buildTagCloudHTML(rolePath);
+      writeFileSync(`${rolePath}/tag-cloud.html`, html);
+    }
+  }
+});
+```
+
 ---
 
 ## 4. 验证闭环
@@ -190,7 +185,7 @@ function generateTagCloudHTML(rolePath: string): string {
 生成 ──► 存储 ──► 使用
   ▲            │
   └────────────┘
-  （看到 Tag Cloud 即验证成功）
+  （看到 Tag Cloud / /memory-tags 即验证成功）
 ```
 
 **验证方式**：
@@ -199,36 +194,99 @@ function generateTagCloudHTML(rolePath: string): string {
 3. 检查输出：
    - 记忆条目旁显示 `[🏷️ vue, reactivity]`
    - 底部显示 Tag Cloud 包含 `vue(1)`
-4. 导出 HTML 包含可视化标签云
+4. 执行 `/memory-tags`
+5. 确认标签云显示正确
+6. 导出 HTML 包含可视化标签云（可选）
 
 ---
 
-## 5. 不做的功能（明确边界）
+## 5. 实际功能 vs 原始设计
 
-| 功能 | 不做原因 |
-|-----|---------|
-| 标签搜索 | 用全文搜索即可，无需单独实现 |
-| 标签编辑 | 复杂度高于收益，重新提取即可 |
-| 标签合并 | 使用频次低，手动整理 memory.md 即可 |
-| 遗忘曲线 | 简化设计，只保留 count/lastUsed |
-| TUI 界面 | 用户明确要求不做 |
+| 功能 | 原始设计 | 实际实现 | 差异说明 |
+|------|----------|----------|----------|
+| `/memory-tags` 命令 | ❌ 不做 | ✅ 已实现 | 用户需求驱动，超出原始设计 |
+| 标签搜索 | ❌ 不做 | ⚠️ 有限支持 | 可通过 `/memory-tags keyword` 过滤 |
+| 标签编辑 | ❌ 不做 | ❌ 未做 | 符合设计，手动整理 memory.md 即可 |
+| 标签合并 | ❌ 不做 | ❌ 未做 | 符合设计 |
+| 遗忘曲线 | ❌ 不做 | ⚠️ 简化实现 | 只保留 count/lastUsed |
+| TUI 界面 | ❌ 不做 | ❌ 未做 | 符合设计，使用 Markdown 渲染 |
 
 ---
 
-## 6. 文件修改清单
+## 6. 文件修改清单（已实现）
 
 ```
+memory-tags.ts (682 lines)
+  ✓ saveMemoryWithTags - 保存时自动提取
+  ✓ updateTagIndex - 更新索引
+  ✓ getAllTags - 获取所有标签
+  ✓ buildTagCloudHTML - 生成标签云
+  ✓ extractTagsWithLLM - LLM 自动打标
+
 memory-md.ts
-  - 修复 extractTagsWithLLM 调用参数
-  - addRoleLearningWithTags 调用 saveMemoryWithTags
+  ✓ addRoleLearning - 调用 tag 提取
+  ✓ addRolePreference - 调用 tag 提取
 
 memory-llm.ts
-  - runAutoMemoryExtraction 提取记忆后提取 tag
-
-memory-tags.ts
-  - 简化 updateTagIndex
-  - 添加 generateTagCloudHTML
+  ✓ runAutoMemoryExtraction - 提取记忆后提取 tag
 
 memory-viewer.ts
-  - buildRoleMemoryViewerMarkdown 附加 Tag Cloud
+  ✓ buildRoleMemoryViewerMarkdown - 附加 Tag Cloud
+
+index.ts
+  ✓ /memory-tags 命令实现
+  ✓ --export 选项支持
 ```
+
+---
+
+## 7. 使用示例
+
+### 查看标签云
+
+```
+/memory-tags
+```
+
+### 搜索特定标签
+
+```
+/memory-tags vue
+```
+
+### 导出 HTML
+
+```
+/memory-tags --export
+# 生成 ~/.pi/agent/roles/{role}/tag-cloud.html
+```
+
+### AI 使用标签
+
+```typescript
+// AI 添加带标签的记忆
+memory({ action: "add_learning", content: "Vue 3 Composition API 最佳实践" })
+// 系统自动提取标签：[vue, composition-api]
+
+// AI 搜索特定标签
+role_search({ query: "vue", maxResults: 10 })
+```
+
+---
+
+## 8. 性能特征
+
+| 操作 | 复杂度 | 说明 |
+|------|--------|------|
+| Tag 提取 | O(1) API | LLM 调用，异步不阻塞 |
+| 索引更新 | O(n) | n = tag 数量，通常 < 100 |
+| 标签云生成 | O(n log n) | 排序后取 top 20 |
+| 标签搜索 | O(n) | 简单字符串匹配 |
+
+---
+
+## 9. 相关文档
+
+- [README.md](../README.md) - 标签系统使用说明
+- [ARCHITECTURE.md](../ARCHITECTURE.md) - 模块架构
+- [CHANGELOG.md](../CHANGELOG.md) - 标签系统变更记录

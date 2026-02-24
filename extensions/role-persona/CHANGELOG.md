@@ -1,5 +1,21 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+- **向量记忆索引范围修复**: `rebuildVectorIndex` 现在同时索引 `memory/consolidated.md` 和 `memory/daily/*.md`，与架构注释保持一致
+  - 原实现只索引 consolidated.md
+  - 新实现解析 daily 文件中的 `## [HH:MM] CATEGORY` 条目并全部索引
+
+### Documentation
+- 重写 README.md，精简并与 v2 架构同步
+- 重写 HANDOFF.md，反映当前完整实现状态
+- 大幅扩展 ARCHITECTURE.md，添加详细模块图和数据流
+- 新增 QUICKSTART.md，5分钟快速入门指南
+- 新增 docs/README.md，文档索引和导航
+
+---
+
 ## 2026-02-21
 
 ### Added
@@ -23,6 +39,8 @@
   - 仅读取 `core/identity.md` / `core/soul.md` 与 `memory/consolidated.md`
   - 日记仅读取 `memory/daily/`
 
+---
+
 ## 2026-02-19
 
 ### Added
@@ -33,6 +51,8 @@
 - **配置项**: `pi-role-persona.jsonc` 新增 `externalReadonly` 配置段
   - `enabled` / `baseUrl` / `token` / `timeoutMs` / `topK` / `experienceLimit` / `minConfidence`
   - 环境变量: `ROLE_EXTERNAL_READONLY`, `ROLE_EXTERNAL_BASE_URL`, `ROLE_EXTERNAL_TOKEN`, `ROLE_EXTERNAL_TIMEOUT_MS`, `ROLE_EXTERNAL_TOP_K`, `ROLE_EXTERNAL_EXP_LIMIT`, `ROLE_EXTERNAL_MIN_CONFIDENCE`
+
+---
 
 ## 2026-02-16
 
@@ -155,6 +175,26 @@
 mv ~/.pi/agent/roles/zero/MEMORY.backup*.md ~/.pi/agent/roles/zero/.backup/memory/
 ```
 
-## Previous
+---
 
-- 初始版本
+## 2025-02-06
+
+### 初始版本
+- 基础角色系统：创建、映射、加载
+- OpenClaw 风格的文件结构（AGENTS, IDENTITY, SOUL, USER）
+- 自动记忆提取（5轮/关键词/30分钟触发）
+- 基础 TUI 支持
+
+---
+
+## 版本汇总
+
+| 版本 | 日期 | 核心特性 |
+|------|------|----------|
+| v2.0 | 2026-02-21 | 结构化目录 v2、Role CRUD Tools |
+| v1.5 | 2026-02-19 | 外部只读记忆增强 |
+| v1.4 | 2026-02-16 | 向量记忆系统 |
+| v1.3 | 2026-02-13 | 压缩时记忆抢救 |
+| v1.2 | 2026-02-10 | Bug 修复、按需搜索 |
+| v1.1 | 2025-02-10 | TOOLS.md 支持、备份目录 |
+| v1.0 | 2025-02-06 | 初始版本 |
