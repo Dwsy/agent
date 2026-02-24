@@ -59,6 +59,10 @@ export type {
   PluginManifest,
   GatewayPluginApi,
   SessionState,
+  SessionStats,
+  RpcState,
+  RpcModelInfo,
+
   // Hooks
   PluginHookName,
   HookPayload,

@@ -499,10 +499,10 @@ export interface GatewayPluginApi extends DomainPluginApi {
   getPiCommands(sessionKey: SessionKey): Promise<{ name: string; description?: string }[]>;
 
   /** Get session statistics */
-  getSessionStats(sessionKey: SessionKey): Promise<unknown>;
+  getSessionStats(sessionKey: SessionKey): Promise<SessionStats | null>;
 
   /** Get RPC process state */
-  getRpcState(sessionKey: SessionKey): Promise<unknown>;
+  getRpcState(sessionKey: SessionKey): Promise<RpcState | null>;
 
   // Utility methods
 
@@ -543,19 +543,49 @@ export interface GatewayPluginApi extends DomainPluginApi {
   readTranscript(sessionKey: SessionKey, lastN?: number): TranscriptEntry[];
 }
 
-/** Session statistics */
+/** Session statistics - aligned with pi's SessionStats */
 export interface SessionStats {
-  messageCount: number;
-  tokenCount?: number;
-  startTime?: number;
-  lastActivity?: number;
+  sessionFile: string | undefined;
+  sessionId: string;
+  userMessages: number;
+  assistantMessages: number;
+  toolCalls: number;
+  toolResults: number;
+  totalMessages: number;
+  tokens: {
+    input: number;
+    output: number;
+    cacheRead: number;
+    cacheWrite: number;
+    total: number;
+  };
+  cost: number;
 }
 
-/** RPC process state */
+/** Model info from RPC state */
+export interface RpcModelInfo {
+  id: string;
+  name: string;
+  provider: string;
+  contextWindow: number;
+  maxTokens: number;
+  reasoning?: boolean;
+}
+
+/** RPC process state - aligned with pi's get_state response */
 export interface RpcState {
-  status: "idle" | "running" | "error" | "stopped";
-  pid?: number;
-  uptime?: number;
+  model: RpcModelInfo | undefined;
+  thinkingLevel: string;
+  isStreaming: boolean;
+  isCompacting: boolean;
+  steeringMode: string;
+  followUpMode: string;
+  sessionFile: string | undefined;
+  sessionId: string;
+  sessionName: string | undefined;
+  autoCompactionEnabled: boolean;
+  messageCount: number;
+  pendingMessageCount: number;
 }
 
 /** Session info for listSessions */

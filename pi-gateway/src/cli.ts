@@ -417,7 +417,7 @@ async function runCron(): Promise<void> {
   const config = loadConfig(getArg("config"));
   const dataDir = config.session.dataDir.replace(/\/sessions$/, "");
   // Create a no-op dispatcher for listing only
-  const engine = new CronEngine(dataDir, { dispatch: async () => {} });
+  const engine = new CronEngine(dataDir, { dispatch: async () => {} }, undefined, undefined, undefined, undefined, undefined);
 
   if (sub === "list") {
     const jobs = engine.listJobs();
