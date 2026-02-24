@@ -4,13 +4,13 @@
   "showUpdateEvery": 10,
   "techniques": {
     "ansiStripping": true,
-    "truncation": { "enabled": true, "maxChars": 10000 },
+    "truncation": { "enabled": true, "maxChars": 50000 },
     "sourceCodeFiltering": "minimal",
-    "smartTruncation": { "enabled": true, "maxLines": 200 },
+    "smartTruncation": { "enabled": true, "maxLines": 1000 },
     "testOutputAggregation": true,
     "buildOutputFiltering": true,
-    "gitCompaction": true,
-    "searchResultGrouping": true,
+    "gitCompaction": false,
+    "searchResultGrouping": false,
     "linterAggregation": true
   }
 }

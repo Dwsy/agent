@@ -4,7 +4,8 @@
   "description": "Pi role persona extension with vector memory support",
   "type": "module",
   "dependencies": {
-    "@lancedb/lancedb": "^0.15.0"
+    "@lancedb/lancedb": "^0.15.0",
+    "node-llama-cpp": "^3.16.2"
   },
   "peerDependencies": {
     "@mariozechner/pi-coding-agent": "*"

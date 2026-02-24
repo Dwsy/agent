@@ -4,7 +4,6 @@
  * Credential priority (search order):
  * 1. ~/.cli-proxy-api/*.json (proxy service, preferred)
  * 2. ~/.qwen/oauth_creds.json (official OAuth, fallback)
- * 3. ~/.iflow/settings.json (iflow API key)
  */
 
 import { exec } from "node:child_process";
@@ -16,23 +15,8 @@ import type { QwenCreds, CliProxyCred, ProviderInfo } from "./types.js";
 const execAsync = promisify(exec);
 
 // Provider paths
-const ILOW_SETTINGS_PATH = `${process.env.HOME}/.iflow/settings.json`;
 const QWEN_CREDS_PATH = `${process.env.HOME}/.qwen/oauth_creds.json`;
 const CLI_PROXY_API_PATH = `${process.env.HOME}/.cli-proxy-api`;
-
-// ============ Ilow Key ============
-
-export async function getIlowApiKey(): Promise<string | null> {
-	try {
-		if (!existsSync(ILOW_SETTINGS_PATH)) return null;
-		const { stdout } = await execAsync(`jq -r '.apiKey // empty' "${ILOW_SETTINGS_PATH}"`);
-		const apiKey = stdout.trim();
-		return apiKey || null;
-	} catch (error) {
-		console.error("Failed to read iflow settings:", error);
-		return null;
-	}
-}
 
 // ============ Qwen Key ============
 
@@ -116,16 +100,6 @@ export async function getCliProxyToken(type: string): Promise<string | null> {
 	const matching = creds.filter(c => c.type === type || c.file.includes(type));
 	if (matching.length === 0) return null;
 	return matching[0].access_token;
-}
-
-// Get iflow token from cli-proxy-api
-export async function getIlowToken(): Promise<string | null> {
-	// Priority 1: ~/.iflow/settings.json
-	const iflowKey = await getIlowApiKey();
-	if (iflowKey) return iflowKey;
-
-	// Priority 2: cli-proxy-api iflow-*.json
-	return await getCliProxyToken("iflow");
 }
 
 // Get all available providers

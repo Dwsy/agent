@@ -1,0 +1,11 @@
+{
+  "crew": {
+    "models": {
+      "planner": "proxypal/kimi-k2.5",
+      "worker": "proxypal/kimi-k2.5",
+      "reviewer": "proxypal/kimi-k2.5",
+      "analyst": "proxypal/kimi-k2.5"
+    },
+    "concurrency": { "workers": 2 }
+  }
+}
