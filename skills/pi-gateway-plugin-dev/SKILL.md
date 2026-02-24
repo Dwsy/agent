@@ -1,6 +1,6 @@
 ---
 name: pi-gateway-plugin-dev
-description: 为 pi-gateway 开发 Gateway 插件的实战技能。当需求涉及通过 pi SDK/RPC 扩展网关能力（如模型列表、模型切换、WS 方法、命令、Hook、后台服务）且要求“每个插件独立目录 + plugin.json + src 多文件结构”时使用。
+description: 为 pi-gateway 开发 Gateway 插件的实战技能。当需求涉及通过 pi SDK/RPC 扩展网关能力（如模型列表、模型切换、WS 方法、命令、Hook、后台服务）且要求"每个插件独立目录 + plugin.json + src 多文件结构"时使用。
 ---
 
 # Pi Gateway Plugin Dev 技能
@@ -63,11 +63,95 @@ bash skills/pi-gateway-plugin-dev/scripts/new-plugin.sh ~/.pi/gateway/plugins mo
 - 切模型：用 `GatewayPluginApi.setModel(sessionKey, provider, modelId)`。
 - 调思考强度：用 `GatewayPluginApi.setThinkingLevel(sessionKey, level)`。
 - 列模型：当前 `GatewayPluginApi` 不直接暴露 `getAvailableModels`，推荐复用网关内置 `models.list` / `/api/models`。
-- 若必须插件内部直连 RPC：先扩展 `GatewayPluginApi` + `createPluginApi` + `RpcClient` 映射，见 `references/rpc-capabilities.md` 的“扩展路径”。
+- 若必须插件内部直连 RPC：先扩展 `GatewayPluginApi` + `createPluginApi` + `RpcClient` 映射，见 `references/rpc-capabilities.md` 的"扩展路径"。
+
+## 工具流式支持 (Tool Streaming)
+
+pi-gateway 工具支持流式执行，通过 `onPartialResult` 回调实时更新进度：
+
+### 工具执行方法签名
+
+```typescript
+async execute(
+  toolCallId: string,
+  args: unknown,
+  signal: AbortSignal,
+  onPartialResult?: (partial: ToolResult) => void
+): Promise<ToolResult>
+```
+
+### 实现流式工具
+
+```typescript
+// src/tools/my-streaming-tool.ts
+export function createMyStreamingTool() {
+  return {
+    name: "my_streaming_tool",
+    parameters: Type.Object({
+      text: Type.String(),
+      stream: Type.Optional(Type.Boolean({ default: true })),
+    }),
+    async execute(
+      _toolCallId: string,
+      params: unknown,
+      signal: AbortSignal,
+      onPartialResult?: (partial: ToolResult) => void
+    ) {
+      const { text, stream } = params as { text: string; stream?: boolean };
+      
+      if (!stream) {
+        // 非流式：直接返回结果
+        return { content: [{ type: "text", text }] };
+      }
+      
+      // 流式：分块处理，每块调用 onPartialResult
+      const chunks = splitIntoChunks(text, 80);
+      let accumulated = "";
+      
+      for (let i = 0; i < chunks.length; i++) {
+        if (signal?.aborted) {
+          return { content: [{ type: "text", text: "Aborted" }], details: { error: true } };
+        }
+        
+        accumulated += chunks[i];
+        
+        // 报告进度
+        if (onPartialResult) {
+          onPartialResult({
+            content: [{ type: "text", text: accumulated + (i < chunks.length - 1 ? "…" : "") }],
+            details: { progress: i + 1, total: chunks.length },
+          });
+        }
+        
+        // 模拟处理延迟
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      
+      return {
+        content: [{ type: "text", text: accumulated }],
+        details: { completed: true, chunks: chunks.length },
+      };
+    },
+  };
+}
+```
+
+### 关键要点
+
+1. **AbortSignal 处理**: 检查 `signal.aborted` 支持取消操作
+2. **PartialResult 结构**: 包含 `content` 数组和可选的 `details` 元数据
+3. **视觉反馈**: 使用 `…` 或其他指示符表示还有更多内容
+4. **渐进式更新**: 每完成一个阶段就调用 `onPartialResult`，不要等全部完成
+
+### 参考实现
+
+查看 `send_message` 工具的流式实现：
+- `extensions/gateway-tools/send-message.ts`
 
 ## 交付要求
 
 - 输出插件目录树
 - 输出 `plugin.json` 和关键源文件
 - 说明如何在 gateway 模式加载（`plugins.dirs[]`）
-- 给出最小验证命令（至少覆盖“列模型/切模型”或对应能力）
+- 给出最小验证命令（至少覆盖"列模型/切模型"或对应能力）
+- （可选）如果工具支持流式，提供流式调用示例
