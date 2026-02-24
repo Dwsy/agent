@@ -1429,32 +1429,70 @@ Rules for memory extraction:
   });
 
   pi.registerCommand("memories", {
-    description: "View role memory in a scrollable overlay",
+    description: "View role memory (TUI or browser)",
     handler: async (_args, ctx) => {
       if (!currentRole || !currentRolePath) {
         notify(ctx, "当前目录未映射角色", "warning");
         return;
       }
 
-      const content = buildRoleMemoryViewerMarkdown(currentRolePath, currentRole);
+      // TUI available: show selection
+      if (isTuiAvailable(ctx)) {
+        const { SelectList, Text, Container } = await import("@mariozechner/pi-tui");
 
-      if (!isTuiAvailable(ctx)) {
-        pi.sendMessage({ customType: "role-memories", content, display: true }, { triggerTurn: false });
+        await ctx.ui.custom<void>((tui, theme, _kb, done) => {
+          const container = new Container();
+
+          container.addChild(new Text(theme.fg("accent", theme.bold(`📊 Memories - ${currentRole}`))));
+          container.addChild(new Text(""));
+
+          const items = [
+            { label: "🖥️  TUI Viewer (terminal)", value: "tui" },
+            { label: "🌐 Export to Browser (HTML)", value: "browser" },
+          ];
+
+          const list = new SelectList(items, {
+            onSelect: async (item) => {
+              container.dispose();
+              done();
+
+              if (item.value === "browser") {
+                const { exportMemoryToBrowser } = await import("./memory-export-html.ts");
+                const tmpFile = await exportMemoryToBrowser(currentRolePath!, currentRole!);
+                notify(ctx, `Opened in browser: ${tmpFile}`, "success");
+              } else {
+                // Re-open TUI viewer
+                await ctx.ui.custom<void>(
+                  (tui, theme, _kb, done) =>
+                    new RoleMemoryViewerComponent(currentRolePath!, currentRole!, tui, theme, done),
+                  {
+                    overlay: true,
+                    overlayOptions: {
+                      anchor: "center",
+                      width: "90%",
+                      minWidth: 60,
+                      maxHeight: "95%",
+                    },
+                  },
+                );
+              }
+            },
+            onCancel: () => {
+              container.dispose();
+              done();
+            },
+          });
+
+          container.addChild(list);
+          tui.addChild(container);
+        }, { overlay: true, overlayOptions: { anchor: "center", width: 50, maxHeight: 15 } });
+
         return;
       }
 
-      await ctx.ui.custom<void>(
-        (tui, theme, _kb, done) => new RoleMemoryViewerComponent(currentRolePath, currentRole, tui, theme, done),
-        {
-          overlay: true,
-          overlayOptions: {
-            anchor: "center",
-            width: "90%",
-            minWidth: 60,
-            maxHeight: "95%",
-          },
-        },
-      );
+      // No TUI: just show markdown
+      const content = buildRoleMemoryViewerMarkdown(currentRolePath, currentRole);
+      pi.sendMessage({ customType: "role-memories", content, display: true }, { triggerTurn: false });
     },
   });
 
