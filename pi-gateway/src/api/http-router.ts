@@ -15,6 +15,7 @@ import { searchMemory, getMemoryStats, getRoleInfo, listRoles } from "../core/me
 import { handleMediaServe } from "./media-routes.ts";
 import { handleMediaSendRequest } from "./media-send.ts";
 import { handleMessageSendRequest } from "./message-send.ts";
+import { handleMessageEditRequest } from "./message-edit.ts";
 import { handleMessageAction } from "./message-action.ts";
 import { handleApiChat, handleApiChatStream } from "./chat-api.ts";
 import { handleApiSend } from "./send-api.ts";
@@ -194,6 +195,14 @@ export async function routeHttp(req: Request, url: URL, ctx: GatewayContext): Pr
       config: ctx.config, pool: ctx.pool, registry: ctx.registry,
       sessions: ctx.sessions, log: ctx.log, broadcastToWs: ctx.broadcastToWs,
       onDelivered: ctx.onCronDelivered,
+    });
+  }
+
+  // Message edit API (v3.4: streaming message updates via channel plugins)
+  if (pathname === "/api/message/edit" && method === "POST") {
+    return handleMessageEditRequest(req, {
+      config: ctx.config, pool: ctx.pool, registry: ctx.registry,
+      sessions: ctx.sessions, log: ctx.log,
     });
   }
 
