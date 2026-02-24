@@ -641,14 +641,18 @@ export async function dispatchAgentTurn(params: {
       }
     },
     setTyping: async (typing) => {
-      runtime.api.logger.info(`[telegram:setTyping] typing=${typing}, current typingInterval=${!!typingInterval}`);
-      if (typing) {
-        ensureTypingInterval();
-        return;
-      }
-      if (typingInterval) {
-        clearInterval(typingInterval);
-        typingInterval = null;
+      try {
+        runtime.api.logger.info(`[telegram:setTyping] typing=${typing}, current typingInterval=${!!typingInterval}`);
+        if (typing) {
+          ensureTypingInterval();
+          return;
+        }
+        if (typingInterval) {
+          clearInterval(typingInterval);
+          typingInterval = null;
+        }
+      } catch (e) {
+        runtime.api.logger.error(`[telegram:setTyping] error: ${e instanceof Error ? e.message : String(e)}`);
       }
     },
   });
