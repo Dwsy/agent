@@ -6,16 +6,17 @@
  *
  * This is Gateway-level logging (independent of pi's internal session files).
  * Useful for debugging message interruptions, timeouts, and agent behavior.
+ *
+ * Features:
+ * - Max file size: 5MB per file (configurable)
+ * - Auto-rotation: session.jsonl → session.1.jsonl → session.2.jsonl
+ * - Max rotations: 3 files per session (keeps latest)
  */
 
-import { existsSync, mkdirSync, appendFileSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, mkdirSync, appendFileSync, readFileSync, readdirSync, renameSync, statSync, unlinkSync } from "node:fs";
 import { join, basename } from "node:path";
 import { createLogger, type Logger, type SessionKey } from "./types.ts";
 import { encodeSessionDir } from "./session-store.ts";
-
-// ============================================================================
-// Types
-// ============================================================================
 
 export interface TranscriptEntry {
   /** ISO timestamp */
@@ -30,25 +31,32 @@ export interface TranscriptEntry {
   data?: Record<string, unknown>;
 }
 
-// ============================================================================
-// Transcript Logger
-// ============================================================================
+export interface TranscriptLoggerOptions {
+  /** Max file size in MB before rotation. Default: 5 */
+  maxFileSizeMB?: number;
+  /** Max number of rotated files to keep. Default: 3 */
+  maxRotations?: number;
+}
+
+const DEFAULT_MAX_FILE_SIZE_MB = 5;
+const DEFAULT_MAX_ROTATIONS = 3;
+const MB_TO_BYTES = 1024 * 1024;
 
 export class TranscriptLogger {
   private log: Logger;
   private baseDir: string;
+  private maxFileSizeBytes: number;
+  private maxRotations: number;
 
-  constructor(baseDir: string) {
+  constructor(baseDir: string, options: TranscriptLoggerOptions = {}) {
     this.baseDir = baseDir;
+    this.maxFileSizeBytes = (options.maxFileSizeMB ?? DEFAULT_MAX_FILE_SIZE_MB) * MB_TO_BYTES;
+    this.maxRotations = options.maxRotations ?? DEFAULT_MAX_ROTATIONS;
     this.log = createLogger("transcript");
     if (!existsSync(baseDir)) {
       mkdirSync(baseDir, { recursive: true });
     }
   }
-
-  // ==========================================================================
-  // Write
-  // ==========================================================================
 
   /** Log a prompt being sent to the agent */
   logPrompt(sessionKey: SessionKey, text: string, imageCount: number): void {
@@ -69,7 +77,6 @@ export class TranscriptLogger {
   logEvent(sessionKey: SessionKey, event: Record<string, unknown>): void {
     const type = (event.type as string) ?? "unknown";
 
-    // For text_delta, only log the delta text (not full accumulated)
     const data: Record<string, unknown> = { type };
 
     if (type === "message_update") {
@@ -144,10 +151,6 @@ export class TranscriptLogger {
     });
   }
 
-  // ==========================================================================
-  // Read
-  // ==========================================================================
-
   /** Read the transcript for a session (last N lines) */
   readTranscript(sessionKey: SessionKey, lastN = 100): TranscriptEntry[] {
     const filePath = this.getFilePath(sessionKey);
@@ -180,10 +183,6 @@ export class TranscriptLogger {
     }
   }
 
-  // ==========================================================================
-  // Internal
-  // ==========================================================================
-
   private getFilePath(sessionKey: SessionKey): string {
     const safeName = encodeSessionDir(sessionKey);
     return join(this.baseDir, `${safeName}.jsonl`);
@@ -192,9 +191,48 @@ export class TranscriptLogger {
   private append(sessionKey: SessionKey, entry: TranscriptEntry): void {
     try {
       const filePath = this.getFilePath(sessionKey);
+      
+      // Check and rotate if needed before appending
+      this.rotateIfNeeded(filePath);
+      
       appendFileSync(filePath, JSON.stringify(entry) + "\n", "utf-8");
     } catch (err) {
       this.log.error(`Failed to write transcript for ${sessionKey}:`, err);
+    }
+  }
+
+  /**
+   * Rotate transcript file if it exceeds max size.
+   * Keeps up to maxRotations files: session.jsonl, session.1.jsonl, session.2.jsonl, ...
+   */
+  private rotateIfNeeded(filePath: string): void {
+    if (!existsSync(filePath)) return;
+
+    try {
+      const stats = statSync(filePath);
+      if (stats.size < this.maxFileSizeBytes) return;
+
+      const basePath = filePath.replace(/\.jsonl$/, "");
+
+      // Delete oldest rotation if at limit
+      const oldestPath = `${basePath}.${this.maxRotations}.jsonl`;
+      if (existsSync(oldestPath)) {
+        unlinkSync(oldestPath);
+      }
+
+      // Shift existing rotations up
+      for (let i = this.maxRotations - 1; i >= 1; i--) {
+        const oldPath = `${basePath}.${i}.jsonl`;
+        const newPath = `${basePath}.${i + 1}.jsonl`;
+        if (existsSync(oldPath)) {
+          renameSync(oldPath, newPath);
+        }
+      }
+
+      // Rename current file to .1.jsonl
+      renameSync(filePath, `${basePath}.1.jsonl`);
+    } catch {
+      // Silent fail — don't break logging on rotation error
     }
   }
 }

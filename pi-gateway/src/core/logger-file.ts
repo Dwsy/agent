@@ -3,18 +3,15 @@
  *
  * Features:
  * - Daily rotation: gateway-YYYY-MM-DD.log
+ * - Size-based rotation: gateway-YYYY-MM-DD.N.log when maxFileSize exceeded
  * - Retention: auto-delete files older than N days
  * - Level filtering: debug/info/warn/error
  * - Dual output: console + file (configurable)
  */
 
-import { existsSync, mkdirSync, appendFileSync, readdirSync, unlinkSync } from "node:fs";
+import { existsSync, mkdirSync, appendFileSync, readdirSync, unlinkSync, renameSync, statSync } from "node:fs";
 import { join } from "node:path";
 import type { Logger } from "./types.ts";
-
-// ============================================================================
-// Types
-// ============================================================================
 
 export type LogLevel = "debug" | "info" | "warn" | "error";
 
@@ -29,6 +26,8 @@ export interface FileLoggerConfig {
   level: LogLevel;
   /** Days to retain log files */
   retentionDays: number;
+  /** Max file size in MB before rotation. Default: 5 */
+  maxFileSize: number;
 }
 
 const LEVEL_ORDER: Record<LogLevel, number> = {
@@ -38,20 +37,17 @@ const LEVEL_ORDER: Record<LogLevel, number> = {
   error: 3,
 };
 
-// ============================================================================
-// File Logger
-// ============================================================================
-
 let globalConfig: FileLoggerConfig = {
   dir: "",
   fileEnabled: false,
   consoleEnabled: true,
   level: "info",
   retentionDays: 7,
+  maxFileSize: 5,
 };
 
 let lastCleanup = 0;
-const CLEANUP_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
+const CLEANUP_INTERVAL_MS = 60 * 60 * 1000; 
 
 /**
  * Initialize the file logger system.
@@ -63,7 +59,7 @@ export function initFileLogger(config: Partial<FileLoggerConfig>): void {
     if (!existsSync(globalConfig.dir)) {
       mkdirSync(globalConfig.dir, { recursive: true });
     }
-    // Initial cleanup
+    
     cleanOldLogs();
   }
 }
@@ -80,19 +76,15 @@ export function createFileLogger(prefix: string): Logger {
   };
 }
 
-// ============================================================================
-// Internal
-// ============================================================================
-
 function writeLog(level: LogLevel, prefix: string, msg: string, args: unknown[]): void {
-  // Level filter
+  
   if (LEVEL_ORDER[level] < LEVEL_ORDER[globalConfig.level]) return;
 
   const ts = new Date().toISOString();
   const argsStr = args.length > 0 ? " " + args.map(formatArg).join(" ") : "";
   const line = `${ts} [${level.toUpperCase().padEnd(5)}] [${prefix}] ${msg}${argsStr}`;
 
-  // Console output
+  
   if (globalConfig.consoleEnabled) {
     const shortTs = ts.slice(11, 19);
     const consoleLine = `${shortTs} [${prefix}] ${msg}${argsStr}`;
@@ -104,23 +96,66 @@ function writeLog(level: LogLevel, prefix: string, msg: string, args: unknown[])
     }
   }
 
-  // File output
+  
   if (globalConfig.fileEnabled && globalConfig.dir) {
     const date = ts.slice(0, 10);
     const filePath = join(globalConfig.dir, `gateway-${date}.log`);
+    
+    
+    rotateLogIfNeeded(filePath);
+    
     try {
       appendFileSync(filePath, line + "\n", "utf-8");
     } catch {
-      // Silent fail — don't recurse into logging
+      
     }
 
-    // Periodic cleanup
+    
     const now = Date.now();
     if (now - lastCleanup > CLEANUP_INTERVAL_MS) {
       lastCleanup = now;
       cleanOldLogs();
     }
   }
+}
+
+/**
+ * Rotate log file if it exceeds maxFileSize.
+ * Renames current file to gateway-YYYY-MM-DD.N.log where N is the next available index.
+ */
+function rotateLogIfNeeded(filePath: string): void {
+  if (!existsSync(filePath)) return;
+
+  try {
+    const stats = statSync(filePath);
+    const maxBytes = globalConfig.maxFileSize * 1024 * 1024;
+
+    if (stats.size >= maxBytes) {
+      const rotatedPath = getNextRotatedPath(filePath);
+      renameSync(filePath, rotatedPath);
+    }
+  } catch {
+    // Silent fail — don't recurse into logging
+  }
+}
+
+/**
+ * Generate next available rotated file path.
+ * E.g., gateway-2024-01-15.log → gateway-2024-01-15.1.log
+ */
+function getNextRotatedPath(filePath: string): string {
+  const basePath = filePath.replace(/\.log$/, "");
+
+  let index = 1;
+  let rotatedPath = `${basePath}.${index}.log`;
+
+  // Find next available index
+  while (existsSync(rotatedPath)) {
+    index++;
+    rotatedPath = `${basePath}.${index}.log`;
+  }
+
+  return rotatedPath;
 }
 
 function cleanOldLogs(): void {
@@ -133,7 +168,7 @@ function cleanOldLogs(): void {
     for (const file of files) {
       if (!file.startsWith("gateway-") || !file.endsWith(".log")) continue;
 
-      // Parse date from filename: gateway-YYYY-MM-DD.log
+      
       const dateStr = file.slice(8, 18);
       const fileDate = new Date(dateStr).getTime();
 
@@ -142,7 +177,7 @@ function cleanOldLogs(): void {
       }
     }
   } catch {
-    // Silent
+    
   }
 }
 

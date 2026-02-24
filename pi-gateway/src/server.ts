@@ -103,6 +103,7 @@ export class Gateway {
       consoleEnabled: true,
       level: this.config.logging.level,
       retentionDays: this.config.logging.retentionDays,
+      maxFileSize: this.config.logging.maxFileSize,
     });
     this.log = this.config.logging.file ? createFileLogger("gateway") : createConsoleLogger("gateway");
 
@@ -133,7 +134,10 @@ export class Gateway {
     this.dedup = new DeduplicationCache({ cacheSize: qc.dedup.cacheSize, ttlMs: qc.dedup.ttlMs });
     this.registry = createPluginRegistry();
     this.systemEvents = new SystemEventsQueue(30_000, this.config.session.dataDir.replace(/\/sessions$/, ""));
-    this.transcripts = new TranscriptLogger(join(this.config.session.dataDir, "transcripts"));
+    this.transcripts = new TranscriptLogger(join(this.config.session.dataDir, "transcripts"), {
+      maxFileSizeMB: 5,
+      maxRotations: 3,
+    });
     this.observability = new GatewayObservability(500);
 
     // Initialize v3 delegate executor if multi-agent config exists

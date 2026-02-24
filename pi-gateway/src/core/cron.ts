@@ -15,6 +15,7 @@ import { createLogger, type Logger, type InboundMessage } from "./types.ts";
 import type { CronJob, CronDelivery, Config } from "./config.ts";
 import type { SystemEventsQueue } from "./system-events.ts";
 import { resolveMainSessionKey } from "./session-router.ts";
+import type { SessionStore } from "./session-store.ts";
 
 /** Normalize delivery config — string shorthand or full object → CronDelivery */
 function resolveDelivery(raw: CronJob["delivery"]): CronDelivery {
@@ -74,6 +75,7 @@ export class CronEngine {
     private announcer?: CronAnnouncer,
     private systemEvents?: SystemEventsQueue,
     private heartbeatWake?: (agentId: string, reason?: string) => void,
+    private sessionStore?: SessionStore,
   ) {
     this.jobsPath = join(dataDir, "cron", "jobs.json");
     this.runsDir = join(dataDir, "cron", "runs");
@@ -310,6 +312,16 @@ export class CronEngine {
     const startedAt = Date.now();
 
     this.log.info(`Triggering job: ${job.id} → agent ${agentId}, session ${sessionKey}`);
+
+    // Set skipAutoResume based on job's resumeContext setting (default: true for fresh context)
+    if (this.sessionStore) {
+      const session = this.sessionStore.get(sessionKey);
+      if (session) {
+        const shouldResume = job.resumeContext ?? false;
+        session.skipAutoResume = !shouldResume;
+        this.log.debug(`[cron:${job.id}] resumeContext=${shouldResume}, skipAutoResume=${session.skipAutoResume}`);
+      }
+    }
 
     let responseText = "";
     let responded = false;
