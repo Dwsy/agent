@@ -35,13 +35,13 @@ export interface QwenCreds {
 export interface QwenSearchResult {
 	success?: boolean;
 	data?: {
-		list?: Array<{
+		docs?: Array<{
 			title?: string;
-			content?: string;
+			snippet?: string;  // API returns 'snippet', not 'content'
 			url?: string;
-			site?: string;
-			date?: string;
-			score?: number;
+			hostname?: string;
+			timestamp?: number;
+			_score?: number;
 		}>;
 		total?: number;
 	};
