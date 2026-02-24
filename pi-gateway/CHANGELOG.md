@@ -1,6 +1,29 @@
 # Changelog
 
-## [Unreleased] - T4-T5 TODO
+## [Unreleased]
+
+**Focus:** Cron Isolated Mode Context Isolation + RPC Log Rotation
+
+### Cron Isolated Mode Context Isolation (Fixes #18)
+- **Fresh context by default**: Cron jobs now run with fresh RPC context per execution by default (by Dwsy)
+- **Config `resumeContext`**: New per-job option `cron.jobs[].resumeContext` — default `false` for stateless runs, set `true` to preserve context across runs (by Dwsy)
+- **Skip auto-resume**: Cron sessions (key pattern `cron:{jobId}`) bypass `--continue` auto-resume unless explicitly enabled (by Dwsy)
+- **Session flag injection**: CronEngine sets `session.skipAutoResume = !job.resumeContext` before dispatch to control RPC pool behavior (by Dwsy)
+
+### RPC Transcript Logger Enhancement
+- **Size-based rotation**: Each session's JSONL transcript now auto-rotates when reaching 5MB (hardcoded default) (by Dwsy)
+- **Rotation pattern**: `session.jsonl` → `session.1.jsonl` → `session.2.jsonl` (max 3 files per session) (by Dwsy)
+- **Automatic cleanup**: Oldest rotation (`.3.jsonl`) deleted when creating new rotation to prevent disk bloat (by Dwsy)
+- **No long-term archival**: Transcripts are debugging-only, not preserved beyond the 3-file rotation window (by Dwsy)
+
+### Gateway File Logger Enhancement
+- **Configurable max file size**: `logging.maxFileSize` config option (1-100MB, default: 5MB) (by Dwsy)
+- **Daily log rotation**: `gateway-YYYY-MM-DD.log` rotates by size within the same day (by Dwsy)
+- **Rotation pattern**: `gateway-2024-01-15.log` → `gateway-2024-01-15.1.log` → `gateway-2024-01-15.2.jsonl` (by Dwsy)
+
+---
+
+## [v3.12] - 2026-02-15
 
 **Focus:** Plugin Hot Reload Enhancement — Complete background services and channel plugins support
 

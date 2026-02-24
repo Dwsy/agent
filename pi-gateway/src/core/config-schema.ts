@@ -399,6 +399,7 @@ export const CronJobSchema = Type.Object({
   timeoutMs: Type.Optional(Type.Integer({ minimum: 1000 })),
   deleteAfterRun: Type.Optional(Type.Boolean()),
   paused: Type.Optional(Type.Boolean()),
+  resumeContext: Type.Optional(Type.Boolean()),
 });
 
 export const CronConfigSchema = Type.Object({
@@ -414,6 +415,7 @@ export const LoggingConfigSchema = Type.Object({
   file: Type.Boolean(),
   level: LogLevelSchema,
   retentionDays: Type.Integer({ minimum: 1, maximum: 365 }),
+  maxFileSize: Type.Integer({ minimum: 1, maximum: 100, default: 5 }),
 });
 
 // ============================================================================

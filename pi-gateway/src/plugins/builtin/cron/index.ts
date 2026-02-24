@@ -48,6 +48,7 @@ export default function register(api: GatewayPluginApi) {
         cronAnnouncer,
         systemEvents,
         svcApi.requestHeartbeat,
+        sessionStore,
       );
       cronEngine.start();
       svcApi.logger.info("Cron engine started via plugin");
