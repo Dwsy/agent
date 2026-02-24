@@ -97,7 +97,7 @@ export class Footer extends LitElement {
             </div>
           </div>
           <div class="links">
-            <a href="https://github.com/mario1ua/pi-coding-agent" class="link" target="_blank" rel="noopener">GitHub</a>
+            <a href="https://github.com/Dwsy/agent" class="link" target="_blank" rel="noopener">GitHub</a>
             <a href="#" class="link">Documentation</a>
             <a href="#" class="link">Discord</a>
           </div>

@@ -276,7 +276,7 @@ export class MemorySection extends LitElement {
             <!-- L3: Runtime -->
             <div class="memory-layer">
               <span class="layer-badge">L3</span>
-              <div class="layer-icon">⚡</div>
+              <div class="layer-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" /></svg></div>
               <h3 class="layer-title">${isZh ? '运行时记忆' : 'Runtime Memory'}</h3>
               <p class="layer-desc">${isZh 
                 ? '实时向量检索、标签索引、每日日志。毫秒级语义搜索。' 

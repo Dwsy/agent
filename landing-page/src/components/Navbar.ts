@@ -10,7 +10,7 @@ const NAV_SECTIONS = [
   { key: 'comparison', id: 'comparison' },
 ] as const;
 
-const GITHUB = 'https://github.com/mario1ua/pi-coding-agent';
+const GITHUB = 'https://github.com/Dwsy/agent';
 
 /**
  * Navbar - Liquid Glass Navigation
