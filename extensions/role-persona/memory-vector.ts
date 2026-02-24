@@ -95,6 +95,64 @@ class OpenAIEmbeddingProvider implements EmbeddingProvider {
   }
 }
 
+/**
+ * Local Embedding Provider - calls pi-session-manager embedding service
+ * Uses the shared embedding model (~435MB) instead of loading per-process
+ */
+class LocalEmbeddingProvider implements EmbeddingProvider {
+  readonly dim = 768;
+  readonly model = "embeddinggemma-300m-qat-q8_0";
+  private baseUrl: string;
+  private timeoutMs: number;
+
+  constructor(baseUrl: string, timeoutMs: number = 5000) {
+    this.baseUrl = baseUrl.replace(/\/$/, "");
+    this.timeoutMs = timeoutMs;
+  }
+
+  async embed(text: string): Promise<number[]> {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), this.timeoutMs);
+
+    try {
+      const response = await fetch(`${this.baseUrl}/v1/embedding`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          text: text.slice(0, 8000),
+          normalize: true,
+        }),
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        const err = await response.text().catch(() => "unknown");
+        throw new Error(`Local embedding failed (${response.status}): ${err}`);
+      }
+
+      const data = (await response.json()) as {
+        success: boolean;
+        data?: { embedding: number[]; dimensions: number };
+        error?: string;
+      };
+
+      if (!data.success || !data.data?.embedding) {
+        throw new Error(data.error || "No embedding returned");
+      }
+
+      return data.data.embedding;
+    } catch (err) {
+      clearTimeout(timeoutId);
+      if ((err as Error).name === "AbortError") {
+        throw new Error(`Local embedding timeout after ${this.timeoutMs}ms`);
+      }
+      throw err;
+    }
+  }
+}
+
 // ============================================================================
 // LanceDB Vector Store
 // ============================================================================
@@ -285,20 +343,34 @@ export async function initVectorMemory(
     return false;
   }
 
+  const provider = config.vectorMemory?.provider || "local";
+
   try {
-    const apiKey = await resolveEmbeddingApiKey(ctx);
-    if (!apiKey) {
-      log("vector", "no OpenAI API key found, vector memory disabled");
-      return false;
+    if (provider === "local") {
+      // Use local embedding service (pi-session-manager)
+      const baseUrl = config.vectorMemory?.baseUrl || "http://127.0.0.1:52131";
+      activeEmbedding = new LocalEmbeddingProvider(baseUrl);
+      activeDB = new VectorDB(getVectorDBPath(rolePath), activeEmbedding.dim);
+      activeRolePath = rolePath;
+
+      log("vector", `initialized (provider=local, baseUrl=${baseUrl}, dim=${activeEmbedding.dim})`);
+      return true;
+    } else {
+      // Use OpenAI embedding
+      const apiKey = await resolveEmbeddingApiKey(ctx);
+      if (!apiKey) {
+        log("vector", "no OpenAI API key found, vector memory disabled");
+        return false;
+      }
+
+      const model = config.vectorMemory?.model || "text-embedding-3-small";
+      activeEmbedding = new OpenAIEmbeddingProvider(apiKey, model);
+      activeDB = new VectorDB(getVectorDBPath(rolePath), activeEmbedding.dim);
+      activeRolePath = rolePath;
+
+      log("vector", `initialized (provider=openai, model=${model}, dim=${activeEmbedding.dim})`);
+      return true;
     }
-
-    const model = config.vectorMemory?.model || "text-embedding-3-small";
-    activeEmbedding = new OpenAIEmbeddingProvider(apiKey, model);
-    activeDB = new VectorDB(getVectorDBPath(rolePath), activeEmbedding.dim);
-    activeRolePath = rolePath;
-
-    log("vector", `initialized (model=${model}, dim=${activeEmbedding.dim})`);
-    return true;
   } catch (err) {
     log("vector", `init failed: ${err}`);
     activeDB = null;

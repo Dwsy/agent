@@ -58,9 +58,10 @@ export interface UIConfig {
 
 export interface VectorMemoryConfig {
   enabled: boolean;
-  provider: "openai";
+  provider: "openai" | "local";
   model: string;
   apiKey: string | null;
+  baseUrl: string;  // for local provider (pi-session-manager embedding service)
   autoRecall: boolean;
   autoIndex: boolean;
   recallLimit: number;
@@ -146,9 +147,10 @@ const DEFAULT_CONFIG: RolePersonaConfig = {
   },
   vectorMemory: {
     enabled: false,
-    provider: "openai",
-    model: "text-embedding-3-small",
+    provider: "local",
+    model: "embeddinggemma-300m-qat-q8_0",
     apiKey: null,
+    baseUrl: "http://127.0.0.1:52131",
     autoRecall: true,
     autoIndex: true,
     hybridSearch: true,
@@ -346,6 +348,17 @@ function applyEnvOverrides(config: RolePersonaConfig): RolePersonaConfig {
   // vectorMemory.apiKey
   if (process.env.ROLE_VECTOR_API_KEY) {
     result.vectorMemory.apiKey = process.env.ROLE_VECTOR_API_KEY;
+  }
+  // vectorMemory.provider
+  if (process.env.ROLE_VECTOR_PROVIDER) {
+    const p = process.env.ROLE_VECTOR_PROVIDER;
+    if (p === "openai" || p === "local") {
+      result.vectorMemory.provider = p;
+    }
+  }
+  // vectorMemory.baseUrl
+  if (process.env.ROLE_VECTOR_BASE_URL) {
+    result.vectorMemory.baseUrl = process.env.ROLE_VECTOR_BASE_URL;
   }
   // 子代理模式强制禁用向量记忆
   if (process.env.RHO_SUBAGENT === "1") {
