@@ -221,6 +221,9 @@ export {
   type AccessCheckContext,
   type AccessResult,
   type ChannelSecurityAdapter,
+  type SessionStats,
+  type RpcState,
+  type RpcModelInfo,
 } from "./interface/index.ts";
 
 // Legacy Compatibility Exports (deprecated, will be removed)

@@ -1,5 +1,6 @@
 import { resolveSessionKey, resolveAgentId } from "../../../core/session-router.ts";
 import type { MessageSource } from "../../../core/types.ts";
+import type { SessionStats, RpcState } from "../../../core/interface/plugins/types.ts";
 import { isSenderAllowed, type DmPolicy } from "../../../security/allowlist.ts";
 import { escapeHtml, markdownToTelegramHtml } from "./format.ts";
 import { parseMediaCommandArgs, sendTelegramMedia } from "./media-send.ts";
@@ -282,8 +283,16 @@ export async function setupTelegramCommands(runtime: TelegramPluginRuntime, acco
   bot.command("new", async (ctx: any) => {
     const source = toSource(account.accountId, ctx as TelegramContext);
     const sessionKey = resolveSessionKey(source, runtime.api.config);
+    // 获取当前模型信息（reset 前）
+    let modelId = "unknown";
+    try {
+      const rpcState = await runtime.api.getRpcState(sessionKey);
+      modelId = (rpcState as RpcState | null)?.model?.id ?? "unknown";
+    } catch {
+      // ignore errors
+    }
     await runtime.api.resetSession(sessionKey);
-    await ctx.reply("Session reset.");
+    await ctx.reply(`Session reset.\n<b>Model:</b> <code>${escapeHtml(modelId)}</code>`, { parse_mode: "HTML" });
   });
 
   bot.command("stop", async (ctx: any) => {
@@ -322,8 +331,8 @@ export async function setupTelegramCommands(runtime: TelegramPluginRuntime, acco
         runtime.api.getSessionStats(sessionKey),
         runtime.api.getRpcState(sessionKey),
       ]);
-      const s = stats as any;
-      const st = rpcState as any;
+      const s = stats as SessionStats | null;
+      const st = rpcState as RpcState | null;
       const contextWindow = st?.model?.contextWindow ?? 0;
       const inputTokens = s?.tokens?.input ?? 0;
       const fmt = (n: number) => n >= 1_000_000 ? (n/1_000_000).toFixed(1)+"M" : n >= 1_000 ? Math.round(n/1_000)+"k" : String(n);
@@ -331,7 +340,7 @@ export async function setupTelegramCommands(runtime: TelegramPluginRuntime, acco
       lines.push(`<b>Context:</b> ${pct}% (${fmt(inputTokens)}/${fmt(contextWindow)})`);
       lines.push(`<b>Model:</b> ${st?.model?.id ?? "unknown"}`);
     } catch {
-      // ignore errors
+      // Ignore RPC errors - session state already shown above
     }
 
     await ctx.reply(lines.join("\n"), { parse_mode: "HTML" });
@@ -351,14 +360,14 @@ export async function setupTelegramCommands(runtime: TelegramPluginRuntime, acco
 
     if (!stats || !state) return;
 
-    const s = stats as any;
-    const st = state as any;
-    const contextWindow = st?.model?.contextWindow ?? 0;
-    const totalTokens = s?.tokens?.total ?? 0;
-    const inputTokens = s?.tokens?.input ?? 0;
-    const outputTokens = s?.tokens?.output ?? 0;
-    const cacheRead = s?.tokens?.cacheRead ?? 0;
-    const cacheWrite = s?.tokens?.cacheWrite ?? 0;
+    const s = stats as SessionStats;
+    const st = state as RpcState;
+    const contextWindow = st.model?.contextWindow ?? 0;
+    const totalTokens = s.tokens?.total ?? 0;
+    const inputTokens = s.tokens?.input ?? 0;
+    const outputTokens = s.tokens?.output ?? 0;
+    const cacheRead = s.tokens?.cacheRead ?? 0;
+    const cacheWrite = s.tokens?.cacheWrite ?? 0;
 
     const fmt = (n: number) => n >= 1_000_000 ? (n/1_000_000).toFixed(1)+"M" : n >= 1_000 ? Math.round(n/1_000)+"k" : String(n);
 
@@ -378,10 +387,10 @@ export async function setupTelegramCommands(runtime: TelegramPluginRuntime, acco
       `<b>Cache R/W:</b> ${fmt(cacheRead)} / ${fmt(cacheWrite)}`,
       `<b>Cost:</b> $${(s?.cost ?? 0).toFixed(4)}`,
       ``,
-      `<b>Messages:</b> ${s?.totalMessages ?? 0} (👤${s?.userMessages ?? 0} 🤖${s?.assistantMessages ?? 0} 🔧${s?.toolResults ?? 0})`,
-      `<b>Tool Calls:</b> ${s?.toolCalls ?? 0}`,
-      `<b>Model:</b> ${st?.model?.id ?? "unknown"}`,
-      `<b>Thinking:</b> ${st?.thinkingLevel ?? "off"}`,
+      `<b>Messages:</b> ${s.totalMessages ?? 0} (👤${s.userMessages ?? 0} 🤖${s.assistantMessages ?? 0} 🔧${s.toolResults ?? 0})`,
+      `<b>Tool Calls:</b> ${s.toolCalls ?? 0}`,
+      `<b>Model:</b> ${st.model?.id ?? "unknown"}`,
+      `<b>Thinking:</b> ${st.thinkingLevel ?? "off"}`,
     ];
     await ctx.reply(lines.join("\n"), { parse_mode: "HTML" });
   });
