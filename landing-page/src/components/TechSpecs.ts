@@ -78,13 +78,17 @@ export class TechSpecs extends LitElement {
       border-radius: 0.625rem;
       display: grid;
       place-items: center;
-      font-size: 1.125rem;
     }
 
-    .spec-icon.runtime { background: rgba(16, 185, 129, 0.1); }
-    .spec-icon.gateway { background: rgba(59, 130, 246, 0.1); }
-    .spec-icon.memory { background: rgba(168, 85, 247, 0.1); }
-    .spec-icon.security { background: rgba(239, 68, 68, 0.1); }
+    .spec-icon svg {
+      width: 20px;
+      height: 20px;
+    }
+
+    .spec-icon.runtime { background: rgba(16, 185, 129, 0.1); color: #10b981; }
+    .spec-icon.gateway { background: rgba(59, 130, 246, 0.1); color: #3b82f6; }
+    .spec-icon.memory { background: rgba(168, 85, 247, 0.1); color: #a855f7; }
+    .spec-icon.security { background: rgba(239, 68, 68, 0.1); color: #ef4444; }
 
     .spec-title {
       font-size: 1.125rem;
@@ -198,7 +202,7 @@ export class TechSpecs extends LitElement {
             <!-- Runtime -->
             <div class="spec-category">
               <div class="spec-header">
-                <div class="spec-icon runtime">⚡</div>
+                <div class="spec-icon runtime"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg></div>
                 <span class="spec-title">${isZh ? '运行时' : 'Runtime'}</span>
               </div>
               <div class="spec-list">
@@ -224,7 +228,7 @@ export class TechSpecs extends LitElement {
             <!-- Gateway -->
             <div class="spec-category">
               <div class="spec-header">
-                <div class="spec-icon gateway">🌐</div>
+                <div class="spec-icon gateway"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg></div>
                 <span class="spec-title">${isZh ? '网关' : 'Gateway'}</span>
               </div>
               <div class="spec-list">
@@ -250,7 +254,7 @@ export class TechSpecs extends LitElement {
             <!-- Memory -->
             <div class="spec-category">
               <div class="spec-header">
-                <div class="spec-icon memory">🧠</div>
+                <div class="spec-icon memory"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a5 5 0 0 0-5 5v2H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7a2 2 0 0 0-2-2h-1V7a5 5 0 0 0-5-5z"/><circle cx="12" cy="13" r="2"/></svg></div>
                 <span class="spec-title">${isZh ? '记忆' : 'Memory'}</span>
               </div>
               <div class="spec-list">
@@ -276,7 +280,7 @@ export class TechSpecs extends LitElement {
             <!-- Security -->
             <div class="spec-category">
               <div class="spec-header">
-                <div class="spec-icon security">🔒</div>
+                <div class="spec-icon security"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div>
                 <span class="spec-title">${isZh ? '安全' : 'Security'}</span>
               </div>
               <div class="spec-list">

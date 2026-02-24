@@ -304,7 +304,7 @@ export class MemorySection extends LitElement {
             <!-- L2: Consolidated -->
             <div class="memory-layer">
               <span class="layer-badge">L2</span>
-              <div class="layer-icon">📝</div>
+              <div class="layer-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg></div>
               <h3 class="layer-title">${isZh ? '结构化记忆' : 'Consolidated Memory'}</h3>
               <p class="layer-desc">${isZh 
                 ? '自动提取关键经验，去重降噪，合并为持久知识。跨会话可用。' 
@@ -324,7 +324,7 @@ export class MemorySection extends LitElement {
             <!-- L1: Daily -->
             <div class="memory-layer">
               <span class="layer-badge">L1</span>
-              <div class="layer-icon">📄</div>
+              <div class="layer-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div>
               <h3 class="layer-title">${isZh ? '原始日志' : 'Raw Logs'}</h3>
               <p class="layer-desc">${isZh 
                 ? '每日完整会话记录，原始思考链，失败经验。回溯的根基。' 
