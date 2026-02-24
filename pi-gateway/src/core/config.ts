@@ -415,6 +415,8 @@ export interface CronJob {
   deleteAfterRun?: boolean;
   /** If true, job is paused (not scheduled). Default: false */
   paused?: boolean;
+  /** If true, resume prior context from previous runs. Default: false (fresh context per run) */
+  resumeContext?: boolean;
 }
 
 export interface CronConfig {
@@ -426,6 +428,8 @@ export interface LoggingConfig {
   file: boolean;
   level: "debug" | "info" | "warn" | "error";
   retentionDays: number;
+  /** Max log file size in MB before rotation. Default: 5 */
+  maxFileSize: number;
 }
 
 export interface QueueConfig {
@@ -537,6 +541,7 @@ export const DEFAULT_CONFIG: Config = {
     file: false,
     level: "info",
     retentionDays: 7,
+    maxFileSize: 5,
   },
   queue: {
     maxPerSession: 15,
