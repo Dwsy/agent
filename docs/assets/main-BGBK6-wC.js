@@ -1,38 +1,38 @@
-(function(){const e=document.createElement("link").relList;if(e&&e.supports&&e.supports("modulepreload"))return;for(const s of document.querySelectorAll('link[rel="modulepreload"]'))i(s);new MutationObserver(s=>{for(const r of s)if(r.type==="childList")for(const n of r.addedNodes)n.tagName==="LINK"&&n.rel==="modulepreload"&&i(n)}).observe(document,{childList:!0,subtree:!0});function a(s){const r={};return s.integrity&&(r.integrity=s.integrity),s.referrerPolicy&&(r.referrerPolicy=s.referrerPolicy),s.crossOrigin==="use-credentials"?r.credentials="include":s.crossOrigin==="anonymous"?r.credentials="omit":r.credentials="same-origin",r}function i(s){if(s.ep)return;s.ep=!0;const r=a(s);fetch(s.href,r)}})();/**
+(function(){const e=document.createElement("link").relList;if(e&&e.supports&&e.supports("modulepreload"))return;for(const s of document.querySelectorAll('link[rel="modulepreload"]'))i(s);new MutationObserver(s=>{for(const r of s)if(r.type==="childList")for(const o of r.addedNodes)o.tagName==="LINK"&&o.rel==="modulepreload"&&i(o)}).observe(document,{childList:!0,subtree:!0});function a(s){const r={};return s.integrity&&(r.integrity=s.integrity),s.referrerPolicy&&(r.referrerPolicy=s.referrerPolicy),s.crossOrigin==="use-credentials"?r.credentials="include":s.crossOrigin==="anonymous"?r.credentials="omit":r.credentials="same-origin",r}function i(s){if(s.ep)return;s.ep=!0;const r=a(s);fetch(s.href,r)}})();/**
  * @license
  * Copyright 2019 Google LLC
  * SPDX-License-Identifier: BSD-3-Clause
- */const j=globalThis,ce=j.ShadowRoot&&(j.ShadyCSS===void 0||j.ShadyCSS.nativeShadow)&&"adoptedStyleSheets"in Document.prototype&&"replace"in CSSStyleSheet.prototype,de=Symbol(),ue=new WeakMap;let ze=class{constructor(e,a,i){if(this._$cssResult$=!0,i!==de)throw Error("CSSResult is not constructable. Use `unsafeCSS` or `css` instead.");this.cssText=e,this.t=a}get styleSheet(){let e=this.o;const a=this.t;if(ce&&e===void 0){const i=a!==void 0&&a.length===1;i&&(e=ue.get(a)),e===void 0&&((this.o=e=new CSSStyleSheet).replaceSync(this.cssText),i&&ue.set(a,e))}return e}toString(){return this.cssText}};const We=t=>new ze(typeof t=="string"?t:t+"",void 0,de),v=(t,...e)=>{const a=t.length===1?t[0]:e.reduce((i,s,r)=>i+(n=>{if(n._$cssResult$===!0)return n.cssText;if(typeof n=="number")return n;throw Error("Value passed to 'css' function must be a 'css' function result: "+n+". Use 'unsafeCSS' to pass non-literal values, but take care to ensure page security.")})(s)+t[r+1],t[0]);return new ze(a,t,de)},Ve=(t,e)=>{if(ce)t.adoptedStyleSheets=e.map(a=>a instanceof CSSStyleSheet?a:a.styleSheet);else for(const a of e){const i=document.createElement("style"),s=j.litNonce;s!==void 0&&i.setAttribute("nonce",s),i.textContent=a.cssText,t.appendChild(i)}},fe=ce?t=>t:t=>t instanceof CSSStyleSheet?(e=>{let a="";for(const i of e.cssRules)a+=i.cssText;return We(a)})(t):t;/**
+ */const U=globalThis,de=U.ShadowRoot&&(U.ShadyCSS===void 0||U.ShadyCSS.nativeShadow)&&"adoptedStyleSheets"in Document.prototype&&"replace"in CSSStyleSheet.prototype,pe=Symbol(),fe=new WeakMap;let Le=class{constructor(e,a,i){if(this._$cssResult$=!0,i!==pe)throw Error("CSSResult is not constructable. Use `unsafeCSS` or `css` instead.");this.cssText=e,this.t=a}get styleSheet(){let e=this.o;const a=this.t;if(de&&e===void 0){const i=a!==void 0&&a.length===1;i&&(e=fe.get(a)),e===void 0&&((this.o=e=new CSSStyleSheet).replaceSync(this.cssText),i&&fe.set(a,e))}return e}toString(){return this.cssText}};const We=t=>new Le(typeof t=="string"?t:t+"",void 0,pe),b=(t,...e)=>{const a=t.length===1?t[0]:e.reduce((i,s,r)=>i+(o=>{if(o._$cssResult$===!0)return o.cssText;if(typeof o=="number")return o;throw Error("Value passed to 'css' function must be a 'css' function result: "+o+". Use 'unsafeCSS' to pass non-literal values, but take care to ensure page security.")})(s)+t[r+1],t[0]);return new Le(a,t,pe)},Ye=(t,e)=>{if(de)t.adoptedStyleSheets=e.map(a=>a instanceof CSSStyleSheet?a:a.styleSheet);else for(const a of e){const i=document.createElement("style"),s=U.litNonce;s!==void 0&&i.setAttribute("nonce",s),i.textContent=a.cssText,t.appendChild(i)}},ve=de?t=>t:t=>t instanceof CSSStyleSheet?(e=>{let a="";for(const i of e.cssRules)a+=i.cssText;return We(a)})(t):t;/**
  * @license
  * Copyright 2017 Google LLC
  * SPDX-License-Identifier: BSD-3-Clause
- */const{is:Je,defineProperty:Ye,getOwnPropertyDescriptor:Fe,getOwnPropertyNames:qe,getOwnPropertySymbols:Ze,getPrototypeOf:Xe}=Object,$=globalThis,be=$.trustedTypes,Ke=be?be.emptyScript:"",ee=$.reactiveElementPolyfillSupport,L=(t,e)=>t,H={toAttribute(t,e){switch(e){case Boolean:t=t?Ke:null;break;case Object:case Array:t=t==null?t:JSON.stringify(t)}return t},fromAttribute(t,e){let a=t;switch(e){case Boolean:a=t!==null;break;case Number:a=t===null?null:Number(t);break;case Object:case Array:try{a=JSON.parse(t)}catch{a=null}}return a}},pe=(t,e)=>!Je(t,e),ve={attribute:!0,type:String,converter:H,reflect:!1,useDefault:!1,hasChanged:pe};Symbol.metadata??(Symbol.metadata=Symbol("metadata")),$.litPropertyMetadata??($.litPropertyMetadata=new WeakMap);let S=class extends HTMLElement{static addInitializer(e){this._$Ei(),(this.l??(this.l=[])).push(e)}static get observedAttributes(){return this.finalize(),this._$Eh&&[...this._$Eh.keys()]}static createProperty(e,a=ve){if(a.state&&(a.attribute=!1),this._$Ei(),this.prototype.hasOwnProperty(e)&&((a=Object.create(a)).wrapped=!0),this.elementProperties.set(e,a),!a.noAccessor){const i=Symbol(),s=this.getPropertyDescriptor(e,i,a);s!==void 0&&Ye(this.prototype,e,s)}}static getPropertyDescriptor(e,a,i){const{get:s,set:r}=Fe(this.prototype,e)??{get(){return this[a]},set(n){this[a]=n}};return{get:s,set(n){const c=s==null?void 0:s.call(this);r==null||r.call(this,n),this.requestUpdate(e,c,i)},configurable:!0,enumerable:!0}}static getPropertyOptions(e){return this.elementProperties.get(e)??ve}static _$Ei(){if(this.hasOwnProperty(L("elementProperties")))return;const e=Xe(this);e.finalize(),e.l!==void 0&&(this.l=[...e.l]),this.elementProperties=new Map(e.elementProperties)}static finalize(){if(this.hasOwnProperty(L("finalized")))return;if(this.finalized=!0,this._$Ei(),this.hasOwnProperty(L("properties"))){const a=this.properties,i=[...qe(a),...Ze(a)];for(const s of i)this.createProperty(s,a[s])}const e=this[Symbol.metadata];if(e!==null){const a=litPropertyMetadata.get(e);if(a!==void 0)for(const[i,s]of a)this.elementProperties.set(i,s)}this._$Eh=new Map;for(const[a,i]of this.elementProperties){const s=this._$Eu(a,i);s!==void 0&&this._$Eh.set(s,a)}this.elementStyles=this.finalizeStyles(this.styles)}static finalizeStyles(e){const a=[];if(Array.isArray(e)){const i=new Set(e.flat(1/0).reverse());for(const s of i)a.unshift(fe(s))}else e!==void 0&&a.push(fe(e));return a}static _$Eu(e,a){const i=a.attribute;return i===!1?void 0:typeof i=="string"?i:typeof e=="string"?e.toLowerCase():void 0}constructor(){super(),this._$Ep=void 0,this.isUpdatePending=!1,this.hasUpdated=!1,this._$Em=null,this._$Ev()}_$Ev(){var e;this._$ES=new Promise(a=>this.enableUpdating=a),this._$AL=new Map,this._$E_(),this.requestUpdate(),(e=this.constructor.l)==null||e.forEach(a=>a(this))}addController(e){var a;(this._$EO??(this._$EO=new Set)).add(e),this.renderRoot!==void 0&&this.isConnected&&((a=e.hostConnected)==null||a.call(e))}removeController(e){var a;(a=this._$EO)==null||a.delete(e)}_$E_(){const e=new Map,a=this.constructor.elementProperties;for(const i of a.keys())this.hasOwnProperty(i)&&(e.set(i,this[i]),delete this[i]);e.size>0&&(this._$Ep=e)}createRenderRoot(){const e=this.shadowRoot??this.attachShadow(this.constructor.shadowRootOptions);return Ve(e,this.constructor.elementStyles),e}connectedCallback(){var e;this.renderRoot??(this.renderRoot=this.createRenderRoot()),this.enableUpdating(!0),(e=this._$EO)==null||e.forEach(a=>{var i;return(i=a.hostConnected)==null?void 0:i.call(a)})}enableUpdating(e){}disconnectedCallback(){var e;(e=this._$EO)==null||e.forEach(a=>{var i;return(i=a.hostDisconnected)==null?void 0:i.call(a)})}attributeChangedCallback(e,a,i){this._$AK(e,i)}_$ET(e,a){var r;const i=this.constructor.elementProperties.get(e),s=this.constructor._$Eu(e,i);if(s!==void 0&&i.reflect===!0){const n=(((r=i.converter)==null?void 0:r.toAttribute)!==void 0?i.converter:H).toAttribute(a,i.type);this._$Em=e,n==null?this.removeAttribute(s):this.setAttribute(s,n),this._$Em=null}}_$AK(e,a){var r,n;const i=this.constructor,s=i._$Eh.get(e);if(s!==void 0&&this._$Em!==s){const c=i.getPropertyOptions(s),l=typeof c.converter=="function"?{fromAttribute:c.converter}:((r=c.converter)==null?void 0:r.fromAttribute)!==void 0?c.converter:H;this._$Em=s;const h=l.fromAttribute(a,c.type);this[s]=h??((n=this._$Ej)==null?void 0:n.get(s))??h,this._$Em=null}}requestUpdate(e,a,i,s=!1,r){var n;if(e!==void 0){const c=this.constructor;if(s===!1&&(r=this[e]),i??(i=c.getPropertyOptions(e)),!((i.hasChanged??pe)(r,a)||i.useDefault&&i.reflect&&r===((n=this._$Ej)==null?void 0:n.get(e))&&!this.hasAttribute(c._$Eu(e,i))))return;this.C(e,a,i)}this.isUpdatePending===!1&&(this._$ES=this._$EP())}C(e,a,{useDefault:i,reflect:s,wrapped:r},n){i&&!(this._$Ej??(this._$Ej=new Map)).has(e)&&(this._$Ej.set(e,n??a??this[e]),r!==!0||n!==void 0)||(this._$AL.has(e)||(this.hasUpdated||i||(a=void 0),this._$AL.set(e,a)),s===!0&&this._$Em!==e&&(this._$Eq??(this._$Eq=new Set)).add(e))}async _$EP(){this.isUpdatePending=!0;try{await this._$ES}catch(a){Promise.reject(a)}const e=this.scheduleUpdate();return e!=null&&await e,!this.isUpdatePending}scheduleUpdate(){return this.performUpdate()}performUpdate(){var i;if(!this.isUpdatePending)return;if(!this.hasUpdated){if(this.renderRoot??(this.renderRoot=this.createRenderRoot()),this._$Ep){for(const[r,n]of this._$Ep)this[r]=n;this._$Ep=void 0}const s=this.constructor.elementProperties;if(s.size>0)for(const[r,n]of s){const{wrapped:c}=n,l=this[r];c!==!0||this._$AL.has(r)||l===void 0||this.C(r,void 0,n,l)}}let e=!1;const a=this._$AL;try{e=this.shouldUpdate(a),e?(this.willUpdate(a),(i=this._$EO)==null||i.forEach(s=>{var r;return(r=s.hostUpdate)==null?void 0:r.call(s)}),this.update(a)):this._$EM()}catch(s){throw e=!1,this._$EM(),s}e&&this._$AE(a)}willUpdate(e){}_$AE(e){var a;(a=this._$EO)==null||a.forEach(i=>{var s;return(s=i.hostUpdated)==null?void 0:s.call(i)}),this.hasUpdated||(this.hasUpdated=!0,this.firstUpdated(e)),this.updated(e)}_$EM(){this._$AL=new Map,this.isUpdatePending=!1}get updateComplete(){return this.getUpdateComplete()}getUpdateComplete(){return this._$ES}shouldUpdate(e){return!0}update(e){this._$Eq&&(this._$Eq=this._$Eq.forEach(a=>this._$ET(a,this[a]))),this._$EM()}updated(e){}firstUpdated(e){}};S.elementStyles=[],S.shadowRootOptions={mode:"open"},S[L("elementProperties")]=new Map,S[L("finalized")]=new Map,ee==null||ee({ReactiveElement:S}),($.reactiveElementVersions??($.reactiveElementVersions=[])).push("2.1.2");/**
+ */const{is:Je,defineProperty:Ve,getOwnPropertyDescriptor:Fe,getOwnPropertyNames:qe,getOwnPropertySymbols:Ze,getPrototypeOf:Xe}=Object,$=globalThis,be=$.trustedTypes,Ke=be?be.emptyScript:"",te=$.reactiveElementPolyfillSupport,E=(t,e)=>t,j={toAttribute(t,e){switch(e){case Boolean:t=t?Ke:null;break;case Object:case Array:t=t==null?t:JSON.stringify(t)}return t},fromAttribute(t,e){let a=t;switch(e){case Boolean:a=t!==null;break;case Number:a=t===null?null:Number(t);break;case Object:case Array:try{a=JSON.parse(t)}catch{a=null}}return a}},he=(t,e)=>!Je(t,e),ye={attribute:!0,type:String,converter:j,reflect:!1,useDefault:!1,hasChanged:he};Symbol.metadata??(Symbol.metadata=Symbol("metadata")),$.litPropertyMetadata??($.litPropertyMetadata=new WeakMap);let S=class extends HTMLElement{static addInitializer(e){this._$Ei(),(this.l??(this.l=[])).push(e)}static get observedAttributes(){return this.finalize(),this._$Eh&&[...this._$Eh.keys()]}static createProperty(e,a=ye){if(a.state&&(a.attribute=!1),this._$Ei(),this.prototype.hasOwnProperty(e)&&((a=Object.create(a)).wrapped=!0),this.elementProperties.set(e,a),!a.noAccessor){const i=Symbol(),s=this.getPropertyDescriptor(e,i,a);s!==void 0&&Ve(this.prototype,e,s)}}static getPropertyDescriptor(e,a,i){const{get:s,set:r}=Fe(this.prototype,e)??{get(){return this[a]},set(o){this[a]=o}};return{get:s,set(o){const c=s==null?void 0:s.call(this);r==null||r.call(this,o),this.requestUpdate(e,c,i)},configurable:!0,enumerable:!0}}static getPropertyOptions(e){return this.elementProperties.get(e)??ye}static _$Ei(){if(this.hasOwnProperty(E("elementProperties")))return;const e=Xe(this);e.finalize(),e.l!==void 0&&(this.l=[...e.l]),this.elementProperties=new Map(e.elementProperties)}static finalize(){if(this.hasOwnProperty(E("finalized")))return;if(this.finalized=!0,this._$Ei(),this.hasOwnProperty(E("properties"))){const a=this.properties,i=[...qe(a),...Ze(a)];for(const s of i)this.createProperty(s,a[s])}const e=this[Symbol.metadata];if(e!==null){const a=litPropertyMetadata.get(e);if(a!==void 0)for(const[i,s]of a)this.elementProperties.set(i,s)}this._$Eh=new Map;for(const[a,i]of this.elementProperties){const s=this._$Eu(a,i);s!==void 0&&this._$Eh.set(s,a)}this.elementStyles=this.finalizeStyles(this.styles)}static finalizeStyles(e){const a=[];if(Array.isArray(e)){const i=new Set(e.flat(1/0).reverse());for(const s of i)a.unshift(ve(s))}else e!==void 0&&a.push(ve(e));return a}static _$Eu(e,a){const i=a.attribute;return i===!1?void 0:typeof i=="string"?i:typeof e=="string"?e.toLowerCase():void 0}constructor(){super(),this._$Ep=void 0,this.isUpdatePending=!1,this.hasUpdated=!1,this._$Em=null,this._$Ev()}_$Ev(){var e;this._$ES=new Promise(a=>this.enableUpdating=a),this._$AL=new Map,this._$E_(),this.requestUpdate(),(e=this.constructor.l)==null||e.forEach(a=>a(this))}addController(e){var a;(this._$EO??(this._$EO=new Set)).add(e),this.renderRoot!==void 0&&this.isConnected&&((a=e.hostConnected)==null||a.call(e))}removeController(e){var a;(a=this._$EO)==null||a.delete(e)}_$E_(){const e=new Map,a=this.constructor.elementProperties;for(const i of a.keys())this.hasOwnProperty(i)&&(e.set(i,this[i]),delete this[i]);e.size>0&&(this._$Ep=e)}createRenderRoot(){const e=this.shadowRoot??this.attachShadow(this.constructor.shadowRootOptions);return Ye(e,this.constructor.elementStyles),e}connectedCallback(){var e;this.renderRoot??(this.renderRoot=this.createRenderRoot()),this.enableUpdating(!0),(e=this._$EO)==null||e.forEach(a=>{var i;return(i=a.hostConnected)==null?void 0:i.call(a)})}enableUpdating(e){}disconnectedCallback(){var e;(e=this._$EO)==null||e.forEach(a=>{var i;return(i=a.hostDisconnected)==null?void 0:i.call(a)})}attributeChangedCallback(e,a,i){this._$AK(e,i)}_$ET(e,a){var r;const i=this.constructor.elementProperties.get(e),s=this.constructor._$Eu(e,i);if(s!==void 0&&i.reflect===!0){const o=(((r=i.converter)==null?void 0:r.toAttribute)!==void 0?i.converter:j).toAttribute(a,i.type);this._$Em=e,o==null?this.removeAttribute(s):this.setAttribute(s,o),this._$Em=null}}_$AK(e,a){var r,o;const i=this.constructor,s=i._$Eh.get(e);if(s!==void 0&&this._$Em!==s){const c=i.getPropertyOptions(s),l=typeof c.converter=="function"?{fromAttribute:c.converter}:((r=c.converter)==null?void 0:r.fromAttribute)!==void 0?c.converter:j;this._$Em=s;const h=l.fromAttribute(a,c.type);this[s]=h??((o=this._$Ej)==null?void 0:o.get(s))??h,this._$Em=null}}requestUpdate(e,a,i,s=!1,r){var o;if(e!==void 0){const c=this.constructor;if(s===!1&&(r=this[e]),i??(i=c.getPropertyOptions(e)),!((i.hasChanged??he)(r,a)||i.useDefault&&i.reflect&&r===((o=this._$Ej)==null?void 0:o.get(e))&&!this.hasAttribute(c._$Eu(e,i))))return;this.C(e,a,i)}this.isUpdatePending===!1&&(this._$ES=this._$EP())}C(e,a,{useDefault:i,reflect:s,wrapped:r},o){i&&!(this._$Ej??(this._$Ej=new Map)).has(e)&&(this._$Ej.set(e,o??a??this[e]),r!==!0||o!==void 0)||(this._$AL.has(e)||(this.hasUpdated||i||(a=void 0),this._$AL.set(e,a)),s===!0&&this._$Em!==e&&(this._$Eq??(this._$Eq=new Set)).add(e))}async _$EP(){this.isUpdatePending=!0;try{await this._$ES}catch(a){Promise.reject(a)}const e=this.scheduleUpdate();return e!=null&&await e,!this.isUpdatePending}scheduleUpdate(){return this.performUpdate()}performUpdate(){var i;if(!this.isUpdatePending)return;if(!this.hasUpdated){if(this.renderRoot??(this.renderRoot=this.createRenderRoot()),this._$Ep){for(const[r,o]of this._$Ep)this[r]=o;this._$Ep=void 0}const s=this.constructor.elementProperties;if(s.size>0)for(const[r,o]of s){const{wrapped:c}=o,l=this[r];c!==!0||this._$AL.has(r)||l===void 0||this.C(r,void 0,o,l)}}let e=!1;const a=this._$AL;try{e=this.shouldUpdate(a),e?(this.willUpdate(a),(i=this._$EO)==null||i.forEach(s=>{var r;return(r=s.hostUpdate)==null?void 0:r.call(s)}),this.update(a)):this._$EM()}catch(s){throw e=!1,this._$EM(),s}e&&this._$AE(a)}willUpdate(e){}_$AE(e){var a;(a=this._$EO)==null||a.forEach(i=>{var s;return(s=i.hostUpdated)==null?void 0:s.call(i)}),this.hasUpdated||(this.hasUpdated=!0,this.firstUpdated(e)),this.updated(e)}_$EM(){this._$AL=new Map,this.isUpdatePending=!1}get updateComplete(){return this.getUpdateComplete()}getUpdateComplete(){return this._$ES}shouldUpdate(e){return!0}update(e){this._$Eq&&(this._$Eq=this._$Eq.forEach(a=>this._$ET(a,this[a]))),this._$EM()}updated(e){}firstUpdated(e){}};S.elementStyles=[],S.shadowRootOptions={mode:"open"},S[E("elementProperties")]=new Map,S[E("finalized")]=new Map,te==null||te({ReactiveElement:S}),($.reactiveElementVersions??($.reactiveElementVersions=[])).push("2.1.2");/**
  * @license
  * Copyright 2017 Google LLC
  * SPDX-License-Identifier: BSD-3-Clause
- */const O=globalThis,ye=t=>t,G=O.trustedTypes,xe=G?G.createPolicy("lit-html",{createHTML:t=>t}):void 0,Ee="$lit$",w=`lit$${Math.random().toFixed(9).slice(2)}$`,Le="?"+w,Qe=`<${Le}>`,A=document,T=()=>A.createComment(""),D=t=>t===null||typeof t!="object"&&typeof t!="function",he=Array.isArray,et=t=>he(t)||typeof(t==null?void 0:t[Symbol.iterator])=="function",te=`[ 	
-\f\r]`,E=/<(?:(!--|\/[^a-zA-Z])|(\/?[a-zA-Z][^>\s]*)|(\/?$))/g,we=/-->/g,$e=/>/g,k=RegExp(`>|${te}(?:([^\\s"'>=/]+)(${te}*=${te}*(?:[^ 	
-\f\r"'\`<>=]|("|')|))|$)`,"g"),ke=/'/g,_e=/"/g,Oe=/^(?:script|style|textarea|title)$/i,tt=t=>(e,...a)=>({_$litType$:t,strings:e,values:a}),d=tt(1),P=Symbol.for("lit-noChange"),g=Symbol.for("lit-nothing"),Ce=new WeakMap,_=A.createTreeWalker(A,129);function Te(t,e){if(!he(t)||!t.hasOwnProperty("raw"))throw Error("invalid template strings array");return xe!==void 0?xe.createHTML(e):e}const st=(t,e)=>{const a=t.length-1,i=[];let s,r=e===2?"<svg>":e===3?"<math>":"",n=E;for(let c=0;c<a;c++){const l=t[c];let h,u,p=-1,y=0;for(;y<l.length&&(n.lastIndex=y,u=n.exec(l),u!==null);)y=n.lastIndex,n===E?u[1]==="!--"?n=we:u[1]!==void 0?n=$e:u[2]!==void 0?(Oe.test(u[2])&&(s=RegExp("</"+u[2],"g")),n=k):u[3]!==void 0&&(n=k):n===k?u[0]===">"?(n=s??E,p=-1):u[1]===void 0?p=-2:(p=n.lastIndex-u[2].length,h=u[1],n=u[3]===void 0?k:u[3]==='"'?_e:ke):n===_e||n===ke?n=k:n===we||n===$e?n=E:(n=k,s=void 0);const x=n===k&&t[c+1].startsWith("/>")?" ":"";r+=n===E?l+Qe:p>=0?(i.push(h),l.slice(0,p)+Ee+l.slice(p)+w+x):l+w+(p===-2?c:x)}return[Te(t,r+(t[a]||"<?>")+(e===2?"</svg>":e===3?"</math>":"")),i]};class N{constructor({strings:e,_$litType$:a},i){let s;this.parts=[];let r=0,n=0;const c=e.length-1,l=this.parts,[h,u]=st(e,a);if(this.el=N.createElement(h,i),_.currentNode=this.el.content,a===2||a===3){const p=this.el.content.firstChild;p.replaceWith(...p.childNodes)}for(;(s=_.nextNode())!==null&&l.length<c;){if(s.nodeType===1){if(s.hasAttributes())for(const p of s.getAttributeNames())if(p.endsWith(Ee)){const y=u[n++],x=s.getAttribute(p).split(w),U=/([.?@])?(.*)/.exec(y);l.push({type:1,index:r,name:U[2],strings:x,ctor:U[1]==="."?it:U[1]==="?"?rt:U[1]==="@"?nt:K}),s.removeAttribute(p)}else p.startsWith(w)&&(l.push({type:6,index:r}),s.removeAttribute(p));if(Oe.test(s.tagName)){const p=s.textContent.split(w),y=p.length-1;if(y>0){s.textContent=G?G.emptyScript:"";for(let x=0;x<y;x++)s.append(p[x],T()),_.nextNode(),l.push({type:2,index:++r});s.append(p[y],T())}}}else if(s.nodeType===8)if(s.data===Le)l.push({type:2,index:r});else{let p=-1;for(;(p=s.data.indexOf(w,p+1))!==-1;)l.push({type:7,index:r}),p+=w.length-1}r++}}static createElement(e,a){const i=A.createElement("template");return i.innerHTML=e,i}}function M(t,e,a=t,i){var n,c;if(e===P)return e;let s=i!==void 0?(n=a._$Co)==null?void 0:n[i]:a._$Cl;const r=D(e)?void 0:e._$litDirective$;return(s==null?void 0:s.constructor)!==r&&((c=s==null?void 0:s._$AO)==null||c.call(s,!1),r===void 0?s=void 0:(s=new r(t),s._$AT(t,a,i)),i!==void 0?(a._$Co??(a._$Co=[]))[i]=s:a._$Cl=s),s!==void 0&&(e=M(t,s._$AS(t,e.values),s,i)),e}class at{constructor(e,a){this._$AV=[],this._$AN=void 0,this._$AD=e,this._$AM=a}get parentNode(){return this._$AM.parentNode}get _$AU(){return this._$AM._$AU}u(e){const{el:{content:a},parts:i}=this._$AD,s=((e==null?void 0:e.creationScope)??A).importNode(a,!0);_.currentNode=s;let r=_.nextNode(),n=0,c=0,l=i[0];for(;l!==void 0;){if(n===l.index){let h;l.type===2?h=new B(r,r.nextSibling,this,e):l.type===1?h=new l.ctor(r,l.name,l.strings,this,e):l.type===6&&(h=new ot(r,this,e)),this._$AV.push(h),l=i[++c]}n!==(l==null?void 0:l.index)&&(r=_.nextNode(),n++)}return _.currentNode=A,s}p(e){let a=0;for(const i of this._$AV)i!==void 0&&(i.strings!==void 0?(i._$AI(e,i,a),a+=i.strings.length-2):i._$AI(e[a])),a++}}class B{get _$AU(){var e;return((e=this._$AM)==null?void 0:e._$AU)??this._$Cv}constructor(e,a,i,s){this.type=2,this._$AH=g,this._$AN=void 0,this._$AA=e,this._$AB=a,this._$AM=i,this.options=s,this._$Cv=(s==null?void 0:s.isConnected)??!0}get parentNode(){let e=this._$AA.parentNode;const a=this._$AM;return a!==void 0&&(e==null?void 0:e.nodeType)===11&&(e=a.parentNode),e}get startNode(){return this._$AA}get endNode(){return this._$AB}_$AI(e,a=this){e=M(this,e,a),D(e)?e===g||e==null||e===""?(this._$AH!==g&&this._$AR(),this._$AH=g):e!==this._$AH&&e!==P&&this._(e):e._$litType$!==void 0?this.$(e):e.nodeType!==void 0?this.T(e):et(e)?this.k(e):this._(e)}O(e){return this._$AA.parentNode.insertBefore(e,this._$AB)}T(e){this._$AH!==e&&(this._$AR(),this._$AH=this.O(e))}_(e){this._$AH!==g&&D(this._$AH)?this._$AA.nextSibling.data=e:this.T(A.createTextNode(e)),this._$AH=e}$(e){var r;const{values:a,_$litType$:i}=e,s=typeof i=="number"?this._$AC(e):(i.el===void 0&&(i.el=N.createElement(Te(i.h,i.h[0]),this.options)),i);if(((r=this._$AH)==null?void 0:r._$AD)===s)this._$AH.p(a);else{const n=new at(s,this),c=n.u(this.options);n.p(a),this.T(c),this._$AH=n}}_$AC(e){let a=Ce.get(e.strings);return a===void 0&&Ce.set(e.strings,a=new N(e)),a}k(e){he(this._$AH)||(this._$AH=[],this._$AR());const a=this._$AH;let i,s=0;for(const r of e)s===a.length?a.push(i=new B(this.O(T()),this.O(T()),this,this.options)):i=a[s],i._$AI(r),s++;s<a.length&&(this._$AR(i&&i._$AB.nextSibling,s),a.length=s)}_$AR(e=this._$AA.nextSibling,a){var i;for((i=this._$AP)==null?void 0:i.call(this,!1,!0,a);e!==this._$AB;){const s=ye(e).nextSibling;ye(e).remove(),e=s}}setConnected(e){var a;this._$AM===void 0&&(this._$Cv=e,(a=this._$AP)==null||a.call(this,e))}}class K{get tagName(){return this.element.tagName}get _$AU(){return this._$AM._$AU}constructor(e,a,i,s,r){this.type=1,this._$AH=g,this._$AN=void 0,this.element=e,this.name=a,this._$AM=s,this.options=r,i.length>2||i[0]!==""||i[1]!==""?(this._$AH=Array(i.length-1).fill(new String),this.strings=i):this._$AH=g}_$AI(e,a=this,i,s){const r=this.strings;let n=!1;if(r===void 0)e=M(this,e,a,0),n=!D(e)||e!==this._$AH&&e!==P,n&&(this._$AH=e);else{const c=e;let l,h;for(e=r[0],l=0;l<r.length-1;l++)h=M(this,c[i+l],a,l),h===P&&(h=this._$AH[l]),n||(n=!D(h)||h!==this._$AH[l]),h===g?e=g:e!==g&&(e+=(h??"")+r[l+1]),this._$AH[l]=h}n&&!s&&this.j(e)}j(e){e===g?this.element.removeAttribute(this.name):this.element.setAttribute(this.name,e??"")}}class it extends K{constructor(){super(...arguments),this.type=3}j(e){this.element[this.name]=e===g?void 0:e}}class rt extends K{constructor(){super(...arguments),this.type=4}j(e){this.element.toggleAttribute(this.name,!!e&&e!==g)}}class nt extends K{constructor(e,a,i,s,r){super(e,a,i,s,r),this.type=5}_$AI(e,a=this){if((e=M(this,e,a,0)??g)===P)return;const i=this._$AH,s=e===g&&i!==g||e.capture!==i.capture||e.once!==i.once||e.passive!==i.passive,r=e!==g&&(i===g||s);s&&this.element.removeEventListener(this.name,this,i),r&&this.element.addEventListener(this.name,this,e),this._$AH=e}handleEvent(e){var a;typeof this._$AH=="function"?this._$AH.call(((a=this.options)==null?void 0:a.host)??this.element,e):this._$AH.handleEvent(e)}}class ot{constructor(e,a,i){this.element=e,this.type=6,this._$AN=void 0,this._$AM=a,this.options=i}get _$AU(){return this._$AM._$AU}_$AI(e){M(this,e)}}const se=O.litHtmlPolyfillSupport;se==null||se(N,B),(O.litHtmlVersions??(O.litHtmlVersions=[])).push("3.3.2");const De=(t,e,a)=>{const i=(a==null?void 0:a.renderBefore)??e;let s=i._$litPart$;if(s===void 0){const r=(a==null?void 0:a.renderBefore)??null;i._$litPart$=s=new B(e.insertBefore(T(),r),r,void 0,a??{})}return s._$AI(t),s};/**
+ */const O=globalThis,xe=t=>t,W=O.trustedTypes,we=W?W.createPolicy("lit-html",{createHTML:t=>t}):void 0,Ne="$lit$",w=`lit$${Math.random().toFixed(9).slice(2)}$`,Ee="?"+w,Qe=`<${Ee}>`,A=document,I=()=>A.createComment(""),D=t=>t===null||typeof t!="object"&&typeof t!="function",me=Array.isArray,et=t=>me(t)||typeof(t==null?void 0:t[Symbol.iterator])=="function",se=`[ 	
+\f\r]`,N=/<(?:(!--|\/[^a-zA-Z])|(\/?[a-zA-Z][^>\s]*)|(\/?$))/g,$e=/-->/g,ke=/>/g,k=RegExp(`>|${se}(?:([^\\s"'>=/]+)(${se}*=${se}*(?:[^ 	
+\f\r"'\`<>=]|("|')|))|$)`,"g"),_e=/'/g,Ce=/"/g,Oe=/^(?:script|style|textarea|title)$/i,tt=t=>(e,...a)=>({_$litType$:t,strings:e,values:a}),d=tt(1),P=Symbol.for("lit-noChange"),g=Symbol.for("lit-nothing"),Ae=new WeakMap,_=A.createTreeWalker(A,129);function Ie(t,e){if(!me(t)||!t.hasOwnProperty("raw"))throw Error("invalid template strings array");return we!==void 0?we.createHTML(e):e}const st=(t,e)=>{const a=t.length-1,i=[];let s,r=e===2?"<svg>":e===3?"<math>":"",o=N;for(let c=0;c<a;c++){const l=t[c];let h,f,p=-1,y=0;for(;y<l.length&&(o.lastIndex=y,f=o.exec(l),f!==null);)y=o.lastIndex,o===N?f[1]==="!--"?o=$e:f[1]!==void 0?o=ke:f[2]!==void 0?(Oe.test(f[2])&&(s=RegExp("</"+f[2],"g")),o=k):f[3]!==void 0&&(o=k):o===k?f[0]===">"?(o=s??N,p=-1):f[1]===void 0?p=-2:(p=o.lastIndex-f[2].length,h=f[1],o=f[3]===void 0?k:f[3]==='"'?Ce:_e):o===Ce||o===_e?o=k:o===$e||o===ke?o=N:(o=k,s=void 0);const x=o===k&&t[c+1].startsWith("/>")?" ":"";r+=o===N?l+Qe:p>=0?(i.push(h),l.slice(0,p)+Ne+l.slice(p)+w+x):l+w+(p===-2?c:x)}return[Ie(t,r+(t[a]||"<?>")+(e===2?"</svg>":e===3?"</math>":"")),i]};class T{constructor({strings:e,_$litType$:a},i){let s;this.parts=[];let r=0,o=0;const c=e.length-1,l=this.parts,[h,f]=st(e,a);if(this.el=T.createElement(h,i),_.currentNode=this.el.content,a===2||a===3){const p=this.el.content.firstChild;p.replaceWith(...p.childNodes)}for(;(s=_.nextNode())!==null&&l.length<c;){if(s.nodeType===1){if(s.hasAttributes())for(const p of s.getAttributeNames())if(p.endsWith(Ne)){const y=f[o++],x=s.getAttribute(p).split(w),G=/([.?@])?(.*)/.exec(y);l.push({type:1,index:r,name:G[2],strings:x,ctor:G[1]==="."?it:G[1]==="?"?rt:G[1]==="@"?ot:K}),s.removeAttribute(p)}else p.startsWith(w)&&(l.push({type:6,index:r}),s.removeAttribute(p));if(Oe.test(s.tagName)){const p=s.textContent.split(w),y=p.length-1;if(y>0){s.textContent=W?W.emptyScript:"";for(let x=0;x<y;x++)s.append(p[x],I()),_.nextNode(),l.push({type:2,index:++r});s.append(p[y],I())}}}else if(s.nodeType===8)if(s.data===Ee)l.push({type:2,index:r});else{let p=-1;for(;(p=s.data.indexOf(w,p+1))!==-1;)l.push({type:7,index:r}),p+=w.length-1}r++}}static createElement(e,a){const i=A.createElement("template");return i.innerHTML=e,i}}function M(t,e,a=t,i){var o,c;if(e===P)return e;let s=i!==void 0?(o=a._$Co)==null?void 0:o[i]:a._$Cl;const r=D(e)?void 0:e._$litDirective$;return(s==null?void 0:s.constructor)!==r&&((c=s==null?void 0:s._$AO)==null||c.call(s,!1),r===void 0?s=void 0:(s=new r(t),s._$AT(t,a,i)),i!==void 0?(a._$Co??(a._$Co=[]))[i]=s:a._$Cl=s),s!==void 0&&(e=M(t,s._$AS(t,e.values),s,i)),e}class at{constructor(e,a){this._$AV=[],this._$AN=void 0,this._$AD=e,this._$AM=a}get parentNode(){return this._$AM.parentNode}get _$AU(){return this._$AM._$AU}u(e){const{el:{content:a},parts:i}=this._$AD,s=((e==null?void 0:e.creationScope)??A).importNode(a,!0);_.currentNode=s;let r=_.nextNode(),o=0,c=0,l=i[0];for(;l!==void 0;){if(o===l.index){let h;l.type===2?h=new H(r,r.nextSibling,this,e):l.type===1?h=new l.ctor(r,l.name,l.strings,this,e):l.type===6&&(h=new nt(r,this,e)),this._$AV.push(h),l=i[++c]}o!==(l==null?void 0:l.index)&&(r=_.nextNode(),o++)}return _.currentNode=A,s}p(e){let a=0;for(const i of this._$AV)i!==void 0&&(i.strings!==void 0?(i._$AI(e,i,a),a+=i.strings.length-2):i._$AI(e[a])),a++}}class H{get _$AU(){var e;return((e=this._$AM)==null?void 0:e._$AU)??this._$Cv}constructor(e,a,i,s){this.type=2,this._$AH=g,this._$AN=void 0,this._$AA=e,this._$AB=a,this._$AM=i,this.options=s,this._$Cv=(s==null?void 0:s.isConnected)??!0}get parentNode(){let e=this._$AA.parentNode;const a=this._$AM;return a!==void 0&&(e==null?void 0:e.nodeType)===11&&(e=a.parentNode),e}get startNode(){return this._$AA}get endNode(){return this._$AB}_$AI(e,a=this){e=M(this,e,a),D(e)?e===g||e==null||e===""?(this._$AH!==g&&this._$AR(),this._$AH=g):e!==this._$AH&&e!==P&&this._(e):e._$litType$!==void 0?this.$(e):e.nodeType!==void 0?this.T(e):et(e)?this.k(e):this._(e)}O(e){return this._$AA.parentNode.insertBefore(e,this._$AB)}T(e){this._$AH!==e&&(this._$AR(),this._$AH=this.O(e))}_(e){this._$AH!==g&&D(this._$AH)?this._$AA.nextSibling.data=e:this.T(A.createTextNode(e)),this._$AH=e}$(e){var r;const{values:a,_$litType$:i}=e,s=typeof i=="number"?this._$AC(e):(i.el===void 0&&(i.el=T.createElement(Ie(i.h,i.h[0]),this.options)),i);if(((r=this._$AH)==null?void 0:r._$AD)===s)this._$AH.p(a);else{const o=new at(s,this),c=o.u(this.options);o.p(a),this.T(c),this._$AH=o}}_$AC(e){let a=Ae.get(e.strings);return a===void 0&&Ae.set(e.strings,a=new T(e)),a}k(e){me(this._$AH)||(this._$AH=[],this._$AR());const a=this._$AH;let i,s=0;for(const r of e)s===a.length?a.push(i=new H(this.O(I()),this.O(I()),this,this.options)):i=a[s],i._$AI(r),s++;s<a.length&&(this._$AR(i&&i._$AB.nextSibling,s),a.length=s)}_$AR(e=this._$AA.nextSibling,a){var i;for((i=this._$AP)==null?void 0:i.call(this,!1,!0,a);e!==this._$AB;){const s=xe(e).nextSibling;xe(e).remove(),e=s}}setConnected(e){var a;this._$AM===void 0&&(this._$Cv=e,(a=this._$AP)==null||a.call(this,e))}}class K{get tagName(){return this.element.tagName}get _$AU(){return this._$AM._$AU}constructor(e,a,i,s,r){this.type=1,this._$AH=g,this._$AN=void 0,this.element=e,this.name=a,this._$AM=s,this.options=r,i.length>2||i[0]!==""||i[1]!==""?(this._$AH=Array(i.length-1).fill(new String),this.strings=i):this._$AH=g}_$AI(e,a=this,i,s){const r=this.strings;let o=!1;if(r===void 0)e=M(this,e,a,0),o=!D(e)||e!==this._$AH&&e!==P,o&&(this._$AH=e);else{const c=e;let l,h;for(e=r[0],l=0;l<r.length-1;l++)h=M(this,c[i+l],a,l),h===P&&(h=this._$AH[l]),o||(o=!D(h)||h!==this._$AH[l]),h===g?e=g:e!==g&&(e+=(h??"")+r[l+1]),this._$AH[l]=h}o&&!s&&this.j(e)}j(e){e===g?this.element.removeAttribute(this.name):this.element.setAttribute(this.name,e??"")}}class it extends K{constructor(){super(...arguments),this.type=3}j(e){this.element[this.name]=e===g?void 0:e}}class rt extends K{constructor(){super(...arguments),this.type=4}j(e){this.element.toggleAttribute(this.name,!!e&&e!==g)}}class ot extends K{constructor(e,a,i,s,r){super(e,a,i,s,r),this.type=5}_$AI(e,a=this){if((e=M(this,e,a,0)??g)===P)return;const i=this._$AH,s=e===g&&i!==g||e.capture!==i.capture||e.once!==i.once||e.passive!==i.passive,r=e!==g&&(i===g||s);s&&this.element.removeEventListener(this.name,this,i),r&&this.element.addEventListener(this.name,this,e),this._$AH=e}handleEvent(e){var a;typeof this._$AH=="function"?this._$AH.call(((a=this.options)==null?void 0:a.host)??this.element,e):this._$AH.handleEvent(e)}}class nt{constructor(e,a,i){this.element=e,this.type=6,this._$AN=void 0,this._$AM=a,this.options=i}get _$AU(){return this._$AM._$AU}_$AI(e){M(this,e)}}const ae=O.litHtmlPolyfillSupport;ae==null||ae(T,H),(O.litHtmlVersions??(O.litHtmlVersions=[])).push("3.3.2");const De=(t,e,a)=>{const i=(a==null?void 0:a.renderBefore)??e;let s=i._$litPart$;if(s===void 0){const r=(a==null?void 0:a.renderBefore)??null;i._$litPart$=s=new H(e.insertBefore(I(),r),r,void 0,a??{})}return s._$AI(t),s};/**
  * @license
  * Copyright 2017 Google LLC
  * SPDX-License-Identifier: BSD-3-Clause
- */const C=globalThis;class m extends S{constructor(){super(...arguments),this.renderOptions={host:this},this._$Do=void 0}createRenderRoot(){var a;const e=super.createRenderRoot();return(a=this.renderOptions).renderBefore??(a.renderBefore=e.firstChild),e}update(e){const a=this.render();this.hasUpdated||(this.renderOptions.isConnected=this.isConnected),super.update(e),this._$Do=De(a,this.renderRoot,this.renderOptions)}connectedCallback(){var e;super.connectedCallback(),(e=this._$Do)==null||e.setConnected(!0)}disconnectedCallback(){var e;super.disconnectedCallback(),(e=this._$Do)==null||e.setConnected(!1)}render(){return P}}var Me;m._$litElement$=!0,m.finalized=!0,(Me=C.litElementHydrateSupport)==null||Me.call(C,{LitElement:m});const ae=C.litElementPolyfillSupport;ae==null||ae({LitElement:m});(C.litElementVersions??(C.litElementVersions=[])).push("4.2.2");/**
+ */const C=globalThis;class m extends S{constructor(){super(...arguments),this.renderOptions={host:this},this._$Do=void 0}createRenderRoot(){var a;const e=super.createRenderRoot();return(a=this.renderOptions).renderBefore??(a.renderBefore=e.firstChild),e}update(e){const a=this.render();this.hasUpdated||(this.renderOptions.isConnected=this.isConnected),super.update(e),this._$Do=De(a,this.renderRoot,this.renderOptions)}connectedCallback(){var e;super.connectedCallback(),(e=this._$Do)==null||e.setConnected(!0)}disconnectedCallback(){var e;super.disconnectedCallback(),(e=this._$Do)==null||e.setConnected(!1)}render(){return P}}var ze;m._$litElement$=!0,m.finalized=!0,(ze=C.litElementHydrateSupport)==null||ze.call(C,{LitElement:m});const ie=C.litElementPolyfillSupport;ie==null||ie({LitElement:m});(C.litElementVersions??(C.litElementVersions=[])).push("4.2.2");/**
  * @license
  * Copyright 2017 Google LLC
  * SPDX-License-Identifier: BSD-3-Clause
- */const f=t=>(e,a)=>{a!==void 0?a.addInitializer(()=>{customElements.define(t,e)}):customElements.define(t,e)};/**
+ */const v=t=>(e,a)=>{a!==void 0?a.addInitializer(()=>{customElements.define(t,e)}):customElements.define(t,e)};/**
  * @license
  * Copyright 2017 Google LLC
  * SPDX-License-Identifier: BSD-3-Clause
- */const lt={attribute:!0,type:String,converter:H,reflect:!1,hasChanged:pe},ct=(t=lt,e,a)=>{const{kind:i,metadata:s}=a;let r=globalThis.litPropertyMetadata.get(s);if(r===void 0&&globalThis.litPropertyMetadata.set(s,r=new Map),i==="setter"&&((t=Object.create(t)).wrapped=!0),r.set(a.name,t),i==="accessor"){const{name:n}=a;return{set(c){const l=e.get.call(this);e.set.call(this,c),this.requestUpdate(n,l,t,!0,c)},init(c){return c!==void 0&&this.C(n,void 0,t,c),c}}}if(i==="setter"){const{name:n}=a;return function(c){const l=this[n];e.call(this,c),this.requestUpdate(n,l,t,!0,c)}}throw Error("Unsupported decorator location: "+i)};function dt(t){return(e,a)=>typeof a=="object"?ct(t,e,a):((i,s,r)=>{const n=s.hasOwnProperty(r);return s.constructor.createProperty(r,i),n?Object.getOwnPropertyDescriptor(s,r):void 0})(t,e,a)}/**
+ */const lt={attribute:!0,type:String,converter:j,reflect:!1,hasChanged:he},ct=(t=lt,e,a)=>{const{kind:i,metadata:s}=a;let r=globalThis.litPropertyMetadata.get(s);if(r===void 0&&globalThis.litPropertyMetadata.set(s,r=new Map),i==="setter"&&((t=Object.create(t)).wrapped=!0),r.set(a.name,t),i==="accessor"){const{name:o}=a;return{set(c){const l=e.get.call(this);e.set.call(this,c),this.requestUpdate(o,l,t,!0,c)},init(c){return c!==void 0&&this.C(o,void 0,t,c),c}}}if(i==="setter"){const{name:o}=a;return function(c){const l=this[o];e.call(this,c),this.requestUpdate(o,l,t,!0,c)}}throw Error("Unsupported decorator location: "+i)};function dt(t){return(e,a)=>typeof a=="object"?ct(t,e,a):((i,s,r)=>{const o=s.hasOwnProperty(r);return s.constructor.createProperty(r,i),o?Object.getOwnPropertyDescriptor(s,r):void 0})(t,e,a)}/**
  * @license
  * Copyright 2017 Google LLC
  * SPDX-License-Identifier: BSD-3-Clause
- */function b(t){return dt({...t,state:!0,attribute:!1})}const pt={common:{getStarted:"开始使用",learnMore:"了解更多",viewOnGithub:"GitHub 仓库"},navbar:{links:{features:"功能",gateway:"网关",workflow:"工作流",extensions:"扩展",comparison:"对比"},cta:"开始使用"},hero:{badge:"v2.0 现已发布",title:{part1:"真正可用的",accent:"AI 工程师",part2:""},description:"不再当 AI 的保姆。Pi 处理上下文检索、并行子代理、安全审计和多通道部署 — 你专注于架构，而非提示词工程。",cta:{primary:"开始使用",secondary:"阅读文档"},stats:{commands:"内置命令",extensions:"扩展插件",productivity:"效率提升"}},features:{label:"核心架构",title:"编排，不只是对话",subtitle:"从语义代码搜索到多代理协作，从安全审计到生产部署。",workflow:{title:"五阶段工作流",desc:"强制管线：上下文检索 → 分析 → 原型 → 实施 → 审计。没有捷径，没有幻觉编辑。",features:["黄金法则：先检索再修改","Unified Diff 隔离","强制交付前审查","L1-L4 复杂度路由"],metrics:{tasks:"任务",success:"成功率",active:"活跃"}},skills:{title:"42 技能",desc:"语义搜索、AST 操作、系统设计、Office 自动化。",tags:["ace-tool","ast-grep","codemap","web-fetch","+38 更多"]},subagents:{title:"25+ 代理",desc:"通过 Crew 协议协调的专用代理。",agents:["侦察","规划","执行","审查","视觉","研究","API测试","安全","简化","代码图","头脑风暴","系统设计"]},search:{title:"代码搜索",desc:"自然语言到精确位置。三层搜索，零遗漏。",example:'pi /search "认证中间件"'},gateway:{title:"多通道网关",desc:"一个服务支持 Telegram、Discord、WebChat、OpenAI API。",code:"await gateway.route({ channel: 'telegram', session: uuid() });"}},gateway:{label:"网关",title:"进程编排器",subtitle:"管理 AI 代理池并路由消息。通道无关、插件优先、纵深安全。",layers:{channels:{title:"通道",desc:"Telegram · Discord · WebChat · API"},pipeline:{title:"管线",desc:"分发 → 去重 → 解析 → 处理"},plugins:{title:"插件",desc:"16 钩子 · 注册表 · 冲突检测"},runtime:{title:"运行时",desc:"RPC 池 · 路由 · 定时 · 事件"},security:{title:"安全",desc:"认证 · 执行守卫 · SSRF · 白名单"}}},workflow:{label:"工作流",title:"五阶段强制管线",subtitle:"每个任务都经过检索、分析、原型、实施和审计。质量源于设计。",phases:[{num:"01",title:"检索",desc:"语义搜索、精确匹配、语法结构"},{num:"02",title:"分析",desc:"侦察派发、策略选择"},{num:"03",title:"原型",desc:"外部模型 diff、内部重构"},{num:"04",title:"实施",desc:"精准编辑、依赖检查"},{num:"05",title:"审计",desc:"Codex 审查、测试验证"}]},extensions:{label:"扩展",title:"无限扩展",subtitle:"从 CLI 命令到 TUI 组件，从网关插件到定时任务。",categories:{commands:{title:"命令",desc:"斜杠命令和快捷键"},tools:{title:"工具",desc:"可复用能力"},gateway:{title:"网关",desc:"通道集成"}}},comparison:{label:"对比",title:"不是又一个包装器",subtitle:"为严肃工程而生，非玩具项目。",headers:{feature:"能力",pi:"Pi Agent",others:"典型工具"},rows:[{feature:"多阶段工作流",pi:"5 个强制阶段",others:"单步执行"},{feature:"上下文检索",pi:"语义 + 精确 + AST",others:"基础搜索"},{feature:"安全模型",pi:"五层防御",others:"最小化"},{feature:"子代理系统",pi:"Crew 网格协议",others:"无"},{feature:"网关",pi:"多通道 + RPC",others:"单一接口"}]},cta:{title:"准备更快交付？",subtitle:"加入那些不再当 AI 保姆、开始真正架构的工程师。",button:"开始使用"},footer:{tagline:"工程级 AI 编排。",links:{docs:"文档",github:"GitHub",discord:"Discord"},copyright:"精准构建。"}},ht={common:{getStarted:"Get Started",learnMore:"Learn More",viewOnGithub:"View on GitHub"},navbar:{links:{features:"Features",gateway:"Gateway",workflow:"Workflow",extensions:"Extensions",comparison:"Compare"},cta:"Get Started"},hero:{badge:"Now in v2.0",title:{part1:"The ",accent:"AI Engineer",part2:" You Actually Want"},description:"Stop babysitting AI agents. Pi handles context retrieval, parallel subagents, security audits, and multi-channel deployment — so you focus on architecture, not prompting.",cta:{primary:"Get Started",secondary:"Read Docs"},stats:{commands:"Built-in Commands",extensions:"Extensions",productivity:"Faster Delivery"}},features:{label:"Core Architecture",title:"Orchestration, Not Just Chat",subtitle:"From semantic code search to multi-agent crews, from security audits to production deployment.",workflow:{title:"5-Phase Workflow",desc:"Mandatory pipeline: Context Retrieval → Analysis → Prototyping → Implementation → Audit. No shortcuts, no hallucinated edits.",features:["Golden Rule: retrieve before modify","Unified Diff isolation","Forced pre-delivery review","L1-L4 complexity routing"],metrics:{tasks:"Tasks",success:"Success",active:"Active"}},skills:{title:"42 Skills",desc:"Semantic search, AST manipulation, system design, Office automation.",tags:["ace-tool","ast-grep","codemap","web-fetch","+38 more"]},subagents:{title:"25+ Agents",desc:"Specialized agents coordinated via Crew protocol.",agents:["scout","planner","worker","reviewer","vision","researcher","api-tester","security","simplifier","codemap","brainstormer","system-design"]},search:{title:"Code Search",desc:"Natural language to exact location. Three layers, zero misses.",example:'pi /search "auth middleware"'},gateway:{title:"Multi-Channel Gateway",desc:"One service for Telegram, Discord, WebChat, OpenAI API.",code:"await gateway.route({ channel: 'telegram', session: uuid() });"}},gateway:{label:"Gateway",title:"Process Orchestrator",subtitle:"Manage AI agent pools and route messages. Channel-agnostic, plugin-first, security-in-depth.",layers:{channels:{title:"Channels",desc:"Telegram · Discord · WebChat · API"},pipeline:{title:"Pipeline",desc:"Dispatch → Dedup → Resolve → Process"},plugins:{title:"Plugins",desc:"16 Hooks · Registry · Conflicts"},runtime:{title:"Runtime",desc:"RPC Pool · Router · Cron · Events"},security:{title:"Security",desc:"Auth · ExecGuard · SSRF · Allowlist"}}},workflow:{label:"Workflow",title:"5-Phase Mandatory Pipeline",subtitle:"Every task goes through retrieval, analysis, prototyping, implementation, and audit. Quality by design.",phases:[{num:"01",title:"Retrieve",desc:"Semantic search, exact match, syntax structure"},{num:"02",title:"Analyze",desc:"Scout dispatch, strategy selection"},{num:"03",title:"Prototype",desc:"External model diff, internal refactor"},{num:"04",title:"Implement",desc:"Surgical edits, dependency checks"},{num:"05",title:"Audit",desc:"Codex review, test verification"}]},extensions:{label:"Extensions",title:"Infinite Extensibility",subtitle:"From CLI commands to TUI components, from gateway plugins to cron jobs.",categories:{commands:{title:"Commands",desc:"Slash commands and shortcuts"},tools:{title:"Tools",desc:"Reusable capabilities"},gateway:{title:"Gateway",desc:"Channel integrations"}}},comparison:{label:"Comparison",title:"Not Another Wrapper",subtitle:"Purpose-built for serious engineering, not toy projects.",headers:{feature:"Capability",pi:"Pi Agent",others:"Typical Tools"},rows:[{feature:"Multi-phase workflow",pi:"5 mandatory phases",others:"Single-step"},{feature:"Context retrieval",pi:"Semantic + exact + AST",others:"Basic search"},{feature:"Security model",pi:"5-layer defense",others:"Minimal"},{feature:"Subagent system",pi:"Crew mesh protocol",others:"None"},{feature:"Gateway",pi:"Multi-channel + RPC",others:"Single interface"}]},cta:{title:"Ready to Ship Faster?",subtitle:"Join the engineers who stopped babysitting AI and started architecting.",button:"Get Started"},footer:{tagline:"Engineering-grade AI orchestration.",links:{docs:"Documentation",github:"GitHub",discord:"Discord"},copyright:"Built with precision."}},ie={"zh-CN":pt,"en-US":ht},Ae="pi-agent-locale";class mt{constructor(){this.currentLocale="en-US",this.listeners=new Set,this.detectLocale()}detectLocale(){try{const a=localStorage.getItem(Ae);if(a&&ie[a]){this.currentLocale=a;return}}catch{}(navigator.language||"").startsWith("zh")&&(this.currentLocale="zh-CN")}getCurrentLocale(){return this.currentLocale}setLocale(e){if(ie[e]&&e!==this.currentLocale){this.currentLocale=e;try{localStorage.setItem(Ae,e)}catch{}document.documentElement.lang=e==="zh-CN"?"zh-CN":"en",this.listeners.forEach(a=>a())}}t(e){const a=e.split(".");let i=ie[this.currentLocale];for(const s of a)if(i&&typeof i=="object"&&s in i)i=i[s];else return e;return typeof i=="string"?i:e}subscribe(e){return this.listeners.add(e),()=>{this.listeners.delete(e)}}getAvailableLocales(){return[{code:"en-US",label:"EN"},{code:"zh-CN",label:"中文"}]}}const o=new mt;var gt=Object.defineProperty,ut=Object.getOwnPropertyDescriptor,Q=(t,e,a,i)=>{for(var s=i>1?void 0:i?ut(e,a):e,r=t.length-1,n;r>=0;r--)(n=t[r])&&(s=(i?n(e,a,s):n(s))||s);return i&&s&&gt(e,a,s),s};const Se=[{key:"features",id:"features"},{key:"gateway",id:"gateway"},{key:"workflow",id:"workflow"},{key:"extensions",id:"extensions"},{key:"comparison",id:"comparison"}],re="https://github.com/Dwsy/agent";let z=class extends m{constructor(){super(...arguments),this.locale=o.getCurrentLocale(),this.menuOpen=!1,this.activeId="",this._ghIcon=d`<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+ */function u(t){return dt({...t,state:!0,attribute:!1})}const pt={common:{getStarted:"开始使用",learnMore:"了解更多",viewOnGithub:"GitHub 仓库"},navbar:{links:{features:"功能",gateway:"网关",workflow:"工作流",extensions:"扩展",comparison:"对比"},cta:"开始使用"},hero:{badge:"v2.0 现已发布",title:{part1:"真正可用的",accent:"AI 工程师",part2:""},description:"不再当 AI 的保姆。Pi 处理上下文检索、并行子代理、安全审计和多通道部署 — 你专注于架构，而非提示词工程。",cta:{primary:"开始使用",secondary:"阅读文档"},stats:{commands:"内置命令",extensions:"扩展插件",productivity:"效率提升"}},features:{label:"核心架构",title:"编排，不只是对话",subtitle:"从语义代码搜索到多代理协作，从安全审计到生产部署。",workflow:{title:"五阶段工作流",desc:"强制管线：上下文检索 → 分析 → 原型 → 实施 → 审计。没有捷径，没有幻觉编辑。",features:["黄金法则：先检索再修改","Unified Diff 隔离","强制交付前审查","L1-L4 复杂度路由"],metrics:{tasks:"任务",success:"成功率",active:"活跃"}},skills:{title:"42 技能",desc:"语义搜索、AST 操作、系统设计、Office 自动化。",tags:["ace-tool","ast-grep","codemap","web-fetch","+38 更多"]},subagents:{title:"25+ 代理",desc:"通过 Crew 协议协调的专用代理。",agents:["侦察","规划","执行","审查","视觉","研究","API测试","安全","简化","代码图","头脑风暴","系统设计"]},search:{title:"代码搜索",desc:"自然语言到精确位置。三层搜索，零遗漏。",example:'pi /search "认证中间件"'},gateway:{title:"多通道网关",desc:"一个服务支持 Telegram、Discord、WebChat、OpenAI API。",code:"await gateway.route({ channel: 'telegram', session: uuid() });"}},gateway:{label:"网关",title:"进程编排器",subtitle:"管理 AI 代理池并路由消息。通道无关、插件优先、纵深安全。",layers:{channels:{title:"通道",desc:"Telegram · Discord · WebChat · API"},pipeline:{title:"管线",desc:"分发 → 去重 → 解析 → 处理"},plugins:{title:"插件",desc:"16 钩子 · 注册表 · 冲突检测"},runtime:{title:"运行时",desc:"RPC 池 · 路由 · 定时 · 事件"},security:{title:"安全",desc:"认证 · 执行守卫 · SSRF · 白名单"}}},workflow:{label:"工作流",title:"五阶段强制管线",subtitle:"每个任务都经过检索、分析、原型、实施和审计。质量源于设计。",phases:[{num:"01",title:"检索",desc:"语义搜索、精确匹配、语法结构"},{num:"02",title:"分析",desc:"侦察派发、策略选择"},{num:"03",title:"原型",desc:"外部模型 diff、内部重构"},{num:"04",title:"实施",desc:"精准编辑、依赖检查"},{num:"05",title:"审计",desc:"Codex 审查、测试验证"}]},extensions:{label:"扩展",title:"无限扩展",subtitle:"从 CLI 命令到 TUI 组件，从网关插件到定时任务。",categories:{commands:{title:"命令",desc:"斜杠命令和快捷键"},tools:{title:"工具",desc:"可复用能力"},gateway:{title:"网关",desc:"通道集成"}}},comparison:{label:"对比",title:"不是又一个包装器",subtitle:"为严肃工程而生，非玩具项目。",headers:{feature:"能力",pi:"Pi Agent",others:"典型工具"},rows:[{feature:"多阶段工作流",pi:"5 个强制阶段",others:"单步执行"},{feature:"上下文检索",pi:"语义 + 精确 + AST",others:"基础搜索"},{feature:"安全模型",pi:"五层防御",others:"最小化"},{feature:"子代理系统",pi:"Crew 网格协议",others:"无"},{feature:"网关",pi:"多通道 + RPC",others:"单一接口"}]},cta:{title:"准备更快交付？",subtitle:"加入那些不再当 AI 保姆、开始真正架构的工程师。",button:"开始使用"},footer:{tagline:"工程级 AI 编排。",links:{docs:"文档",github:"GitHub",discord:"Discord"},copyright:"精准构建。"}},ht={common:{getStarted:"Get Started",learnMore:"Learn More",viewOnGithub:"View on GitHub"},navbar:{links:{features:"Features",gateway:"Gateway",workflow:"Workflow",extensions:"Extensions",comparison:"Compare"},cta:"Get Started"},hero:{badge:"Now in v2.0",title:{part1:"The ",accent:"AI Engineer",part2:" You Actually Want"},description:"Stop babysitting AI agents. Pi handles context retrieval, parallel subagents, security audits, and multi-channel deployment — so you focus on architecture, not prompting.",cta:{primary:"Get Started",secondary:"Read Docs"},stats:{commands:"Built-in Commands",extensions:"Extensions",productivity:"Faster Delivery"}},features:{label:"Core Architecture",title:"Orchestration, Not Just Chat",subtitle:"From semantic code search to multi-agent crews, from security audits to production deployment.",workflow:{title:"5-Phase Workflow",desc:"Mandatory pipeline: Context Retrieval → Analysis → Prototyping → Implementation → Audit. No shortcuts, no hallucinated edits.",features:["Golden Rule: retrieve before modify","Unified Diff isolation","Forced pre-delivery review","L1-L4 complexity routing"],metrics:{tasks:"Tasks",success:"Success",active:"Active"}},skills:{title:"42 Skills",desc:"Semantic search, AST manipulation, system design, Office automation.",tags:["ace-tool","ast-grep","codemap","web-fetch","+38 more"]},subagents:{title:"25+ Agents",desc:"Specialized agents coordinated via Crew protocol.",agents:["scout","planner","worker","reviewer","vision","researcher","api-tester","security","simplifier","codemap","brainstormer","system-design"]},search:{title:"Code Search",desc:"Natural language to exact location. Three layers, zero misses.",example:'pi /search "auth middleware"'},gateway:{title:"Multi-Channel Gateway",desc:"One service for Telegram, Discord, WebChat, OpenAI API.",code:"await gateway.route({ channel: 'telegram', session: uuid() });"}},gateway:{label:"Gateway",title:"Process Orchestrator",subtitle:"Manage AI agent pools and route messages. Channel-agnostic, plugin-first, security-in-depth.",layers:{channels:{title:"Channels",desc:"Telegram · Discord · WebChat · API"},pipeline:{title:"Pipeline",desc:"Dispatch → Dedup → Resolve → Process"},plugins:{title:"Plugins",desc:"16 Hooks · Registry · Conflicts"},runtime:{title:"Runtime",desc:"RPC Pool · Router · Cron · Events"},security:{title:"Security",desc:"Auth · ExecGuard · SSRF · Allowlist"}}},workflow:{label:"Workflow",title:"5-Phase Mandatory Pipeline",subtitle:"Every task goes through retrieval, analysis, prototyping, implementation, and audit. Quality by design.",phases:[{num:"01",title:"Retrieve",desc:"Semantic search, exact match, syntax structure"},{num:"02",title:"Analyze",desc:"Scout dispatch, strategy selection"},{num:"03",title:"Prototype",desc:"External model diff, internal refactor"},{num:"04",title:"Implement",desc:"Surgical edits, dependency checks"},{num:"05",title:"Audit",desc:"Codex review, test verification"}]},extensions:{label:"Extensions",title:"Infinite Extensibility",subtitle:"From CLI commands to TUI components, from gateway plugins to cron jobs.",categories:{commands:{title:"Commands",desc:"Slash commands and shortcuts"},tools:{title:"Tools",desc:"Reusable capabilities"},gateway:{title:"Gateway",desc:"Channel integrations"}}},comparison:{label:"Comparison",title:"Not Another Wrapper",subtitle:"Purpose-built for serious engineering, not toy projects.",headers:{feature:"Capability",pi:"Pi Agent",others:"Typical Tools"},rows:[{feature:"Multi-phase workflow",pi:"5 mandatory phases",others:"Single-step"},{feature:"Context retrieval",pi:"Semantic + exact + AST",others:"Basic search"},{feature:"Security model",pi:"5-layer defense",others:"Minimal"},{feature:"Subagent system",pi:"Crew mesh protocol",others:"None"},{feature:"Gateway",pi:"Multi-channel + RPC",others:"Single interface"}]},cta:{title:"Ready to Ship Faster?",subtitle:"Join the engineers who stopped babysitting AI and started architecting.",button:"Get Started"},footer:{tagline:"Engineering-grade AI orchestration.",links:{docs:"Documentation",github:"GitHub",discord:"Discord"},copyright:"Built with precision."}},re={"zh-CN":pt,"en-US":ht},Se="pi-agent-locale";class mt{constructor(){this.currentLocale="en-US",this.listeners=new Set,this.detectLocale()}detectLocale(){try{const a=localStorage.getItem(Se);if(a&&re[a]){this.currentLocale=a;return}}catch{}(navigator.language||"").startsWith("zh")&&(this.currentLocale="zh-CN")}getCurrentLocale(){return this.currentLocale}setLocale(e){if(re[e]&&e!==this.currentLocale){this.currentLocale=e;try{localStorage.setItem(Se,e)}catch{}document.documentElement.lang=e==="zh-CN"?"zh-CN":"en",this.listeners.forEach(a=>a())}}t(e){const a=e.split(".");let i=re[this.currentLocale];for(const s of a)if(i&&typeof i=="object"&&s in i)i=i[s];else return e;return typeof i=="string"?i:e}subscribe(e){return this.listeners.add(e),()=>{this.listeners.delete(e)}}getAvailableLocales(){return[{code:"en-US",label:"EN"},{code:"zh-CN",label:"中文"}]}}const n=new mt;var gt=Object.defineProperty,ut=Object.getOwnPropertyDescriptor,Q=(t,e,a,i)=>{for(var s=i>1?void 0:i?ut(e,a):e,r=t.length-1,o;r>=0;r--)(o=t[r])&&(s=(i?o(e,a,s):o(s))||s);return i&&s&&gt(e,a,s),s};const Pe=[{key:"features",id:"features"},{key:"gateway",id:"gateway"},{key:"workflow",id:"workflow"},{key:"extensions",id:"extensions"},{key:"comparison",id:"comparison"}],oe="https://github.com/Dwsy/agent";let z=class extends m{constructor(){super(...arguments),this.locale=n.getCurrentLocale(),this.menuOpen=!1,this.activeId="",this._ghIcon=d`<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
     <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
   </svg>`,this._burgerIcon=d`<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
     ${this.menuOpen?d`<path d="M18 6L6 18M6 6l12 12"/>`:d`<path d="M4 8h16M4 12h16M4 16h16"/>`}
-  </svg>`}connectedCallback(){super.connectedCallback(),this._unsub=o.subscribe(()=>{this.locale=o.getCurrentLocale()}),this._setupScrollSpy(),this._scrollHandler=()=>{this.toggleAttribute("scrolled",window.scrollY>20)},window.addEventListener("scroll",this._scrollHandler,{passive:!0})}disconnectedCallback(){var t,e;super.disconnectedCallback(),(t=this._unsub)==null||t.call(this),(e=this._io)==null||e.disconnect(),this._scrollHandler&&window.removeEventListener("scroll",this._scrollHandler)}_setupScrollSpy(){const t=new Map;this._io=new IntersectionObserver(e=>{for(const s of e)s.isIntersecting?t.set(s.target.id,s.intersectionRatio):t.delete(s.target.id);let a="",i=0;t.forEach((s,r)=>{s>i&&(i=s,a=r)}),a!==this.activeId&&(this.activeId=a)},{threshold:[0,.25,.5],rootMargin:"-80px 0px -40% 0px"}),requestAnimationFrame(()=>{for(const e of Se){const a=document.getElementById(e.id);a&&this._io.observe(a)}})}t(t){return o.t(t)}_toggleLocale(){o.setLocale(this.locale==="zh-CN"?"en-US":"zh-CN")}_toggleMenu(){this.menuOpen=!this.menuOpen}_closeMenu(){this.menuOpen=!1}render(){const t=Se.map(e=>({id:e.id,label:this.t(`navbar.links.${e.key}`)}));return d`
+  </svg>`}connectedCallback(){super.connectedCallback(),this._unsub=n.subscribe(()=>{this.locale=n.getCurrentLocale()}),this._setupScrollSpy(),this._scrollHandler=()=>{this.toggleAttribute("scrolled",window.scrollY>20)},window.addEventListener("scroll",this._scrollHandler,{passive:!0})}disconnectedCallback(){var t,e;super.disconnectedCallback(),(t=this._unsub)==null||t.call(this),(e=this._io)==null||e.disconnect(),this._scrollHandler&&window.removeEventListener("scroll",this._scrollHandler)}_setupScrollSpy(){const t=new Map;this._io=new IntersectionObserver(e=>{for(const s of e)s.isIntersecting?t.set(s.target.id,s.intersectionRatio):t.delete(s.target.id);let a="",i=0;t.forEach((s,r)=>{s>i&&(i=s,a=r)}),a!==this.activeId&&(this.activeId=a)},{threshold:[0,.25,.5],rootMargin:"-80px 0px -40% 0px"}),requestAnimationFrame(()=>{for(const e of Pe){const a=document.getElementById(e.id);a&&this._io.observe(a)}})}t(t){return n.t(t)}_toggleLocale(){n.setLocale(this.locale==="zh-CN"?"en-US":"zh-CN")}_toggleMenu(){this.menuOpen=!this.menuOpen}_closeMenu(){this.menuOpen=!1}render(){const t=Pe.map(e=>({id:e.id,label:this.t(`navbar.links.${e.key}`)}));return d`
       <nav class="nav">
         <a href="#" class="logo">
           <div class="logo-mark">π</div>
@@ -49,10 +49,10 @@
           <button class="lang-btn" @click=${this._toggleLocale}>
             ${this.locale==="zh-CN"?"EN":"中文"}
           </button>
-          <a href=${re} target="_blank" class="gh-btn" aria-label="GitHub">
+          <a href=${oe} target="_blank" class="gh-btn" aria-label="GitHub">
             ${this._ghIcon}
           </a>
-          <a href=${re} class="cta" target="_blank">${this.t("navbar.cta")}</a>
+          <a href=${oe} class="cta" target="_blank">${this.t("navbar.cta")}</a>
           <button class="burger" @click=${this._toggleMenu}>${this._burgerIcon}</button>
         </div>
       </nav>
@@ -63,9 +63,9 @@
             ${e.label}
           </a>
         `)}
-        <a href=${re} class="m-link" @click=${this._closeMenu}>${this.t("navbar.cta")}</a>
+        <a href=${oe} class="m-link" @click=${this._closeMenu}>${this.t("navbar.cta")}</a>
       </div>
-    `}};z.styles=v`
+    `}};z.styles=b`
     :host {
       display: block;
       position: fixed;
@@ -277,7 +277,7 @@
       .links, .cta { display: none; }
       .burger { display: block; }
     }
-  `;Q([b()],z.prototype,"locale",2);Q([b()],z.prototype,"menuOpen",2);Q([b()],z.prototype,"activeId",2);z=Q([f("pi-navbar")],z);var ft=Object.defineProperty,bt=Object.getOwnPropertyDescriptor,Ne=(t,e,a,i)=>{for(var s=i>1?void 0:i?bt(e,a):e,r=t.length-1,n;r>=0;r--)(n=t[r])&&(s=(i?n(e,a,s):n(s))||s);return i&&s&&ft(e,a,s),s};let W=class extends m{constructor(){super(...arguments),this.locale=o.getCurrentLocale()}connectedCallback(){super.connectedCallback(),this._unsub=o.subscribe(()=>{this.locale=o.getCurrentLocale()})}disconnectedCallback(){var t;super.disconnectedCallback(),(t=this._unsub)==null||t.call(this)}t(t){return o.t(t)}render(){const t=o.t.bind(o);return d`
+  `;Q([u()],z.prototype,"locale",2);Q([u()],z.prototype,"menuOpen",2);Q([u()],z.prototype,"activeId",2);z=Q([v("pi-navbar")],z);var ft=Object.defineProperty,vt=Object.getOwnPropertyDescriptor,Te=(t,e,a,i)=>{for(var s=i>1?void 0:i?vt(e,a):e,r=t.length-1,o;r>=0;r--)(o=t[r])&&(s=(i?o(e,a,s):o(s))||s);return i&&s&&ft(e,a,s),s};let Y=class extends m{constructor(){super(...arguments),this.locale=n.getCurrentLocale()}connectedCallback(){super.connectedCallback(),this._unsub=n.subscribe(()=>{this.locale=n.getCurrentLocale()})}disconnectedCallback(){var t;super.disconnectedCallback(),(t=this._unsub)==null||t.call(this)}t(t){return n.t(t)}render(){const t=n.t.bind(n);return d`
       <section class="hero" id="features">
         <div class="content">
           <div class="badge">
@@ -349,7 +349,7 @@
           </div>
         </div>
       </section>
-    `}};W.styles=v`
+    `}};Y.styles=b`
     :host {
       display: block;
       width: 100%;
@@ -673,7 +673,7 @@
         gap: 1.5rem;
       }
     }
-  `;Ne([b()],W.prototype,"locale",2);W=Ne([f("hero-section")],W);var vt=Object.defineProperty,yt=Object.getOwnPropertyDescriptor,Ie=(t,e,a,i)=>{for(var s=i>1?void 0:i?yt(e,a):e,r=t.length-1,n;r>=0;r--)(n=t[r])&&(s=(i?n(e,a,s):n(s))||s);return i&&s&&vt(e,a,s),s};let V=class extends m{constructor(){super(...arguments),this.locale=o.getCurrentLocale()}connectedCallback(){super.connectedCallback(),this._unsub=o.subscribe(()=>{this.locale=o.getCurrentLocale()})}disconnectedCallback(){var t;super.disconnectedCallback(),(t=this._unsub)==null||t.call(this)}_handleMouseMove(t){const e=t.currentTarget,a=e.getBoundingClientRect(),i=(t.clientX-a.left)/a.width*100,s=(t.clientY-a.top)/a.height*100;e.style.setProperty("--mouse-x",`${i}%`),e.style.setProperty("--mouse-y",`${s}%`)}render(){const t=i=>o.t(i),e=o.getCurrentLocale()==="zh-CN",a=e?["侦察","规划","执行","审查","视觉","研究","API测","安全","简化","码图","脑暴","系统"]:["SC","PL","WR","RV","VS","RS","AP","SE","SI","CM","BR","SD"];return d`
+  `;Te([u()],Y.prototype,"locale",2);Y=Te([v("hero-section")],Y);var bt=Object.defineProperty,yt=Object.getOwnPropertyDescriptor,Re=(t,e,a,i)=>{for(var s=i>1?void 0:i?yt(e,a):e,r=t.length-1,o;r>=0;r--)(o=t[r])&&(s=(i?o(e,a,s):o(s))||s);return i&&s&&bt(e,a,s),s};let J=class extends m{constructor(){super(...arguments),this.locale=n.getCurrentLocale()}connectedCallback(){super.connectedCallback(),this._unsub=n.subscribe(()=>{this.locale=n.getCurrentLocale()})}disconnectedCallback(){var t;super.disconnectedCallback(),(t=this._unsub)==null||t.call(this)}_handleMouseMove(t){const e=t.currentTarget,a=e.getBoundingClientRect(),i=(t.clientX-a.left)/a.width*100,s=(t.clientY-a.top)/a.height*100;e.style.setProperty("--mouse-x",`${i}%`),e.style.setProperty("--mouse-y",`${s}%`)}render(){const t=i=>n.t(i),e=n.getCurrentLocale()==="zh-CN",a=e?["侦察","规划","执行","审查","视觉","研究","API测","安全","简化","码图","脑暴","系统"]:["SC","PL","WR","RV","VS","RS","AP","SE","SI","CM","BR","SD"];return d`
       <section class="section" id="features">
         <div class="inner">
           <div class="header">
@@ -806,7 +806,7 @@
           </div>
         </div>
       </section>
-    `}};V.styles=v`
+    `}};J.styles=b`
     :host { display: block; width: 100%; }
 
     .section {
@@ -1212,7 +1212,7 @@
         grid-template-columns: repeat(5, 1fr);
       }
     }
-  `;Ie([b()],V.prototype,"locale",2);V=Ie([f("bento-grid")],V);var xt=Object.defineProperty,wt=Object.getOwnPropertyDescriptor,Re=(t,e,a,i)=>{for(var s=i>1?void 0:i?wt(e,a):e,r=t.length-1,n;r>=0;r--)(n=t[r])&&(s=(i?n(e,a,s):n(s))||s);return i&&s&&xt(e,a,s),s};let J=class extends m{constructor(){super(...arguments),this.messageCount=1247}connectedCallback(){super.connectedCallback(),this._interval=window.setInterval(()=>{this.messageCount+=Math.floor(Math.random()*3)},2e3)}disconnectedCallback(){super.disconnectedCallback(),this._interval&&clearInterval(this._interval)}render(){return d`
+  `;Re([u()],J.prototype,"locale",2);J=Re([v("bento-grid")],J);var xt=Object.defineProperty,wt=Object.getOwnPropertyDescriptor,Be=(t,e,a,i)=>{for(var s=i>1?void 0:i?wt(e,a):e,r=t.length-1,o;r>=0;r--)(o=t[r])&&(s=(i?o(e,a,s):o(s))||s);return i&&s&&xt(e,a,s),s};let V=class extends m{constructor(){super(...arguments),this.messageCount=1247}connectedCallback(){super.connectedCallback(),this._interval=window.setInterval(()=>{this.messageCount+=Math.floor(Math.random()*3)},2e3)}disconnectedCallback(){super.disconnectedCallback(),this._interval&&clearInterval(this._interval)}render(){return d`
       <div class="viz-container">
         <svg viewBox="0 0 800 500" preserveAspectRatio="xMidYMid meet">
           <defs>
@@ -1352,7 +1352,7 @@
           Messages: <span class="counter-value">${this.messageCount.toLocaleString()}</span>/s
         </div>
       </div>
-    `}};J.styles=v`
+    `}};V.styles=b`
     :host { display: block; width: 100%; }
 
     .viz-container {
@@ -1511,7 +1511,7 @@
       color: #10b981;
       font-weight: 600;
     }
-  `;Re([b()],J.prototype,"messageCount",2);J=Re([f("gateway-visualization")],J);var $t=Object.defineProperty,kt=Object.getOwnPropertyDescriptor,Be=(t,e,a,i)=>{for(var s=i>1?void 0:i?kt(e,a):e,r=t.length-1,n;r>=0;r--)(n=t[r])&&(s=(i?n(e,a,s):n(s))||s);return i&&s&&$t(e,a,s),s};let Y=class extends m{constructor(){super(...arguments),this.locale=o.getCurrentLocale()}connectedCallback(){super.connectedCallback(),this._unsub=o.subscribe(()=>{this.locale=o.getCurrentLocale()})}disconnectedCallback(){var t;super.disconnectedCallback(),(t=this._unsub)==null||t.call(this)}t(t){return o.t(t)}render(){const t=o.t.bind(o),e=o.getCurrentLocale()==="zh-CN";return d`
+  `;Be([u()],V.prototype,"messageCount",2);V=Be([v("gateway-visualization")],V);var $t=Object.defineProperty,kt=Object.getOwnPropertyDescriptor,He=(t,e,a,i)=>{for(var s=i>1?void 0:i?kt(e,a):e,r=t.length-1,o;r>=0;r--)(o=t[r])&&(s=(i?o(e,a,s):o(s))||s);return i&&s&&$t(e,a,s),s};let F=class extends m{constructor(){super(...arguments),this.locale=n.getCurrentLocale()}connectedCallback(){super.connectedCallback(),this._unsub=n.subscribe(()=>{this.locale=n.getCurrentLocale()})}disconnectedCallback(){var t;super.disconnectedCallback(),(t=this._unsub)==null||t.call(this)}t(t){return n.t(t)}render(){const t=n.t.bind(n),e=n.getCurrentLocale()==="zh-CN";return d`
       <section class="section" id="gateway">
         <div class="inner">
           <div class="header">
@@ -1542,7 +1542,7 @@
           </div>
         </div>
       </section>
-    `}};Y.styles=v`
+    `}};F.styles=b`
     :host { display: block; width: 100%; }
 
     .section {
@@ -1629,7 +1629,7 @@
     @media (max-width: 768px) {
       .features { grid-template-columns: repeat(2, 1fr); }
     }
-  `;Be([b()],Y.prototype,"locale",2);Y=Be([f("gateway-section")],Y);var _t=Object.defineProperty,Ct=Object.getOwnPropertyDescriptor,me=(t,e,a,i)=>{for(var s=i>1?void 0:i?Ct(e,a):e,r=t.length-1,n;r>=0;r--)(n=t[r])&&(s=(i?n(e,a,s):n(s))||s);return i&&s&&_t(e,a,s),s};let I=class extends m{constructor(){super(...arguments),this.locale=o.getCurrentLocale(),this.progress=0}connectedCallback(){super.connectedCallback(),this._unsub=o.subscribe(()=>{this.locale=o.getCurrentLocale()}),this._progressInterval=window.setInterval(()=>{this.progress=(this.progress+1)%100},100)}disconnectedCallback(){var t;super.disconnectedCallback(),(t=this._unsub)==null||t.call(this),this._progressInterval&&clearInterval(this._progressInterval)}t(t){return o.t(t)}render(){const t=o.t.bind(o),e=o.getCurrentLocale()==="zh-CN",a=[{num:"01",title:t("workflow.phases.0.title"),desc:t("workflow.phases.0.desc"),tools:["ace","rg","ast-grep"]},{num:"02",title:t("workflow.phases.1.title"),desc:t("workflow.phases.1.desc"),tools:["scout","planner"]},{num:"03",title:t("workflow.phases.2.title"),desc:t("workflow.phases.2.desc"),tools:["Gemini","diff"]},{num:"04",title:t("workflow.phases.3.title"),desc:t("workflow.phases.3.desc"),tools:["edit","test"]},{num:"05",title:t("workflow.phases.4.title"),desc:t("workflow.phases.4.desc"),tools:["Codex","verify"]}];return d`
+  `;He([u()],F.prototype,"locale",2);F=He([v("gateway-section")],F);var _t=Object.defineProperty,Ct=Object.getOwnPropertyDescriptor,ge=(t,e,a,i)=>{for(var s=i>1?void 0:i?Ct(e,a):e,r=t.length-1,o;r>=0;r--)(o=t[r])&&(s=(i?o(e,a,s):o(s))||s);return i&&s&&_t(e,a,s),s};let R=class extends m{constructor(){super(...arguments),this.locale=n.getCurrentLocale(),this.progress=0}connectedCallback(){super.connectedCallback(),this._unsub=n.subscribe(()=>{this.locale=n.getCurrentLocale()}),this._progressInterval=window.setInterval(()=>{this.progress=(this.progress+1)%100},100)}disconnectedCallback(){var t;super.disconnectedCallback(),(t=this._unsub)==null||t.call(this),this._progressInterval&&clearInterval(this._progressInterval)}t(t){return n.t(t)}render(){const t=n.t.bind(n),e=n.getCurrentLocale()==="zh-CN",a=[{num:"01",title:t("workflow.phases.0.title"),desc:t("workflow.phases.0.desc"),tools:["ace","rg","ast-grep"]},{num:"02",title:t("workflow.phases.1.title"),desc:t("workflow.phases.1.desc"),tools:["scout","planner"]},{num:"03",title:t("workflow.phases.2.title"),desc:t("workflow.phases.2.desc"),tools:["Gemini","diff"]},{num:"04",title:t("workflow.phases.3.title"),desc:t("workflow.phases.3.desc"),tools:["edit","test"]},{num:"05",title:t("workflow.phases.4.title"),desc:t("workflow.phases.4.desc"),tools:["Codex","verify"]}];return d`
       <section class="section" id="workflow">
         <div class="inner">
           <div class="header">
@@ -1682,7 +1682,7 @@
           </div>
         </div>
       </section>
-    `}};I.styles=v`
+    `}};R.styles=b`
     :host { display: block; width: 100%; }
 
     .section {
@@ -1962,9 +1962,9 @@
         height: 56px;
       }
     }
-  `;me([b()],I.prototype,"locale",2);me([b()],I.prototype,"progress",2);I=me([f("workflow-timeline")],I);var At=Object.getOwnPropertyDescriptor,St=(t,e,a,i)=>{for(var s=i>1?void 0:i?At(e,a):e,r=t.length-1,n;r>=0;r--)(n=t[r])&&(s=n(s)||s);return s};let ne=class extends m{render(){return d`<workflow-timeline></workflow-timeline>`}};ne.styles=v`
+  `;ge([u()],R.prototype,"locale",2);ge([u()],R.prototype,"progress",2);R=ge([v("workflow-timeline")],R);var At=Object.getOwnPropertyDescriptor,St=(t,e,a,i)=>{for(var s=i>1?void 0:i?At(e,a):e,r=t.length-1,o;r>=0;r--)(o=t[r])&&(s=o(s)||s);return s};let ne=class extends m{render(){return d`<workflow-timeline></workflow-timeline>`}};ne.styles=b`
     :host { display: block; width: 100%; }
-  `;ne=St([f("workflow-section")],ne);var Pt=Object.defineProperty,Mt=Object.getOwnPropertyDescriptor,ge=(t,e,a,i)=>{for(var s=i>1?void 0:i?Mt(e,a):e,r=t.length-1,n;r>=0;r--)(n=t[r])&&(s=(i?n(e,a,s):n(s))||s);return i&&s&&Pt(e,a,s),s};let R=class extends m{constructor(){super(...arguments),this.locale=o.getCurrentLocale(),this.activeTab=0}connectedCallback(){super.connectedCallback(),this._unsub=o.subscribe(()=>{this.locale=o.getCurrentLocale()})}disconnectedCallback(){var t;super.disconnectedCallback(),(t=this._unsub)==null||t.call(this)}t(t){return o.t(t)}render(){const t=o.t.bind(o),e=o.getCurrentLocale()==="zh-CN",a=e?["/research","/scout","/plan","/work","/review","/brainstorm"]:["/research","/scout","/plan","/work","/review","/brainstorm"],i=e?["web-fetch","ast-grep","ace-tool","codemap","send-request","tmux"]:["web-fetch","ast-grep","ace-tool","codemap","send-request","tmux"],s=e?["Telegram","Discord","WebChat","API","Cron","Webhook"]:["Telegram","Discord","WebChat","API","Cron","Webhook"],r=e?["git-commit","notify","continue","handoff","hash-trigger","pi-messenger"]:["git-commit","notify","continue","handoff","hash-trigger","pi-messenger"];return d`
+  `;ne=St([v("workflow-section")],ne);var Pt=Object.defineProperty,Mt=Object.getOwnPropertyDescriptor,ue=(t,e,a,i)=>{for(var s=i>1?void 0:i?Mt(e,a):e,r=t.length-1,o;r>=0;r--)(o=t[r])&&(s=(i?o(e,a,s):o(s))||s);return i&&s&&Pt(e,a,s),s};let B=class extends m{constructor(){super(...arguments),this.locale=n.getCurrentLocale(),this.activeTab=0}connectedCallback(){super.connectedCallback(),this._unsub=n.subscribe(()=>{this.locale=n.getCurrentLocale()})}disconnectedCallback(){var t;super.disconnectedCallback(),(t=this._unsub)==null||t.call(this)}t(t){return n.t(t)}render(){const t=n.t.bind(n),e=n.getCurrentLocale()==="zh-CN",a=e?["/research","/scout","/plan","/work","/review","/brainstorm"]:["/research","/scout","/plan","/work","/review","/brainstorm"],i=e?["web-fetch","ast-grep","ace-tool","codemap","send-request","tmux"]:["web-fetch","ast-grep","ace-tool","codemap","send-request","tmux"],s=e?["Telegram","Discord","WebChat","API","Cron","Webhook"]:["Telegram","Discord","WebChat","API","Cron","Webhook"],r=e?["git-commit","notify","continue","handoff","hash-trigger","pi-messenger"]:["git-commit","notify","continue","handoff","hash-trigger","pi-messenger"];return d`
       <section class="section" id="extensions">
         <div class="bg-grid"></div>
         <div class="bg-glow"></div>
@@ -2007,10 +2007,10 @@
               </div>
               <p class="category-desc">${e?"交互式命令系统。支持参数补全、历史记录、上下文感知。":"Interactive command system. Supports arg completion, history, context awareness."}</p>
               <div class="ext-list">
-                ${a.map(n=>d`
+                ${a.map(o=>d`
                   <div class="ext-item">
                     <span class="ext-status"></span>
-                    <span>${n}</span>
+                    <span>${o}</span>
                   </div>
                 `)}
               </div>
@@ -2025,10 +2025,10 @@
               </div>
               <p class="category-desc">${e?"可复用的能力单元。每个技能都是独立的 npm 包，按需加载。":"Reusable capability units. Each skill is an independent npm package, loaded on demand."}</p>
               <div class="ext-list">
-                ${i.map(n=>d`
+                ${i.map(o=>d`
                   <div class="ext-item">
                     <span class="ext-status"></span>
-                    <span>${n}</span>
+                    <span>${o}</span>
                   </div>
                 `)}
               </div>
@@ -2043,10 +2043,10 @@
               </div>
               <p class="category-desc">${e?"多通道接入。16 个生命周期钩子，消息管道可编程。":"Multi-channel access. 16 lifecycle hooks, programmable message pipeline."}</p>
               <div class="ext-list">
-                ${s.map(n=>d`
+                ${s.map(o=>d`
                   <div class="ext-item">
                     <span class="ext-status"></span>
-                    <span>${n}</span>
+                    <span>${o}</span>
                   </div>
                 `)}
               </div>
@@ -2105,16 +2105,16 @@
 
           <!-- Extension Gallery -->
           <div class="gallery">
-            ${r.map(n=>d`
+            ${r.map(o=>d`
               <div class="gallery-item">
-                <div class="gallery-icon">${n.charAt(0).toUpperCase()}</div>
-                <span class="gallery-name">${n}</span>
+                <div class="gallery-icon">${o.charAt(0).toUpperCase()}</div>
+                <span class="gallery-name">${o}</span>
               </div>
             `)}
           </div>
         </div>
       </section>
-    `}};R.styles=v`
+    `}};B.styles=b`
     :host { display: block; width: 100%; }
 
     .section {
@@ -2452,7 +2452,7 @@
     @media (max-width: 640px) {
       .gallery { grid-template-columns: repeat(3, 1fr); }
     }
-  `;ge([b()],R.prototype,"locale",2);ge([b()],R.prototype,"activeTab",2);R=ge([f("extensions-section")],R);var zt=Object.defineProperty,Et=Object.getOwnPropertyDescriptor,Ue=(t,e,a,i)=>{for(var s=i>1?void 0:i?Et(e,a):e,r=t.length-1,n;r>=0;r--)(n=t[r])&&(s=(i?n(e,a,s):n(s))||s);return i&&s&&zt(e,a,s),s};let F=class extends m{constructor(){super(...arguments),this.locale=o.getCurrentLocale()}connectedCallback(){super.connectedCallback(),this._unsub=o.subscribe(()=>{this.locale=o.getCurrentLocale()})}disconnectedCallback(){var t;super.disconnectedCallback(),(t=this._unsub)==null||t.call(this)}t(t){return o.t(t)}render(){const t=o.t.bind(o),e=[0,1,2,3,4];return d`
+  `;ue([u()],B.prototype,"locale",2);ue([u()],B.prototype,"activeTab",2);B=ue([v("extensions-section")],B);var zt=Object.defineProperty,Lt=Object.getOwnPropertyDescriptor,Ge=(t,e,a,i)=>{for(var s=i>1?void 0:i?Lt(e,a):e,r=t.length-1,o;r>=0;r--)(o=t[r])&&(s=(i?o(e,a,s):o(s))||s);return i&&s&&zt(e,a,s),s};let q=class extends m{constructor(){super(...arguments),this.locale=n.getCurrentLocale()}connectedCallback(){super.connectedCallback(),this._unsub=n.subscribe(()=>{this.locale=n.getCurrentLocale()})}disconnectedCallback(){var t;super.disconnectedCallback(),(t=this._unsub)==null||t.call(this)}t(t){return n.t(t)}render(){const t=n.t.bind(n),e=[0,1,2,3,4];return d`
       <section class="section" id="comparison">
         <div class="inner">
           <div class="header">
@@ -2477,7 +2477,7 @@
           </div>
         </div>
       </section>
-    `}};F.styles=v`
+    `}};q.styles=b`
     :host {
       display: block;
       width: 100%;
@@ -2596,7 +2596,7 @@
         min-height: auto;
       }
     }
-  `;Ue([b()],F.prototype,"locale",2);F=Ue([f("comparison-section")],F);var Lt=Object.defineProperty,Ot=Object.getOwnPropertyDescriptor,je=(t,e,a,i)=>{for(var s=i>1?void 0:i?Ot(e,a):e,r=t.length-1,n;r>=0;r--)(n=t[r])&&(s=(i?n(e,a,s):n(s))||s);return i&&s&&Lt(e,a,s),s};let q=class extends m{constructor(){super(...arguments),this.locale=o.getCurrentLocale()}connectedCallback(){super.connectedCallback(),this._unsub=o.subscribe(()=>{this.locale=o.getCurrentLocale()})}disconnectedCallback(){var t;super.disconnectedCallback(),(t=this._unsub)==null||t.call(this)}render(){const t=o.getCurrentLocale()==="zh-CN";return d`
+  `;Ge([u()],q.prototype,"locale",2);q=Ge([v("comparison-section")],q);var Nt=Object.defineProperty,Et=Object.getOwnPropertyDescriptor,Ue=(t,e,a,i)=>{for(var s=i>1?void 0:i?Et(e,a):e,r=t.length-1,o;r>=0;r--)(o=t[r])&&(s=(i?o(e,a,s):o(s))||s);return i&&s&&Nt(e,a,s),s};let Z=class extends m{constructor(){super(...arguments),this.locale=n.getCurrentLocale()}connectedCallback(){super.connectedCallback(),this._unsub=n.subscribe(()=>{this.locale=n.getCurrentLocale()})}disconnectedCallback(){var t;super.disconnectedCallback(),(t=this._unsub)==null||t.call(this)}render(){const t=n.getCurrentLocale()==="zh-CN";return d`
       <section class="section" id="memory">
         <div class="data-flow">
           <div class="flow-line"></div>
@@ -2678,7 +2678,7 @@
           </div>
         </div>
       </section>
-    `}};q.styles=v`
+    `}};Z.styles=b`
     :host { display: block; width: 100%; }
 
     .section {
@@ -2901,7 +2901,7 @@
       .header { grid-template-columns: 1fr; gap: 2rem; }
       .memory-stack { grid-template-columns: 1fr; }
     }
-  `;je([b()],q.prototype,"locale",2);q=je([f("memory-section")],q);var Tt=Object.defineProperty,Dt=Object.getOwnPropertyDescriptor,He=(t,e,a,i)=>{for(var s=i>1?void 0:i?Dt(e,a):e,r=t.length-1,n;r>=0;r--)(n=t[r])&&(s=(i?n(e,a,s):n(s))||s);return i&&s&&Tt(e,a,s),s};let Z=class extends m{constructor(){super(...arguments),this.locale=o.getCurrentLocale()}connectedCallback(){super.connectedCallback(),this._unsub=o.subscribe(()=>{this.locale=o.getCurrentLocale()})}disconnectedCallback(){var t;super.disconnectedCallback(),(t=this._unsub)==null||t.call(this)}render(){const t=o.getCurrentLocale()==="zh-CN";return d`
+  `;Ue([u()],Z.prototype,"locale",2);Z=Ue([v("memory-section")],Z);var Ot=Object.defineProperty,It=Object.getOwnPropertyDescriptor,ee=(t,e,a,i)=>{for(var s=i>1?void 0:i?It(e,a):e,r=t.length-1,o;r>=0;r--)(o=t[r])&&(s=(i?o(e,a,s):o(s))||s);return i&&s&&Ot(e,a,s),s};let L=class extends m{constructor(){super(...arguments),this.locale=n.getCurrentLocale(),this.activeNode=null,this.packetCount=0}connectedCallback(){super.connectedCallback(),this._unsub=n.subscribe(()=>{this.locale=n.getCurrentLocale()}),this._counterInterval=window.setInterval(()=>{this.packetCount+=Math.floor(Math.random()*5)+1},1e3)}disconnectedCallback(){var t;super.disconnectedCallback(),(t=this._unsub)==null||t.call(this),this._counterInterval&&clearInterval(this._counterInterval)}_handleNodeHover(t){this.activeNode=t}_handleNodeLeave(){this.activeNode=null}_getNodeInfo(t,e){const i={core:{zh:"Pi Core",en:"Pi Core",descZh:"核心编排引擎，管理扩展生命周期",descEn:"Core orchestration engine managing extension lifecycle"},extensions:{zh:"扩展系统",en:"Extensions",descZh:"插件化架构，支持命令、工具、钩子",descEn:"Plugin architecture supporting commands, tools, hooks"},skills:{zh:"技能系统",en:"Skills",descZh:"42+ 可复用技能单元",descEn:"42+ reusable capability units"},subagents:{zh:"子代理网格",en:"Subagents",descZh:"25+ 专用代理通过 Crew 协议协调",descEn:"25+ specialized agents coordinated via Crew protocol"},gateway:{zh:"网关",en:"Gateway",descZh:"多通道接入，16 个生命周期钩子",descEn:"Multi-channel access with 16 lifecycle hooks"},rpc:{zh:"RPC 池",en:"RPC Pool",descZh:"进程池管理，会话路由",descEn:"Process pool management, session routing"},channels:{zh:"通道",en:"Channels",descZh:"Telegram / Discord / WebChat / API",descEn:"Telegram / Discord / WebChat / API"},memory:{zh:"记忆系统",en:"Memory",descZh:"三层记忆栈：L3 运行时 + L2 合并 + L1 日志",descEn:"3-layer memory: L3 runtime + L2 consolidated + L1 logs"}}[t];return{title:e?i.zh:i.en,desc:e?i.descZh:i.descEn}}render(){const t=n.getCurrentLocale()==="zh-CN",e=this.activeNode?this._getNodeInfo(this.activeNode,t):null;return d`
       <section class="section" id="specs">
         <div class="inner">
           <div class="header">
@@ -2917,22 +2917,10 @@
                 <span class="spec-title">${t?"运行时":"Runtime"}</span>
               </div>
               <div class="spec-list">
-                <div class="spec-item">
-                  <span class="spec-label">${t?"语言":"Language"}</span>
-                  <span class="spec-value">TypeScript 5.3</span>
-                </div>
-                <div class="spec-item">
-                  <span class="spec-label">${t?"引擎":"Engine"}</span>
-                  <span class="spec-value">Node.js 20+</span>
-                </div>
-                <div class="spec-item">
-                  <span class="spec-label">${t?"打包":"Bundler"}</span>
-                  <span class="spec-value">Vite 5</span>
-                </div>
-                <div class="spec-item">
-                  <span class="spec-label">TUI</span>
-                  <span class="spec-value highlight">React + Ink</span>
-                </div>
+                <div class="spec-item"><span class="spec-label">${t?"语言":"Language"}</span><span class="spec-value">TypeScript 5.3</span></div>
+                <div class="spec-item"><span class="spec-label">${t?"引擎":"Engine"}</span><span class="spec-value">Node.js 20+</span></div>
+                <div class="spec-item"><span class="spec-label">${t?"打包":"Bundler"}</span><span class="spec-value">Vite 5</span></div>
+                <div class="spec-item"><span class="spec-label">TUI</span><span class="spec-value highlight">React + Ink</span></div>
               </div>
             </div>
 
@@ -2943,22 +2931,10 @@
                 <span class="spec-title">${t?"网关":"Gateway"}</span>
               </div>
               <div class="spec-list">
-                <div class="spec-item">
-                  <span class="spec-label">${t?"协议":"Protocol"}</span>
-                  <span class="spec-value">WebSocket + HTTP/2</span>
-                </div>
-                <div class="spec-item">
-                  <span class="spec-label">${t?"并发":"Concurrency"}</span>
-                  <span class="spec-value highlight">1000+ sessions</span>
-                </div>
-                <div class="spec-item">
-                  <span class="spec-label">${t?"延迟":"Latency"}</span>
-                  <span class="spec-value">&lt; 10ms p99</span>
-                </div>
-                <div class="spec-item">
-                  <span class="spec-label">RPC</span>
-                  <span class="spec-value">JSON-RPC 2.0</span>
-                </div>
+                <div class="spec-item"><span class="spec-label">${t?"协议":"Protocol"}</span><span class="spec-value">WebSocket + HTTP/2</span></div>
+                <div class="spec-item"><span class="spec-label">${t?"并发":"Concurrency"}</span><span class="spec-value highlight">1000+ sessions</span></div>
+                <div class="spec-item"><span class="spec-label">${t?"延迟":"Latency"}</span><span class="spec-value">&lt; 10ms p99</span></div>
+                <div class="spec-item"><span class="spec-label">RPC</span><span class="spec-value">JSON-RPC 2.0</span></div>
               </div>
             </div>
 
@@ -2969,22 +2945,10 @@
                 <span class="spec-title">${t?"记忆":"Memory"}</span>
               </div>
               <div class="spec-list">
-                <div class="spec-item">
-                  <span class="spec-label">${t?"向量维度":"Vector Dim"}</span>
-                  <span class="spec-value">768 (Gemma)</span>
-                </div>
-                <div class="spec-item">
-                  <span class="spec-label">${t?"检索":"Retrieval"}</span>
-                  <span class="spec-value highlight">Vector + BM25</span>
-                </div>
-                <div class="spec-item">
-                  <span class="spec-label">${t?"数据库":"Database"}</span>
-                  <span class="spec-value">LanceDB</span>
-                </div>
-                <div class="spec-item">
-                  <span class="spec-label">${t?"存储":"Storage"}</span>
-                  <span class="spec-value">Markdown + SQLite</span>
-                </div>
+                <div class="spec-item"><span class="spec-label">${t?"向量维度":"Vector Dim"}</span><span class="spec-value">768 (Gemma)</span></div>
+                <div class="spec-item"><span class="spec-label">${t?"检索":"Retrieval"}</span><span class="spec-value highlight">Vector + BM25</span></div>
+                <div class="spec-item"><span class="spec-label">${t?"数据库":"Database"}</span><span class="spec-value">LanceDB</span></div>
+                <div class="spec-item"><span class="spec-label">${t?"存储":"Storage"}</span><span class="spec-value">Markdown + SQLite</span></div>
               </div>
             </div>
 
@@ -2995,71 +2959,133 @@
                 <span class="spec-title">${t?"安全":"Security"}</span>
               </div>
               <div class="spec-list">
-                <div class="spec-item">
-                  <span class="spec-label">${t?"认证":"Auth"}</span>
-                  <span class="spec-value highlight">HMAC-SHA256</span>
-                </div>
-                <div class="spec-item">
-                  <span class="spec-label">${t?"沙箱":"Sandbox"}</span>
-                  <span class="spec-value">Unified Diff</span>
-                </div>
-                <div class="spec-item">
-                  <span class="spec-label">${t?"网络":"Network"}</span>
-                  <span class="spec-value">SSRF Guard</span>
-                </div>
-                <div class="spec-item">
-                  <span class="spec-label">${t?"执行":"Execution"}</span>
-                  <span class="spec-value">Allowlist</span>
-                </div>
+                <div class="spec-item"><span class="spec-label">${t?"认证":"Auth"}</span><span class="spec-value highlight">HMAC-SHA256</span></div>
+                <div class="spec-item"><span class="spec-label">${t?"沙箱":"Sandbox"}</span><span class="spec-value">Unified Diff</span></div>
+                <div class="spec-item"><span class="spec-label">${t?"网络":"Network"}</span><span class="spec-value">SSRF Guard</span></div>
+                <div class="spec-item"><span class="spec-label">${t?"执行":"Execution"}</span><span class="spec-value">Allowlist</span></div>
               </div>
             </div>
           </div>
 
-          <!-- Architecture Diagram -->
+          <!-- Interactive Architecture Diagram -->
           <div class="arch-diagram">
-            <h3 class="arch-title">${t?"数据流架构":"Data Flow Architecture"}</h3>
-            <svg class="arch-svg" viewBox="0 0 800 300">
-              <!-- Core -->
-              <rect class="arch-node" x="350" y="120" width="100" height="60" rx="8" />
-              <text class="arch-label" x="400" y="155">Pi Core</text>
+            <h3 class="arch-title">${t?"数据流架构 (悬停查看详情)":"Data Flow Architecture (hover for details)"}</h3>
+            
+            <div class="traffic-counter">
+              ${t?"数据包":"Packets"}: <span>${this.packetCount.toLocaleString()}</span>
+            </div>
 
-              <!-- Extensions -->
-              <rect class="arch-node" x="150" y="50" width="80" height="40" rx="6" />
+            <svg class="arch-svg" viewBox="0 0 900 380">
+              <defs>
+                <linearGradient id="line-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                  <stop offset="0%" style="stop-color:#3f3f46;stop-opacity:1" />
+                  <stop offset="50%" style="stop-color:#10b981;stop-opacity:1" />
+                  <stop offset="100%" style="stop-color:#3f3f46;stop-opacity:1" />
+                </linearGradient>
+                <filter id="node-glow">
+                  <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+                  <feMerge>
+                    <feMergeNode in="coloredBlur"/>
+                    <feMergeNode in="SourceGraphic"/>
+                  </feMerge>
+                </filter>
+              </defs>
+
+              <!-- Connection Lines - Extensions to Core -->
+              <path class="arch-connector ${this.activeNode==="extensions"||this.activeNode==="core"?"active":""}" d="M 230 70 L 350 190" />
+              <path class="arch-connector ${this.activeNode==="skills"||this.activeNode==="core"?"active":""}" d="M 230 160 L 350 190" />
+              <path class="arch-connector ${this.activeNode==="subagents"||this.activeNode==="core"?"active":""}" d="M 230 250 L 350 190" />
+              
+              <!-- Connection Lines - Core to Gateway -->
+              <path class="arch-connector ${this.activeNode==="core"||this.activeNode==="gateway"?"active":""}" d="M 450 190 L 570 70" />
+              <path class="arch-connector ${this.activeNode==="core"||this.activeNode==="rpc"?"active":""}" d="M 450 190 L 570 160" />
+              <path class="arch-connector ${this.activeNode==="core"||this.activeNode==="channels"?"active":""}" d="M 450 190 L 570 250" />
+              
+              <!-- Connection Line - Core to Memory -->
+              <path class="arch-connector ${this.activeNode==="core"||this.activeNode==="memory"?"active":""}" d="M 400 230 L 400 290" />
+
+              <!-- Pulse Rings -->
+              <circle class="pulse-ring ${this.activeNode==="core"?"animating":""}" cx="400" cy="190" />
+
+              <!-- Extension Nodes -->
+              <rect class="arch-node ${this.activeNode==="extensions"?"active":""}" 
+                x="150" y="50" width="80" height="40" rx="6" 
+                @mouseenter="${()=>this._handleNodeHover("extensions")}" 
+                @mouseleave="${this._handleNodeLeave}" />
               <text class="arch-label" x="190" y="75">Extensions</text>
 
-              <rect class="arch-node" x="150" y="120" width="80" height="40" rx="6" />
-              <text class="arch-label" x="190" y="145">Skills</text>
+              <rect class="arch-node ${this.activeNode==="skills"?"active":""}" 
+                x="150" y="140" width="80" height="40" rx="6" 
+                @mouseenter="${()=>this._handleNodeHover("skills")}" 
+                @mouseleave="${this._handleNodeLeave}" />
+              <text class="arch-label" x="190" y="165">Skills</text>
 
-              <rect class="arch-node" x="150" y="190" width="80" height="40" rx="6" />
-              <text class="arch-label" x="190" y="215">Subagents</text>
+              <rect class="arch-node ${this.activeNode==="subagents"?"active":""}" 
+                x="150" y="230" width="80" height="40" rx="6" 
+                @mouseenter="${()=>this._handleNodeHover("subagents")}" 
+                @mouseleave="${this._handleNodeLeave}" />
+              <text class="arch-label" x="190" y="255">Subagents</text>
 
-              <!-- Gateway -->
-              <rect class="arch-node" x="570" y="50" width="80" height="40" rx="6" />
+              <!-- Core Node -->
+              <rect class="arch-node ${this.activeNode==="core"?"active":""}" 
+                x="350" y="160" width="100" height="70" rx="8" 
+                @mouseenter="${()=>this._handleNodeHover("core")}" 
+                @mouseleave="${this._handleNodeLeave}" />
+              <text class="arch-label" x="400" y="200" style="font-size: 14px; font-weight: 600;">Pi Core</text>
+
+              <!-- Gateway Nodes -->
+              <rect class="arch-node ${this.activeNode==="gateway"?"active":""}" 
+                x="570" y="50" width="80" height="40" rx="6" 
+                @mouseenter="${()=>this._handleNodeHover("gateway")}" 
+                @mouseleave="${this._handleNodeLeave}" />
               <text class="arch-label" x="610" y="75">Gateway</text>
 
-              <rect class="arch-node" x="570" y="120" width="80" height="40" rx="6" />
-              <text class="arch-label" x="610" y="145">RPC Pool</text>
+              <rect class="arch-node ${this.activeNode==="rpc"?"active":""}" 
+                x="570" y="140" width="80" height="40" rx="6" 
+                @mouseenter="${()=>this._handleNodeHover("rpc")}" 
+                @mouseleave="${this._handleNodeLeave}" />
+              <text class="arch-label" x="610" y="165">RPC Pool</text>
 
-              <rect class="arch-node" x="570" y="190" width="80" height="40" rx="6" />
-              <text class="arch-label" x="610" y="215">Channels</text>
+              <rect class="arch-node ${this.activeNode==="channels"?"active":""}" 
+                x="570" y="230" width="80" height="40" rx="6" 
+                @mouseenter="${()=>this._handleNodeHover("channels")}" 
+                @mouseleave="${this._handleNodeLeave}" />
+              <text class="arch-label" x="610" y="255">Channels</text>
 
-              <!-- Memory -->
-              <rect class="arch-node" x="360" y="240" width="80" height="40" rx="6" />
-              <text class="arch-label" x="400" y="265">Memory</text>
+              <!-- Memory Node -->
+              <rect class="arch-node ${this.activeNode==="memory"?"active":""}" 
+                x="360" y="290" width="80" height="40" rx="6" 
+                @mouseenter="${()=>this._handleNodeHover("memory")}" 
+                @mouseleave="${this._handleNodeLeave}" />
+              <text class="arch-label" x="400" y="315">Memory</text>
 
-              <!-- Connections -->
-              <path class="arch-connector" d="M 230 70 L 350 150" />
-              <path class="arch-connector" d="M 230 140 L 350 150" />
-              <path class="arch-connector" d="M 230 210 L 350 150" />
-              <path class="arch-connector" d="M 450 150 L 570 70" />
-              <path class="arch-connector" d="M 450 150 L 570 140" />
-              <path class="arch-connector" d="M 450 150 L 570 210" />
-              <path class="arch-connector" d="M 400 180 L 400 240" />
+              <!-- Data Packets -->
+              <circle class="data-packet" cx="290" cy="130" r="4">
+                <animate attributeName="cx" values="230;350" dur="1.5s" repeatCount="indefinite" />
+                <animate attributeName="cy" values="70;190" dur="1.5s" repeatCount="indefinite" />
+              </circle>
+              <circle class="data-packet" cx="290" cy="175" r="4">
+                <animate attributeName="cx" values="350;570" dur="1.2s" repeatCount="indefinite" />
+                <animate attributeName="cy" values="190;70" dur="1.2s" repeatCount="indefinite" />
+              </circle>
+              <circle class="data-packet" cx="400" cy="260" r="4">
+                <animate attributeName="cy" values="190;290" dur="2s" repeatCount="indefinite" />
+              </circle>
             </svg>
+
+            <div class="node-info ${this.activeNode?"visible":""}">
+              ${e?d`
+                <div class="node-info-title">${e.title}</div>
+                <div class="node-info-desc">${e.desc}</div>
+              `:d`
+                <div class="node-info-title">${t?"悬停节点查看详情":"Hover nodes for details"}</div>
+                <div class="node-info-desc">${t?"数据包在节点间实时流动":"Data packets flow between nodes in real-time"}</div>
+              `}
+            </div>
           </div>
         </div>
       </section>
-    `}};Z.styles=v`
+    `}};L.styles=b`
     :host { display: block; width: 100%; }
 
     .section {
@@ -3094,11 +3120,11 @@
       letter-spacing: -0.02em;
     }
 
-    /* Specs Grid */
     .specs-grid {
       display: grid;
       grid-template-columns: repeat(2, 1fr);
       gap: 1.5rem;
+      margin-bottom: 4rem;
     }
 
     .spec-category {
@@ -3174,14 +3200,14 @@
       color: #10b981;
     }
 
-    /* Architecture Diagram */
+    /* Architecture Diagram - Interactive */
     .arch-diagram {
-      margin-top: 4rem;
-      padding: 2rem;
       background: #18181b;
       border: 1px solid #27272a;
       border-radius: 1.25rem;
+      padding: 2rem;
       overflow-x: auto;
+      position: relative;
     }
 
     .arch-title {
@@ -3195,33 +3221,144 @@
     .arch-svg {
       width: 100%;
       min-width: 800px;
-      height: 300px;
+      height: 350px;
     }
 
+    /* Nodes */
     .arch-node {
       fill: #27272a;
       stroke: #3f3f46;
-      stroke-width: 1;
+      stroke-width: 1.5;
+      transition: all 0.3s ease;
+      cursor: pointer;
     }
 
+    .arch-node:hover {
+      fill: #3f3f46;
+      stroke: #10b981;
+      filter: drop-shadow(0 0 8px rgba(16, 185, 129, 0.3));
+    }
+
+    .arch-node.active {
+      fill: #1e293b;
+      stroke: #10b981;
+      filter: drop-shadow(0 0 12px rgba(16, 185, 129, 0.4));
+    }
+
+    /* Node Labels */
     .arch-label {
       fill: #a1a1aa;
-      font-size: 11px;
+      font-size: 12px;
       font-family: 'JetBrains Mono', monospace;
       text-anchor: middle;
+      pointer-events: none;
+      transition: all 0.3s ease;
     }
 
+    .arch-node:hover + .arch-label,
+    .arch-node.active + .arch-label {
+      fill: #fafafa;
+      font-weight: 600;
+    }
+
+    /* Connection Lines */
     .arch-connector {
       stroke: #3f3f46;
-      stroke-width: 1;
+      stroke-width: 1.5;
       fill: none;
-      stroke-dasharray: 4 2;
+      stroke-dasharray: 4 4;
+      transition: all 0.3s ease;
+    }
+
+    .arch-connector.active {
+      stroke: #10b981;
+      stroke-width: 2;
+      animation: flow 1s linear infinite;
+    }
+
+    @keyframes flow {
+      to { stroke-dashoffset: -8; }
+    }
+
+    /* Data Flow Animation */
+    .data-packet {
+      fill: #10b981;
+      filter: drop-shadow(0 0 4px #10b981);
+    }
+
+    /* Pulse Effect */
+    .pulse-ring {
+      fill: none;
+      stroke: #10b981;
+      stroke-width: 2;
+      opacity: 0;
+    }
+
+    .pulse-ring.animating {
+      animation: pulse-ring 2s ease-out infinite;
+    }
+
+    @keyframes pulse-ring {
+      0% { r: 30; opacity: 0.6; stroke-width: 2; }
+      100% { r: 50; opacity: 0; stroke-width: 0; }
+    }
+
+    /* Node Info Panel */
+    .node-info {
+      position: absolute;
+      bottom: 1.5rem;
+      left: 1.5rem;
+      right: 1.5rem;
+      padding: 1rem 1.25rem;
+      background: rgba(24, 24, 27, 0.95);
+      border: 1px solid #27272a;
+      border-radius: 0.75rem;
+      opacity: 0;
+      transform: translateY(10px);
+      transition: all 0.3s ease;
+      pointer-events: none;
+    }
+
+    .node-info.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .node-info-title {
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: #10b981;
+      margin-bottom: 0.375rem;
+    }
+
+    .node-info-desc {
+      font-size: 0.8125rem;
+      color: #71717a;
+    }
+
+    /* Traffic Counter */
+    .traffic-counter {
+      position: absolute;
+      top: 1.5rem;
+      right: 1.5rem;
+      padding: 0.5rem 0.875rem;
+      background: rgba(16, 185, 129, 0.1);
+      border: 1px solid rgba(16, 185, 129, 0.2);
+      border-radius: 0.5rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.75rem;
+      color: #10b981;
+    }
+
+    .traffic-counter span {
+      font-weight: 600;
     }
 
     @media (max-width: 768px) {
       .specs-grid { grid-template-columns: 1fr; }
+      .arch-svg { min-width: 600px; height: 280px; }
     }
-  `;He([b()],Z.prototype,"locale",2);Z=He([f("tech-specs")],Z);var Nt=Object.defineProperty,It=Object.getOwnPropertyDescriptor,Ge=(t,e,a,i)=>{for(var s=i>1?void 0:i?It(e,a):e,r=t.length-1,n;r>=0;r--)(n=t[r])&&(s=(i?n(e,a,s):n(s))||s);return i&&s&&Nt(e,a,s),s};let X=class extends m{constructor(){super(...arguments),this.locale=o.getCurrentLocale()}connectedCallback(){super.connectedCallback(),this._unsub=o.subscribe(()=>{this.locale=o.getCurrentLocale()})}disconnectedCallback(){var t;super.disconnectedCallback(),(t=this._unsub)==null||t.call(this)}t(t){return o.t(t)}render(){const t=o.t.bind(o);return d`
+  `;ee([u()],L.prototype,"locale",2);ee([u()],L.prototype,"activeNode",2);ee([u()],L.prototype,"packetCount",2);L=ee([v("tech-specs")],L);var Dt=Object.defineProperty,Tt=Object.getOwnPropertyDescriptor,je=(t,e,a,i)=>{for(var s=i>1?void 0:i?Tt(e,a):e,r=t.length-1,o;r>=0;r--)(o=t[r])&&(s=(i?o(e,a,s):o(s))||s);return i&&s&&Dt(e,a,s),s};let X=class extends m{constructor(){super(...arguments),this.locale=n.getCurrentLocale()}connectedCallback(){super.connectedCallback(),this._unsub=n.subscribe(()=>{this.locale=n.getCurrentLocale()})}disconnectedCallback(){var t;super.disconnectedCallback(),(t=this._unsub)==null||t.call(this)}t(t){return n.t(t)}render(){const t=n.t.bind(n);return d`
       <section class="section">
         <div class="inner">
           <h2 class="title">${t("cta.title")}</h2>
@@ -3234,7 +3371,7 @@
           </a>
         </div>
       </section>
-    `}};X.styles=v`
+    `}};X.styles=b`
     :host {
       display: block;
       width: 100%;
@@ -3304,7 +3441,7 @@
       background: radial-gradient(circle, rgba(16, 185, 129, 0.08) 0%, transparent 70%);
       pointer-events: none;
     }
-  `;Ge([b()],X.prototype,"locale",2);X=Ge([f("cta-section")],X);var Rt=Object.getOwnPropertyDescriptor,Bt=(t,e,a,i)=>{for(var s=i>1?void 0:i?Rt(e,a):e,r=t.length-1,n;r>=0;r--)(n=t[r])&&(s=n(s)||s);return s};let oe=class extends m{render(){return d`
+  `;je([u()],X.prototype,"locale",2);X=je([v("cta-section")],X);var Rt=Object.getOwnPropertyDescriptor,Bt=(t,e,a,i)=>{for(var s=i>1?void 0:i?Rt(e,a):e,r=t.length-1,o;r>=0;r--)(o=t[r])&&(s=o(s)||s);return s};let le=class extends m{render(){return d`
       <footer class="footer">
         <div class="inner">
           <div class="brand">
@@ -3321,7 +3458,7 @@
           </div>
         </div>
       </footer>
-    `}};oe.styles=v`
+    `}};le.styles=b`
     :host {
       display: block;
       width: 100%;
@@ -3398,7 +3535,7 @@
         gap: 1.5rem;
       }
     }
-  `;oe=Bt([f("pi-footer")],oe);var Ut=Object.getOwnPropertyDescriptor,jt=(t,e,a,i)=>{for(var s=i>1?void 0:i?Ut(e,a):e,r=t.length-1,n;r>=0;r--)(n=t[r])&&(s=n(s)||s);return s};let le=class extends m{constructor(){super(...arguments),this.particles=[],this.PARTICLE_COUNT=30,this.CONNECTION_DISTANCE=150,this.MAX_CONNECTIONS=3,this.animate=()=>{!this.ctx||!this.canvas||(this.ctx.clearRect(0,0,this.canvas.width,this.canvas.height),this.particles.forEach((t,e)=>{t.x+=t.vx,t.y+=t.vy,(t.x<0||t.x>this.canvas.width)&&(t.vx*=-1),(t.y<0||t.y>this.canvas.height)&&(t.vy*=-1),this.ctx.beginPath(),this.ctx.arc(t.x,t.y,t.radius,0,Math.PI*2),this.ctx.fillStyle=`rgba(16, 185, 129, ${t.opacity})`,this.ctx.fill();let a=0;for(let i=e+1;i<this.particles.length&&!(a>=this.MAX_CONNECTIONS);i++){const s=this.particles[i],r=t.x-s.x,n=t.y-s.y,c=Math.sqrt(r*r+n*n);if(c<this.CONNECTION_DISTANCE){const l=(1-c/this.CONNECTION_DISTANCE)*.15;this.ctx.beginPath(),this.ctx.moveTo(t.x,t.y),this.ctx.lineTo(s.x,s.y),this.ctx.strokeStyle=`rgba(16, 185, 129, ${l})`,this.ctx.lineWidth=.5,this.ctx.stroke(),a++}}}),this.animationId=requestAnimationFrame(this.animate))}}firstUpdated(){this.canvas=this.renderRoot.querySelector("canvas"),this.canvas&&(this.ctx=this.canvas.getContext("2d")||void 0,this.ctx&&(this.setupCanvas(),this.initParticles(),this.animate(),this.resizeObserver=new ResizeObserver(()=>{this.setupCanvas()}),this.resizeObserver.observe(this.canvas)))}setupCanvas(){var e;if(!this.canvas)return;const t=(e=this.canvas.parentElement)==null?void 0:e.getBoundingClientRect();t&&(this.canvas.width=t.width,this.canvas.height=t.height)}initParticles(){if(this.canvas){this.particles=[];for(let t=0;t<this.PARTICLE_COUNT;t++)this.particles.push({x:Math.random()*this.canvas.width,y:Math.random()*this.canvas.height,vx:(Math.random()-.5)*.3,vy:(Math.random()-.5)*.3,radius:Math.random()*1.5+.5,opacity:Math.random()*.3+.1})}}disconnectedCallback(){var t;super.disconnectedCallback(),this.animationId&&cancelAnimationFrame(this.animationId),(t=this.resizeObserver)==null||t.disconnect()}render(){return d`<canvas></canvas>`}};le.styles=v`
+  `;le=Bt([v("pi-footer")],le);var Ht=Object.getOwnPropertyDescriptor,Gt=(t,e,a,i)=>{for(var s=i>1?void 0:i?Ht(e,a):e,r=t.length-1,o;r>=0;r--)(o=t[r])&&(s=o(s)||s);return s};let ce=class extends m{constructor(){super(...arguments),this.particles=[],this.PARTICLE_COUNT=30,this.CONNECTION_DISTANCE=150,this.MAX_CONNECTIONS=3,this.animate=()=>{!this.ctx||!this.canvas||(this.ctx.clearRect(0,0,this.canvas.width,this.canvas.height),this.particles.forEach((t,e)=>{t.x+=t.vx,t.y+=t.vy,(t.x<0||t.x>this.canvas.width)&&(t.vx*=-1),(t.y<0||t.y>this.canvas.height)&&(t.vy*=-1),this.ctx.beginPath(),this.ctx.arc(t.x,t.y,t.radius,0,Math.PI*2),this.ctx.fillStyle=`rgba(16, 185, 129, ${t.opacity})`,this.ctx.fill();let a=0;for(let i=e+1;i<this.particles.length&&!(a>=this.MAX_CONNECTIONS);i++){const s=this.particles[i],r=t.x-s.x,o=t.y-s.y,c=Math.sqrt(r*r+o*o);if(c<this.CONNECTION_DISTANCE){const l=(1-c/this.CONNECTION_DISTANCE)*.15;this.ctx.beginPath(),this.ctx.moveTo(t.x,t.y),this.ctx.lineTo(s.x,s.y),this.ctx.strokeStyle=`rgba(16, 185, 129, ${l})`,this.ctx.lineWidth=.5,this.ctx.stroke(),a++}}}),this.animationId=requestAnimationFrame(this.animate))}}firstUpdated(){this.canvas=this.renderRoot.querySelector("canvas"),this.canvas&&(this.ctx=this.canvas.getContext("2d")||void 0,this.ctx&&(this.setupCanvas(),this.initParticles(),this.animate(),this.resizeObserver=new ResizeObserver(()=>{this.setupCanvas()}),this.resizeObserver.observe(this.canvas)))}setupCanvas(){var e;if(!this.canvas)return;const t=(e=this.canvas.parentElement)==null?void 0:e.getBoundingClientRect();t&&(this.canvas.width=t.width,this.canvas.height=t.height)}initParticles(){if(this.canvas){this.particles=[];for(let t=0;t<this.PARTICLE_COUNT;t++)this.particles.push({x:Math.random()*this.canvas.width,y:Math.random()*this.canvas.height,vx:(Math.random()-.5)*.3,vy:(Math.random()-.5)*.3,radius:Math.random()*1.5+.5,opacity:Math.random()*.3+.1})}}disconnectedCallback(){var t;super.disconnectedCallback(),this.animationId&&cancelAnimationFrame(this.animationId),(t=this.resizeObserver)==null||t.disconnect()}render(){return d`<canvas></canvas>`}};ce.styles=b`
     :host {
       display: block;
       position: fixed;
@@ -3412,7 +3549,7 @@
       height: 100%;
       opacity: 0.4;
     }
-  `;le=jt([f("canvas-background")],le);var Ht=Object.getOwnPropertyDescriptor,Gt=(t,e,a,i)=>{for(var s=i>1?void 0:i?Ht(e,a):e,r=t.length-1,n;r>=0;r--)(n=t[r])&&(s=n(s)||s);return s};let Pe=class extends m{createRenderRoot(){return this}render(){return d`
+  `;ce=Gt([v("canvas-background")],ce);var Ut=Object.getOwnPropertyDescriptor,jt=(t,e,a,i)=>{for(var s=i>1?void 0:i?Ut(e,a):e,r=t.length-1,o;r>=0;r--)(o=t[r])&&(s=o(s)||s);return s};let Me=class extends m{createRenderRoot(){return this}render(){return d`
       <canvas-background></canvas-background>
       <pi-navbar></pi-navbar>
       <main id="main-content" style="position: relative; z-index: 1; padding-top: 5rem;">
@@ -3427,4 +3564,4 @@
         <cta-section></cta-section>
       </main>
       <pi-footer></pi-footer>
-    `}};Pe=Gt([f("pi-app")],Pe);De(d`<pi-app></pi-app>`,document.getElementById("app"));
+    `}};Me=jt([v("pi-app")],Me);De(d`<pi-app></pi-app>`,document.getElementById("app"));
