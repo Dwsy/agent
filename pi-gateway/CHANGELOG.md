@@ -2,7 +2,15 @@
 
 ## [Unreleased]
 
-**Focus:** Cron Isolated Mode Context Isolation + RPC Log Rotation
+**Focus:** Cron Isolated Mode Context Isolation + RPC Log Rotation + Streaming send_message
+
+### Streaming send_message Tool
+- **Stream parameter**: `send_message({ text: "...", stream: true })` enables typing animation for long messages (by Dwsy)
+- **Auto-detect**: Messages > 200 chars automatically use streaming mode (can be overridden with `stream: false`) (by Dwsy)
+- **Chunked delivery**: Messages split into 80-char chunks, each sent with `…` suffix to indicate continuation (by Dwsy)
+- **Progress callback**: Tool uses `onPartialResult` to emit `tool_execution_update` events for live progress display (by Dwsy)
+- **New API endpoint**: `POST /api/message/edit` for updating previously sent messages during streaming (by Dwsy)
+- **Message ID tracking**: `/api/message/send` now returns `messageId` for subsequent edits (by Dwsy)
 
 ### Cron Isolated Mode Context Isolation (Fixes #18)
 - **Fresh context by default**: Cron jobs now run with fresh RPC context per execution by default (by Dwsy)
