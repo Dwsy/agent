@@ -107,7 +107,7 @@ export class CTASection extends LitElement {
         <div class="inner">
           <h2 class="title">${f('cta.title')}</h2>
           <p class="subtitle">${f('cta.subtitle')}</p>
-          <a href="https://github.com/mario1ua/pi-coding-agent" class="cta" target="_blank" rel="noopener">
+          <a href="https://github.com/Dwsy/agent" class="cta" target="_blank" rel="noopener">
             ${f('cta.button')}
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M5 12h14M12 5l7 7-7 7"/>

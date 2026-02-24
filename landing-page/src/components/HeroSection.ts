@@ -375,7 +375,7 @@ export class HeroSection extends LitElement {
           <p class="description">${f('hero.description')}</p>
 
           <div class="cta-group">
-            <a href="https://github.com/mario1ua/pi-coding-agent" class="cta-primary" target="_blank" rel="noopener">
+            <a href="https://github.com/Dwsy/agent" class="cta-primary" target="_blank" rel="noopener">
               ${f('hero.cta.primary')}
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M5 12h14M12 5l7 7-7 7"/>
