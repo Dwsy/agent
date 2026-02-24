@@ -501,6 +501,7 @@ export async function dispatchAgentTurn(params: {
       if (reply === SILENT_TOKEN || reply?.includes(SILENT_TOKEN)) {
         log.info(`[telegram:respond] concise-mode: suppressing all output for chatId=${chatId}`);
         // Clean up streaming state without sending anything
+        log.info(`[telegram:respond] clearing typingInterval=${!!typingInterval}`);
         if (typingInterval) {
           clearInterval(typingInterval);
           typingInterval = null;
@@ -640,6 +641,7 @@ export async function dispatchAgentTurn(params: {
       }
     },
     setTyping: async (typing) => {
+      runtime.api.logger.info(`[telegram:setTyping] typing=${typing}, current typingInterval=${!!typingInterval}`);
       if (typing) {
         ensureTypingInterval();
         return;
@@ -652,13 +654,16 @@ export async function dispatchAgentTurn(params: {
   });
 
     if (result?.injected && typingInterval) {
+      runtime.api.logger.info(`[telegram:streaming] result.injected=true, clearing typingInterval`);
       clearInterval(typingInterval);
       typingInterval = null;
+      stopSpinner();
       return;
     }
   } catch (err) {
     runtime.api.logger.error(`[telegram:dispatch] Error: ${err instanceof Error ? err.message : String(err)}`);
   } finally {
+    runtime.api.logger.info(`[telegram:streaming] finally block: typingInterval=${!!typingInterval}`);
     if (typingInterval) {
       clearInterval(typingInterval);
       typingInterval = null;
