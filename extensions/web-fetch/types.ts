@@ -2,26 +2,6 @@
  * Type definitions for web-fetch extension
  */
 
-// iflow response type
-export interface IlowWebFetchResponse {
-	success: boolean;
-	code: string;
-	message: string;
-	data?: {
-		outputs?: {
-			data?: {
-				data?: Array<{
-					title?: string;
-					content?: string;
-					url?: string;
-					site?: string;
-					publishTime?: string;
-				}>;
-			};
-		};
-	};
-}
-
 // Qwen OAuth credentials
 export interface QwenCreds {
 	access_token: string;

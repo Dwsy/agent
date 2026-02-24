@@ -1,94 +1,347 @@
 import { html, LitElement, css } from "lit";
 import { customElement, state } from "lit/decorators.js";
-import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { i18n, type Locale } from "../i18n/i18n-manager";
 
-const COL_KEYS = ["models", "skills", "agents", "security"] as const;
-
-const ICONS: Record<string, string> = {
-  models: `<svg width="28" height="28" viewBox="0 0 28 28" fill="none"><circle cx="14" cy="14" r="10" stroke="#60A5FA" stroke-width="1.5"/><circle cx="14" cy="14" r="4" fill="#2563EB"/><line x1="14" y1="4" x2="14" y2="10" stroke="#60A5FA" stroke-width="1.5"/><line x1="14" y1="18" x2="14" y2="24" stroke="#60A5FA" stroke-width="1.5"/></svg>`,
-  skills: `<svg width="28" height="28" viewBox="0 0 28 28" fill="none"><rect x="4" y="4" width="20" height="20" rx="4" stroke="#A78BFA" stroke-width="1.5"/><rect x="9" y="9" width="10" height="10" rx="2" fill="#7C3AED"/></svg>`,
-  agents: `<svg width="28" height="28" viewBox="0 0 28 28" fill="none"><polygon points="14,3 25,10 25,20 14,27 3,20 3,10" stroke="#34D399" stroke-width="1.5" fill="none"/><circle cx="14" cy="15" r="3.5" fill="#059669"/></svg>`,
-  security: `<svg width="28" height="28" viewBox="0 0 28 28" fill="none"><path d="M14 3L4 8v6c0 6.5 4.3 11.5 10 13 5.7-1.5 10-6.5 10-13V8L14 3z" stroke="#F59E0B" stroke-width="1.5" fill="none"/><rect x="11" y="12" width="6" height="5" rx="1" fill="#D97706"/></svg>`,
-};
-
+/**
+ * Tech Specs - Detailed System Specifications
+ * Grid layout with animated counters and specs
+ */
 @customElement("tech-specs")
 export class TechSpecs extends LitElement {
   static styles = css`
-    :host { display: block; }
-    .section { padding: 6rem 1.5rem; background: #0A0F1E; }
-    .header { text-align: center; margin-bottom: 4rem; }
-    .label { font-size: 0.8rem; font-weight: 600; color: #A78BFA; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 0.75rem; font-family: "Space Grotesk", sans-serif; }
-    .title { font-size: clamp(2rem, 4vw, 3rem); font-weight: 700; color: #F1F5F9; margin-bottom: 1rem; font-family: "Space Grotesk", sans-serif; letter-spacing: -0.01em; }
-    .subtitle { font-size: 1.05rem; color: #94A3B8; max-width: 36rem; margin: 0 auto; font-family: "DM Sans", sans-serif; }
-    .grid { max-width: 64rem; margin: 0 auto; display: grid; grid-template-columns: repeat(2, 1fr); gap: 1.5rem; }
-    .col { background: #1E293B; border: 1px solid rgba(51,65,85,0.4); border-radius: 12px; padding: 2rem; opacity: 0; transform: translateY(24px); transition: opacity 0.5s ease, transform 0.5s ease; }
-    .col.visible { opacity: 1; transform: translateY(0); }
-    .col-icon { margin-bottom: 1rem; line-height: 0; }
-    .col-title { font-size: 1.15rem; font-weight: 600; color: #F1F5F9; margin-bottom: 1rem; font-family: "Space Grotesk", sans-serif; }
-    .col-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 0.6rem; }
-    .col-list li { font-size: 0.88rem; color: #94A3B8; line-height: 1.5; font-family: "DM Sans", sans-serif; padding-left: 1rem; position: relative; }
-    .col-list li::before { content: ""; position: absolute; left: 0; top: 0.55em; width: 5px; height: 5px; border-radius: 50%; background: #2563EB; }
-    @media (max-width: 640px) { .grid { grid-template-columns: 1fr; } }
+    :host { display: block; width: 100%; }
+
+    .section {
+      padding: 8rem 1.5rem;
+      background: #0c0c0e;
+      position: relative;
+    }
+
+    .inner { max-width: 1200px; margin: 0 auto; }
+
+    .header {
+      text-align: center;
+      margin-bottom: 4rem;
+    }
+
+    .label {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: #ec4899;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 1rem;
+    }
+
+    .title {
+      font-size: clamp(2rem, 4vw, 2.75rem);
+      font-weight: 600;
+      color: #fafafa;
+      letter-spacing: -0.02em;
+    }
+
+    /* Specs Grid */
+    .specs-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 1.5rem;
+    }
+
+    .spec-category {
+      background: #18181b;
+      border: 1px solid #27272a;
+      border-radius: 1.25rem;
+      padding: 1.75rem;
+      transition: all 0.3s ease;
+    }
+
+    .spec-category:hover {
+      border-color: #3f3f46;
+      transform: translateY(-2px);
+    }
+
+    .spec-header {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin-bottom: 1.25rem;
+      padding-bottom: 1rem;
+      border-bottom: 1px solid #27272a;
+    }
+
+    .spec-icon {
+      width: 2.5rem;
+      height: 2.5rem;
+      border-radius: 0.625rem;
+      display: grid;
+      place-items: center;
+      font-size: 1.125rem;
+    }
+
+    .spec-icon.runtime { background: rgba(16, 185, 129, 0.1); }
+    .spec-icon.gateway { background: rgba(59, 130, 246, 0.1); }
+    .spec-icon.memory { background: rgba(168, 85, 247, 0.1); }
+    .spec-icon.security { background: rgba(239, 68, 68, 0.1); }
+
+    .spec-title {
+      font-size: 1.125rem;
+      font-weight: 600;
+      color: #fafafa;
+    }
+
+    .spec-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.875rem;
+    }
+
+    .spec-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.875rem;
+    }
+
+    .spec-label {
+      color: #71717a;
+    }
+
+    .spec-value {
+      color: #a1a1aa;
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 500;
+    }
+
+    .spec-value.highlight {
+      color: #10b981;
+    }
+
+    /* Architecture Diagram */
+    .arch-diagram {
+      margin-top: 4rem;
+      padding: 2rem;
+      background: #18181b;
+      border: 1px solid #27272a;
+      border-radius: 1.25rem;
+      overflow-x: auto;
+    }
+
+    .arch-title {
+      font-size: 1rem;
+      font-weight: 600;
+      color: #fafafa;
+      margin-bottom: 1.5rem;
+      text-align: center;
+    }
+
+    .arch-svg {
+      width: 100%;
+      min-width: 800px;
+      height: 300px;
+    }
+
+    .arch-node {
+      fill: #27272a;
+      stroke: #3f3f46;
+      stroke-width: 1;
+    }
+
+    .arch-label {
+      fill: #a1a1aa;
+      font-size: 11px;
+      font-family: 'JetBrains Mono', monospace;
+      text-anchor: middle;
+    }
+
+    .arch-connector {
+      stroke: #3f3f46;
+      stroke-width: 1;
+      fill: none;
+      stroke-dasharray: 4 2;
+    }
+
+    @media (max-width: 768px) {
+      .specs-grid { grid-template-columns: 1fr; }
+    }
   `;
 
-  @state() locale: Locale = i18n.getCurrentLocale();
-  private observer?: IntersectionObserver;
+  @state() private locale: Locale = i18n.getCurrentLocale();
+  private _unsub?: () => void;
 
   connectedCallback() {
     super.connectedCallback();
-    this.id = "tech-specs";
-    i18n.subscribe(() => { this.locale = i18n.getCurrentLocale(); this.requestUpdate(); });
-  }
-
-  disconnectedCallback() { super.disconnectedCallback(); this.observer?.disconnect(); }
-
-  protected firstUpdated() {
-    this.observer = new IntersectionObserver(
-      (entries) => entries.forEach((e) => {
-        if (e.isIntersecting) {
-          const el = e.target as HTMLElement;
-          setTimeout(() => el.classList.add("visible"), parseInt(el.dataset.delay || "0", 10));
-          this.observer!.unobserve(el);
-        }
-      }),
-      { threshold: 0.1, rootMargin: "0px 0px -30px 0px" },
-    );
-    this.renderRoot.querySelectorAll(".col").forEach((el, i) => {
-      (el as HTMLElement).dataset.delay = String(i * 100);
-      this.observer!.observe(el);
+    this._unsub = i18n.subscribe(() => {
+      this.locale = i18n.getCurrentLocale();
     });
   }
 
-  private getItems(key: string): string[] {
-    const base = `techSpecs.columns.${key}.items`;
-    const items: string[] = [];
-    for (let i = 0; i < 4; i++) {
-      const v = i18n.t(`${base}.${i}`);
-      if (v !== `${base}.${i}`) items.push(v);
-    }
-    return items;
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    this._unsub?.();
   }
 
   render() {
-    const f = i18n.t.bind(i18n);
+    const isZh = i18n.getCurrentLocale() === 'zh-CN';
+
     return html`
-      <section class="section">
-        <div class="header">
-          <p class="label">${f("techSpecs.label")}</p>
-          <h2 class="title">${f("techSpecs.title")}</h2>
-          <p class="subtitle">${f("techSpecs.subtitle")}</p>
-        </div>
-        <div class="grid">
-          ${COL_KEYS.map(key => html`
-            <div class="col">
-              <div class="col-icon">${unsafeHTML(ICONS[key])}</div>
-              <h3 class="col-title">${f(`techSpecs.columns.${key}.title`)}</h3>
-              <ul class="col-list">
-                ${this.getItems(key).map(item => html`<li>${item}</li>`)}
-              </ul>
+      <section class="section" id="specs">
+        <div class="inner">
+          <div class="header">
+            <span class="label">${isZh ? '技术规格' : 'Technical Specifications'}</span>
+            <h2 class="title">${isZh ? '系统架构' : 'System Architecture'}</h2>
+          </div>
+
+          <div class="specs-grid">
+            <!-- Runtime -->
+            <div class="spec-category">
+              <div class="spec-header">
+                <div class="spec-icon runtime">⚡</div>
+                <span class="spec-title">${isZh ? '运行时' : 'Runtime'}</span>
+              </div>
+              <div class="spec-list">
+                <div class="spec-item">
+                  <span class="spec-label">${isZh ? '语言' : 'Language'}</span>
+                  <span class="spec-value">TypeScript 5.3</span>
+                </div>
+                <div class="spec-item">
+                  <span class="spec-label">${isZh ? '引擎' : 'Engine'}</span>
+                  <span class="spec-value">Node.js 20+</span>
+                </div>
+                <div class="spec-item">
+                  <span class="spec-label">${isZh ? '打包' : 'Bundler'}</span>
+                  <span class="spec-value">Vite 5</span>
+                </div>
+                <div class="spec-item">
+                  <span class="spec-label">TUI</span>
+                  <span class="spec-value highlight">React + Ink</span>
+                </div>
+              </div>
             </div>
-          `)}
+
+            <!-- Gateway -->
+            <div class="spec-category">
+              <div class="spec-header">
+                <div class="spec-icon gateway">🌐</div>
+                <span class="spec-title">${isZh ? '网关' : 'Gateway'}</span>
+              </div>
+              <div class="spec-list">
+                <div class="spec-item">
+                  <span class="spec-label">${isZh ? '协议' : 'Protocol'}</span>
+                  <span class="spec-value">WebSocket + HTTP/2</span>
+                </div>
+                <div class="spec-item">
+                  <span class="spec-label">${isZh ? '并发' : 'Concurrency'}</span>
+                  <span class="spec-value highlight">1000+ sessions</span>
+                </div>
+                <div class="spec-item">
+                  <span class="spec-label">${isZh ? '延迟' : 'Latency'}</span>
+                  <span class="spec-value">&lt; 10ms p99</span>
+                </div>
+                <div class="spec-item">
+                  <span class="spec-label">RPC</span>
+                  <span class="spec-value">JSON-RPC 2.0</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Memory -->
+            <div class="spec-category">
+              <div class="spec-header">
+                <div class="spec-icon memory">🧠</div>
+                <span class="spec-title">${isZh ? '记忆' : 'Memory'}</span>
+              </div>
+              <div class="spec-list">
+                <div class="spec-item">
+                  <span class="spec-label">${isZh ? '向量维度' : 'Vector Dim'}</span>
+                  <span class="spec-value">768 (Gemma)</span>
+                </div>
+                <div class="spec-item">
+                  <span class="spec-label">${isZh ? '检索' : 'Retrieval'}</span>
+                  <span class="spec-value highlight">Vector + BM25</span>
+                </div>
+                <div class="spec-item">
+                  <span class="spec-label">${isZh ? '数据库' : 'Database'}</span>
+                  <span class="spec-value">LanceDB</span>
+                </div>
+                <div class="spec-item">
+                  <span class="spec-label">${isZh ? '存储' : 'Storage'}</span>
+                  <span class="spec-value">Markdown + SQLite</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Security -->
+            <div class="spec-category">
+              <div class="spec-header">
+                <div class="spec-icon security">🔒</div>
+                <span class="spec-title">${isZh ? '安全' : 'Security'}</span>
+              </div>
+              <div class="spec-list">
+                <div class="spec-item">
+                  <span class="spec-label">${isZh ? '认证' : 'Auth'}</span>
+                  <span class="spec-value highlight">HMAC-SHA256</span>
+                </div>
+                <div class="spec-item">
+                  <span class="spec-label">${isZh ? '沙箱' : 'Sandbox'}</span>
+                  <span class="spec-value">Unified Diff</span>
+                </div>
+                <div class="spec-item">
+                  <span class="spec-label">${isZh ? '网络' : 'Network'}</span>
+                  <span class="spec-value">SSRF Guard</span>
+                </div>
+                <div class="spec-item">
+                  <span class="spec-label">${isZh ? '执行' : 'Execution'}</span>
+                  <span class="spec-value">Allowlist</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Architecture Diagram -->
+          <div class="arch-diagram">
+            <h3 class="arch-title">${isZh ? '数据流架构' : 'Data Flow Architecture'}</h3>
+            <svg class="arch-svg" viewBox="0 0 800 300">
+              <!-- Core -->
+              <rect class="arch-node" x="350" y="120" width="100" height="60" rx="8" />
+              <text class="arch-label" x="400" y="155">Pi Core</text>
+
+              <!-- Extensions -->
+              <rect class="arch-node" x="150" y="50" width="80" height="40" rx="6" />
+              <text class="arch-label" x="190" y="75">Extensions</text>
+
+              <rect class="arch-node" x="150" y="120" width="80" height="40" rx="6" />
+              <text class="arch-label" x="190" y="145">Skills</text>
+
+              <rect class="arch-node" x="150" y="190" width="80" height="40" rx="6" />
+              <text class="arch-label" x="190" y="215">Subagents</text>
+
+              <!-- Gateway -->
+              <rect class="arch-node" x="570" y="50" width="80" height="40" rx="6" />
+              <text class="arch-label" x="610" y="75">Gateway</text>
+
+              <rect class="arch-node" x="570" y="120" width="80" height="40" rx="6" />
+              <text class="arch-label" x="610" y="145">RPC Pool</text>
+
+              <rect class="arch-node" x="570" y="190" width="80" height="40" rx="6" />
+              <text class="arch-label" x="610" y="215">Channels</text>
+
+              <!-- Memory -->
+              <rect class="arch-node" x="360" y="240" width="80" height="40" rx="6" />
+              <text class="arch-label" x="400" y="265">Memory</text>
+
+              <!-- Connections -->
+              <path class="arch-connector" d="M 230 70 L 350 150" />
+              <path class="arch-connector" d="M 230 140 L 350 150" />
+              <path class="arch-connector" d="M 230 210 L 350 150" />
+              <path class="arch-connector" d="M 450 150 L 570 70" />
+              <path class="arch-connector" d="M 450 150 L 570 140" />
+              <path class="arch-connector" d="M 450 150 L 570 210" />
+              <path class="arch-connector" d="M 400 180 L 400 240" />
+            </svg>
+          </div>
         </div>
       </section>
     `;
