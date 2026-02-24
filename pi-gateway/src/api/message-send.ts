@@ -120,16 +120,17 @@ export async function handleMessageSendRequest(
       return Response.json({ ok: true, channel, textLength: text.length, delivered: true });
     }
 
-    await channelPlugin.outbound.sendText(chatId, text, { replyTo, parseMode });
+    const result = await channelPlugin.outbound.sendText(chatId, text, { replyTo, parseMode });
 
-    await toolInterceptor.afterCall({ ok: true, textLength: text.length }, false);
+    await toolInterceptor.afterCall({ ok: result.ok, textLength: text.length, messageId: result.messageId }, false);
 
     if (sessionKey) ctx.onDelivered?.(sessionKey);
 
     return Response.json({
-      ok: true,
+      ok: result.ok,
       channel,
       textLength: text.length,
+      messageId: result.messageId ?? null,
       replyTo: replyTo ?? null,
     });
   } catch (err: unknown) {

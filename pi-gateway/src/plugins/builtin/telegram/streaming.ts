@@ -387,14 +387,15 @@ export async function dispatchAgentTurn(params: {
   let toolCallSinceLastText = false;
   let lastStreamAccumLen = 0;
 
-  const result = await runtime.api.dispatch({
-    source,
-    sessionKey,
-    text: textWithPrompt,
-    images: images.length > 0 ? images : undefined,
-    onStreamDelta: conciseMode.wrapStreamDelta(undefined),
-    onToolStart: conciseMode.wrapToolStart(undefined),
-    onSteerInjected: () => {
+  try {
+    const result = await runtime.api.dispatch({
+      source,
+      sessionKey,
+      text: textWithPrompt,
+      images: images.length > 0 ? images : undefined,
+      onStreamDelta: conciseMode.wrapStreamDelta(undefined),
+      onToolStart: conciseMode.wrapToolStart(undefined),
+      onSteerInjected: () => {
       if (typingInterval) {
         clearInterval(typingInterval);
         typingInterval = null;
@@ -650,14 +651,18 @@ export async function dispatchAgentTurn(params: {
     },
   });
 
-  if (result?.injected && typingInterval) {
-    clearInterval(typingInterval);
-    typingInterval = null;
-    return;
-  }
-
-  if (typingInterval) {
-    clearInterval(typingInterval);
-    typingInterval = null;
+    if (result?.injected && typingInterval) {
+      clearInterval(typingInterval);
+      typingInterval = null;
+      return;
+    }
+  } catch (err) {
+    runtime.api.logger.error(`[telegram:dispatch] Error: ${err instanceof Error ? err.message : String(err)}`);
+  } finally {
+    if (typingInterval) {
+      clearInterval(typingInterval);
+      typingInterval = null;
+    }
+    stopSpinner();
   }
 }
