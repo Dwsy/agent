@@ -218,6 +218,10 @@ export interface SessionState {
   lastTopicId?: string;
   /** Last thread id (discord/web thread) */
   lastThreadId?: string;
+  /** Last resolved model for this session turn */
+  lastModel?: string;
+  /** Source of last resolved model */
+  lastModelSource?: string;
   /** Auto-compaction in progress (to prevent message race) */
   isCompacting?: boolean;
   /** Set to true after /new (reset) to skip --continue on next spawn */

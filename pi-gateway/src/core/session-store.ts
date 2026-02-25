@@ -30,6 +30,8 @@ interface PersistedSession {
   lastSenderName?: string;
   lastTopicId?: string;
   lastThreadId?: string;
+  lastModel?: string;
+  lastModelSource?: string;
 }
 
 // ============================================================================
@@ -134,6 +136,8 @@ export class SessionStore {
           lastSenderName: s.lastSenderName,
           lastTopicId: s.lastTopicId,
           lastThreadId: s.lastThreadId,
+          lastModel: s.lastModel,
+          lastModelSource: s.lastModelSource,
         };
       }
 
@@ -189,6 +193,8 @@ export class SessionStore {
           lastSenderName: p.lastSenderName,
           lastTopicId: p.lastTopicId,
           lastThreadId: p.lastThreadId,
+          lastModel: p.lastModel,
+          lastModelSource: p.lastModelSource,
         });
         count++;
       }

@@ -16,7 +16,7 @@
 import type { InboundMessage, SessionKey } from "../core/types.ts";
 import type { GatewayContext } from "./types.ts";
 import type { PrioritizedWork } from "../core/message-queue.ts";
-import { extractAgentIdFromSessionKey, resolveRoleForSessionAndAgent } from "../core/session-router.ts";
+import { extractAgentIdFromSessionKey, resolveModelForSessionAndAgent, resolveRoleForSessionAndAgent } from "../core/session-router.ts";
 import { isTuiCommand, tryHandleCommand } from "./command-handler.ts";
 import { getAssistantMessageEvent, getAmePartial } from "../core/rpc-events.ts";
 import { isTransient, classifyError } from "../core/model-health.ts";
@@ -79,6 +79,7 @@ export async function processMessage(
   const isNew = !ctx.sessions.has(sessionKey);
   const agentId = source.agentId ?? extractAgentIdFromSessionKey(sessionKey) ?? undefined;
   const roleResolution = resolveRoleForSessionAndAgent(source, ctx.config, agentId);
+  const modelResolution = resolveModelForSessionAndAgent(source, ctx.config, agentId);
   const session = ctx.sessions.getOrCreate(sessionKey, {
     role: roleResolution.role,
     isStreaming: false,
@@ -93,11 +94,15 @@ export async function processMessage(
     lastSenderName: source.senderName,
     lastTopicId: source.topicId,
     lastThreadId: source.threadId,
+    lastModel: modelResolution.model ?? undefined,
+    lastModelSource: modelResolution.source,
   });
   if (isNew) {
     ctx.transcripts.logMeta(sessionKey, "session_created", {
       role: session.role,
       roleSource: roleResolution.source,
+      model: modelResolution.model,
+      modelSource: modelResolution.source,
     });
     await ctx.registry.hooks.dispatch("session_start", { sessionKey });
   }
@@ -111,6 +116,8 @@ export async function processMessage(
   session.lastSenderName = source.senderName;
   session.lastTopicId = source.topicId;
   session.lastThreadId = source.threadId;
+  session.lastModel = modelResolution.model ?? undefined;
+  session.lastModelSource = modelResolution.source;
 
   // Resolve role → capability profile for RPC process
   const role = session.role ?? "default";
@@ -155,6 +162,22 @@ export async function processMessage(
     signature: profile.signature.slice(0, 12),
     capabilities: profile.resourceCounts,
   });
+
+  if (modelResolution.model) {
+    const idx = modelResolution.model.indexOf("/");
+    if (idx > 0 && idx < modelResolution.model.length - 1) {
+      const provider = modelResolution.model.slice(0, idx);
+      const modelId = modelResolution.model.slice(idx + 1);
+      try {
+        await rpc.setModel(provider, modelId);
+        ctx.log.info(`[model-routing] ${sessionKey} model=${modelResolution.model} source=${modelResolution.source}`);
+      } catch (err: unknown) {
+        ctx.log.warn(`[model-routing] failed to apply model=${modelResolution.model} source=${modelResolution.source}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    } else {
+      ctx.log.warn(`[model-routing] invalid model format for ${sessionKey}: ${modelResolution.model}`);
+    }
+  }
 
   // Typing indicator
   await setTyping(true);
@@ -432,7 +455,7 @@ export async function processMessage(
 
     // Model health: record success
     if (ctx.modelHealth) {
-      const currentModel = ctx.config.agent?.model ?? "default";
+      const currentModel = session.lastModel ?? ctx.config.agent?.model ?? "default";
       ctx.modelHealth.recordSuccess(currentModel);
     }
   } catch (err: unknown) {
@@ -443,7 +466,7 @@ export async function processMessage(
 
     // Model health: record failure and execute failover if transient
     if (ctx.modelHealth) {
-      const currentModel = ctx.config.agent?.model ?? "default";
+      const currentModel = session.lastModel ?? ctx.config.agent?.model ?? "default";
       const category = ctx.modelHealth.recordFailure(currentModel, errMsg);
       if (isTransient(category)) {
         const fc = ctx.config.agent?.modelFailover;

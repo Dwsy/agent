@@ -214,6 +214,7 @@ export const SessionConfigSchema = Type.Object({
 export const TelegramTopicConfigSchema = Type.Object({
   requireMention: Type.Optional(Type.Boolean()),
   role: Type.Optional(Type.String()),
+  model: Type.Optional(Type.String()),
   groupPolicy: Type.Optional(GroupPolicySchema),
   enabled: Type.Optional(Type.Boolean()),
   allowFrom: Type.Optional(Type.Array(Type.Union([Type.String(), Type.Integer()]))),
@@ -224,6 +225,7 @@ export const TelegramTopicConfigSchema = Type.Object({
 export const TelegramGroupConfigSchema = Type.Object({
   requireMention: Type.Optional(Type.Boolean()),
   role: Type.Optional(Type.String()),
+  model: Type.Optional(Type.String()),
   groupPolicy: Type.Optional(GroupPolicySchema),
   enabled: Type.Optional(Type.Boolean()),
   allowFrom: Type.Optional(Type.Array(Type.Union([Type.String(), Type.Integer()]))),
@@ -272,6 +274,7 @@ export const TelegramAccountConfigSchema = Type.Object({
   groupPolicy: Type.Optional(GroupPolicySchema),
   messageMode: Type.Optional(MessageModeSchema),
   role: Type.Optional(Type.String()),
+  model: Type.Optional(Type.String()),
   groups: Type.Optional(Type.Record(Type.String(), TelegramGroupConfigSchema)),
   mediaMaxMb: Type.Optional(Type.Number({ minimum: 0.1, maximum: 50 })),
   audio: Type.Optional(TelegramAudioConfigSchema),
@@ -307,8 +310,10 @@ export const DiscordDmConfigSchema = Type.Object({
 export const DiscordGuildConfigSchema = Type.Object({
   requireMention: Type.Optional(Type.Boolean()),
   role: Type.Optional(Type.String()),
+  model: Type.Optional(Type.String()),
   channels: Type.Optional(Type.Record(Type.String(), Type.Object({
     role: Type.Optional(Type.String()),
+    model: Type.Optional(Type.String()),
   }))),
 });
 
@@ -317,6 +322,7 @@ export const DiscordChannelConfigSchema = Type.Object({
   token: Type.Optional(Type.String()),
   dmPolicy: Type.Optional(DmPolicySchema),
   role: Type.Optional(Type.String()),
+  model: Type.Optional(Type.String()),
   dm: Type.Optional(DiscordDmConfigSchema),
   guilds: Type.Optional(Type.Record(Type.String(), DiscordGuildConfigSchema)),
 });
