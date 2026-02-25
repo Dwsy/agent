@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { resolveModelForSessionAndAgent } from "../../session-router.ts";
+import { resolveModelForSessionAndAgent, resolveThinkingLevelForSessionAndAgent } from "../../session-router.ts";
 import type { MessageSource } from "../../types.ts";
 
 function createBaseConfig(): any {
@@ -130,5 +130,76 @@ describe("model routing", () => {
     const resolved = resolveModelForSessionAndAgent(source, config, "ops");
     expect(resolved.model).toBe("agent/ops");
     expect(resolved.source).toBe("agent.model");
+  });
+
+  test("thinking: telegram topic > group > account > channel > global", () => {
+    const config = createBaseConfig();
+    config.agent.thinkingLevel = "minimal";
+    config.channels.telegram = {
+      enabled: true,
+      thinkingLevel: "low",
+      accounts: {
+        zero: {
+          enabled: true,
+          thinkingLevel: "medium",
+          groups: {
+            "-1001": {
+              thinkingLevel: "high",
+              topics: {
+                "77": { thinkingLevel: "xhigh" },
+              },
+            },
+          },
+        },
+      },
+    };
+
+    const source: MessageSource = {
+      channel: "telegram",
+      accountId: "zero",
+      chatType: "group",
+      chatId: "-1001",
+      topicId: "77",
+      senderId: "u1",
+    };
+
+    const resolved = resolveThinkingLevelForSessionAndAgent(source, config);
+    expect(resolved.thinkingLevel).toBe("xhigh");
+    expect(resolved.source).toBe("telegram.topic");
+  });
+
+  test("thinking: same account different groups can route different levels", () => {
+    const config = createBaseConfig();
+    config.agent.thinkingLevel = "off";
+    config.channels.telegram = {
+      enabled: true,
+      accounts: {
+        zero: {
+          enabled: true,
+          groups: {
+            "-100A": { thinkingLevel: "minimal" },
+            "-100B": { thinkingLevel: "high" },
+          },
+        },
+      },
+    };
+
+    const sourceA: MessageSource = {
+      channel: "telegram",
+      accountId: "zero",
+      chatType: "group",
+      chatId: "-100A",
+      senderId: "u1",
+    };
+    const sourceB: MessageSource = {
+      channel: "telegram",
+      accountId: "zero",
+      chatType: "group",
+      chatId: "-100B",
+      senderId: "u1",
+    };
+
+    expect(resolveThinkingLevelForSessionAndAgent(sourceA, config).thinkingLevel).toBe("minimal");
+    expect(resolveThinkingLevelForSessionAndAgent(sourceB, config).thinkingLevel).toBe("high");
   });
 });

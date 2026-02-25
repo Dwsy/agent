@@ -222,6 +222,10 @@ export interface SessionState {
   lastModel?: string;
   /** Source of last resolved model */
   lastModelSource?: string;
+  /** Last resolved thinking level for this session turn */
+  lastThinkingLevel?: ThinkingLevel;
+  /** Source of last resolved thinking level */
+  lastThinkingLevelSource?: string;
   /** Auto-compaction in progress (to prevent message race) */
   isCompacting?: boolean;
   /** Set to true after /new (reset) to skip --continue on next spawn */

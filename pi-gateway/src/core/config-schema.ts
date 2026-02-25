@@ -215,6 +215,7 @@ export const TelegramTopicConfigSchema = Type.Object({
   requireMention: Type.Optional(Type.Boolean()),
   role: Type.Optional(Type.String()),
   model: Type.Optional(Type.String()),
+  thinkingLevel: Type.Optional(ThinkingLevelSchema),
   groupPolicy: Type.Optional(GroupPolicySchema),
   enabled: Type.Optional(Type.Boolean()),
   allowFrom: Type.Optional(Type.Array(Type.Union([Type.String(), Type.Integer()]))),
@@ -226,6 +227,7 @@ export const TelegramGroupConfigSchema = Type.Object({
   requireMention: Type.Optional(Type.Boolean()),
   role: Type.Optional(Type.String()),
   model: Type.Optional(Type.String()),
+  thinkingLevel: Type.Optional(ThinkingLevelSchema),
   groupPolicy: Type.Optional(GroupPolicySchema),
   enabled: Type.Optional(Type.Boolean()),
   allowFrom: Type.Optional(Type.Array(Type.Union([Type.String(), Type.Integer()]))),
@@ -275,6 +277,7 @@ export const TelegramAccountConfigSchema = Type.Object({
   messageMode: Type.Optional(MessageModeSchema),
   role: Type.Optional(Type.String()),
   model: Type.Optional(Type.String()),
+  thinkingLevel: Type.Optional(ThinkingLevelSchema),
   groups: Type.Optional(Type.Record(Type.String(), TelegramGroupConfigSchema)),
   mediaMaxMb: Type.Optional(Type.Number({ minimum: 0.1, maximum: 50 })),
   audio: Type.Optional(TelegramAudioConfigSchema),
@@ -311,9 +314,11 @@ export const DiscordGuildConfigSchema = Type.Object({
   requireMention: Type.Optional(Type.Boolean()),
   role: Type.Optional(Type.String()),
   model: Type.Optional(Type.String()),
+  thinkingLevel: Type.Optional(ThinkingLevelSchema),
   channels: Type.Optional(Type.Record(Type.String(), Type.Object({
     role: Type.Optional(Type.String()),
     model: Type.Optional(Type.String()),
+    thinkingLevel: Type.Optional(ThinkingLevelSchema),
   }))),
 });
 
@@ -323,6 +328,7 @@ export const DiscordChannelConfigSchema = Type.Object({
   dmPolicy: Type.Optional(DmPolicySchema),
   role: Type.Optional(Type.String()),
   model: Type.Optional(Type.String()),
+  thinkingLevel: Type.Optional(ThinkingLevelSchema),
   dm: Type.Optional(DiscordDmConfigSchema),
   guilds: Type.Optional(Type.Record(Type.String(), DiscordGuildConfigSchema)),
 });

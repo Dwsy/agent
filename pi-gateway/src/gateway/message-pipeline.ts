@@ -16,7 +16,7 @@
 import type { InboundMessage, SessionKey } from "../core/types.ts";
 import type { GatewayContext } from "./types.ts";
 import type { PrioritizedWork } from "../core/message-queue.ts";
-import { extractAgentIdFromSessionKey, resolveModelForSessionAndAgent, resolveRoleForSessionAndAgent } from "../core/session-router.ts";
+import { extractAgentIdFromSessionKey, resolveModelForSessionAndAgent, resolveRoleForSessionAndAgent, resolveThinkingLevelForSessionAndAgent } from "../core/session-router.ts";
 import { isTuiCommand, tryHandleCommand } from "./command-handler.ts";
 import { getAssistantMessageEvent, getAmePartial } from "../core/rpc-events.ts";
 import { isTransient, classifyError } from "../core/model-health.ts";
@@ -80,6 +80,7 @@ export async function processMessage(
   const agentId = source.agentId ?? extractAgentIdFromSessionKey(sessionKey) ?? undefined;
   const roleResolution = resolveRoleForSessionAndAgent(source, ctx.config, agentId);
   const modelResolution = resolveModelForSessionAndAgent(source, ctx.config, agentId);
+  const thinkingResolution = resolveThinkingLevelForSessionAndAgent(source, ctx.config, agentId);
   const session = ctx.sessions.getOrCreate(sessionKey, {
     role: roleResolution.role,
     isStreaming: false,
@@ -96,6 +97,8 @@ export async function processMessage(
     lastThreadId: source.threadId,
     lastModel: modelResolution.model ?? undefined,
     lastModelSource: modelResolution.source,
+    lastThinkingLevel: thinkingResolution.thinkingLevel ?? undefined,
+    lastThinkingLevelSource: thinkingResolution.source,
   });
   if (isNew) {
     ctx.transcripts.logMeta(sessionKey, "session_created", {
@@ -103,6 +106,8 @@ export async function processMessage(
       roleSource: roleResolution.source,
       model: modelResolution.model,
       modelSource: modelResolution.source,
+      thinkingLevel: thinkingResolution.thinkingLevel,
+      thinkingSource: thinkingResolution.source,
     });
     await ctx.registry.hooks.dispatch("session_start", { sessionKey });
   }
@@ -118,6 +123,8 @@ export async function processMessage(
   session.lastThreadId = source.threadId;
   session.lastModel = modelResolution.model ?? undefined;
   session.lastModelSource = modelResolution.source;
+  session.lastThinkingLevel = thinkingResolution.thinkingLevel ?? undefined;
+  session.lastThinkingLevelSource = thinkingResolution.source;
 
   // Resolve role → capability profile for RPC process
   const role = session.role ?? "default";
@@ -162,6 +169,15 @@ export async function processMessage(
     signature: profile.signature.slice(0, 12),
     capabilities: profile.resourceCounts,
   });
+
+  if (thinkingResolution.thinkingLevel) {
+    try {
+      await rpc.setThinkingLevel(thinkingResolution.thinkingLevel);
+      ctx.log.info(`[thinking-routing] ${sessionKey} level=${thinkingResolution.thinkingLevel} source=${thinkingResolution.source}`);
+    } catch (err: unknown) {
+      ctx.log.warn(`[thinking-routing] failed to apply level=${thinkingResolution.thinkingLevel} source=${thinkingResolution.source}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
 
   if (modelResolution.model) {
     const idx = modelResolution.model.indexOf("/");

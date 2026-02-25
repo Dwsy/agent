@@ -247,6 +247,7 @@ export interface TelegramGroupConfig {
   requireMention?: boolean;
   role?: string;
   model?: string;
+  thinkingLevel?: ThinkingLevel;
   groupPolicy?: "open" | "disabled" | "allowlist";
   enabled?: boolean;
   allowFrom?: Array<string | number>;
@@ -261,6 +262,7 @@ export interface TelegramTopicConfig {
   requireMention?: boolean;
   role?: string;
   model?: string;
+  thinkingLevel?: ThinkingLevel;
   groupPolicy?: "open" | "disabled" | "allowlist";
   enabled?: boolean;
   allowFrom?: Array<string | number>;
@@ -295,6 +297,7 @@ export interface TelegramAccountConfig {
   messageMode?: "steer" | "follow-up" | "interrupt";
   role?: string;
   model?: string;
+  thinkingLevel?: ThinkingLevel;
   groups?: Record<string, TelegramGroupConfig>;
   mediaMaxMb?: number;
   /** Audio STT configuration */
@@ -336,12 +339,14 @@ export interface DiscordDmConfig {
 export interface DiscordGuildChannelConfig {
   role?: string;
   model?: string;
+  thinkingLevel?: ThinkingLevel;
 }
 
 export interface DiscordGuildConfig {
   requireMention?: boolean;
   role?: string;
   model?: string;
+  thinkingLevel?: ThinkingLevel;
   channels?: Record<string, DiscordGuildChannelConfig>;
 }
 
@@ -351,6 +356,7 @@ export interface DiscordChannelConfig {
   dmPolicy?: "pairing" | "allowlist" | "open" | "disabled";
   role?: string;
   model?: string;
+  thinkingLevel?: ThinkingLevel;
   dm?: DiscordDmConfig;
   guilds?: Record<string, DiscordGuildConfig>;
 }
