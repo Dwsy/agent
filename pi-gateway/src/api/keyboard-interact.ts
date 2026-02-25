@@ -26,6 +26,7 @@ import type { RpcPool } from "../core/rpc-pool.ts";
 import type { PluginRegistryState } from "../plugins/loader.ts";
 import type { SessionStore } from "../core/session-store.ts";
 import { getGatewayInternalToken } from "./media-send.ts";
+import { resolveChannelTarget } from "./channel-target.ts";
 
 // ============================================================================
 // Types
@@ -183,6 +184,8 @@ export async function handleKeyboardRequest(
   if (!channel) return Response.json({ error: "Cannot resolve channel" }, { status: 400 });
   if (!chatId) return Response.json({ error: "Cannot resolve chatId" }, { status: 400 });
 
+  const target = resolveChannelTarget(channel, chatId, sessionKey, session);
+
   const channelPlugin = ctx.registry.channels.get(channel);
   if (!channelPlugin) return Response.json({ error: `Channel not found: ${channel}` }, { status: 404 });
   if (!channelPlugin.outbound.sendKeyboard) {
@@ -208,7 +211,7 @@ export async function handleKeyboardRequest(
   if (currentRow.length > 0) rows.push(currentRow);
 
   // Send keyboard via channel outbound
-  const sendResult = await channelPlugin.outbound.sendKeyboard(chatId, title, { inline_keyboard: rows });
+  const sendResult = await channelPlugin.outbound.sendKeyboard(target, title, { inline_keyboard: rows });
   if (!sendResult.ok) {
     return Response.json({ error: sendResult.error ?? "Failed to send keyboard" }, { status: 500 });
   }
@@ -221,7 +224,7 @@ export async function handleKeyboardRequest(
       pending.delete(requestId);
       // Edit message to show timeout
       if (messageId && channelPlugin.outbound.editMessageMarkup) {
-        channelPlugin.outbound.editMessageMarkup(chatId, messageId, `⏰ ${title}\n<i>(timed out)</i>`).catch(() => {});
+        channelPlugin.outbound.editMessageMarkup(target, messageId, `⏰ ${title}\n<i>(timed out)</i>`).catch(() => {});
       }
       resolve({ ok: false, error: "timeout" });
     }, timeoutMs);
@@ -241,7 +244,7 @@ export async function handleKeyboardRequest(
   // Edit message to show selection result (remove keyboard)
   if (result.ok && result.selected && messageId && channelPlugin.outbound.editMessageMarkup) {
     channelPlugin.outbound.editMessageMarkup(
-      chatId, messageId,
+      target, messageId,
       `${title}\n\n✅ <b>${result.selected.text}</b>`,
     ).catch(() => {});
   }

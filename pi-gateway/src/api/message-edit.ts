@@ -13,6 +13,7 @@ import type { RpcPool } from "../core/rpc-pool.ts";
 import type { PluginRegistryState } from "../plugins/loader.ts";
 import type { SessionStore } from "../core/session-store.ts";
 import { getGatewayInternalToken } from "./media-send.ts";
+import { resolveChannelTarget } from "./channel-target.ts";
 
 export interface MessageEditContext {
   config: Config;
@@ -81,6 +82,8 @@ export async function handleMessageEditRequest(
     return Response.json({ error: "Cannot resolve chatId" }, { status: 400 });
   }
 
+  const target = resolveChannelTarget(channel, chatId, sessionKey, session);
+
   const channelPlugin = ctx.registry.channels.get(channel);
   if (!channelPlugin) {
     return Response.json({ error: `Channel plugin not found: ${channel}` }, { status: 404 });
@@ -92,10 +95,10 @@ export async function handleMessageEditRequest(
     return Response.json({ error: `Channel ${channel} does not support message editing` }, { status: 400 });
   }
 
-  ctx.log.debug(`[message-edit] channel=${channel} chatId=${chatId} messageId=${messageId} text=${text.length} chars`);
+  ctx.log.debug(`[message-edit] channel=${channel} target=${target} messageId=${messageId} text=${text.length} chars`);
 
   try {
-    await channelPlugin.outbound.editMessage(chatId, messageId, text);
+    await channelPlugin.outbound.editMessage(target, messageId, text);
 
     return Response.json({
       ok: true,
