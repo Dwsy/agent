@@ -49,6 +49,7 @@ export class RpcPool {
   private waitingList = new PoolWaitingList();
   private nextId = 0;
   private maintenanceTimer: ReturnType<typeof setInterval> | null = null;
+  private maintenanceRunning = false;
   private log: Logger;
 
   constructor(
@@ -522,6 +523,31 @@ export class RpcPool {
   }
 
   /**
+   * Spawn with exponential backoff retry for transient failures.
+   * Used by crash recovery where a single failure shouldn't abandon the session.
+   */
+  private async spawnClientWithRetry(
+    profile: CapabilityProfile,
+    sessionKey?: SessionKey,
+    maxRetries = 3,
+  ): Promise<RpcClient> {
+    let lastError: unknown;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        return await this.spawnClient(profile, sessionKey);
+      } catch (err) {
+        lastError = err;
+        if (attempt < maxRetries) {
+          const delayMs = Math.min(1000 * 2 ** attempt, 8000); // 1s, 2s, 4s, 8s
+          this.log.warn(`Spawn attempt ${attempt + 1}/${maxRetries + 1} failed, retrying in ${delayMs}ms: ${err}`);
+          await new Promise(r => setTimeout(r, delayMs));
+        }
+      }
+    }
+    throw lastError;
+  }
+
+  /**
    * Retry spawn without --provider/--model args (model fallback).
    */
   private async spawnClientWithoutModel(profile: CapabilityProfile, sessionKey?: SessionKey): Promise<RpcClient> {
@@ -602,21 +628,56 @@ export class RpcPool {
   }
 
   private async maintenance(): Promise<void> {
+    // Guard against concurrent maintenance runs (if previous run takes >30s)
+    if (this.maintenanceRunning) return;
+    this.maintenanceRunning = true;
+
+    try {
+      await this.maintenanceInner();
+    } catch (err) {
+      this.log.error("Maintenance error:", err);
+    } finally {
+      this.maintenanceRunning = false;
+    }
+  }
+
+  private async maintenanceInner(): Promise<void> {
     const now = Date.now();
     const idleTimeout = this.poolConfig.idleTimeoutMs;
+    const crashedSessions: { sessionKey: SessionKey; profile: CapabilityProfile }[] = [];
 
     for (const [id, client] of this.clients) {
       // Remove dead processes
       if (!client.isAlive) {
         this.log.warn(`Process ${id} died, removing from pool`);
-        // Clean up any session binding
-        if (client.sessionKey) {
-          this.sessionBindings.delete(client.sessionKey);
-          this.onSessionEnd?.(client.sessionKey);
+        const sessionKey = client.sessionKey;
+        if (sessionKey) {
+          this.sessionBindings.delete(sessionKey);
+          // Collect crashed active sessions for recovery instead of just notifying end
+          const profile = this.buildDefaultProfile();
+          crashedSessions.push({ sessionKey, profile });
         }
         this.clients.delete(id);
         this.metrics?.incProcessCrash();
         continue;
+      }
+
+      // Active health check for non-idle processes (detect hung/zombie)
+      if (!client.isIdle && now - client.lastActivity > 60_000) {
+        const healthy = await client.healthCheck(5_000);
+        if (!healthy) {
+          this.log.warn(`Process ${id} failed health check (hung/zombie), killing`);
+          const sessionKey = client.sessionKey;
+          await client.stop().catch(() => {});
+          if (sessionKey) {
+            this.sessionBindings.delete(sessionKey);
+            const profile = this.buildDefaultProfile();
+            crashedSessions.push({ sessionKey, profile });
+          }
+          this.clients.delete(id);
+          this.metrics?.incProcessCrash();
+          continue;
+        }
       }
 
       // Reclaim idle processes beyond min
@@ -633,6 +694,21 @@ export class RpcPool {
         this.clients.delete(id);
         client.stop().catch(() => {});
         this.metrics?.incProcessKill();
+      }
+    }
+
+    // Crash recovery: attempt to respawn processes for active sessions
+    for (const { sessionKey, profile } of crashedSessions) {
+      try {
+        this.log.info(`Attempting crash recovery for session ${sessionKey}`);
+        const newClient = await this.spawnClientWithRetry(profile, sessionKey);
+        newClient.sessionKey = sessionKey;
+        this.sessionBindings.set(sessionKey, newClient.id);
+        await this.initializeRpcState(newClient);
+        this.log.info(`Crash recovery succeeded for ${sessionKey} → ${newClient.id}`);
+      } catch (err) {
+        this.log.error(`Crash recovery failed for ${sessionKey}: ${err}`);
+        this.onSessionEnd?.(sessionKey);
       }
     }
 

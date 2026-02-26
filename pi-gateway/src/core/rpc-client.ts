@@ -202,6 +202,26 @@ export class RpcClient {
     return this.stderr;
   }
 
+  /**
+   * Active health check — sends a lightweight RPC command and expects a response.
+   * Detects zombie/hung processes that still have exitCode === null but are unresponsive.
+   * Returns false if the process doesn't respond within timeoutMs.
+   */
+  async healthCheck(timeoutMs = 5_000): Promise<boolean> {
+    if (!this.isAlive) return false;
+    try {
+      await Promise.race([
+        this.getState(),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("health check timeout")), timeoutMs),
+        ),
+      ]);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   // ==========================================================================
   // Event Subscription
   // ==========================================================================
@@ -241,7 +261,9 @@ export class RpcClient {
     if (!this.proc) throw new Error("RPC client not started");
     const id = `req_${++this.requestCounter}`;
     const cmd = JSON.stringify({ type: "abort", id }) + "\n";
-    this.proc.stdin.write(cmd);
+    if (!this.safeStdinWrite(cmd)) {
+      throw new Error("RPC process stdin broken (process likely crashed)");
+    }
     this.lastActivity = Date.now();
   }
 
@@ -441,7 +463,12 @@ export class RpcClient {
       }
       this.log.info(`RPC send: ${JSON.stringify(debugCmd).slice(0, 500)}`);
       void rpcFileLog(this.id, ">>>", JSON.stringify(debugCmd));
-      this.proc!.stdin.write(line);
+
+      if (!this.safeStdinWrite(line)) {
+        this.pendingRequests.delete(id);
+        clearTimeout(timeout);
+        reject(new Error(`RPC stdin broken for ${command.type} (process likely crashed)`));
+      }
     });
   }
 
@@ -557,7 +584,22 @@ export class RpcClient {
     }
 
     if (response && this.proc) {
-      this.proc.stdin.write(JSON.stringify(response) + "\n");
+      this.safeStdinWrite(JSON.stringify(response) + "\n");
+    }
+  }
+
+  /**
+   * Safe stdin write — catches broken pipe errors when process has died
+   * between isAlive check and actual write.
+   * Returns true if write succeeded, false if pipe is broken.
+   */
+  private safeStdinWrite(data: string): boolean {
+    try {
+      this.proc?.stdin.write(data);
+      return true;
+    } catch (err) {
+      this.log.warn(`stdin write failed (process ${this.id} likely crashed): ${err}`);
+      return false;
     }
   }
 
