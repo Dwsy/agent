@@ -151,10 +151,14 @@ export function ensureRolesDir(): void {
   }
 }
 
+/** Directories under ROLES_DIR that are not roles */
+export const RESERVED_ROLE_DIRS = new Set(["knowledge"]);
+
 export function getRoles(): string[] {
   ensureRolesDir();
   try {
     return readdirSync(ROLES_DIR).filter((name) => {
+      if (RESERVED_ROLE_DIRS.has(name) || name.startsWith(".") || name.startsWith("_")) return false;
       const path = join(ROLES_DIR, name);
       return statSync(path).isDirectory();
     });
