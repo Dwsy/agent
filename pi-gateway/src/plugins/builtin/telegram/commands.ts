@@ -35,6 +35,7 @@ const LOCAL_COMMANDS = [
   { command: "resume", description: "恢复指定会话" },
   { command: "concise", description: "简洁模式开关" },
   { command: "refresh", description: "刷新命令列表" },
+  { command: "reload_session", description: "重载 agent 运行时" },
 ];
 
 // Prefixes to collapse into grouped commands (not registered individually)
@@ -152,6 +153,7 @@ function helpPage(page: number): { text: string; keyboard: { inline_keyboard: Ar
       "/sessions — 查看所有会话",
       "/resume — 恢复指定会话",
       "/refresh — 刷新命令列表",
+      "/reload_session — 重载 agent 运行时",
     ],
     [
       "<b>Admin Commands (3/3)</b>",
@@ -829,6 +831,25 @@ export async function setupTelegramCommands(runtime: TelegramPluginRuntime, acco
   bot.command("refresh", async (ctx: any) => {
     const count = await refreshPiCommands(account, runtime.api.config);
     await ctx.reply(`Commands refreshed. ${LOCAL_COMMANDS.length} local + ${count} pi commands registered.`);
+  });
+
+  bot.command("reload_session", async (ctx: any) => {
+    const source = toSource(account.accountId, ctx as TelegramContext);
+    const sessionKey = resolveSessionKey(source, runtime.api.config);
+    const rpc = runtime.api.rpcPool?.getForSession(sessionKey);
+    if (!rpc) {
+      await ctx.reply("⚠️ No active RPC session. Send a message first.");
+      return;
+    }
+    try {
+      await ctx.reply("⏳ Reloading agent runtime (extensions, skills, prompts, themes)…");
+      // pi RPC: send /reload as prompt — triggers native reload mechanism
+      await rpc.prompt("/reload");
+      await rpc.waitForIdle(30_000);
+      await ctx.reply("✅ Agent runtime reloaded.");
+    } catch (err: any) {
+      await ctx.reply(`❌ Reload failed: ${err?.message ?? String(err)}`);
+    }
   });
 
   bot.command("skills", async (ctx: any) => {
