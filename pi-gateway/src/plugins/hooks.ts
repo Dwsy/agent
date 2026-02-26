@@ -52,7 +52,7 @@ export class HookRegistry {
 
     for (const { pluginId, handler } of handlers) {
       try {
-        await handler(payload);
+        await (handler as any)(payload);
       } catch (err) {
         this.log.error(`Hook error in ${pluginId}/${event}:`, err);
       }

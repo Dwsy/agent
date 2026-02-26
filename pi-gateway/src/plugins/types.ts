@@ -25,8 +25,11 @@ export type { ConfigEntity as Config } from "../core/domain/config/entities.ts";
 // Domain plugin types
 export type { PluginFactory as DomainPluginFactory } from "../core/domain/plugins/index.ts";
 
+// Import for local use
+import type { GatewayPluginApi as _GatewayPluginApi } from "../core/interface/plugins/types.ts";
+
 /** Gateway plugin factory — receives GatewayPluginApi and registers capabilities */
-export type PluginFactory = (api: GatewayPluginApi) => void | Promise<void>;
+export type PluginFactory = (api: _GatewayPluginApi) => void | Promise<void>;
 
 // Types defined locally (not in Clean Architecture layers yet)
 export interface ReloadResult {

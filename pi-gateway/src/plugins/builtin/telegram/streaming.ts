@@ -396,8 +396,6 @@ export async function dispatchAgentTurn(params: {
       sessionKey,
       text: textWithPrompt,
       images: images.length > 0 ? images : undefined,
-      onStreamDelta: conciseMode.wrapStreamDelta(undefined),
-      onToolStart: conciseMode.wrapToolStart(undefined),
       onSteerInjected: () => {
       if (typingInterval) {
         clearInterval(typingInterval);
@@ -643,7 +641,7 @@ export async function dispatchAgentTurn(params: {
         }
       }
     },
-    setTyping: async (typing) => {
+    setTyping: async (typing: boolean) => {
       try {
         runtime.api.logger.info(`[telegram:setTyping] typing=${typing}, current typingInterval=${!!typingInterval}`);
         if (typing) {

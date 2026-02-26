@@ -230,6 +230,10 @@ export interface AgentConfig {
   pool: AgentPoolConfig;
   tools?: ToolPolicyConfig;
   sandbox?: SandboxConfig;
+  /** Delegation configuration for sub-agent spawning */
+  delegation?: DelegationConfig;
+  /** Heartbeat configuration */
+  heartbeat?: HeartbeatConfig;
   /** Per-message timeout in milliseconds. Default: 120000 (2 min) */
   timeoutMs?: number;
   /** Message handling mode when agent is already running. Default: "steer" */

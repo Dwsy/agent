@@ -393,12 +393,12 @@ export interface DispatchResult {
 
 /** Outbound message for dispatch */
 export interface OutboundMessage {
-  id: string;
-  sessionKey: SessionKey;
+  id?: string;
+  sessionKey?: SessionKey;
   text: string;
   channel: string;
   target: string;
-  timestamp: number;
+  timestamp?: number;
 }
 
 /** Plugin manifest for loading */

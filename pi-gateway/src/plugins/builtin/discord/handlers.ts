@@ -399,7 +399,7 @@ export async function handleInteraction(rt: DiscordPluginRuntime, interaction: I
             source: agentSource,
             sessionKey: agentSessionKey,
             text: msgText,
-            respond: async (reply) => {
+            respond: async (reply: string) => {
               const chunks = splitDiscordText(reply || "(no response)", 2000);
               await interaction.editReply(chunks[0]!);
               for (let i = 1; i < chunks.length; i++) {

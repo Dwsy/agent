@@ -40,7 +40,7 @@ export default function hotReloadPlugin(api: GatewayPluginApi) {
 
     let body: { pluginId?: string };
     try {
-      body = await req.json();
+      body = await req.json() as { pluginId?: string };
     } catch {
       return Response.json({ error: "Invalid JSON" }, { status: 400 });
     }
@@ -79,7 +79,7 @@ export default function hotReloadPlugin(api: GatewayPluginApi) {
 
     let body: { pluginId?: string; path?: string };
     try {
-      body = await req.json();
+      body = await req.json() as { pluginId?: string; path?: string };
     } catch {
       return Response.json({ error: "Invalid JSON" }, { status: 400 });
     }
