@@ -12,6 +12,7 @@ import { resolveStreamCompat } from "./config-compat.ts";
 import { escapeHtml, markdownToTelegramHtml, splitTelegramText } from "./format.ts";
 import { parseOutboundMediaDirectives, sendTelegramMedia } from "./media-send.ts";
 import { recordSentMessage } from "./sent-message-cache.ts";
+import { getEffectiveConciseState } from "../concise-mode/index.ts";
 import type {
   TelegramAccountRuntime,
   TelegramContext,
@@ -154,13 +155,16 @@ class ConciseModeHandler {
 }
 
 /**
- * Factory function to create concise-mode handler
+ * Factory function to create concise-mode handler.
+ * Reads effective state dynamically: session override > config default.
  */
 function createConciseModeHandler(
   runtime: TelegramPluginRuntime,
-  account: TelegramAccountRuntime
+  account: TelegramAccountRuntime,
+  sessionKey?: string,
 ): ConciseModeHandler {
-  return new ConciseModeHandler(runtime, account, true);
+  const enabled = sessionKey ? getEffectiveConciseState(sessionKey) : false;
+  return new ConciseModeHandler(runtime, account, enabled);
 }
 
 // ============================================================================
@@ -192,8 +196,7 @@ export async function dispatchAgentTurn(params: {
   const { runtime, account, ctx, source, sessionKey, text, images } = params;
 
   // Concise-mode: inject prompt and disable streaming
-  // Note: message_received hook doesn't reach here, so we inject directly
-  const conciseMode = createConciseModeHandler(runtime, account);
+  const conciseMode = createConciseModeHandler(runtime, account, sessionKey);
   const textWithPrompt = conciseMode.injectPrompt(text);
   const streamCfg = conciseMode.resolveStreamConfig();
   const isConcise = conciseMode.isEnabled();

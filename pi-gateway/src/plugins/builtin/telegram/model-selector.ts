@@ -13,6 +13,7 @@ import {
   parseModelCallbackData,
 } from "./model-buttons.ts";
 import { parseKeyboardCallback, resolveKeyboard } from "../../../api/keyboard-interact.ts";
+import { dispatchCallback } from "./callback-router.ts";
 import type {
   TelegramAccountRuntime,
   TelegramContext,
@@ -135,6 +136,19 @@ export function registerCallbackHandler(
     }
 
     const data = String(callbackQuery?.data ?? "").trim();
+
+    // === Callback Registry dispatch (feature modules register their own handlers) ===
+    const handled = await dispatchCallback({
+      data,
+      ctx: ctx as TelegramContext,
+      bot,
+      runtime,
+      account,
+      callbackQuery,
+    });
+    if (handled) return;
+
+    // === Legacy inline handlers (to be migrated to callback-router over time) ===
 
     // Keyboard interaction (kb:requestId:optionId)
     const kbParsed = parseKeyboardCallback(data);

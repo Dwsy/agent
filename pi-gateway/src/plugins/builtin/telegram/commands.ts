@@ -5,7 +5,9 @@ import { isSenderAllowed, type DmPolicy } from "../../../security/allowlist.ts";
 import { escapeHtml, markdownToTelegramHtml } from "./format.ts";
 import { parseMediaCommandArgs, sendTelegramMedia } from "./media-send.ts";
 import { registerModelCommand, registerCallbackHandler, buildResumeView } from "./model-selector.ts";
+import { onCallback } from "./callback-router.ts";
 import { collectSysInfo } from "./sysinfo.ts";
+import { getConciseStateManager, getConciseConfigDefault, getEffectiveConciseState } from "../concise-mode/index.ts";
 import type { TelegramAccountRuntime, TelegramContext, TelegramPluginRuntime } from "./types.ts";
 
 type SessionMessageMode = "steer" | "follow-up" | "interrupt";
@@ -41,6 +43,7 @@ const LOCAL_COMMANDS = [
   { command: "skills", description: "查看/调用技能" },
   { command: "sessions", description: "查看所有会话" },
   { command: "resume", description: "恢复指定会话" },
+  { command: "concise", description: "简洁模式开关" },
   { command: "refresh", description: "刷新命令列表" },
 ];
 
@@ -275,6 +278,58 @@ function resolveConfiguredSessionMode(runtime: TelegramPluginRuntime, account: T
 // renderModelProviders + renderProviderModels → model-selector.ts
 
 // Resume keyboard UI → model-selector.ts (buildResumeView, handleResumeCallback)
+
+// ============================================================================
+// Concise mode — shared UI builder + callback registration
+// ============================================================================
+
+function buildConciseView(sessionKey: string): { text: string; keyboard: { inline_keyboard: Array<Array<{ text: string; callback_data: string }>> } } {
+  const manager = getConciseStateManager();
+  const configDefault = getConciseConfigDefault();
+  const effective = manager?.getEffectiveState(sessionKey, configDefault) ?? configDefault;
+  const override = manager?.getSessionOverride(sessionKey);
+  const src = override !== undefined ? "override" : "config";
+  return {
+    text: `<b>简洁模式</b>: ${effective ? "✅ ON" : "⭕ OFF"} <i>(${src})</i>`,
+    keyboard: {
+      inline_keyboard: [[
+        { text: effective ? "✅ ON" : "ON", callback_data: "csm:on" },
+        { text: effective ? "OFF" : "⭕ OFF", callback_data: "csm:off" },
+        { text: "🔄 Default", callback_data: "csm:reset" },
+      ]],
+    },
+  };
+}
+
+// Register csm:* callback via callback-router (called once at module load)
+onCallback("csm:", async ({ data, ctx, bot, runtime, account, callbackQuery }) => {
+  const source = toSource(account.accountId, ctx);
+  const sessionKey = resolveSessionKey(source, runtime.api.config);
+  const manager = getConciseStateManager();
+
+  if (data === "csm:on") {
+    manager?.setSessionOverride(sessionKey, true);
+    await ctx.answerCallbackQuery?.({ text: "Concise ON" });
+  } else if (data === "csm:off") {
+    manager?.setSessionOverride(sessionKey, false);
+    await ctx.answerCallbackQuery?.({ text: "Concise OFF" });
+  } else if (data === "csm:reset") {
+    manager?.clearSessionOverride(sessionKey);
+    await ctx.answerCallbackQuery?.({ text: "Reset to config default" });
+  } else {
+    await ctx.answerCallbackQuery?.();
+    return;
+  }
+
+  const view = buildConciseView(sessionKey);
+  const msg = callbackQuery?.message as any;
+  if (msg?.chat?.id && msg?.message_id) {
+    await (bot.api as any).editMessageText(String(msg.chat.id), msg.message_id, view.text, {
+      parse_mode: "HTML",
+      reply_markup: view.keyboard,
+    }).catch(() => {});
+  }
+});
 
 export async function setupTelegramCommands(runtime: TelegramPluginRuntime, account: TelegramAccountRuntime): Promise<void> {
   const bot = account.bot;
@@ -718,6 +773,43 @@ export async function setupTelegramCommands(runtime: TelegramPluginRuntime, acco
       `<b>Sessions (${sessions.length})</b>\n\n${lines.join("\n\n")}`,
       { parse_mode: "HTML" },
     );
+  });
+
+  bot.command("concise", async (ctx: any) => {
+    const source = toSource(account.accountId, ctx as TelegramContext);
+    const sessionKey = resolveSessionKey(source, runtime.api.config);
+    const arg = String(ctx.match ?? "").trim().toLowerCase();
+
+    const manager = getConciseStateManager();
+    const configDefault = getConciseConfigDefault();
+
+    if (arg === "on") {
+      manager?.setSessionOverride(sessionKey, true);
+      await ctx.reply("✅ Concise mode: <b>ON</b> (session override)", { parse_mode: "HTML" });
+      return;
+    }
+    if (arg === "off") {
+      manager?.setSessionOverride(sessionKey, false);
+      await ctx.reply("⭕ Concise mode: <b>OFF</b> (session override)", { parse_mode: "HTML" });
+      return;
+    }
+    if (arg === "reset") {
+      manager?.clearSessionOverride(sessionKey);
+      const newEffective = manager?.getEffectiveState(sessionKey, configDefault) ?? configDefault;
+      await ctx.reply(`🔄 Concise mode: <b>${newEffective ? "ON" : "OFF"}</b> (config default)`, { parse_mode: "HTML" });
+      return;
+    }
+    if (arg === "status") {
+      const effective = manager?.getEffectiveState(sessionKey, configDefault) ?? configDefault;
+      const override = manager?.getSessionOverride(sessionKey);
+      const src = override !== undefined ? "session override" : "config default";
+      await ctx.reply(`Concise mode: <b>${effective ? "ON" : "OFF"}</b> (${src})`, { parse_mode: "HTML" });
+      return;
+    }
+
+    // Default: show status + inline keyboard
+    const view = buildConciseView(sessionKey);
+    await ctx.reply(view.text, { parse_mode: "HTML", reply_markup: view.keyboard });
   });
 
   bot.command("resume", async (ctx: any) => {
