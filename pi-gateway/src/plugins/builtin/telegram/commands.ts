@@ -1,5 +1,4 @@
 import { resolveSessionKey, resolveAgentId } from "../../../core/session-router.ts";
-import type { MessageSource } from "../../../core/types.ts";
 import type { SessionStats, RpcState } from "../../../core/interface/plugins/types.ts";
 import { isSenderAllowed, type DmPolicy } from "../../../security/allowlist.ts";
 import { escapeHtml, markdownToTelegramHtml } from "./format.ts";
@@ -7,20 +6,11 @@ import { parseMediaCommandArgs, sendTelegramMedia } from "./media-send.ts";
 import { registerModelCommand, registerCallbackHandler } from "./model-selector.ts";
 import { onCallback } from "./callback-router.ts";
 import { collectSysInfo } from "./sysinfo.ts";
-import { getConciseStateManager, getConciseConfigDefault, getEffectiveConciseState } from "../concise-mode/index.ts";
+import { getConciseStateManager, getConciseConfigDefault } from "../concise-mode/index.ts";
+import { toSource, timeSince } from "./helpers.ts";
 import type { TelegramAccountRuntime, TelegramContext, TelegramPluginRuntime } from "./types.ts";
 
 type SessionMessageMode = "steer" | "follow-up" | "interrupt";
-
-function timeSince(ts: number): string {
-  const sec = Math.floor((Date.now() - ts) / 1000);
-  if (sec < 60) return `${sec}s`;
-  const min = Math.floor(sec / 60);
-  if (min < 60) return `${min}m`;
-  const hr = Math.floor(min / 60);
-  if (hr < 24) return `${hr}h`;
-  return `${Math.floor(hr / 24)}d`;
-}
 
 // Gateway 本地命令列表
 const LOCAL_COMMANDS = [
@@ -65,24 +55,6 @@ export async function refreshPiCommands(account: TelegramAccountRuntime, config?
   const agentIds = (config?.agents?.list ?? []).map(a => a.id).filter(id => id !== "main");
   await registerNativeCommands(account, piCommands, agentIds.length > 0 ? agentIds : undefined);
   return piCommands.length;
-}
-
-function toChatType(chatType?: string): "dm" | "group" {
-  return chatType === "private" ? "dm" : "group";
-}
-
-function toSource(accountId: string, ctx: TelegramContext): MessageSource {
-  return {
-    channel: "telegram",
-    accountId,
-    chatType: toChatType(ctx.chat?.type),
-    chatId: String(ctx.chat?.id ?? ""),
-    topicId: (ctx.message as any)?.message_thread_id
-      ? String((ctx.message as any).message_thread_id)
-      : undefined,
-    senderId: String(ctx.from?.id ?? "unknown"),
-    senderName: ctx.from?.username ?? ctx.from?.first_name,
-  };
 }
 
 /** Check if sender is in allowFrom list (for privileged commands like /bash, /config, /restart). */

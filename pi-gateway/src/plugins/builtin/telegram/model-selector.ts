@@ -15,23 +15,12 @@ import {
 } from "./model-buttons.ts";
 import { parseKeyboardCallback, resolveKeyboard } from "../../../api/keyboard-interact.ts";
 import { dispatchCallback } from "./callback-router.ts";
+import { toSource } from "./helpers.ts";
 import type {
   TelegramAccountRuntime,
   TelegramContext,
   TelegramPluginRuntime,
 } from "./types.ts";
-import type { MessageSource } from "../../../core/types.ts";
-
-function toSource(accountId: string, ctx: TelegramContext): MessageSource {
-  return {
-    channel: "telegram",
-    accountId,
-    chatType: ctx.chat?.type === "private" ? "dm" : "group",
-    chatId: String(ctx.chat?.id ?? ""),
-    senderId: String(ctx.from?.id ?? "unknown"),
-    senderName: ctx.from?.username ?? ctx.from?.first_name,
-  };
-}
 
 export async function renderProviderModels(params: {
   account: TelegramAccountRuntime;
