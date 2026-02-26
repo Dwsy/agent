@@ -10,6 +10,14 @@
 - **Callback Router** (`callback-router.ts`): Prefix-based callback registry — `onCallback("prefix:", handler)` decouples feature callbacks from model-selector.ts (by Dwsy)
 - **Legacy migration**: Moved `role:*`, `cmd_page:*`, `skill_run:*`, `rsm:*` handlers from model-selector.ts to commands.ts via callback-router; model-selector.ts reduced from ~500 to 210 lines (by Dwsy)
 
+### Type System Unification (Tech Debt)
+- **125→0 TS errors**: Unified dual type system (domain vs legacy) across 20+ files (by Dwsy)
+- **`GatewayPluginApi.config`**: `Record<string,unknown>` → `Config` — eliminated 32 type mismatch errors at source (by Dwsy)
+- **`MessageSource` inheritance**: Legacy extends domain, `MessageChannel` gains `string` fallback for extensibility (by Dwsy)
+- **Typed hook handlers**: `api.on<T>()` overload with `TypedHookHandler<T>` for type-safe hook payloads (by Dwsy)
+- **Interface completeness**: Added `rpcPool`, `cronEngine`, `registerHook`, `broadcastToWs`, `emitEvent`, `getConfig` to `GatewayPluginApi` (by Dwsy)
+- **`PluginFactory`**: Gateway-specific `(api) => void` instead of domain `() => Plugin` (by Dwsy)
+
 ---
 
 **Focus:** Cron Isolated Mode Context Isolation + RPC Log Rotation + Streaming send_message
