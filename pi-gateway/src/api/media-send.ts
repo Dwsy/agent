@@ -17,6 +17,7 @@ import type { RpcPool } from "../core/rpc-pool.ts";
 import type { Logger } from "../core/types.ts";
 import type { PluginRegistryState } from "../plugins/loader.ts";
 import type { SessionStore } from "../core/session-store.ts";
+import { resolveChannelTarget } from "./channel-target.ts";
 
 /** Allowed absolute path prefixes for agent tool calls (send_media). */
 const ALLOWED_ABSOLUTE_PREFIXES = [
@@ -213,10 +214,12 @@ export async function handleMediaSendRequest(
     return Response.json({ error: "Cannot resolve chatId — no messages received in this session yet" }, { status: 400 });
   }
 
-  ctx.log.info(`[media-send] direct delivery: channel=${channel} chatId=${chatId} path=${filePath} type=${resolvedType}`);
+  const target = resolveChannelTarget(channel, chatId, sessionKey, session);
+
+  ctx.log.info(`[media-send] direct delivery: channel=${channel} target=${target} path=${filePath} type=${resolvedType}`);
 
   try {
-    const result = await channelPlugin.outbound.sendMedia(chatId, fullPath, {
+    const result = await channelPlugin.outbound.sendMedia(target, fullPath, {
       type: resolvedType as "photo" | "audio" | "document" | "video" | "sticker",
       caption,
     });
