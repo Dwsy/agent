@@ -4,7 +4,7 @@ import type { SessionStats, RpcState } from "../../../core/interface/plugins/typ
 import { isSenderAllowed, type DmPolicy } from "../../../security/allowlist.ts";
 import { escapeHtml, markdownToTelegramHtml } from "./format.ts";
 import { parseMediaCommandArgs, sendTelegramMedia } from "./media-send.ts";
-import { registerModelCommand, registerCallbackHandler, buildResumeView } from "./model-selector.ts";
+import { registerModelCommand, registerCallbackHandler } from "./model-selector.ts";
 import { onCallback } from "./callback-router.ts";
 import { collectSysInfo } from "./sysinfo.ts";
 import { getConciseStateManager, getConciseConfigDefault, getEffectiveConciseState } from "../concise-mode/index.ts";
@@ -277,8 +277,6 @@ function resolveConfiguredSessionMode(runtime: TelegramPluginRuntime, account: T
 
 // renderModelProviders + renderProviderModels → model-selector.ts
 
-// Resume keyboard UI → model-selector.ts (buildResumeView, handleResumeCallback)
-
 // ============================================================================
 // Concise mode — shared UI builder + callback registration
 // ============================================================================
@@ -330,6 +328,244 @@ onCallback("csm:", async ({ data, ctx, bot, runtime, account, callbackQuery }) =
     }).catch(() => {});
   }
 });
+
+// ============================================================================
+// Help pagination callback
+// ============================================================================
+
+onCallback("cmd_page:", async ({ data, ctx, bot, callbackQuery }) => {
+  const page = Math.max(1, Number.parseInt(data.slice("cmd_page:".length), 10) || 1);
+  const view = helpPage(page);
+  const msg = callbackQuery?.message as any;
+  await ctx.answerCallbackQuery?.();
+  await (bot.api as any).editMessageText(String(msg.chat.id), msg.message_id, view.text, {
+    parse_mode: "HTML",
+    reply_markup: view.keyboard,
+  }).catch(async () => {
+    await ctx.reply(view.text, { parse_mode: "HTML", reply_markup: view.keyboard });
+  });
+});
+
+// ============================================================================
+// Role keyboard callbacks
+// ============================================================================
+
+onCallback("role:", async ({ data, ctx, runtime, account }) => {
+  const source = toSource(account.accountId, ctx);
+  const sessionKey = resolveSessionKey(source, runtime.api.config);
+
+  if (data.startsWith("role:set:")) {
+    const role = data.slice("role:set:".length).trim();
+    const ok = await runtime.api.setSessionRole(sessionKey, role);
+    await ctx.answerCallbackQuery?.({ text: ok ? `Switched: ${role}` : "Switch failed" });
+    if (ok) {
+      await ctx.reply(`✅ Role switched to: <b>${role}</b>`, { parse_mode: "HTML" });
+    }
+    return;
+  }
+
+  if (data.startsWith("role:del:")) {
+    const role = data.slice("role:del:".length).trim();
+    const deleted = await runtime.api.deleteRole(role);
+    await ctx.answerCallbackQuery?.({ text: deleted.ok ? `Deleted: ${role}` : "Delete failed" });
+    if (deleted.ok) {
+      await ctx.reply(`🗑 Role deleted: <b>${role}</b>`, { parse_mode: "HTML" });
+    } else {
+      await ctx.reply(`❌ Failed to delete role <b>${role}</b>: ${deleted.error ?? "unknown error"}`, { parse_mode: "HTML" });
+    }
+    return;
+  }
+
+  if (data === "role:hint:create") {
+    await ctx.answerCallbackQuery?.({ text: "Use /role create <name>" });
+    await ctx.reply("Use <code>/role create &lt;name&gt;</code> to create role.", { parse_mode: "HTML" });
+    return;
+  }
+
+  if (data === "role:hint:delete") {
+    await ctx.answerCallbackQuery?.({ text: "Use /role delete <name>" });
+    await ctx.reply("Use <code>/role delete &lt;name&gt;</code> to delete role.", { parse_mode: "HTML" });
+    return;
+  }
+
+  await ctx.answerCallbackQuery?.();
+});
+
+// ============================================================================
+// Skill execution callback
+// ============================================================================
+
+onCallback("skill_run:", async ({ data, ctx, bot, runtime, account, callbackQuery }) => {
+  const skillName = data.slice("skill_run:".length);
+  await ctx.answerCallbackQuery?.({ text: `Running /${skillName}...` });
+  const source = toSource(account.accountId, ctx);
+  const { agentId, text: routedText } = resolveAgentId(source, `/${skillName}`, runtime.api.config);
+  const sessionKey = resolveSessionKey(source, runtime.api.config, agentId);
+  const chatId = String(callbackQuery?.message?.chat?.id ?? "");
+  await runtime.api.dispatch({
+    source,
+    sessionKey,
+    text: routedText || `/${skillName}`,
+    respond: async (text: string) => {
+      if (text?.trim()) {
+        await bot.api.sendMessage(chatId, markdownToTelegramHtml(text), { parse_mode: "HTML" }).catch(() => {
+          bot.api.sendMessage(chatId, text).catch(() => {});
+        });
+      }
+    },
+    setTyping: async () => {
+      await bot.api.sendChatAction(chatId, "typing").catch(() => {});
+    },
+  });
+});
+
+// ============================================================================
+// Resume session callbacks
+// ============================================================================
+
+const RESUME_PAGE_SIZE = 5;
+
+function getFirstUserMessage(api: TelegramPluginRuntime["api"], sessionKey: string): string | null {
+  try {
+    const entries = api.readTranscript(sessionKey, 200);
+    const first = entries.find((e: any) => e.cat === "prompt" && e.type === "user_message");
+    if (!first?.data?.text) return null;
+    const text = String(first.data.text);
+    return text.length > 200 ? text.slice(0, 200) + "…" : text;
+  } catch {
+    return null;
+  }
+}
+
+function buildResumeView(
+  sessions: any[],
+  currentKey: string,
+  page: number,
+): { text: string; rows: Array<Array<{ text: string; callback_data: string }>> } {
+  const totalPages = Math.max(1, Math.ceil(sessions.length / RESUME_PAGE_SIZE));
+  page = Math.max(1, Math.min(page, totalPages));
+  const start = (page - 1) * RESUME_PAGE_SIZE;
+  const slice = sessions.slice(start, start + RESUME_PAGE_SIZE);
+
+  const lines = slice.map((s: any, i: number) => {
+    const idx = start + i + 1;
+    const active = s.sessionKey === currentKey ? " ✅" : "";
+    const msgs = s.messageCount ?? 0;
+    const ago = s.lastActivity ? timeSince(s.lastActivity) : "?";
+    return `<b>${idx}.</b> <code>${escapeHtml(s.sessionKey)}</code>${active}\n   ${msgs} msgs · ${ago} ago`;
+  });
+
+  const text = `<b>Sessions (${sessions.length})</b>\n\n${lines.join("\n\n")}\n\n<i>▶ resume · 👁 preview</i>`;
+
+  const rows: Array<Array<{ text: string; callback_data: string }>> = slice.map((_s: any, i: number) => {
+    const idx = start + i;
+    return [
+      { text: `▶ ${start + i + 1}`, callback_data: `rsm:${idx}` },
+      { text: "👁", callback_data: `rsm_see:${idx}` },
+    ];
+  });
+
+  if (totalPages > 1) {
+    rows.push([
+      { text: "◀", callback_data: `rsm_pg:${Math.max(1, page - 1)}` },
+      { text: `${page}/${totalPages}`, callback_data: `rsm_pg:${page}` },
+      { text: "▶", callback_data: `rsm_pg:${Math.min(totalPages, page + 1)}` },
+    ]);
+  }
+
+  return { text, rows };
+}
+
+// Register all rsm:* prefixes
+for (const prefix of ["rsm_pg:", "rsm_see:", "rsm:"]) {
+  onCallback(prefix, async ({ data, ctx, bot, runtime, account, callbackQuery }) => {
+    const msg = callbackQuery?.message as any;
+    const chatId = String(msg?.chat?.id ?? "");
+    const messageId = msg?.message_id;
+    const sessions = runtime.api.listSessions();
+    const source = toSource(account.accountId, ctx);
+    const currentKey = resolveSessionKey(source, runtime.api.config);
+
+    // Pagination
+    if (data.startsWith("rsm_pg:")) {
+      const page = Math.max(1, parseInt(data.slice("rsm_pg:".length), 10) || 1);
+      const view = buildResumeView(sessions, currentKey, page);
+      await ctx.answerCallbackQuery?.();
+      await (bot.api as any).editMessageText(chatId, messageId, view.text, {
+        parse_mode: "HTML",
+        reply_markup: { inline_keyboard: view.rows },
+      }).catch(() => {});
+      return;
+    }
+
+    // Preview
+    if (data.startsWith("rsm_see:")) {
+      const idx = parseInt(data.slice("rsm_see:".length), 10);
+      const target = sessions[idx];
+      if (!target) {
+        await ctx.answerCallbackQuery?.({ text: "Session not found" });
+        return;
+      }
+      const firstMsg = getFirstUserMessage(runtime.api, target.sessionKey);
+      const preview = firstMsg
+        ? `💬 <b>First message:</b>\n<blockquote>${escapeHtml(firstMsg)}</blockquote>`
+        : `<i>No messages recorded</i>`;
+      const msgs = target.messageCount ?? 0;
+      const ago = target.lastActivity ? timeSince(target.lastActivity) : "?";
+      const text = `<b>Session ${idx + 1}</b>\n<code>${escapeHtml(target.sessionKey)}</code>\n${msgs} msgs · ${ago} ago\n\n${preview}`;
+      await ctx.answerCallbackQuery?.();
+      await (bot.api as any).editMessageText(chatId, messageId, text, {
+        parse_mode: "HTML",
+        reply_markup: {
+          inline_keyboard: [[
+            { text: "▶ Resume", callback_data: `rsm:${idx}` },
+            { text: "◀ Back", callback_data: `rsm_pg:${Math.floor(idx / RESUME_PAGE_SIZE) + 1}` },
+          ]],
+        },
+      }).catch(() => {});
+      return;
+    }
+
+    // Resume
+    if (data.startsWith("rsm:")) {
+      const idx = parseInt(data.slice("rsm:".length), 10);
+      const target = sessions[idx];
+      if (!target) {
+        await ctx.answerCallbackQuery?.({ text: "Session not found" });
+        return;
+      }
+      if (target.sessionKey === currentKey) {
+        await ctx.answerCallbackQuery?.({ text: "Already active" });
+        return;
+      }
+      runtime.api.releaseSession(currentKey);
+
+      let extra = "";
+      try {
+        const [stats, rpcState] = await Promise.all([
+          runtime.api.getSessionStats(target.sessionKey),
+          runtime.api.getRpcState(target.sessionKey),
+        ]);
+        const s = stats as any;
+        const st = rpcState as any;
+        const contextWindow = st?.model?.contextWindow ?? 0;
+        const inputTokens = s?.tokens?.input ?? 0;
+        const pct = contextWindow > 0 ? ((inputTokens / contextWindow) * 100).toFixed(1) : "?";
+        const model = st?.model?.id ?? "unknown";
+        extra = `\n<b>Model:</b> ${model}\n<b>Context:</b> ${pct}%`;
+      } catch { /* RPC not yet bound */ }
+
+      const msgs = target.messageCount ?? 0;
+      const ago = target.lastActivity ? timeSince(target.lastActivity) : "?";
+      await ctx.answerCallbackQuery?.({ text: "Switched!" });
+      await (bot.api as any).editMessageText(
+        chatId, messageId,
+        `✅ Switched to <code>${escapeHtml(target.sessionKey)}</code>\n<b>Messages:</b> ${msgs}\n<b>Last active:</b> ${ago} ago${extra}`,
+        { parse_mode: "HTML" },
+      ).catch(() => {});
+    }
+  });
+}
 
 export async function setupTelegramCommands(runtime: TelegramPluginRuntime, account: TelegramAccountRuntime): Promise<void> {
   const bot = account.bot;
@@ -857,7 +1093,7 @@ export async function setupTelegramCommands(runtime: TelegramPluginRuntime, acco
 
   // /model + callback_query:data → model-selector.ts
   registerModelCommand(bot, runtime, account);
-  registerCallbackHandler(bot, runtime, account, helpPage);
+  registerCallbackHandler(bot, runtime, account);
 
   // 初始化时尝试获取 pi 命令，如果 RPC 还没连接则只注册本地命令
   // 用户可以稍后用 /refresh 手动刷新
