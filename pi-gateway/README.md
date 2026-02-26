@@ -239,6 +239,26 @@ API: HTTP (`/api/cron/jobs`), WebSocket (`cron.*`), Telegram/Discord (`/cron`).
 
 Architecture: `docs/architecture/CRON-AND-CONFIG.md` | Visual: `docs/architecture/cron-architecture.html`
 
+## Design Patterns & Maintainability
+
+| Pattern | Where | Purpose |
+|---------|-------|---------|
+| Callback Router | `callback-router.ts` | Prefix-based registry — features register `onCallback("prefix:", handler)`, dispatcher routes automatically. Eliminates god-file anti-pattern |
+| Plugin System | `GatewayPluginApi` | 7 registration types + 14 hooks. Plugins are isolated, hot-reloadable, and composable |
+| Singleton + Hot-Reload | `ConciseStateManager` | Singleton survives config reload; session overrides preserved, new sessions follow updated defaults |
+| Session Router | `session-router.ts` | Deterministic key generation (`agent:{id}:{channel}:{scope}:{chatId}`) decouples routing from channel logic |
+| RPC Pool | `rpc-pool.ts` | Process isolation with configurable min/max/idle. Crash recovery without gateway restart |
+| Message Queue | `message-queue.ts` | Per-session serial queue with priority, collect mode, and backpressure — prevents message interleaving |
+| Fail-Closed Auth | `security/` | DM policies (`pairing`/`allowlist`/`open`/`disabled`) default to deny. SSRF guard on tool URLs |
+| Config as Code | `pi-gateway.jsonc` | JSONC with env var interpolation, aligned with OpenClaw schema. Single source of truth |
+
+Key maintainability decisions:
+- Callbacks live next to their commands (not in a central dispatcher)
+- Each plugin owns its lifecycle — register, reload, teardown
+- Type-safe plugin API with `GatewayPluginApi` interface (14 hooks + 8 methods)
+- Cron jobs run in isolated sessions by default (`resumeContext: false`)
+- Transcript rotation (5MB cap) prevents disk bloat without manual cleanup
+
 ## Extensibility
 
 - **Webhook**: `POST /hooks/wake` (aligned with OpenClaw)
