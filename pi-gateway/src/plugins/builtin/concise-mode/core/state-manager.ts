@@ -5,7 +5,7 @@
  * Encapsulates state transitions and validation logic.
  */
 
-import type { GatewayPluginApi } from "../../types.ts";
+import type { GatewayPluginApi } from "../../../../core/interface/plugins/types.ts";
 
 /**
  * Session state for concise-mode
@@ -76,7 +76,6 @@ export class ConciseStateManager {
     this.suppressRoutes.set(routeKey, expiry);
     
     session.suppressCount++;
-    this.logger?.info(`[state] Added suppress route: ${routeKey} (TTL: ${this.ttlMs}ms)`);
     return true;
   }
 

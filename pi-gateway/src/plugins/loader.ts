@@ -261,8 +261,8 @@ export class PluginLoader {
 
         if (typeof factory === "function") {
           await factory(api);
-        } else if (factory && "register" in factory) {
-          await factory.register(api);
+        } else if (factory && "register" in (factory as any)) {
+          await (factory as any).register(api);
         }
 
         this.loaded.set(name, { manifest, source: "builtin", path });
@@ -347,8 +347,8 @@ export class PluginLoader {
 
     if (typeof factory === "function") {
       await factory(api);
-    } else if (factory && "register" in factory) {
-      await factory.register(api);
+    } else if (factory && "register" in (factory as any)) {
+      await (factory as any).register(api);
     } else {
       throw new Error(`Plugin ${manifest.id} does not export a valid factory`);
     }

@@ -236,17 +236,11 @@ export interface SessionState {
 // Message Types
 // ============================================================================
 
-/** Source of an inbound message */
-export interface MessageSource {
-  channel: string;
-  /** Optional channel account id (e.g. telegram account) */
-  accountId?: string;
-  chatType: "dm" | "group" | "channel" | "thread";
-  chatId: string;
-  threadId?: string;
-  topicId?: string;
+import type { MessageSource as DomainMessageSource } from "./domain/types.ts";
+
+/** Source of an inbound message (extends domain MessageSource with gateway-specific fields) */
+export interface MessageSource extends DomainMessageSource {
   senderId: string;
-  senderName?: string;
   guildId?: string;
   /** Discord member role IDs, used for guild+roles routing. */
   memberRoleIds?: string[];

@@ -13,7 +13,7 @@
 export type SessionKey = string;
 
 /** Message source channel */
-export type MessageChannel = "main" | "telegram" | "discord" | "webchat" | "cron" | "hook";
+export type MessageChannel = "main" | "telegram" | "discord" | "webchat" | "feishu" | "cron" | "hook" | (string & {});
 
 /** Chat type within a channel */
 export type ChatType = "dm" | "group" | "channel" | "thread";
@@ -52,14 +52,15 @@ export interface SessionState {
 
 /** Inbound message to be processed */
 export interface InboundMessage {
-  id: string;
+  id?: string;
   source: MessageSource;
+  sessionKey?: string;
   text: string;
   images?: Array<{
     data: string;
     mimeType: string;
   }>;
-  timestamp: number;
+  timestamp?: number;
 }
 
 // ============================================================================

@@ -18,7 +18,7 @@ import type { HookHandler, HookPayload, PluginHookName } from "./types.ts";
 interface RegisteredHook {
   pluginId: string;
   event: PluginHookName;
-  handler: HookHandler<any>;
+  handler: HookHandler;
 }
 
 export class HookRegistry {
@@ -32,7 +32,7 @@ export class HookRegistry {
   /**
    * Register a hook handler for one or more events.
    */
-  register(pluginId: string, events: PluginHookName[], handler: HookHandler<any>): void {
+  register(pluginId: string, events: PluginHookName[], handler: HookHandler): void {
     for (const event of events) {
       this.hooks.push({ pluginId, event, handler });
       this.log.debug(`Registered hook: ${pluginId} → ${event}`);

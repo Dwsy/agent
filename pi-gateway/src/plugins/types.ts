@@ -22,6 +22,20 @@ export type {
 // Export Config from domain
 export type { ConfigEntity as Config } from "../core/domain/config/entities.ts";
 
+// Domain plugin types
+export type { PluginFactory as DomainPluginFactory } from "../core/domain/plugins/index.ts";
+
+/** Gateway plugin factory — receives GatewayPluginApi and registers capabilities */
+export type PluginFactory = (api: GatewayPluginApi) => void | Promise<void>;
+
+// Types defined locally (not in Clean Architecture layers yet)
+export interface ReloadResult {
+  success: boolean;
+  pluginId: string;
+  error?: string;
+  timestamp: number;
+}
+
 // Re-export all interface layer plugin types
 export type {
   GatewayPluginApi,
@@ -33,6 +47,7 @@ export type {
   ToolResult,
   BackgroundService,
   CommandHandler,
+  CommandContext,
   HttpHandler,
   WsMethodHandler,
   DispatchResult,
@@ -51,8 +66,12 @@ export type {
   InlineKeyboardMarkup,
   ChannelOutbound,
   StreamingConfig,
+  StreamPlaceholderOpts,
+  StreamEditOpts,
   ChannelStreamingAdapter,
   AccessCheckContext,
   AccessResult,
   ChannelSecurityAdapter,
+  CliProgram,
+  HookPayload,
 } from "../core/interface/plugins/types.ts";

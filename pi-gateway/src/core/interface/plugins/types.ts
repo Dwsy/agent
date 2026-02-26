@@ -19,6 +19,9 @@ import type {
   HookHandler,
   Result,
 } from "../../domain/types.ts";
+import type { Config } from "../../config.ts";
+import type { RpcPool } from "../../rpc-pool.ts";
+import type { CronEngine } from "../../cron.ts";
 
 // Re-export domain types for plugin convenience
 export type {
@@ -428,10 +431,16 @@ export interface GatewayPluginApi extends DomainPluginApi {
   readonly source: string;
 
   /** Gateway configuration (read-only) */
-  readonly config: Record<string, unknown>;
+  readonly config: Config;
 
   /** Plugin-specific configuration */
   readonly pluginConfig?: Record<string, unknown>;
+
+  /** RPC process pool (optional, available after gateway start) */
+  readonly rpcPool?: RpcPool;
+
+  /** Cron engine (optional, available when cron is enabled) */
+  readonly cronEngine?: CronEngine;
 
   // Registration methods
 
@@ -441,6 +450,9 @@ export interface GatewayPluginApi extends DomainPluginApi {
   /** Register a tool plugin (extended signature) */
   registerTool(name: string, tool: DomainToolDefinition): void;
   registerTool(plugin: ToolPlugin): void;
+
+  /** Register lifecycle hooks */
+  registerHook(events: PluginHookName[], handler: HookHandler): void;
 
   /** Register a background service */
   registerService(service: BackgroundService): void;
@@ -458,12 +470,13 @@ export interface GatewayPluginApi extends DomainPluginApi {
   registerCli(registrar: (program: CliProgram) => void): void;
 
   /** Shorthand for single hook registration */
+  on<T extends PluginHookName>(hook: T, handler: TypedHookHandler<T>): void;
   on(hook: string, handler: HookHandler): void;
 
   // Session operations
 
   /** Dispatch message to agent pipeline */
-  dispatch(msg: InboundMessage): Promise<DispatchResult>;
+  dispatch(msg: InboundMessage & Record<string, unknown>): Promise<DispatchResult>;
 
   /** Send message to specific channel target */
   sendToChannel(channel: string, target: string, text: string): Promise<void>;
@@ -541,6 +554,21 @@ export interface GatewayPluginApi extends DomainPluginApi {
 
   /** Read session transcript (last N entries) */
   readTranscript(sessionKey: SessionKey, lastN?: number): TranscriptEntry[];
+
+  /** System events queue (runtime) */
+  readonly systemEvents?: unknown;
+
+  /** Session store (runtime) */
+  readonly sessionStore?: unknown;
+
+  /** Request heartbeat check */
+  requestHeartbeat?: (agentId: string, reason?: string) => void;
+
+  /** Get registered channels */
+  getChannels?: () => Map<string, ChannelPlugin>;
+
+  /** Allow additional runtime properties */
+  [key: string]: unknown;
 }
 
 /** Session statistics - aligned with pi's SessionStats */
@@ -598,8 +626,19 @@ export interface SessionInfo {
 
 /** Transcript entry */
 export interface TranscriptEntry {
-  role: "user" | "assistant" | "system";
-  content: string;
+  /** ISO timestamp */
+  ts: string;
+  /** Event category */
+  cat: "prompt" | "event" | "response" | "error" | "meta";
+  /** Specific type within category */
+  type: string;
+  /** Session key */
+  session: string;
+  /** Payload (varies by type) */
+  data?: Record<string, unknown>;
+  /** Legacy compat fields */
+  role?: "user" | "assistant" | "system";
+  content?: string;
   timestamp?: number;
 }
 
@@ -611,6 +650,10 @@ export interface SessionState {
   thinkingLevel?: string;
   isStreaming: boolean;
   messageCount: number;
+  lastChatId?: string;
+  lastChannel?: string;
+  lastAccountId?: string;
+  lastChatType?: "dm" | "group" | "channel" | "thread";
 }
 
 // ============================================================================

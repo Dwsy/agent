@@ -90,7 +90,7 @@ export default function register(api: GatewayPluginApi): void {
   registerSystemPromptSegment({
     id: "concise-mode",
     segment: CONCISE_MODE_SEGMENT,
-    shouldInclude: (gatewayConfig) => gatewayConfig.plugins?.config?.["concise-mode"]?.enabled ?? false,
+    shouldInclude: (gatewayConfig) => !!(gatewayConfig.plugins?.config?.["concise-mode"]?.enabled),
     priority: 0,
   });
 
@@ -110,8 +110,9 @@ export default function register(api: GatewayPluginApi): void {
 
   // Hook 1: message_received — track active sessions
   api.on("message_received", ({ message }) => {
-    const { channel, sessionKey } = message.source;
-    if (stateManager!.isChannelEnabled(channel)) {
+    const { channel } = message.source;
+    const sessionKey = message.sessionKey;
+    if (sessionKey && stateManager!.isChannelEnabled(channel)) {
       stateManager!.activateSession(sessionKey, channel);
       api.logger.debug(`[concise] Activated session: ${sessionKey} (${channel})`);
     }

@@ -7,10 +7,10 @@
  * - Builder Pattern: SystemPromptBuilder assembles the final prompt
  */
 
-import type { ConfigEntity } from "../../../domain/config/entities.ts";
+import type { Config } from "../../../config.ts";
 
-/** @deprecated Use ConfigEntity directly */
-export type Config = ConfigEntity;
+/** @deprecated Use Config directly */
+export type { Config };
 
 // ============================================================================
 // Core Types
