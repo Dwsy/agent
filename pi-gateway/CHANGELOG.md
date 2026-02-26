@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Concise Mode Command & Callback Router (#19)
+- **`/concise` command**: Toggle concise mode per session — `/concise [on|off|reset|status]` with inline keyboard (by Dwsy)
+- **Session override**: `ConciseStateManager` gains `sessionOverrides` Map — explicit toggle survives hot-reload, `getEffectiveState()` computes override > config default (by Dwsy)
+- **Dynamic config**: concise-mode plugin reads live gateway config per message instead of startup snapshot; singleton manager preserved across reload (by Dwsy)
+- **Streaming fix**: `createConciseModeHandler` now reads effective state per sessionKey instead of hardcoded `true` (by Dwsy)
+- **Callback Router** (`callback-router.ts`): Prefix-based callback registry — `onCallback("prefix:", handler)` decouples feature callbacks from model-selector.ts (by Dwsy)
+- **Legacy migration**: Moved `role:*`, `cmd_page:*`, `skill_run:*`, `rsm:*` handlers from model-selector.ts to commands.ts via callback-router; model-selector.ts reduced from ~500 to 210 lines (by Dwsy)
+
+---
+
 **Focus:** Cron Isolated Mode Context Isolation + RPC Log Rotation + Streaming send_message
 
 ### Streaming send_message Tool
