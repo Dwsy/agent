@@ -11,7 +11,7 @@
  */
 
 import { describe, test, expect } from "bun:test";
-import type { AgentBindingEntityEntity, AgentsEntity } from "../../domain/config/entities.ts";
+import type { AgentBindingEntity, AgentsEntity } from "../../domain/config/entities.ts";
 
 // ============================================================================
 // Helpers — routing logic simulation (replace with real imports when ready)

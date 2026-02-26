@@ -76,5 +76,6 @@ export type {
   AccessResult,
   ChannelSecurityAdapter,
   CliProgram,
+  CliCommandHandler,
   HookPayload,
 } from "../core/interface/plugins/types.ts";

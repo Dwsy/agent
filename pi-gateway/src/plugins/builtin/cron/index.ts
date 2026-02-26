@@ -25,8 +25,8 @@ export default function register(api: GatewayPluginApi) {
         return;
       }
 
-      const systemEvents = svcApi.systemEvents;
-      const sessionStore = svcApi.sessionStore;
+      const systemEvents = svcApi.systemEvents as any;
+      const sessionStore = svcApi.sessionStore as any;
       if (!systemEvents || !sessionStore) {
         svcApi.logger.warn("Cron plugin requires systemEvents and sessionStore — skipping");
         return;

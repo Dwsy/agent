@@ -342,7 +342,7 @@ export async function sendReactionViaAccount(params: {
     await account.bot.api.setMessageReaction(
       parsed.chatId,
       Number(params.messageId),
-      reactions,
+      reactions as any,
     );
     return { ok: true };
   } catch (err: unknown) {
@@ -402,7 +402,7 @@ export async function pinMessageViaAccount(params: {
 
   try {
     if (params.unpin) {
-      await account.bot.api.unpinChatMessage(parsed.chatId, { message_id: Number(params.messageId) });
+      await account.bot.api.unpinChatMessage(parsed.chatId, { message_id: Number(params.messageId) } as any);
     } else {
       await account.bot.api.pinChatMessage(parsed.chatId, Number(params.messageId));
     }
@@ -444,7 +444,7 @@ export async function sendKeyboardViaAccount(params: {
   try {
     const sent = await account.bot.api.sendMessage(parsed.chatId, markdownToTelegramHtml(params.text), {
       parse_mode: "HTML",
-      reply_markup: params.keyboard,
+      reply_markup: params.keyboard as any,
       ...(threadId ? { message_thread_id: threadId } : {}),
     });
     recordSentMessage(parsed.chatId, sent.message_id);
@@ -472,7 +472,7 @@ export async function editMessageMarkupViaAccount(params: {
       markdownToTelegramHtml(params.text),
       {
         parse_mode: "HTML",
-        ...(params.keyboard ? { reply_markup: params.keyboard } : {}),
+        ...(params.keyboard ? { reply_markup: params.keyboard as any } : {}),
       },
     );
     return { ok: true };

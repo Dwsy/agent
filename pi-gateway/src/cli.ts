@@ -27,10 +27,10 @@ import type {
   ToolPlugin,
   BackgroundService,
   CommandHandler,
+  CliCommandHandler,
   HttpHandler,
   WsMethodHandler,
   CliProgram,
-  CliCommandHandler,
 } from "./plugins/types.ts";
 import type { InboundMessage, SessionKey } from "./core/types.ts";
 import type { DispatchResult } from "./gateway/types.ts";
@@ -104,18 +104,23 @@ function createCliOnlyPluginApi(
     logger,
 
     registerChannel(_channel: ChannelPlugin): void {},
-    registerTool(_tool: ToolPlugin): void {},
+    registerTool(..._args: any[]): void {},
     registerHook(_events: PluginHookName[], _handler: HookHandler): void {},
     registerHttpRoute(_method: string, _path: string, _handler: HttpHandler): void {},
     registerGatewayMethod(_method: string, _handler: WsMethodHandler): void {},
     registerCommand(_name: string, _handler: CommandHandler): void {},
     registerService(_service: BackgroundService): void {},
-    registerCli(registrar: (program: unknown) => void): void {
-      registry.cliRegistrars.push({ pluginId, registrar: registrar as (program: CliProgram) => void });
+    registerCli(registrar: (program: CliProgram) => void): void {
+      registry.cliRegistrars.push({ pluginId, registrar });
     },
-    on<T extends PluginHookName>(_hook: T, _handler: HookHandler<T>): void {},
+    on(_hook: string, _handler: any): void {},
 
-    async dispatch(_msg: InboundMessage): Promise<DispatchResult> {
+    onHook(_name: string, _handler: any): void {},
+    emitEvent(_event: any): void {},
+    getConfig<T = unknown>(): T { return config as unknown as T; },
+    broadcastToWs(_event: string, _payload: unknown): void {},
+
+    async dispatch(_msg: any): Promise<DispatchResult> {
       throw new Error("dispatch is not available in CLI-only plugin context");
     },
     async sendToChannel(_channel: string, _target: string, _text: string): Promise<void> {
@@ -126,6 +131,7 @@ function createCliOnlyPluginApi(
     },
     async resetSession(_sessionKey: SessionKey): Promise<void> {},
     async setThinkingLevel(_sessionKey: SessionKey, _level: string): Promise<void> {},
+    async cycleThinkingLevel(_sessionKey: SessionKey): Promise<string | undefined> { return undefined; },
     async setModel(_sessionKey: SessionKey, _provider: string, _modelId: string): Promise<void> {},
     async getAvailableModels(_sessionKey: SessionKey): Promise<unknown[]> { return []; },
     async getSessionMessageMode(): Promise<"steer" | "follow-up" | "interrupt"> { return "steer"; },
@@ -139,11 +145,11 @@ function createCliOnlyPluginApi(
       return [];
     },
 
-    async getSessionStats(_sessionKey: SessionKey): Promise<unknown> {
-      return {};
+    async getSessionStats(_sessionKey: SessionKey): Promise<any> {
+      return null;
     },
-    async getRpcState(_sessionKey: SessionKey): Promise<unknown> {
-      return {};
+    async getRpcState(_sessionKey: SessionKey): Promise<any> {
+      return null;
     },
     listSessions(): import("./core/types.ts").SessionState[] {
       return [];

@@ -41,7 +41,7 @@ export function createClackPrompter(): WizardPrompter {
     async select<T>(params: WizardSelectParams<T>): Promise<T> {
       const result = await select({
         message: params.message,
-        options: params.options as unknown as { value: T; label: string; hint?: string }[],
+        options: params.options as any,
         initialValue: params.initialValue,
       });
 
@@ -55,7 +55,7 @@ export function createClackPrompter(): WizardPrompter {
     async multiselect<T>(params: WizardMultiSelectParams<T>): Promise<T[]> {
       const result = await multiselect({
         message: params.message,
-        options: params.options as unknown as { value: T; label: string; hint?: string }[],
+        options: params.options as any,
         initialValues: params.initialValues,
         required: false,
       });

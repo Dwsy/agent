@@ -71,7 +71,7 @@ class TelegramApi {
       body: JSON.stringify(params),
     });
 
-    const data = await res.json();
+    const data: any = await res.json();
     if (!data.ok) throw new Error(data.description);
     return data.result;
   }
