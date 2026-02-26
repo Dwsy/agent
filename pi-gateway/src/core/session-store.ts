@@ -30,6 +30,10 @@ interface PersistedSession {
   lastSenderName?: string;
   lastTopicId?: string;
   lastThreadId?: string;
+  lastModel?: string;
+  lastModelSource?: string;
+  lastThinkingLevel?: string;
+  lastThinkingLevelSource?: string;
 }
 
 // ============================================================================
@@ -134,6 +138,10 @@ export class SessionStore {
           lastSenderName: s.lastSenderName,
           lastTopicId: s.lastTopicId,
           lastThreadId: s.lastThreadId,
+          lastModel: s.lastModel,
+          lastModelSource: s.lastModelSource,
+          lastThinkingLevel: s.lastThinkingLevel,
+          lastThinkingLevelSource: s.lastThinkingLevelSource,
         };
       }
 
@@ -189,6 +197,10 @@ export class SessionStore {
           lastSenderName: p.lastSenderName,
           lastTopicId: p.lastTopicId,
           lastThreadId: p.lastThreadId,
+          lastModel: p.lastModel,
+          lastModelSource: p.lastModelSource,
+          lastThinkingLevel: p.lastThinkingLevel as any,
+          lastThinkingLevelSource: p.lastThinkingLevelSource,
         });
         count++;
       }

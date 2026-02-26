@@ -17,7 +17,7 @@
  */
 
 import type { AgentDefinition, Config } from "./config.ts";
-import type { MessageSource, SessionKey } from "./types.ts";
+import type { MessageSource, SessionKey, ThinkingLevel } from "./types.ts";
 
 const DEFAULT_AGENT_ID = "main";
 const AGENT_ID = "main"; // Legacy fallback, will be removed after v3 migration
@@ -39,6 +39,45 @@ export type RoleSource =
 export interface RoleResolution {
   role: string | null;
   source: RoleSource;
+}
+
+export type ModelSource =
+  | "discord.channel"
+  | "discord.guild"
+  | "discord.channel-default"
+  | "telegram.topic"
+  | "telegram.topic-wildcard"
+  | "telegram.group"
+  | "telegram.group-wildcard"
+  | "telegram.account"
+  | "telegram.channel-default"
+  | "channel-default"
+  | "agent.model"
+  | "global-agent"
+  | "default";
+
+export interface ModelResolution {
+  model: string | null;
+  source: ModelSource;
+}
+
+export type ThinkingLevelSource =
+  | "discord.channel"
+  | "discord.guild"
+  | "discord.channel-default"
+  | "telegram.topic"
+  | "telegram.topic-wildcard"
+  | "telegram.group"
+  | "telegram.group-wildcard"
+  | "telegram.account"
+  | "telegram.channel-default"
+  | "channel-default"
+  | "global-agent"
+  | "default";
+
+export interface ThinkingLevelResolution {
+  thinkingLevel: ThinkingLevel | null;
+  source: ThinkingLevelSource;
 }
 
 export type AgentRouteSource = "single-agent" | "binding" | "prefix" | "default";
@@ -197,6 +236,120 @@ export function resolveRoleForSession(source: MessageSource, config: Config): st
   return resolveRoleForSessionDetailed(source, config).role;
 }
 
+/**
+ * Resolve model for a message source.
+ *
+ * Priority (most specific first):
+ *   1. Discord channel-level model
+ *   2. Discord guild-level model
+ *   3. Telegram topic-level model
+ *   4. Telegram group-level model
+ *   5. Telegram account-level model
+ *   6. Channel-level default model
+ *   7. Generic channel config model
+ *   8. Agent-level model
+ *   9. Global agent.model
+ */
+export function resolveModelForSessionDetailed(source: MessageSource, config: Config): ModelResolution {
+  const { channel, accountId, chatType, chatId, guildId, topicId } = source;
+
+  if (channel === "discord" && config.channels.discord) {
+    const dc = config.channels.discord as any;
+    if (guildId && dc.guilds?.[guildId]) {
+      const guild = dc.guilds[guildId];
+      if (chatId && guild.channels?.[chatId]?.model) {
+        return { model: guild.channels[chatId].model, source: "discord.channel" };
+      }
+      if (guild.model) return { model: guild.model, source: "discord.guild" };
+    }
+    if (dc.model) return { model: dc.model, source: "discord.channel-default" };
+  }
+
+  if (channel === "telegram" && config.channels.telegram) {
+    const tg = config.channels.telegram as any;
+    const accountCfg = accountId ? tg.accounts?.[accountId] : undefined;
+    const groups = accountCfg?.groups ?? tg.groups;
+
+    if (chatType === "group" && topicId) {
+      const groupTopicModel = groups?.[chatId]?.topics?.[topicId]?.model;
+      if (groupTopicModel) return { model: groupTopicModel, source: "telegram.topic" };
+
+      const wildcardGroupTopicModel = groups?.["*"]?.topics?.[topicId]?.model;
+      if (wildcardGroupTopicModel) return { model: wildcardGroupTopicModel, source: "telegram.topic-wildcard" };
+    }
+
+    if (chatType === "group" && groups?.[chatId]?.model) {
+      return { model: groups[chatId].model, source: "telegram.group" };
+    }
+    if (chatType === "group" && groups?.["*"]?.model) {
+      return { model: groups["*"].model, source: "telegram.group-wildcard" };
+    }
+    if (accountCfg?.model) return { model: accountCfg.model, source: "telegram.account" };
+    if (tg.model) return { model: tg.model, source: "telegram.channel-default" };
+  }
+
+  const channelConfig = config.channels[channel];
+  if (channelConfig && typeof channelConfig === "object" && "model" in channelConfig) {
+    return { model: (channelConfig as any).model ?? null, source: "channel-default" };
+  }
+
+  return { model: null, source: "default" };
+}
+
+export function resolveModelForSession(source: MessageSource, config: Config): string | null {
+  return resolveModelForSessionDetailed(source, config).model;
+}
+
+export function resolveThinkingLevelForSessionDetailed(source: MessageSource, config: Config): ThinkingLevelResolution {
+  const { channel, accountId, chatType, chatId, guildId, topicId } = source;
+
+  if (channel === "discord" && config.channels.discord) {
+    const dc = config.channels.discord as any;
+    if (guildId && dc.guilds?.[guildId]) {
+      const guild = dc.guilds[guildId];
+      if (chatId && guild.channels?.[chatId]?.thinkingLevel) {
+        return { thinkingLevel: guild.channels[chatId].thinkingLevel, source: "discord.channel" };
+      }
+      if (guild.thinkingLevel) return { thinkingLevel: guild.thinkingLevel, source: "discord.guild" };
+    }
+    if (dc.thinkingLevel) return { thinkingLevel: dc.thinkingLevel, source: "discord.channel-default" };
+  }
+
+  if (channel === "telegram" && config.channels.telegram) {
+    const tg = config.channels.telegram as any;
+    const accountCfg = accountId ? tg.accounts?.[accountId] : undefined;
+    const groups = accountCfg?.groups ?? tg.groups;
+
+    if (chatType === "group" && topicId) {
+      const groupTopicThinking = groups?.[chatId]?.topics?.[topicId]?.thinkingLevel;
+      if (groupTopicThinking) return { thinkingLevel: groupTopicThinking, source: "telegram.topic" };
+
+      const wildcardGroupTopicThinking = groups?.["*"]?.topics?.[topicId]?.thinkingLevel;
+      if (wildcardGroupTopicThinking) return { thinkingLevel: wildcardGroupTopicThinking, source: "telegram.topic-wildcard" };
+    }
+
+    if (chatType === "group" && groups?.[chatId]?.thinkingLevel) {
+      return { thinkingLevel: groups[chatId].thinkingLevel, source: "telegram.group" };
+    }
+    if (chatType === "group" && groups?.["*"]?.thinkingLevel) {
+      return { thinkingLevel: groups["*"].thinkingLevel, source: "telegram.group-wildcard" };
+    }
+    if (accountCfg?.thinkingLevel) return { thinkingLevel: accountCfg.thinkingLevel, source: "telegram.account" };
+    if (tg.thinkingLevel) return { thinkingLevel: tg.thinkingLevel, source: "telegram.channel-default" };
+  }
+
+  const channelConfig = config.channels[channel];
+  if (channelConfig && typeof channelConfig === "object" && "thinkingLevel" in channelConfig) {
+    return { thinkingLevel: (channelConfig as any).thinkingLevel ?? null, source: "channel-default" };
+  }
+
+  return { thinkingLevel: null, source: "default" };
+}
+
+export function resolveThinkingLevelForSession(source: MessageSource, config: Config): ThinkingLevel | null {
+  return resolveThinkingLevelForSessionDetailed(source, config).thinkingLevel;
+}
+
 function findAgentDefinition(config: Config, agentId?: string): AgentDefinition | null {
   if (!agentId || !config.agents?.list?.length) return null;
   return config.agents.list.find((agent) => agent.id === agentId) ?? null;
@@ -222,6 +375,41 @@ export function resolveRoleForSessionAndAgent(
   const agent = findAgentDefinition(config, agentId ?? source.agentId);
   if (agent?.role) {
     return { role: agent.role, source: "agent.role" };
+  }
+
+  return detailed;
+}
+
+export function resolveModelForSessionAndAgent(
+  source: MessageSource,
+  config: Config,
+  agentId?: string,
+): ModelResolution {
+  const detailed = resolveModelForSessionDetailed(source, config);
+  if (detailed.model) return detailed;
+
+  const agent = findAgentDefinition(config, agentId ?? source.agentId);
+  if (agent?.model) {
+    return { model: agent.model, source: "agent.model" };
+  }
+
+  if (config.agent.model) {
+    return { model: config.agent.model, source: "global-agent" };
+  }
+
+  return detailed;
+}
+
+export function resolveThinkingLevelForSessionAndAgent(
+  source: MessageSource,
+  config: Config,
+  _agentId?: string,
+): ThinkingLevelResolution {
+  const detailed = resolveThinkingLevelForSessionDetailed(source, config);
+  if (detailed.thinkingLevel) return detailed;
+
+  if (config.agent.thinkingLevel) {
+    return { thinkingLevel: config.agent.thinkingLevel, source: "global-agent" };
   }
 
   return detailed;

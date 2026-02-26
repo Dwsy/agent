@@ -44,6 +44,10 @@ export interface SessionState {
   lastSenderName?: string;
   lastTopicId?: string;
   lastThreadId?: string;
+  lastModel?: string;
+  lastModelSource?: string;
+  lastThinkingLevel?: string;
+  lastThinkingLevelSource?: string;
 }
 
 /** Inbound message to be processed */

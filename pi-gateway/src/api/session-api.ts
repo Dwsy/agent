@@ -199,6 +199,10 @@ export async function handleSessionStatus(
       messageCount: session?.messageCount ?? 0,
       isStreaming: session?.isStreaming ?? false,
       lastActivity: session?.lastActivity ?? null,
+      resolvedModel: session?.lastModel ?? null,
+      resolvedModelSource: session?.lastModelSource ?? null,
+      resolvedThinkingLevel: session?.lastThinkingLevel ?? null,
+      resolvedThinkingSource: session?.lastThinkingLevelSource ?? null,
     });
   } catch (err: unknown) {
     return Response.json({ error: (err instanceof Error ? err.message : String(err)) }, { status: 500 });
