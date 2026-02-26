@@ -87,6 +87,23 @@ export interface ExternalReadonlyConfig {
   minConfidence: number;
 }
 
+export interface KnowledgeExternalSource {
+  id: string;
+  path: string;
+  description?: string;
+}
+
+export interface KnowledgeConfig {
+  enabled: boolean;
+  vectorTable: string;
+  search: {
+    maxResults: number;
+    minScore: number;
+    roleBoost: number;
+  };
+  externalSources: KnowledgeExternalSource[];
+}
+
 export interface RolePersonaConfig {
   autoMemory: AutoMemoryConfig;
   logging: LoggingConfig;
@@ -95,6 +112,7 @@ export interface RolePersonaConfig {
   advanced: AdvancedConfig;
   vectorMemory: VectorMemoryConfig;
   externalReadonly: ExternalReadonlyConfig;
+  knowledge: KnowledgeConfig;
 }
 
 // ============================================================================
@@ -167,6 +185,16 @@ const DEFAULT_CONFIG: RolePersonaConfig = {
     topK: 8,
     experienceLimit: 8,
     minConfidence: 0.35,
+  },
+  knowledge: {
+    enabled: true,
+    vectorTable: "knowledge",
+    search: {
+      maxResults: 5,
+      minScore: 0.2,
+      roleBoost: 1.2,
+    },
+    externalSources: [],
   },
 };
 
@@ -496,5 +524,8 @@ export const config = {
   },
   get externalReadonly(): ExternalReadonlyConfig {
     return getConfig().externalReadonly;
+  },
+  get knowledge(): KnowledgeConfig {
+    return getConfig().knowledge;
   },
 };
