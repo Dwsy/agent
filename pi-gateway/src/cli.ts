@@ -3,6 +3,7 @@
  * CLI entry point for pi-gateway.
  *
  * Commands (aligned with OpenClaw CLI surface):
+ *   pi-gw onboard [--install-daemon]        Interactive configuration wizard
  *   pi-gw gateway [--port N] [--verbose]    Start the gateway
  *   pi-gw doctor                            Health check
  *   pi-gw send --to <target> --message <m>  Send a message
@@ -10,11 +11,13 @@
  */
 
 import { Gateway } from "./server.ts";
-import { loadConfig, resolveConfigPath, type CronJob } from "./core/config.ts";
+import { loadConfig, resolveConfigPath, type CronJob, type Config } from "./core/config.ts";
 import { listPendingRequests, approvePairingRequest } from "./security/pairing.ts";
 import { CronEngine } from "./core/cron.ts";
 import { installDaemon, uninstallDaemon } from "./core/daemon.ts";
 import { createPluginRegistry, PluginLoader } from "./plugins/loader.ts";
+import { runOnboardingWizard } from "./wizard/onboarding";
+import { createClackPrompter } from "./wizard/clack-prompter";
 import type {
   GatewayPluginApi,
   PluginManifest,
@@ -24,15 +27,16 @@ import type {
   ToolPlugin,
   BackgroundService,
   CommandHandler,
+  CliCommandHandler,
   HttpHandler,
   WsMethodHandler,
   CliProgram,
-  CliCommandHandler,
 } from "./plugins/types.ts";
 import type { InboundMessage, SessionKey } from "./core/types.ts";
 import type { DispatchResult } from "./gateway/types.ts";
 import { createLogger } from "./core/types.ts";
 import { ExecGuard } from "./core/exec-guard.ts";
+import { runSticker } from "./cli/sticker.ts";
 
 // ============================================================================
 // Argument Parsing
@@ -82,7 +86,7 @@ interface RegisteredCliEntry {
 }
 
 function createCliOnlyPluginApi(
-  config: ReturnType<typeof loadConfig>,
+  config: Config,
   pluginId: string,
   manifest: PluginManifest,
   registry: ReturnType<typeof createPluginRegistry>,
@@ -100,18 +104,23 @@ function createCliOnlyPluginApi(
     logger,
 
     registerChannel(_channel: ChannelPlugin): void {},
-    registerTool(_tool: ToolPlugin): void {},
+    registerTool(..._args: any[]): void {},
     registerHook(_events: PluginHookName[], _handler: HookHandler): void {},
     registerHttpRoute(_method: string, _path: string, _handler: HttpHandler): void {},
     registerGatewayMethod(_method: string, _handler: WsMethodHandler): void {},
     registerCommand(_name: string, _handler: CommandHandler): void {},
     registerService(_service: BackgroundService): void {},
-    registerCli(registrar: (program: unknown) => void): void {
-      registry.cliRegistrars.push({ pluginId, registrar: registrar as (program: CliProgram) => void });
+    registerCli(registrar: (program: CliProgram) => void): void {
+      registry.cliRegistrars.push({ pluginId, registrar });
     },
-    on<T extends PluginHookName>(_hook: T, _handler: HookHandler<T>): void {},
+    on(_hook: string, _handler: any): void {},
 
-    async dispatch(_msg: InboundMessage): Promise<DispatchResult> {
+    onHook(_name: string, _handler: any): void {},
+    emitEvent(_event: any): void {},
+    getConfig<T = unknown>(): T { return config as unknown as T; },
+    broadcastToWs(_event: string, _payload: unknown): void {},
+
+    async dispatch(_msg: any): Promise<DispatchResult> {
       throw new Error("dispatch is not available in CLI-only plugin context");
     },
     async sendToChannel(_channel: string, _target: string, _text: string): Promise<void> {
@@ -122,6 +131,7 @@ function createCliOnlyPluginApi(
     },
     async resetSession(_sessionKey: SessionKey): Promise<void> {},
     async setThinkingLevel(_sessionKey: SessionKey, _level: string): Promise<void> {},
+    async cycleThinkingLevel(_sessionKey: SessionKey): Promise<string | undefined> { return undefined; },
     async setModel(_sessionKey: SessionKey, _provider: string, _modelId: string): Promise<void> {},
     async getAvailableModels(_sessionKey: SessionKey): Promise<unknown[]> { return []; },
     async getSessionMessageMode(): Promise<"steer" | "follow-up" | "interrupt"> { return "steer"; },
@@ -133,6 +143,32 @@ function createCliOnlyPluginApi(
     },
     async getPiCommands(_sessionKey: SessionKey): Promise<{ name: string; description?: string }[]> {
       return [];
+    },
+
+    async getSessionStats(_sessionKey: SessionKey): Promise<any> {
+      return null;
+    },
+    async getRpcState(_sessionKey: SessionKey): Promise<any> {
+      return null;
+    },
+    listSessions(): import("./core/types.ts").SessionState[] {
+      return [];
+    },
+    releaseSession(_sessionKey: SessionKey): void {},
+    readTranscript(_sessionKey: SessionKey, _lastN?: number): import("./core/transcript-logger.ts").TranscriptEntry[] {
+      return [];
+    },
+    listAvailableRoles(): string[] {
+      return [];
+    },
+    async setSessionRole(_sessionKey: SessionKey, _role: string): Promise<boolean> {
+      return false;
+    },
+    async createRole(_role: string): Promise<{ ok: boolean; error?: string }> {
+      return { ok: false, error: "Not available in CLI context" };
+    },
+    async deleteRole(_role: string): Promise<{ ok: boolean; error?: string }> {
+      return { ok: false, error: "Not available in CLI context" };
     },
   };
 }
@@ -387,7 +423,7 @@ async function runCron(): Promise<void> {
   const config = loadConfig(getArg("config"));
   const dataDir = config.session.dataDir.replace(/\/sessions$/, "");
   // Create a no-op dispatcher for listing only
-  const engine = new CronEngine(dataDir, { dispatch: async () => {} });
+  const engine = new CronEngine(dataDir, { dispatch: async () => {} }, undefined, undefined, undefined, undefined, undefined);
 
   if (sub === "list") {
     const jobs = engine.listJobs();
@@ -444,6 +480,56 @@ async function runCron(): Promise<void> {
     console.log("  pi-gw cron list");
     console.log("  pi-gw cron add <id> --schedule <expr> --text <text> [--kind cron|at|every]");
     console.log("  pi-gw cron remove <id>");
+  }
+}
+
+async function runPluginCommand(): Promise<void> {
+  const sub = args[1];
+
+  if (sub === "reload") {
+    const pluginId = args[2];
+    if (!pluginId) {
+      console.error("Usage: pi-gw plugin reload <plugin-id>");
+      process.exit(1);
+    }
+
+    const config = loadConfig(getArg("config"));
+    const port = config.gateway.port;
+    const token = config.gateway.auth.token;
+
+    try {
+      const res = await fetch(`http://localhost:${port}/api/plugins/reload`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          ...(token && { authorization: `Bearer ${token}` }),
+        },
+        body: JSON.stringify({ pluginId }),
+      });
+
+      const result = await res.json() as { success: boolean; durationMs?: number; message?: string; error?: string };
+      if (result.success) {
+        console.log(`✅ Plugin ${pluginId} reloaded successfully`);
+        if (result.durationMs) {
+          console.log(`   Duration: ${result.durationMs}ms`);
+        }
+      } else {
+        console.error(`❌ Failed to reload ${pluginId}: ${result.message || result.error}`);
+        process.exit(1);
+      }
+    } catch (err: unknown) {
+      console.error(`❌ Cannot connect to gateway at :${port}. Is it running?`);
+      process.exit(1);
+    }
+  } else if (sub === "list") {
+    console.log("Plugin management commands:");
+    console.log("  pi-gw plugin reload <plugin-id>     Reload a plugin");
+    console.log("  pi-gw plugin list                   Show this help");
+    console.log("");
+    console.log("Note: Only external plugins can be reloaded.");
+    console.log("Builtin plugins require gateway restart.");
+  } else {
+    console.log("Usage: pi-gw plugin reload <plugin-id> | pi-gw plugin list");
   }
 }
 
@@ -552,11 +638,54 @@ function formatBytes(bytes: number): string {
   return `${val.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
 }
 
+async function runOnboard(): Promise<void> {
+  const prompter = createClackPrompter();
+
+  try {
+    const result = await runOnboardingWizard(
+      {
+        nonInteractive: getFlag("non-interactive"),
+        acceptRisk: getFlag("accept-risk"),
+        flow: getArg("flow") as "quickstart" | "advanced" | undefined,
+        workspace: getArg("workspace"),
+        port: getArg("port") ? parseInt(getArg("port")!, 10) : undefined,
+        bind: getArg("bind") as "loopback" | "lan" | "auto" | "custom" | undefined,
+        customHost: getArg("custom-host"),
+        auth: getArg("auth") as "token" | "password" | "off" | undefined,
+        token: getArg("token"),
+        password: getArg("password"),
+        telegramToken: getArg("telegram-token"),
+        piCliPath: getArg("pi-cli"),
+        poolMin: getArg("pool-min") ? parseInt(getArg("pool-min")!, 10) : undefined,
+        poolMax: getArg("pool-max") ? parseInt(getArg("pool-max")!, 10) : undefined,
+        installDaemon: getFlag("install-daemon"),
+        configPath: getArg("config"),
+      },
+      prompter,
+    );
+
+    console.log(`\n✅ ${result.message}`);
+
+    if (!getFlag("install-daemon")) {
+      console.log("\nNext steps:");
+      console.log(`  pi-gw gateway              # Start the gateway`);
+      console.log(`  pi-gw install-daemon       # Install as system service`);
+    }
+  } catch (err: unknown) {
+    if (err instanceof Error && err.name === "WizardCancelledError") {
+      console.log("\n❌ Onboarding cancelled.");
+      process.exit(0);
+    }
+    throw err;
+  }
+}
+
 function showHelp(): void {
   console.log(`
 pi-gateway — Local AI Gateway for pi agent
 
 Usage:
+  pi-gw onboard [--install-daemon] [...]                  Interactive configuration wizard
   pi-gw gateway [--port N] [--verbose] [--no-gui] [--config path]   Start the gateway
   pi-gw doctor [--config path]                            Health check
   pi-gw send --to <target> --message <text>               Send a message (telegram:<chatId> or telegram:<accountId>:<chatId>[:topic:<tid>])
@@ -569,10 +698,26 @@ Usage:
   pi-gw media stats [--channel <ch>]                      Show media storage statistics
   pi-gw media clean [--days N] [--channel <ch>] [--dry-run]  Clean old media files
   pi-gw media sticker-cache [stats|prune|clear]           Manage sticker cache
+  pi-gw sticker list <pack>                               List stickers in pack
+  pi-gw sticker send <chat> <pack> [index|random]         Send sticker to chat
+  pi-gw sticker download <pack> [dir]                     Download sticker pack
+  pi-gw sticker search <query>                            Search sticker packs
+  pi-gw onboard [--install-daemon]                        Interactive configuration wizard
+  pi-gw plugin reload <plugin-id>                         Hot reload a plugin
   pi-gw install-daemon [--port N]                         Install as system daemon
   pi-gw uninstall-daemon                                  Remove system daemon
   pi-gw help                                              Show this help
   pi-gw <plugin-command> [...]                            Run plugin-registered CLI command
+
+Onboarding options:
+  --flow quickstart|advanced      Choose wizard mode
+  --workspace <path>              Set workspace directory
+  --port <n>                      Gateway port
+  --bind loopback|lan|auto|custom Bind address mode
+  --auth token|password|off       Authentication mode
+  --telegram-token <token>        Telegram bot token
+  --install-daemon                Install as system service after config
+  --non-interactive               Non-interactive mode (use with other flags)
 
 Environment:
   PI_GATEWAY_CONFIG   Path to config file (default: ~/.pi/gateway/pi-gateway.jsonc)
@@ -584,6 +729,9 @@ Environment:
 // ============================================================================
 
 switch (command) {
+  case "onboard":
+    await runOnboard();
+    break;
   case "gateway":
   case "start":
     await runGateway();
@@ -602,6 +750,12 @@ switch (command) {
     break;
   case "media":
     await runMedia();
+    break;
+  case "sticker":
+    await runSticker(args, () => loadConfig(getArg("config")));
+    break;
+  case "plugin":
+    await runPluginCommand();
     break;
   case "install-daemon": {
     const config = loadConfig(getArg("config"));

@@ -16,7 +16,7 @@
 import type { InboundMessage, SessionKey } from "../core/types.ts";
 import type { GatewayContext } from "./types.ts";
 import type { PrioritizedWork } from "../core/message-queue.ts";
-import { resolveRoleForSession } from "../core/session-router.ts";
+import { extractAgentIdFromSessionKey, resolveModelForSessionAndAgent, resolveRoleForSessionAndAgent, resolveThinkingLevelForSessionAndAgent } from "../core/session-router.ts";
 import { isTuiCommand, tryHandleCommand } from "./command-handler.ts";
 import { getAssistantMessageEvent, getAmePartial } from "../core/rpc-events.ts";
 import { isTransient, classifyError } from "../core/model-health.ts";
@@ -77,23 +77,54 @@ export async function processMessage(
 
   // Hook: session_start (if new session)
   const isNew = !ctx.sessions.has(sessionKey);
+  const agentId = source.agentId ?? extractAgentIdFromSessionKey(sessionKey) ?? undefined;
+  const roleResolution = resolveRoleForSessionAndAgent(source, ctx.config, agentId);
+  const modelResolution = resolveModelForSessionAndAgent(source, ctx.config, agentId);
+  const thinkingResolution = resolveThinkingLevelForSessionAndAgent(source, ctx.config, agentId);
   const session = ctx.sessions.getOrCreate(sessionKey, {
-    role: resolveRoleForSession(source, ctx.config),
+    role: roleResolution.role,
     isStreaming: false,
     lastActivity: Date.now(),
     messageCount: 0,
     rpcProcessId: null,
     lastChatId: source.chatId,
     lastChannel: source.channel,
+    lastAccountId: source.accountId,
+    lastChatType: source.chatType,
+    lastSenderId: source.senderId,
+    lastSenderName: source.senderName,
+    lastTopicId: source.topicId,
+    lastThreadId: source.threadId,
+    lastModel: modelResolution.model ?? undefined,
+    lastModelSource: modelResolution.source,
+    lastThinkingLevel: thinkingResolution.thinkingLevel ?? undefined,
+    lastThinkingLevelSource: thinkingResolution.source,
   });
   if (isNew) {
-    ctx.transcripts.logMeta(sessionKey, "session_created", { role: session.role });
+    ctx.transcripts.logMeta(sessionKey, "session_created", {
+      role: session.role,
+      roleSource: roleResolution.source,
+      model: modelResolution.model,
+      modelSource: modelResolution.source,
+      thinkingLevel: thinkingResolution.thinkingLevel,
+      thinkingSource: thinkingResolution.source,
+    });
     await ctx.registry.hooks.dispatch("session_start", { sessionKey });
   }
   session.lastActivity = Date.now();
   session.messageCount++;
-  if (source.chatId) session.lastChatId = source.chatId;
-  if (source.channel) session.lastChannel = source.channel;
+  session.lastChatId = source.chatId;
+  session.lastChannel = source.channel;
+  session.lastAccountId = source.accountId;
+  session.lastChatType = source.chatType;
+  session.lastSenderId = source.senderId;
+  session.lastSenderName = source.senderName;
+  session.lastTopicId = source.topicId;
+  session.lastThreadId = source.threadId;
+  session.lastModel = modelResolution.model ?? undefined;
+  session.lastModelSource = modelResolution.source;
+  session.lastThinkingLevel = thinkingResolution.thinkingLevel ?? undefined;
+  session.lastThinkingLevelSource = thinkingResolution.source;
 
   // Resolve role → capability profile for RPC process
   const role = session.role ?? "default";
@@ -138,6 +169,31 @@ export async function processMessage(
     signature: profile.signature.slice(0, 12),
     capabilities: profile.resourceCounts,
   });
+
+  if (thinkingResolution.thinkingLevel) {
+    try {
+      await rpc.setThinkingLevel(thinkingResolution.thinkingLevel);
+      ctx.log.info(`[thinking-routing] ${sessionKey} level=${thinkingResolution.thinkingLevel} source=${thinkingResolution.source}`);
+    } catch (err: unknown) {
+      ctx.log.warn(`[thinking-routing] failed to apply level=${thinkingResolution.thinkingLevel} source=${thinkingResolution.source}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  if (modelResolution.model) {
+    const idx = modelResolution.model.indexOf("/");
+    if (idx > 0 && idx < modelResolution.model.length - 1) {
+      const provider = modelResolution.model.slice(0, idx);
+      const modelId = modelResolution.model.slice(idx + 1);
+      try {
+        await rpc.setModel(provider, modelId);
+        ctx.log.info(`[model-routing] ${sessionKey} model=${modelResolution.model} source=${modelResolution.source}`);
+      } catch (err: unknown) {
+        ctx.log.warn(`[model-routing] failed to apply model=${modelResolution.model} source=${modelResolution.source}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    } else {
+      ctx.log.warn(`[model-routing] invalid model format for ${sessionKey}: ${modelResolution.model}`);
+    }
+  }
 
   // Typing indicator
   await setTyping(true);
@@ -415,7 +471,7 @@ export async function processMessage(
 
     // Model health: record success
     if (ctx.modelHealth) {
-      const currentModel = ctx.config.agent?.model ?? "default";
+      const currentModel = session.lastModel ?? ctx.config.agent?.model ?? "default";
       ctx.modelHealth.recordSuccess(currentModel);
     }
   } catch (err: unknown) {
@@ -426,7 +482,7 @@ export async function processMessage(
 
     // Model health: record failure and execute failover if transient
     if (ctx.modelHealth) {
-      const currentModel = ctx.config.agent?.model ?? "default";
+      const currentModel = session.lastModel ?? ctx.config.agent?.model ?? "default";
       const category = ctx.modelHealth.recordFailure(currentModel, errMsg);
       if (isTransient(category)) {
         const fc = ctx.config.agent?.modelFailover;

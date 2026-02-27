@@ -108,4 +108,75 @@ describe("ConciseStateManager", () => {
     expect(manager.isChannelEnabled("discord")).toBe(true);
     expect(manager.isChannelEnabled("slack")).toBe(false);
   });
+
+  // === Session Override Tests ===
+
+  test("should set and get session override", () => {
+    const manager = new ConciseStateManager(["telegram"]);
+
+    expect(manager.getSessionOverride("s1")).toBeUndefined();
+
+    manager.setSessionOverride("s1", true);
+    expect(manager.getSessionOverride("s1")).toBe(true);
+
+    manager.setSessionOverride("s1", false);
+    expect(manager.getSessionOverride("s1")).toBe(false);
+  });
+
+  test("should clear session override", () => {
+    const manager = new ConciseStateManager(["telegram"]);
+    manager.setSessionOverride("s1", true);
+
+    manager.clearSessionOverride("s1");
+    expect(manager.getSessionOverride("s1")).toBeUndefined();
+  });
+
+  test("getEffectiveState: override wins over config default", () => {
+    const manager = new ConciseStateManager(["telegram"]);
+
+    // No override → use config default
+    expect(manager.getEffectiveState("s1", false)).toBe(false);
+    expect(manager.getEffectiveState("s1", true)).toBe(true);
+
+    // Override ON → always ON regardless of config
+    manager.setSessionOverride("s1", true);
+    expect(manager.getEffectiveState("s1", false)).toBe(true);
+    expect(manager.getEffectiveState("s1", true)).toBe(true);
+
+    // Override OFF → always OFF regardless of config
+    manager.setSessionOverride("s1", false);
+    expect(manager.getEffectiveState("s1", true)).toBe(false);
+    expect(manager.getEffectiveState("s1", false)).toBe(false);
+  });
+
+  test("should track override count", () => {
+    const manager = new ConciseStateManager(["telegram"]);
+    expect(manager.getOverrideCount()).toBe(0);
+
+    manager.setSessionOverride("s1", true);
+    manager.setSessionOverride("s2", false);
+    expect(manager.getOverrideCount()).toBe(2);
+
+    manager.clearSessionOverride("s1");
+    expect(manager.getOverrideCount()).toBe(1);
+  });
+
+  test("should update channels on hot-reload", () => {
+    const manager = new ConciseStateManager(["telegram"]);
+    expect(manager.isChannelEnabled("discord")).toBe(false);
+
+    manager.updateChannels(["telegram", "discord"]);
+    expect(manager.isChannelEnabled("discord")).toBe(true);
+  });
+
+  test("session overrides survive channel update", () => {
+    const manager = new ConciseStateManager(["telegram"]);
+    manager.setSessionOverride("s1", true);
+
+    manager.updateChannels(["discord"]);
+
+    // Override still intact
+    expect(manager.getSessionOverride("s1")).toBe(true);
+    expect(manager.getEffectiveState("s1", false)).toBe(true);
+  });
 });

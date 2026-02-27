@@ -4,7 +4,7 @@
 import type * as Lark from "@larksuiteoapi/node-sdk";
 import type { GatewayPluginApi } from "../../types.ts";
 import type { MessageSource } from "../../../core/types.ts";
-import { resolveAgentId, resolveSessionKey } from "../../../core/session-router.ts";
+import { resolveAgentRoute, resolveSessionKey } from "../../../core/session-router.ts";
 import { isSenderAllowed, type DmPolicy } from "../../../security/allowlist.ts";
 import { createPairingRequest } from "../../../security/pairing.ts";
 import type { FeishuChannelConfig, FeishuMessageContext, FeishuPluginRuntime } from "./types.ts";
@@ -280,8 +280,13 @@ async function handleFeishuMessage(
     senderId: ctx.senderOpenId,
   };
 
-  const { agentId, text: routedText } = resolveAgentId(source, ctx.content, api.config);
-  const sessionKey = resolveSessionKey(source, api.config, agentId);
+  const route = resolveAgentRoute(source, ctx.content, api.config);
+  const { agentId, text: routedText } = route;
+  const routedSource: MessageSource = { ...source, agentId };
+  const sessionKey = resolveSessionKey(routedSource, api.config, agentId);
+  log.info(
+    `feishu: routing chat=${source.chatId} sender=${source.senderId} type=${source.chatType} agentId=${agentId} agentSource=${route.source}${route.bindingScore !== undefined ? ` bindingScore=${route.bindingScore}` : ""}`,
+  );
 
   // Streaming state
   const streamMode = channelCfg.streamMode ?? (channelCfg.streamingEnabled === false ? "off" : "cardkit");
@@ -298,7 +303,7 @@ async function handleFeishuMessage(
 
   // Dispatch to agent
   await api.dispatch({
-    source,
+    source: routedSource,
     sessionKey,
     text: routedText,
     images,

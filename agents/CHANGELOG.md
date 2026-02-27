@@ -1,5 +1,38 @@
 # Pi Agent 代理系统更新日志
 
+## [2.0.0] - 2026-02-24
+
+### 重大重构: Agent 系统精简与进化
+
+#### 🗑️ 删除的代理（功能重叠或过时）
+- `researcher.md` - 过于具体的并行处理研究，功能合并到 research
+- `joke-teller.md` - 无关功能，不适用于生产环境
+- `system-design.md` - 过于简单，功能合并到 design
+- `myagent.md` - 空模板文件
+- `run-python.md` - 可用 worker 替代
+- `brainstormer.md` - 功能合并到 design
+- `dynamic/pi.md` - 一次性 NES 模拟器任务
+- `dynamic/non-existent-test-agent-xyz123.md` - 测试文件
+
+#### 🔄 进化的新代理
+- **`research.md` v2.0.0** - 通用研究代理
+  - 合并: research + researcher
+  - 新增: codebase research (ace-tool) + web research (web_search)
+  - 模式: readonly
+  
+- **`design.md` v2.0.0** - 系统设计代理  
+  - 合并: brainstormer + system-design
+  - 新增: EventStorming 方法论 + workhub 集成
+  - 模式: planning
+
+#### 📊 统计
+- 清理前: 38 个文件
+- 清理后: 30 个有效代理文件
+- 删除: 7 个过时代理
+- 合并: 2 组重复功能
+
+---
+
 ## [1.2.1] - 2026-01-26
 
 ### 改进

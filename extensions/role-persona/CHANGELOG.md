@@ -1,5 +1,97 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+- **向量记忆索引范围修复**: `rebuildVectorIndex` 现在同时索引 `memory/consolidated.md` 和 `memory/daily/*.md`，与架构注释保持一致
+  - 原实现只索引 consolidated.md
+  - 新实现解析 daily 文件中的 `## [HH:MM] CATEGORY` 条目并全部索引
+
+### Documentation
+- 重写 README.md，精简并与 v2 架构同步
+- 重写 HANDOFF.md，反映当前完整实现状态
+- 大幅扩展 ARCHITECTURE.md，添加详细模块图和数据流
+- 新增 QUICKSTART.md，5分钟快速入门指南
+- 新增 docs/README.md，文档索引和导航
+
+---
+
+## 2026-02-21
+
+### Added
+- **结构化角色目录（v2）**
+  - 新建角色默认生成 `core/`、`memory/daily/`、`context/`、`skills/`、`archive/` 层级
+  - 新增 `core/constraints.md`、`context/active-project.md`、`context/session-state.md`、`skills/active.json`
+- **Role CRUD 工具（可编程操作角色文件）**
+  - `role_read`：读取角色文件（默认 `memory/consolidated.md`）
+  - `role_write`：覆盖/追加写入角色文件
+  - `role_list`：列出角色文件（支持递归）
+  - `role_search`：跨文件全文检索
+
+### Changed
+- **Memory 存储升级为单一路径（无旧版回退）**
+  - 使用 `memory/consolidated.md` + `memory/daily/YYYY-MM-DD.md`
+  - 启动时自动迁移历史 `MEMORY.md` 与旧 daily 文件到新结构
+- **MEMORY 元数据升级**
+  - 支持 YAML frontmatter（name/version/created/updated/autoConsolidate/consolidationInterval/tags）
+  - 写入时自动更新 `updated`
+- **Gateway 只读访问切换到新路径** (`pi-gateway/src/core/memory-access.ts`)
+  - 仅读取 `core/identity.md` / `core/soul.md` 与 `memory/consolidated.md`
+  - 日记仅读取 `memory/daily/`
+
+---
+
+## 2026-02-19
+
+### Added
+- **外部只读记忆增强** (`externalReadonly`): 可选接入只读记忆服务（如 pi-session-manager）
+  - `before_agent_start` 调用 `/v1/memory/unified`，按置信度注入跨会话 hints（evidence + next_actions）
+  - `agent_end` 调用 `/v1/experience/extract`，记录候选经验数量（仅日志）
+  - 失败自动降级，不影响原有 MEMORY.md 与向量记忆流程
+- **配置项**: `pi-role-persona.jsonc` 新增 `externalReadonly` 配置段
+  - `enabled` / `baseUrl` / `token` / `timeoutMs` / `topK` / `experienceLimit` / `minConfidence`
+  - 环境变量: `ROLE_EXTERNAL_READONLY`, `ROLE_EXTERNAL_BASE_URL`, `ROLE_EXTERNAL_TOKEN`, `ROLE_EXTERNAL_TIMEOUT_MS`, `ROLE_EXTERNAL_TOP_K`, `ROLE_EXTERNAL_EXP_LIMIT`, `ROLE_EXTERNAL_MIN_CONFIDENCE`
+
+---
+
+## 2026-02-16
+
+### Added
+- **向量记忆系统** (`memory-vector.ts`): 基于 LanceDB + OpenAI embedding 的语义搜索层
+  - 在现有 Markdown 记忆之上叠加向量索引，不替换原有系统
+  - 自动召回 (auto-recall): `before_agent_start` 时语义搜索注入相关记忆到 system prompt
+  - 自动索引 (auto-index): 写入 learning/preference 时异步生成向量索引
+  - 混合搜索 (hybrid search): 关键词 + 向量 → RRF (Reciprocal Rank Fusion) 融合排序
+  - 全量重建: `vector_rebuild` action 或 `/memory-vector rebuild` 命令
+  - 优雅降级: embedding 不可用时自动回退到纯关键词搜索
+  - 安全: prompt injection 防护，XML 转义，输入长度限制
+- **`/memory-vector` 命令**: 向量记忆管理
+  - `/memory-vector stats` — 查看向量记忆状态
+  - `/memory-vector rebuild` — 从 MEMORY.md 全量重建向量索引
+- **memory tool 新增 actions**: `vector_rebuild`, `vector_stats`
+- **配置**: `pi-role-persona.jsonc` 新增 `vectorMemory` 配置段
+  - `enabled` / `provider` / `model` / `apiKey` / `autoRecall` / `autoIndex` / `hybridSearch` / `vectorWeight` / `recallLimit` / `recallMinScore` / `dbPath`
+  - 环境变量: `ROLE_VECTOR_MEMORY`, `ROLE_VECTOR_API_KEY`
+
+### Changed
+- **search action 升级**: 当向量记忆激活时自动使用混合搜索 (keyword + vector → RRF)
+- **session_shutdown**: 新增向量索引 flush 和资源释放
+- **auto-memory extraction**: 提取后自动将新记忆写入向量索引
+
+### Dependencies
+- `@lancedb/lancedb` — 本地向量数据库 (可选，仅 vectorMemory.enabled=true 时需要)
+- OpenAI Embeddings API — text-embedding-3-small ($0.02/1M tokens)
+
+### Files Added
+- `memory-vector.ts` — 向量记忆核心模块 (VectorDB, EmbeddingProvider, hybrid search, auto-recall)
+
+### Files Modified
+- `index.ts` — 集成向量记忆 init/recall/index/flush/dispose + 新增 tool actions 和命令
+- `config.ts` — 新增 `VectorMemoryConfig` 类型和默认值 + 环境变量覆盖
+- `pi-role-persona.jsonc` — 新增 `vectorMemory` 配置段
+
+---
+
 ## 2026-02-13
 
 ### Added
@@ -83,6 +175,26 @@
 mv ~/.pi/agent/roles/zero/MEMORY.backup*.md ~/.pi/agent/roles/zero/.backup/memory/
 ```
 
-## Previous
+---
 
-- 初始版本
+## 2025-02-06
+
+### 初始版本
+- 基础角色系统：创建、映射、加载
+- OpenClaw 风格的文件结构（AGENTS, IDENTITY, SOUL, USER）
+- 自动记忆提取（5轮/关键词/30分钟触发）
+- 基础 TUI 支持
+
+---
+
+## 版本汇总
+
+| 版本 | 日期 | 核心特性 |
+|------|------|----------|
+| v2.0 | 2026-02-21 | 结构化目录 v2、Role CRUD Tools |
+| v1.5 | 2026-02-19 | 外部只读记忆增强 |
+| v1.4 | 2026-02-16 | 向量记忆系统 |
+| v1.3 | 2026-02-13 | 压缩时记忆抢救 |
+| v1.2 | 2026-02-10 | Bug 修复、按需搜索 |
+| v1.1 | 2025-02-10 | TOOLS.md 支持、备份目录 |
+| v1.0 | 2025-02-06 | 初始版本 |

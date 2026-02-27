@@ -43,6 +43,7 @@ export async function resetSession(
   if (session) {
     session.messageCount = 0;
     session.lastActivity = Date.now();
+    session.skipAutoResume = true; // Mark to skip --continue on next spawn
     ctx.sessions.touch(sessionKey);
     result.stateReset = true;
   }

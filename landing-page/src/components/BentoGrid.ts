@@ -2,230 +2,425 @@ import { html, LitElement, css } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { i18n, type Locale } from "../i18n/i18n-manager";
 
-interface CardDef {
-  key: string;
-  icon: string;
-  colorClass: string;
-  accentColor: string;
-  span2: boolean;
-  hasFeatures: boolean;
-  featureCount: number;
-}
-
-const CARDS: CardDef[] = [
-  { key: "workflow",   icon: "workflow",   colorClass: "accent-blue",   accentColor: "#2563EB", span2: true,  hasFeatures: true,  featureCount: 4 },
-  { key: "skills",     icon: "skills",     colorClass: "accent-purple", accentColor: "#8B5CF6", span2: false, hasFeatures: false, featureCount: 0 },
-  { key: "subagents",  icon: "subagents",  colorClass: "accent-green",  accentColor: "#10B981", span2: false, hasFeatures: false, featureCount: 0 },
-  { key: "search",     icon: "search",     colorClass: "accent-cyan",   accentColor: "#22D3EE", span2: false, hasFeatures: false, featureCount: 0 },
-  { key: "gateway",    icon: "gateway",    colorClass: "accent-orange", accentColor: "#F97316", span2: false, hasFeatures: false, featureCount: 0 },
-  { key: "enterprise", icon: "enterprise", colorClass: "accent-pink",   accentColor: "#EC4899", span2: true,  hasFeatures: true,  featureCount: 4 },
-];
-
+/**
+ * Bento Grid - Motion-Engine Paradigm v2
+ * DESIGN_VARIANCE: 8 | MOTION_INTENSITY: 6 | VISUAL_DENSITY: 4
+ */
 @customElement("bento-grid")
 export class BentoGrid extends LitElement {
   static styles = css`
     :host { display: block; width: 100%; }
 
     .section {
-      padding: 7rem 1.5rem;
-      background: #0A0F1E;
+      padding: 8rem 1.5rem;
+      background: #09090b;
       position: relative;
     }
 
-    /* subtle grid texture */
-    .section::after {
-      content: "";
-      position: absolute;
-      inset: 0;
-      background-image:
-        linear-gradient(rgba(51,65,85,0.06) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(51,65,85,0.06) 1px, transparent 1px);
-      background-size: 48px 48px;
-      pointer-events: none;
+    .inner { max-width: 1200px; margin: 0 auto; }
+
+    .header {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 4rem;
+      margin-bottom: 5rem;
+      align-items: end;
     }
 
-    .inner { position: relative; z-index: 1; max-width: 72rem; margin: 0 auto; }
-
-    /* ── header ── */
-    .header { text-align: center; margin-bottom: 4rem; }
+    .header-left { max-width: 480px; }
 
     .label {
-      font-size: 0.8rem;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.75rem;
       font-weight: 600;
-      color: #60A5FA;
+      color: #10b981;
       text-transform: uppercase;
-      letter-spacing: 0.1em;
-      margin-bottom: 0.75rem;
-      font-family: "Space Grotesk", sans-serif;
+      letter-spacing: 0.08em;
+      margin-bottom: 1rem;
     }
 
     .title {
       font-size: clamp(2rem, 4vw, 3rem);
-      font-weight: 700;
-      color: #F1F5F9;
-      margin: 0 0 1rem;
-      font-family: "Space Grotesk", sans-serif;
-      letter-spacing: -0.01em;
+      font-weight: 600;
+      color: #fafafa;
+      letter-spacing: -0.02em;
+      line-height: 1.05;
+      margin-bottom: 1.25rem;
     }
 
     .subtitle {
-      font-size: 1.05rem;
-      color: #94A3B8;
-      max-width: 38rem;
-      margin: 0 auto;
+      font-size: 1.0625rem;
+      color: #71717a;
       line-height: 1.7;
-      font-family: "DM Sans", sans-serif;
     }
 
-    /* ── grid ── */
+    .header-right {
+      display: flex;
+      gap: 3rem;
+      justify-content: flex-end;
+    }
+
+    .stat-block {
+      text-align: right;
+    }
+
+    .stat-value {
+      font-size: 2.5rem;
+      font-weight: 700;
+      color: #fafafa;
+      letter-spacing: -0.02em;
+      line-height: 1;
+    }
+
+    .stat-label {
+      font-size: 0.75rem;
+      color: #52525b;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin-top: 0.5rem;
+    }
+
+    /* Bento Grid - Asymmetric Masonry */
     .grid {
       display: grid;
-      grid-template-columns: repeat(3, 1fr);
+      grid-template-columns: repeat(12, 1fr);
+      grid-auto-rows: 140px;
       gap: 1.25rem;
     }
 
-    /* ── card ── */
     .card {
-      background: rgba(30, 41, 59, 0.4);
-      border: 1px solid rgba(51, 65, 85, 0.5);
-      border-radius: 1rem;
-      padding: 1.75rem;
+      background: #18181b;
+      border: 1px solid #27272a;
+      border-radius: 1.25rem;
+      padding: 1.5rem;
       position: relative;
       overflow: hidden;
-      transition: transform 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease;
-      /* scroll reveal initial state */
-      opacity: 0;
-      transform: translateY(24px);
+      transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+      display: flex;
+      flex-direction: column;
     }
 
-    .card.revealed {
-      opacity: 1;
-      transform: translateY(0);
-      transition: opacity 0.5s ease, transform 0.5s ease, box-shadow 0.3s ease, border-color 0.3s ease;
-    }
-
-    /* accent border-top */
-    .card::before {
-      content: "";
-      position: absolute;
-      top: 0; left: 0; right: 0;
-      height: 3px;
-      border-radius: 1rem 1rem 0 0;
-    }
-
-    .accent-blue::before   { background: linear-gradient(90deg, #2563EB, #60A5FA); }
-    .accent-purple::before { background: linear-gradient(90deg, #8B5CF6, #A78BFA); }
-    .accent-green::before  { background: linear-gradient(90deg, #10B981, #34D399); }
-    .accent-cyan::before   { background: linear-gradient(90deg, #22D3EE, #67E8F9); }
-    .accent-orange::before { background: linear-gradient(90deg, #F97316, #FB923C); }
-    .accent-pink::before   { background: linear-gradient(90deg, #EC4899, #F472B6); }
-
-    /* hover glow */
     .card:hover {
-      transform: translateY(-2px);
-      border-color: rgba(96, 165, 250, 0.35);
+      transform: translateY(-4px);
+      border-color: #3f3f46;
     }
-    .card.revealed:hover { transform: translateY(-2px); }
 
-    .accent-blue:hover   { box-shadow: 0 4px 30px rgba(37, 99, 235, 0.12); }
-    .accent-purple:hover { box-shadow: 0 4px 30px rgba(139, 92, 246, 0.12); }
-    .accent-green:hover  { box-shadow: 0 4px 30px rgba(16, 185, 129, 0.12); }
-    .accent-cyan:hover   { box-shadow: 0 4px 30px rgba(34, 211, 238, 0.12); }
-    .accent-orange:hover { box-shadow: 0 4px 30px rgba(249, 115, 22, 0.12); }
-    .accent-pink:hover   { box-shadow: 0 4px 30px rgba(236, 72, 153, 0.12); }
+    .card::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(500px circle at var(--mouse-x, 50%) var(--mouse-y, 50%), rgba(16, 185, 129, 0.08), transparent 40%);
+      opacity: 0;
+      transition: opacity 0.3s;
+      pointer-events: none;
+    }
 
-    .span2 { grid-column: span 2; }
+    .card:hover::before { opacity: 1; }
 
-    /* ── card internals ── */
-    .card-head {
+    /* Card Sizes - True Asymmetric */
+    .card.span-6 { grid-column: span 6; }
+    .card.span-4 { grid-column: span 4; }
+    .card.span-3 { grid-column: span 3; }
+    .card.row-2 { grid-row: span 2; }
+    .card.row-3 { grid-row: span 3; }
+    .card.row-4 { grid-row: span 4; }
+
+    /* Card Types */
+    .card-header {
       display: flex;
       align-items: center;
-      gap: 0.875rem;
-      margin-bottom: 0.875rem;
+      gap: 0.75rem;
+      margin-bottom: 1rem;
     }
 
-    .icon-box {
-      width: 2.75rem;
-      height: 2.75rem;
+    .card-icon {
+      width: 2.25rem;
+      height: 2.25rem;
       border-radius: 0.625rem;
-      display: flex;
-      align-items: center;
-      justify-content: center;
+      display: grid;
+      place-items: center;
+      font-size: 0.875rem;
+      font-weight: 600;
       flex-shrink: 0;
     }
 
-    .icon-box.blue   { background: rgba(37, 99, 235, 0.15); color: #60A5FA; }
-    .icon-box.purple { background: rgba(139, 92, 246, 0.15); color: #A78BFA; }
-    .icon-box.green  { background: rgba(16, 185, 129, 0.15); color: #34D399; }
-    .icon-box.cyan   { background: rgba(34, 211, 238, 0.15); color: #67E8F9; }
-    .icon-box.orange { background: rgba(249, 115, 22, 0.15); color: #FB923C; }
-    .icon-box.pink   { background: rgba(236, 72, 153, 0.15); color: #F472B6; }
+    .card-icon.accent {
+      background: rgba(16, 185, 129, 0.12);
+      color: #10b981;
+    }
+
+    .card-icon.purple {
+      background: rgba(168, 85, 247, 0.12);
+      color: #a855f7;
+    }
+
+    .card-icon.blue {
+      background: rgba(59, 130, 246, 0.12);
+      color: #3b82f6;
+    }
+
+    .card-icon.orange {
+      background: rgba(249, 115, 22, 0.12);
+      color: #f97316;
+    }
 
     .card-title {
-      font-size: 1.125rem;
+      font-size: 1rem;
       font-weight: 600;
-      color: #F1F5F9;
-      font-family: "Space Grotesk", sans-serif;
-      margin: 0;
+      color: #fafafa;
+      letter-spacing: -0.01em;
     }
 
     .card-desc {
-      color: #94A3B8;
-      line-height: 1.7;
-      font-size: 0.9rem;
-      margin: 0;
-      font-family: "DM Sans", sans-serif;
+      font-size: 0.875rem;
+      color: #71717a;
+      line-height: 1.6;
     }
 
+    /* Feature List */
     .features {
       list-style: none;
       padding: 0;
-      margin: 1rem 0 0;
-    }
-
-    .features li {
+      margin: auto 0 0 0;
       display: flex;
-      align-items: flex-start;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    .feature {
+      display: flex;
+      align-items: center;
       gap: 0.625rem;
-      padding: 0.375rem 0;
-      color: #94A3B8;
-      font-size: 0.85rem;
-      font-family: "DM Sans", sans-serif;
-      line-height: 1.5;
+      font-size: 0.8125rem;
+      color: #a1a1aa;
     }
 
-    .features li::before {
-      content: "\u2192";
-      color: #60A5FA;
-      font-weight: 600;
+    .feature::before {
+      content: '';
+      width: 4px;
+      height: 4px;
+      border-radius: 50%;
+      background: #10b981;
       flex-shrink: 0;
-      margin-top: 1px;
     }
 
-    /* ── responsive ── */
+    /* Live Status Widget */
+    .status-widget {
+      margin-top: auto;
+      padding: 1rem;
+      background: rgba(16, 185, 129, 0.05);
+      border-radius: 0.75rem;
+      border: 1px solid rgba(16, 185, 129, 0.1);
+    }
+
+    .status-header {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-bottom: 0.75rem;
+    }
+
+    .status-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #10b981;
+      animation: pulse 2s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4); }
+      50% { box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
+    }
+
+    .status-text {
+      font-size: 0.6875rem;
+      color: #10b981;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-weight: 600;
+    }
+
+    .status-metrics {
+      display: flex;
+      gap: 1.5rem;
+    }
+
+    .metric {
+      display: flex;
+      flex-direction: column;
+      gap: 0.125rem;
+    }
+
+    .metric-value {
+      font-size: 1.125rem;
+      font-weight: 700;
+      color: #fafafa;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .metric-label {
+      font-size: 0.6875rem;
+      color: #52525b;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    /* Terminal Widget */
+    .terminal {
+      background: #0c0c0e;
+      border-radius: 0.75rem;
+      padding: 1rem;
+      margin-top: auto;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.75rem;
+    }
+
+    .terminal-line {
+      display: flex;
+      gap: 0.5rem;
+      margin-bottom: 0.375rem;
+    }
+
+    .terminal-prompt {
+      color: #10b981;
+      flex-shrink: 0;
+    }
+
+    .terminal-command {
+      color: #a1a1aa;
+    }
+
+    .terminal-cursor {
+      display: inline-block;
+      width: 6px;
+      height: 1.2em;
+      background: #10b981;
+      animation: blink 1s step-end infinite;
+      vertical-align: text-bottom;
+    }
+
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0; }
+    }
+
+    /* Code Preview */
+    .code-preview {
+      background: #0c0c0e;
+      border-radius: 0.75rem;
+      padding: 1rem;
+      margin-top: auto;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.6875rem;
+      line-height: 1.7;
+      overflow-x: auto;
+    }
+
+    .code-line { display: flex; gap: 0.75rem; }
+    .code-num { color: #3f3f46; user-select: none; min-width: 1.5rem; }
+    .code-keyword { color: #c084fc; }
+    .code-string { color: #4ade80; }
+    .code-func { color: #60a5fa; }
+    .code-plain { color: #a1a1aa; }
+    .code-comment { color: #52525b; }
+
+    /* Skill Tags */
+    .skill-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-top: auto;
+    }
+
+    .skill-tag {
+      padding: 0.375rem 0.75rem;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid #27272a;
+      border-radius: 0.375rem;
+      font-size: 0.75rem;
+      color: #a1a1aa;
+      transition: all 0.2s;
+    }
+
+    .skill-tag:hover {
+      border-color: #3f3f46;
+      color: #fafafa;
+    }
+
+    /* Agent Grid */
+    .agent-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 0.5rem;
+      margin-top: auto;
+    }
+
+    .agent-cell {
+      aspect-ratio: 1;
+      background: rgba(255, 255, 255, 0.03);
+      border-radius: 0.5rem;
+      display: grid;
+      place-items: center;
+      font-size: 0.625rem;
+      color: #52525b;
+      font-weight: 600;
+      transition: all 0.3s;
+    }
+
+    .agent-cell:hover {
+      background: rgba(16, 185, 129, 0.1);
+      color: #10b981;
+    }
+
+    .agent-cell.active {
+      background: rgba(16, 185, 129, 0.15);
+      color: #10b981;
+    }
+
+    /* Responsive */
     @media (max-width: 1024px) {
-      .grid { grid-template-columns: repeat(2, 1fr); }
+      .header {
+        grid-template-columns: 1fr;
+        gap: 2rem;
+      }
+      .header-right { justify-content: flex-start; }
+      .grid {
+        grid-template-columns: repeat(6, 1fr);
+      }
+      .card.span-6 { grid-column: span 6; }
+      .card.span-4 { grid-column: span 3; }
+      .card.span-3 { grid-column: span 3; }
     }
 
     @media (max-width: 640px) {
-      .section { padding: 4rem 1rem; }
-      .grid { grid-template-columns: 1fr; gap: 1rem; }
-      .span2 { grid-column: span 1; }
-    }
-
-    @media (prefers-reduced-motion: reduce) {
-      .card { opacity: 1; transform: none; transition: none; }
-      .card.revealed { transition: none; }
+      .grid {
+        grid-template-columns: 1fr;
+        grid-auto-rows: auto;
+      }
+      .card.span-6,
+      .card.span-4,
+      .card.span-3 {
+        grid-column: span 1;
+      }
+      .card.row-2,
+      .card.row-3,
+      .card.row-4 {
+        grid-row: span 1;
+      }
+      .agent-grid {
+        grid-template-columns: repeat(5, 1fr);
+      }
     }
   `;
 
   @state() private locale: Locale = i18n.getCurrentLocale();
   private _unsub?: () => void;
-  private _io?: IntersectionObserver;
 
   connectedCallback() {
     super.connectedCallback();
-    this.id = "features";
     this._unsub = i18n.subscribe(() => {
       this.locale = i18n.getCurrentLocale();
     });
@@ -234,119 +429,154 @@ export class BentoGrid extends LitElement {
   disconnectedCallback() {
     super.disconnectedCallback();
     this._unsub?.();
-    this._io?.disconnect();
   }
 
-  protected firstUpdated() {
-    this._setupReveal();
-  }
-
-  private _setupReveal() {
-    const cards = this.shadowRoot?.querySelectorAll(".card");
-    if (!cards?.length) return;
-
-    this._io = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((e) => {
-          if (e.isIntersecting) {
-            const el = e.target as HTMLElement;
-            const delay = Number(el.dataset.idx ?? 0) * 80;
-            setTimeout(() => el.classList.add("revealed"), delay);
-            this._io!.unobserve(el);
-          }
-        });
-      },
-      { threshold: 0.15 }
-    );
-
-    cards.forEach((c) => this._io!.observe(c));
-  }
-
-  private t(key: string) { return i18n.t(key); }
-
-  /* ── SVG icons (simple geometric) ── */
-  private _icon(type: string) {
-    const s = 20;
-    switch (type) {
-      case "workflow":
-        return html`<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>
-          <line x1="10" y1="6.5" x2="14" y2="6.5"/><line x1="6.5" y1="10" x2="6.5" y2="14"/>
-        </svg>`;
-      case "skills":
-        return html`<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
-        </svg>`;
-      case "subagents":
-        return html`<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="12" cy="8" r="3"/><circle cx="5" cy="17" r="2.5"/><circle cx="19" cy="17" r="2.5"/>
-          <line x1="12" y1="11" x2="5" y2="14.5"/><line x1="12" y1="11" x2="19" y2="14.5"/>
-        </svg>`;
-      case "search":
-        return html`<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="10" cy="10" r="7"/><line x1="21" y1="21" x2="15" y2="15"/>
-          <line x1="10" y1="7" x2="10" y2="13"/><line x1="7" y1="10" x2="13" y2="10"/>
-        </svg>`;
-      case "gateway":
-        return html`<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <rect x="2" y="4" width="20" height="6" rx="1.5"/><rect x="2" y="14" width="20" height="6" rx="1.5"/>
-          <circle cx="6" cy="7" r="1" fill="currentColor"/><circle cx="6" cy="17" r="1" fill="currentColor"/>
-        </svg>`;
-      case "enterprise":
-        return html`<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-          <polyline points="9 12 11 14 15 10"/>
-        </svg>`;
-      default:
-        return html``;
-    }
-  }
-
-  private _iconColor(key: string) {
-    const map: Record<string, string> = {
-      workflow: "blue", skills: "purple", subagents: "green",
-      search: "cyan", gateway: "orange", enterprise: "pink",
-    };
-    return map[key] ?? "blue";
-  }
-
-  private _renderCard(card: CardDef, idx: number) {
-    const base = `features.cards.${card.key}`;
-    return html`
-      <div
-        class="card ${card.colorClass}${card.span2 ? " span2" : ""}"
-        data-idx="${idx}"
-      >
-        <div class="card-head">
-          <div class="icon-box ${this._iconColor(card.key)}">
-            ${this._icon(card.icon)}
-          </div>
-          <h3 class="card-title">${this.t(`${base}.title`)}</h3>
-        </div>
-        <p class="card-desc">${this.t(`${base}.description`)}</p>
-        ${card.hasFeatures
-          ? html`<ul class="features">
-              ${Array.from({ length: card.featureCount }, (_, i) =>
-                html`<li>${this.t(`${base}.features.${i}`)}</li>`
-              )}
-            </ul>`
-          : null}
-      </div>
-    `;
+  private _handleMouseMove(e: MouseEvent) {
+    const card = e.currentTarget as HTMLElement;
+    const rect = card.getBoundingClientRect();
+    const x = ((e.clientX - rect.left) / rect.width) * 100;
+    const y = ((e.clientY - rect.top) / rect.height) * 100;
+    card.style.setProperty('--mouse-x', `${x}%`);
+    card.style.setProperty('--mouse-y', `${y}%`);
   }
 
   render() {
-    void this.locale; // trigger reactivity
+    const f = (key: string) => i18n.t(key);
+    const isZh = i18n.getCurrentLocale() === 'zh-CN';
+    const agents = isZh 
+      ? ['侦察', '规划', '执行', '审查', '视觉', '研究', 'API测', '安全', '简化', '码图', '脑暴', '系统']
+      : ['SC', 'PL', 'WR', 'RV', 'VS', 'RS', 'AP', 'SE', 'SI', 'CM', 'BR', 'SD'];
+
     return html`
-      <section class="section">
+      <section class="section" id="features">
         <div class="inner">
           <div class="header">
-            <p class="label">${this.t("features.label")}</p>
-            <h2 class="title">${this.t("features.title")}</h2>
-            <p class="subtitle">${this.t("features.subtitle")}</p>
+            <div class="header-left">
+              <span class="label">${f('features.label')}</span>
+              <h2 class="title">${f('features.title').replace(', ', ',<br>')}</h2>
+              <p class="subtitle">${f('features.subtitle')}</p>
+            </div>
+            <div class="header-right">
+              <div class="stat-block">
+                <div class="stat-value">42</div>
+                <div class="stat-label">${isZh ? '技能' : 'Skills'}</div>
+              </div>
+              <div class="stat-block">
+                <div class="stat-value">25+</div>
+                <div class="stat-label">${isZh ? '代理' : 'Agents'}</div>
+              </div>
+              <div class="stat-block">
+                <div class="stat-value">5</div>
+                <div class="stat-label">${isZh ? '阶段' : 'Phases'}</div>
+              </div>
+            </div>
           </div>
+
           <div class="grid">
-            ${CARDS.map((c, i) => this._renderCard(c, i))}
+            <!-- Row 1: Workflow (Large) -->
+            <div class="card span-6 row-4" @mousemove=${this._handleMouseMove}>
+              <div class="card-header">
+                <div class="card-icon accent">WF</div>
+                <span class="card-title">${f('features.workflow.title')}</span>
+              </div>
+              <p class="card-desc">${f('features.workflow.desc')}</p>
+              <ul class="features">
+                ${[0, 1, 2, 3].map(i => html`<li class="feature">${f(`features.workflow.features.${i}`)}</li>`)}
+              </ul>
+              <div class="status-widget">
+                <div class="status-header">
+                  <span class="status-dot"></span>
+                  <span class="status-text">Live System Status</span>
+                </div>
+                <div class="status-metrics">
+                  <div class="metric">
+                    <span class="metric-value">2.4k</span>
+                    <span class="metric-label">${f('features.workflow.metrics.tasks')}</span>
+                  </div>
+                  <div class="metric">
+                    <span class="metric-value">98.7%</span>
+                    <span class="metric-label">${f('features.workflow.metrics.success')}</span>
+                  </div>
+                  <div class="metric">
+                    <span class="metric-value">142</span>
+                    <span class="metric-label">${f('features.workflow.metrics.active')}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Skills -->
+            <div class="card span-3 row-2" @mousemove=${this._handleMouseMove}>
+              <div class="card-header">
+                <div class="card-icon purple">SK</div>
+                <span class="card-title">${f('features.skills.title')}</span>
+              </div>
+              <p class="card-desc">${f('features.skills.desc')}</p>
+              <div class="skill-tags">
+                ${[0, 1, 2, 3, 4].map(i => html`<span class="skill-tag">${f(`features.skills.tags.${i}`)}</span>`)}
+              </div>
+            </div>
+
+            <!-- Subagents Grid -->
+            <div class="card span-3 row-2" @mousemove=${this._handleMouseMove}>
+              <div class="card-header">
+                <div class="card-icon blue">SA</div>
+                <span class="card-title">${f('features.subagents.title')}</span>
+              </div>
+              <p class="card-desc">${f('features.subagents.desc')}</p>
+              <div class="agent-grid">
+                ${agents.map((code, i) => html`
+                  <div class="agent-cell ${i < 5 ? 'active' : ''}">${code}</div>
+                `)}
+              </div>
+            </div>
+
+            <!-- Search -->
+            <div class="card span-3 row-2" @mousemove=${this._handleMouseMove}>
+              <div class="card-header">
+                <div class="card-icon accent">SR</div>
+                <span class="card-title">${f('features.search.title')}</span>
+              </div>
+              <p class="card-desc">${f('features.search.desc')}</p>
+              <div class="terminal">
+                <div class="terminal-line">
+                  <span class="terminal-prompt">$</span>
+                  <span class="terminal-command">${f('features.search.example')}</span>
+                </div>
+                <div class="terminal-line">
+                  <span class="terminal-prompt">$</span>
+                  <span class="terminal-command">ace "find middleware"</span>
+                  <span class="terminal-cursor"></span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Gateway Code -->
+            <div class="card span-3 row-2" @mousemove=${this._handleMouseMove}>
+              <div class="card-header">
+                <div class="card-icon orange">GW</div>
+                <span class="card-title">${f('features.gateway.title')}</span>
+              </div>
+              <p class="card-desc">${f('features.gateway.desc')}</p>
+              <div class="code-preview">
+                <div class="code-line">
+                  <span class="code-num">1</span>
+                  <span class="code-plain"><span class="code-keyword">await</span> <span class="code-func">gateway</span>.route({</span>
+                </div>
+                <div class="code-line">
+                  <span class="code-num">2</span>
+                  <span class="code-plain">  channel: <span class="code-string">'telegram'</span>,</span>
+                </div>
+                <div class="code-line">
+                  <span class="code-num">3</span>
+                  <span class="code-plain">  session: <span class="code-func">uuid</span>()</span>
+                </div>
+                <div class="code-line">
+                  <span class="code-num">4</span>
+                  <span class="code-plain">});</span>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </section>

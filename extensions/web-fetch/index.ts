@@ -2,14 +2,14 @@
  * Web Fetch Extension - Main Entry
  *
  * Multi-provider web fetch and search
- * Supports: iflow, Qwen, cli-proxy-api
+ * Supports: Qwen, cli-proxy-api
  */
 
 import { Text, Container, Markdown } from "@mariozechner/pi-tui";
 import { getMarkdownTheme } from "@mariozechner/pi-coding-agent";
 import type { ExtensionAPI, ToolRenderResultOptions } from "@mariozechner/pi-coding-agent";
 
-import { getQwenAccessToken, getIlowApiKey, getAllProviders } from "./providers.js";
+import { getQwenAccessToken, getAllProviders } from "./providers.js";
 import { webFetch, webSearch } from "./api.js";
 
 export default function (pi: ExtensionAPI) {
@@ -17,7 +17,7 @@ export default function (pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "web_fetch",
 		label: "Web Fetch",
-		description: "Fetch and extract content from a web URL (iflow or Qwen)",
+		description: "Fetch and extract content from a web URL (Qwen)",
 		parameters: {
 			type: "object",
 			properties: {
@@ -250,7 +250,6 @@ export default function (pi: ExtensionAPI) {
 		description: "Show web fetch/search provider status",
 		handler: async (args, ctx) => {
 			const qwenToken = await getQwenAccessToken();
-			const iflowKey = await getIlowApiKey();
 			const providers = await getAllProviders();
 
 			const lines = [
@@ -258,9 +257,6 @@ export default function (pi: ExtensionAPI) {
 				"",
 				`- Qwen: ${qwenToken ? "✓ Connected" : "✗ Not configured"}`,
 				`  Token: ${qwenToken ? qwenToken.slice(0, 20) + "..." : "N/A"}`,
-				"",
-				`- iflow: ${iflowKey ? "✓ Connected" : "✗ Not configured"}`,
-				`  Key: ${iflowKey ? iflowKey.slice(0, 20) + "..." : "N/A"}`,
 				"",
 				"---",
 				"",

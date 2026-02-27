@@ -16,11 +16,78 @@
  *   hook:{uuid}                                       Webhook
  */
 
-import type { Config } from "./config.ts";
-import type { MessageSource, SessionKey } from "./types.ts";
+import type { AgentDefinition, Config } from "./config.ts";
+import type { MessageSource, SessionKey, ThinkingLevel } from "./types.ts";
 
 const DEFAULT_AGENT_ID = "main";
 const AGENT_ID = "main"; // Legacy fallback, will be removed after v3 migration
+
+export type RoleSource =
+  | "discord.channel"
+  | "discord.guild"
+  | "discord.channel-default"
+  | "telegram.topic"
+  | "telegram.topic-wildcard"
+  | "telegram.group"
+  | "telegram.group-wildcard"
+  | "telegram.account"
+  | "telegram.channel-default"
+  | "channel-default"
+  | "agent.role"
+  | "default";
+
+export interface RoleResolution {
+  role: string | null;
+  source: RoleSource;
+}
+
+export type ModelSource =
+  | "discord.channel"
+  | "discord.guild"
+  | "discord.channel-default"
+  | "telegram.topic"
+  | "telegram.topic-wildcard"
+  | "telegram.group"
+  | "telegram.group-wildcard"
+  | "telegram.account"
+  | "telegram.channel-default"
+  | "channel-default"
+  | "agent.model"
+  | "global-agent"
+  | "default";
+
+export interface ModelResolution {
+  model: string | null;
+  source: ModelSource;
+}
+
+export type ThinkingLevelSource =
+  | "discord.channel"
+  | "discord.guild"
+  | "discord.channel-default"
+  | "telegram.topic"
+  | "telegram.topic-wildcard"
+  | "telegram.group"
+  | "telegram.group-wildcard"
+  | "telegram.account"
+  | "telegram.channel-default"
+  | "channel-default"
+  | "global-agent"
+  | "default";
+
+export interface ThinkingLevelResolution {
+  thinkingLevel: ThinkingLevel | null;
+  source: ThinkingLevelSource;
+}
+
+export type AgentRouteSource = "single-agent" | "binding" | "prefix" | "default";
+
+export interface AgentRouteResolution {
+  agentId: string;
+  text: string;
+  source: AgentRouteSource;
+  bindingScore?: number;
+}
 
 // ============================================================================
 // Session Key Resolution
@@ -86,6 +153,12 @@ function resolveDmSessionKey(source: MessageSource, config: Config, agentId: str
     case "per-channel-peer":
       return `agent:${agentId}:${channel}${accountPart}:dm:${senderId}`;
 
+    case "per-account-channel-peer": {
+      const genericAccountPart = accountId ? `:account:${accountId}` : "";
+      const scopedAccountPart = channel === "telegram" ? accountPart : genericAccountPart;
+      return `agent:${agentId}:${channel}${scopedAccountPart}:dm:${senderId}`;
+    }
+
     default:
       return channel === "telegram"
         ? `agent:${agentId}:${channel}${accountPart}:main`
@@ -103,12 +176,13 @@ function resolveDmSessionKey(source: MessageSource, config: Config, agentId: str
  * Priority (most specific first):
  *   1. Discord guild channel-level role
  *   2. Discord guild-level role
- *   3. Telegram group-level role
- *   4. Channel-level default role
- *   5. Global default (null → use default role from role-persona)
+ *   3. Telegram topic-level role
+ *   4. Telegram group-level role
+ *   5. Channel-level default role
+ *   6. Global default (null → use default role from role-persona)
  */
-export function resolveRoleForSession(source: MessageSource, config: Config): string | null {
-  const { channel, accountId, chatType, chatId, guildId } = source;
+export function resolveRoleForSessionDetailed(source: MessageSource, config: Config): RoleResolution {
+  const { channel, accountId, chatType, chatId, guildId, topicId } = source;
 
   // Discord: check guild > channel hierarchy
   if (channel === "discord" && config.channels.discord) {
@@ -117,36 +191,228 @@ export function resolveRoleForSession(source: MessageSource, config: Config): st
       const guild = dc.guilds[guildId];
       // Channel-level role
       if (chatId && guild.channels?.[chatId]?.role) {
-        return guild.channels[chatId].role;
+        return { role: guild.channels[chatId].role, source: "discord.channel" };
       }
       // Guild-level role
-      if (guild.role) return guild.role;
+      if (guild.role) return { role: guild.role, source: "discord.guild" };
     }
-    if (dc.role) return dc.role;
+    if (dc.role) return { role: dc.role, source: "discord.channel-default" };
   }
 
-  // Telegram: check group > channel hierarchy
+  // Telegram: check topic > group > account > channel hierarchy
   if (channel === "telegram" && config.channels.telegram) {
     const tg = config.channels.telegram as any;
     const accountCfg = accountId ? tg.accounts?.[accountId] : undefined;
     const groups = accountCfg?.groups ?? tg.groups;
+
+    if (chatType === "group" && topicId) {
+      const groupTopicRole = groups?.[chatId]?.topics?.[topicId]?.role;
+      if (groupTopicRole) return { role: groupTopicRole, source: "telegram.topic" };
+
+      const wildcardGroupTopicRole = groups?.["*"]?.topics?.[topicId]?.role;
+      if (wildcardGroupTopicRole) return { role: wildcardGroupTopicRole, source: "telegram.topic-wildcard" };
+    }
+
     if (chatType === "group" && groups?.[chatId]?.role) {
-      return groups[chatId].role;
+      return { role: groups[chatId].role, source: "telegram.group" };
     }
     if (chatType === "group" && groups?.["*"]?.role) {
-      return groups["*"].role;
+      return { role: groups["*"].role, source: "telegram.group-wildcard" };
     }
-    if (accountCfg?.role) return accountCfg.role;
-    if (tg.role) return tg.role;
+    if (accountCfg?.role) return { role: accountCfg.role, source: "telegram.account" };
+    if (tg.role) return { role: tg.role, source: "telegram.channel-default" };
   }
 
   // Generic channel-level role
   const channelConfig = config.channels[channel];
   if (channelConfig && typeof channelConfig === "object" && "role" in channelConfig) {
-    return (channelConfig as any).role ?? null;
+    return { role: (channelConfig as any).role ?? null, source: "channel-default" };
   }
 
-  return null;
+  return { role: null, source: "default" };
+}
+
+export function resolveRoleForSession(source: MessageSource, config: Config): string | null {
+  return resolveRoleForSessionDetailed(source, config).role;
+}
+
+/**
+ * Resolve model for a message source.
+ *
+ * Priority (most specific first):
+ *   1. Discord channel-level model
+ *   2. Discord guild-level model
+ *   3. Telegram topic-level model
+ *   4. Telegram group-level model
+ *   5. Telegram account-level model
+ *   6. Channel-level default model
+ *   7. Generic channel config model
+ *   8. Agent-level model
+ *   9. Global agent.model
+ */
+export function resolveModelForSessionDetailed(source: MessageSource, config: Config): ModelResolution {
+  const { channel, accountId, chatType, chatId, guildId, topicId } = source;
+
+  if (channel === "discord" && config.channels.discord) {
+    const dc = config.channels.discord as any;
+    if (guildId && dc.guilds?.[guildId]) {
+      const guild = dc.guilds[guildId];
+      if (chatId && guild.channels?.[chatId]?.model) {
+        return { model: guild.channels[chatId].model, source: "discord.channel" };
+      }
+      if (guild.model) return { model: guild.model, source: "discord.guild" };
+    }
+    if (dc.model) return { model: dc.model, source: "discord.channel-default" };
+  }
+
+  if (channel === "telegram" && config.channels.telegram) {
+    const tg = config.channels.telegram as any;
+    const accountCfg = accountId ? tg.accounts?.[accountId] : undefined;
+    const groups = accountCfg?.groups ?? tg.groups;
+
+    if (chatType === "group" && topicId) {
+      const groupTopicModel = groups?.[chatId]?.topics?.[topicId]?.model;
+      if (groupTopicModel) return { model: groupTopicModel, source: "telegram.topic" };
+
+      const wildcardGroupTopicModel = groups?.["*"]?.topics?.[topicId]?.model;
+      if (wildcardGroupTopicModel) return { model: wildcardGroupTopicModel, source: "telegram.topic-wildcard" };
+    }
+
+    if (chatType === "group" && groups?.[chatId]?.model) {
+      return { model: groups[chatId].model, source: "telegram.group" };
+    }
+    if (chatType === "group" && groups?.["*"]?.model) {
+      return { model: groups["*"].model, source: "telegram.group-wildcard" };
+    }
+    if (accountCfg?.model) return { model: accountCfg.model, source: "telegram.account" };
+    if (tg.model) return { model: tg.model, source: "telegram.channel-default" };
+  }
+
+  const channelConfig = config.channels[channel];
+  if (channelConfig && typeof channelConfig === "object" && "model" in channelConfig) {
+    return { model: (channelConfig as any).model ?? null, source: "channel-default" };
+  }
+
+  return { model: null, source: "default" };
+}
+
+export function resolveModelForSession(source: MessageSource, config: Config): string | null {
+  return resolveModelForSessionDetailed(source, config).model;
+}
+
+export function resolveThinkingLevelForSessionDetailed(source: MessageSource, config: Config): ThinkingLevelResolution {
+  const { channel, accountId, chatType, chatId, guildId, topicId } = source;
+
+  if (channel === "discord" && config.channels.discord) {
+    const dc = config.channels.discord as any;
+    if (guildId && dc.guilds?.[guildId]) {
+      const guild = dc.guilds[guildId];
+      if (chatId && guild.channels?.[chatId]?.thinkingLevel) {
+        return { thinkingLevel: guild.channels[chatId].thinkingLevel, source: "discord.channel" };
+      }
+      if (guild.thinkingLevel) return { thinkingLevel: guild.thinkingLevel, source: "discord.guild" };
+    }
+    if (dc.thinkingLevel) return { thinkingLevel: dc.thinkingLevel, source: "discord.channel-default" };
+  }
+
+  if (channel === "telegram" && config.channels.telegram) {
+    const tg = config.channels.telegram as any;
+    const accountCfg = accountId ? tg.accounts?.[accountId] : undefined;
+    const groups = accountCfg?.groups ?? tg.groups;
+
+    if (chatType === "group" && topicId) {
+      const groupTopicThinking = groups?.[chatId]?.topics?.[topicId]?.thinkingLevel;
+      if (groupTopicThinking) return { thinkingLevel: groupTopicThinking, source: "telegram.topic" };
+
+      const wildcardGroupTopicThinking = groups?.["*"]?.topics?.[topicId]?.thinkingLevel;
+      if (wildcardGroupTopicThinking) return { thinkingLevel: wildcardGroupTopicThinking, source: "telegram.topic-wildcard" };
+    }
+
+    if (chatType === "group" && groups?.[chatId]?.thinkingLevel) {
+      return { thinkingLevel: groups[chatId].thinkingLevel, source: "telegram.group" };
+    }
+    if (chatType === "group" && groups?.["*"]?.thinkingLevel) {
+      return { thinkingLevel: groups["*"].thinkingLevel, source: "telegram.group-wildcard" };
+    }
+    if (accountCfg?.thinkingLevel) return { thinkingLevel: accountCfg.thinkingLevel, source: "telegram.account" };
+    if (tg.thinkingLevel) return { thinkingLevel: tg.thinkingLevel, source: "telegram.channel-default" };
+  }
+
+  const channelConfig = config.channels[channel];
+  if (channelConfig && typeof channelConfig === "object" && "thinkingLevel" in channelConfig) {
+    return { thinkingLevel: (channelConfig as any).thinkingLevel ?? null, source: "channel-default" };
+  }
+
+  return { thinkingLevel: null, source: "default" };
+}
+
+export function resolveThinkingLevelForSession(source: MessageSource, config: Config): ThinkingLevel | null {
+  return resolveThinkingLevelForSessionDetailed(source, config).thinkingLevel;
+}
+
+function findAgentDefinition(config: Config, agentId?: string): AgentDefinition | null {
+  if (!agentId || !config.agents?.list?.length) return null;
+  return config.agents.list.find((agent) => agent.id === agentId) ?? null;
+}
+
+export function extractAgentIdFromSessionKey(sessionKey: string): string | null {
+  const m = sessionKey.match(/^agent:([^:]+):/);
+  return m?.[1] ?? null;
+}
+
+/**
+ * Resolve role with agent fallback:
+ * channel/group role > agent.role > default(null)
+ */
+export function resolveRoleForSessionAndAgent(
+  source: MessageSource,
+  config: Config,
+  agentId?: string,
+): RoleResolution {
+  const detailed = resolveRoleForSessionDetailed(source, config);
+  if (detailed.role) return detailed;
+
+  const agent = findAgentDefinition(config, agentId ?? source.agentId);
+  if (agent?.role) {
+    return { role: agent.role, source: "agent.role" };
+  }
+
+  return detailed;
+}
+
+export function resolveModelForSessionAndAgent(
+  source: MessageSource,
+  config: Config,
+  agentId?: string,
+): ModelResolution {
+  const detailed = resolveModelForSessionDetailed(source, config);
+  if (detailed.model) return detailed;
+
+  const agent = findAgentDefinition(config, agentId ?? source.agentId);
+  if (agent?.model) {
+    return { model: agent.model, source: "agent.model" };
+  }
+
+  if (config.agent.model) {
+    return { model: config.agent.model, source: "global-agent" };
+  }
+
+  return detailed;
+}
+
+export function resolveThinkingLevelForSessionAndAgent(
+  source: MessageSource,
+  config: Config,
+  _agentId?: string,
+): ThinkingLevelResolution {
+  const detailed = resolveThinkingLevelForSessionDetailed(source, config);
+  if (detailed.thinkingLevel) return detailed;
+
+  if (config.agent.thinkingLevel) {
+    return { thinkingLevel: config.agent.thinkingLevel, source: "global-agent" };
+  }
+
+  return detailed;
 }
 
 // ============================================================================
@@ -160,14 +426,14 @@ export function resolveRoleForSession(source: MessageSource, config: Config): st
  *   Layer 2: Prefix command — /{agentId} strips prefix
  *   Layer 3: Default agent
  */
-export function resolveAgentId(
+export function resolveAgentRoute(
   source: MessageSource,
   text: string,
   config: Config,
-): { agentId: string; text: string } {
+): AgentRouteResolution {
   const agents = config.agents;
   if (!agents?.list?.length) {
-    return { agentId: DEFAULT_AGENT_ID, text };
+    return { agentId: DEFAULT_AGENT_ID, text, source: "single-agent" };
   }
 
   const agentIds = new Set(agents.list.map((a) => a.id));
@@ -175,8 +441,8 @@ export function resolveAgentId(
   // Layer 1: Static binding
   if (agents.bindings?.length) {
     const bound = matchBinding(source, agents.bindings);
-    if (bound && agentIds.has(bound)) {
-      return { agentId: bound, text };
+    if (bound && agentIds.has(bound.agentId)) {
+      return { agentId: bound.agentId, text, source: "binding", bindingScore: bound.score };
     }
   }
 
@@ -185,21 +451,31 @@ export function resolveAgentId(
   if (prefixMatch) {
     const prefix = prefixMatch[1]!;
     if (agentIds.has(prefix)) {
-      return { agentId: prefix, text: prefixMatch[2]?.trim() || "" };
+      return { agentId: prefix, text: prefixMatch[2]?.trim() || "", source: "prefix" };
     }
   }
 
   // Layer 3: Default
-  return { agentId: agents.default || DEFAULT_AGENT_ID, text };
+  return { agentId: agents.default || DEFAULT_AGENT_ID, text, source: "default" };
+}
+
+export function resolveAgentId(
+  source: MessageSource,
+  text: string,
+  config: Config,
+): { agentId: string; text: string } {
+  const resolved = resolveAgentRoute(source, text, config);
+  return { agentId: resolved.agentId, text: resolved.text };
 }
 
 /**
- * Static binding matcher. Score-based: peer(8) > guild(4) > account(2) > channel(1).
+ * Static binding matcher (OpenClaw-aligned tiers via weighted score):
+ * peer(8) > parentPeer(7) > guild+roles(6+4) > guild(4) > account(2) > channel(1).
  */
 function matchBinding(
   source: MessageSource,
   bindings: NonNullable<Config["agents"]>["bindings"],
-): string | null {
+): { agentId: string; score: number } | null {
   if (!bindings) return null;
   let bestMatch: string | null = null;
   let bestScore = -1;
@@ -221,10 +497,23 @@ function matchBinding(
       if (m.guildId !== source.guildId) { matched = false; continue; }
       score += 4;
     }
+    if (m.roles?.length) {
+      const memberRoles = source.memberRoleIds ?? [];
+      const hasAnyRole = m.roles.some((role) => memberRoles.includes(role));
+      if (!hasAnyRole) { matched = false; continue; }
+      score += 6;
+    }
     if (m.peer) {
       if (m.peer.kind && m.peer.kind !== source.chatType) { matched = false; continue; }
       if (m.peer.id && m.peer.id !== source.chatId && m.peer.id !== source.senderId) { matched = false; continue; }
       score += 8;
+    }
+    if (m.parentPeer) {
+      const parent = source.parentPeer;
+      if (!parent) { matched = false; continue; }
+      if (m.parentPeer.kind && m.parentPeer.kind !== parent.kind) { matched = false; continue; }
+      if (m.parentPeer.id && m.parentPeer.id !== parent.id) { matched = false; continue; }
+      score += 7;
     }
 
     if (matched && score > bestScore) {
@@ -232,7 +521,7 @@ function matchBinding(
       bestMatch = binding.agentId;
     }
   }
-  return bestMatch;
+  return bestMatch ? { agentId: bestMatch, score: bestScore } : null;
 }
 
 // ============================================================================
@@ -247,8 +536,8 @@ import { homedir } from "node:os";
  * Get the CWD that maps to a role for the RPC process.
  * Also ensures the role mapping exists in role-persona's config.json.
  */
-export function getCwdForRole(role: string, config: Config): string {
-  // Check if user configured a workspace dir for this role
+export function getCwdForRole(role: string, config: Config, agentId?: string): string {
+  // 1) Explicit role->workspace mapping has highest priority
   const configured = config.roles.workspaceDirs?.[role];
   if (configured) {
     const resolved = configured.replace(/^~/, homedir());
@@ -257,7 +546,16 @@ export function getCwdForRole(role: string, config: Config): string {
     return resolved;
   }
 
-  // Default: ~/.pi/gateway/workspaces/{role}
+  // 2) Fallback to selected agent workspace (if configured)
+  const agent = findAgentDefinition(config, agentId);
+  if (agent?.workspace?.trim()) {
+    const resolved = agent.workspace.replace(/^~/, homedir());
+    ensureDir(resolved);
+    ensureRoleMapping(resolved, role, config);
+    return resolved;
+  }
+
+  // 3) Default: ~/.pi/gateway/workspaces/{role}
   const defaultDir = join(homedir(), ".pi", "gateway", "workspaces", role);
   ensureDir(defaultDir);
   ensureRoleMapping(defaultDir, role, config);
@@ -294,7 +592,10 @@ function ensureRoleMapping(cwd: string, role: string, config: Config): void {
   }
 }
 
-function resolveRolesDir(config: Config): string {
+export function resolveRolesDir(config: Config): string {
+  const envRolesDir = process.env.PI_AGENT_ROLES_DIR?.trim();
+  if (envRolesDir) return envRolesDir;
+
   const runtimeAgentDir = config.agent.runtime?.agentDir?.trim();
   if (runtimeAgentDir) {
     return join(runtimeAgentDir.replace(/^~/, homedir()), "roles");

@@ -20,6 +20,7 @@
 import type { GatewayContext } from "./types.ts";
 import type { InboundMessage } from "../core/types.ts";
 import type { RpcClient } from "../core/rpc-client.ts";
+import { isSenderAllowed } from "../security/allowlist.ts";
 
 // TUI-dependent commands that hang in RPC mode
 const TUI_COMMANDS = [
@@ -97,12 +98,162 @@ export async function tryHandleCommand(
   return false;
 }
 
+function canManageRole(
+  ctx: GatewayContext,
+  senderId: string,
+  channel: string,
+  accountId?: string,
+): boolean {
+  const channels = ctx.config.channels as Record<string, any>;
+
+  if (channel === "telegram") {
+    const tg = channels.telegram;
+    const accountCfg = accountId ? tg?.accounts?.[accountId] : tg?.accounts?.default;
+    const cfg = accountCfg ?? tg;
+    const policy = cfg?.dmPolicy ?? "allowlist";
+    const allowFrom = cfg?.allowFrom;
+    return isSenderAllowed("telegram", senderId, policy, allowFrom, accountId ?? "default");
+  }
+
+  if (channel === "discord") {
+    const dc = channels.discord;
+    const allowFrom = dc?.dm?.allowFrom ?? dc?.allowFrom;
+    return isSenderAllowed("discord", senderId, "allowlist", allowFrom);
+  }
+
+  const generic = channels[channel];
+  const allowFrom = generic?.allowFrom;
+  return isSenderAllowed(channel, senderId, "allowlist", allowFrom);
+}
+
 /**
  * Register built-in gateway commands.
- * Currently empty — /role handled by role-persona via RPC.
+ *
+ * /role
+ *   - /role                    查看当前 role
+ *   - /role list               列出可用 role
+ *   - /role set <name>         切换当前会话 role
  */
-export function registerBuiltinCommands(_ctx: GatewayContext): void {
-  // All slash commands forward to pi RPC
+export function registerBuiltinCommands(ctx: GatewayContext): void {
+  // Keep plugin priority: don't override if plugin already registered /role.
+  if (ctx.registry.commands.has("role")) return;
+
+  ctx.registry.commands.set("role", {
+    pluginId: "gateway-core",
+    handler: async ({ sessionKey, senderId, channel, chatId, accountId, args, respond }) => {
+      const session = ctx.sessions.get(sessionKey);
+      if (!session) {
+        await respond("No active session. Send a normal message first, then use /role.");
+        return;
+      }
+
+      const raw = (args ?? "").trim();
+      if (!raw) {
+        const currentRole = session.role ?? "default";
+        if (channel === "telegram" && chatId) {
+          const ch = ctx.registry.channels.get(channel);
+          const roles = ctx.listAvailableRoles();
+          if (ch?.outbound.sendKeyboard && roles.length > 0) {
+            const topRoles = roles.slice(0, 12);
+            const rows = topRoles.map((role) => {
+              const row: Array<{ text: string; callback_data: string }> = [
+                { text: role === currentRole ? `✅ ${role}` : role, callback_data: `role:set:${role}` },
+              ];
+              if (role !== "default") {
+                row.push({ text: `🗑 ${role}`, callback_data: `role:del:${role}` });
+              }
+              return row;
+            });
+            rows.push([{ text: "➕ Create role (use /role create <name>)", callback_data: "role:hint:create" }]);
+            await ch.outbound.sendKeyboard(chatId, `Current role: ${currentRole}\nSelect / Delete role:`, { inline_keyboard: rows });
+            return;
+          }
+        }
+        await respond(`Current role: ${currentRole}`);
+        return;
+      }
+
+      const [sub, ...rest] = raw.split(/\s+/);
+      const action = sub.toLowerCase();
+
+      if (action === "list") {
+        const roles = ctx.listAvailableRoles();
+        await respond(roles.length ? `Available roles: ${roles.join(", ")}` : "No roles available.");
+        return;
+      }
+
+      if (action === "set" || action === "switch") {
+        if (!canManageRole(ctx, senderId, channel, accountId)) {
+          await respond("Unauthorized: /role set requires allowFrom authorization.");
+          return;
+        }
+
+        const targetRole = rest.join(" ").trim();
+        if (!targetRole) {
+          await respond("Usage: /role set <role>");
+          return;
+        }
+
+        const ok = await ctx.setSessionRole(sessionKey, targetRole);
+        if (!ok) {
+          await respond(`Failed to switch role to '${targetRole}'.`);
+          return;
+        }
+
+        await respond(`Role switched to: ${targetRole}`);
+        return;
+      }
+
+      if (action === "create") {
+        if (!canManageRole(ctx, senderId, channel, accountId)) {
+          await respond("Unauthorized: /role create requires allowFrom authorization.");
+          return;
+        }
+        const targetRole = rest.join(" ").trim();
+        if (!targetRole) {
+          await respond("Usage: /role create <role>");
+          return;
+        }
+        const created = await ctx.createRole(targetRole);
+        if (!created.ok) {
+          await respond(`Failed to create role '${targetRole}': ${created.error ?? "unknown error"}`);
+          return;
+        }
+        await respond(`Role created: ${targetRole}`);
+        return;
+      }
+
+      if (action === "delete") {
+        if (!canManageRole(ctx, senderId, channel, accountId)) {
+          await respond("Unauthorized: /role delete requires allowFrom authorization.");
+          return;
+        }
+        const targetRole = rest.join(" ").trim();
+        if (!targetRole) {
+          if (channel === "telegram" && chatId) {
+            const ch = ctx.registry.channels.get(channel);
+            const roles = ctx.listAvailableRoles().filter((r) => r !== "default");
+            if (ch?.outbound.sendKeyboard && roles.length > 0) {
+              const rows = roles.slice(0, 20).map((role) => ([{ text: `🗑 ${role}`, callback_data: `role:del:${role}` }]));
+              await ch.outbound.sendKeyboard(chatId, "Select role to delete:", { inline_keyboard: rows });
+              return;
+            }
+          }
+          await respond("Usage: /role delete <role>");
+          return;
+        }
+        const deleted = await ctx.deleteRole(targetRole);
+        if (!deleted.ok) {
+          await respond(`Failed to delete role '${targetRole}': ${deleted.error ?? "unknown error"}`);
+          return;
+        }
+        await respond(`Role deleted: ${targetRole}`);
+        return;
+      }
+
+      await respond("Usage: /role | /role list | /role set <role> | /role create <role> | /role delete <role>");
+    },
+  });
 }
 
 // ============================================================================
@@ -133,6 +284,8 @@ async function executeLocalCommand(
       sessionKey: msg.sessionKey,
       senderId: msg.source.senderId,
       channel: msg.source.channel,
+      chatId: msg.source.chatId,
+      accountId: msg.source.accountId,
       args: parsed.args,
       respond: sendReply,
     });

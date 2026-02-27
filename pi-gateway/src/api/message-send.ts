@@ -13,6 +13,7 @@ import type { RpcPool } from "../core/rpc-pool.ts";
 import type { PluginRegistryState } from "../plugins/loader.ts";
 import type { SessionStore } from "../core/session-store.ts";
 import { getGatewayInternalToken } from "./media-send.ts";
+import { resolveChannelTarget } from "./channel-target.ts";
 
 export interface MessageSendContext {
   config: Config;
@@ -84,13 +85,15 @@ export async function handleMessageSendRequest(
     return Response.json({ error: "Cannot resolve chatId — no messages received in this session yet" }, { status: 400 });
   }
 
+  const target = resolveChannelTarget(channel, chatId, sessionKey, session);
+
   // Find channel plugin
   const channelPlugin = ctx.registry.channels.get(channel);
   if (!channelPlugin) {
     return Response.json({ error: `Channel plugin not found: ${channel}` }, { status: 404 });
   }
 
-  ctx.log.info(`[message-send] channel=${channel} chatId=${chatId} text=${text.length} chars replyTo=${replyTo ?? "none"}`);
+  ctx.log.info(`[message-send] channel=${channel} target=${target} text=${text.length} chars replyTo=${replyTo ?? "none"}`);
 
   // Tool hook integration for send_message
   const toolInterceptor = new ToolCallInterceptor(ctx, sessionKey);
@@ -120,16 +123,17 @@ export async function handleMessageSendRequest(
       return Response.json({ ok: true, channel, textLength: text.length, delivered: true });
     }
 
-    await channelPlugin.outbound.sendText(chatId, text, { replyTo, parseMode });
+    const result = await channelPlugin.outbound.sendText(target, text, { replyTo, parseMode });
 
-    await toolInterceptor.afterCall({ ok: true, textLength: text.length }, false);
+    await toolInterceptor.afterCall({ ok: result.ok, textLength: text.length, messageId: result.messageId }, false);
 
     if (sessionKey) ctx.onDelivered?.(sessionKey);
 
     return Response.json({
-      ok: true,
+      ok: result.ok,
       channel,
       textLength: text.length,
+      messageId: result.messageId ?? null,
       replyTo: replyTo ?? null,
     });
   } catch (err: unknown) {

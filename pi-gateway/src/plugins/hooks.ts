@@ -18,7 +18,7 @@ import type { HookHandler, HookPayload, PluginHookName } from "./types.ts";
 interface RegisteredHook {
   pluginId: string;
   event: PluginHookName;
-  handler: HookHandler<any>;
+  handler: HookHandler;
 }
 
 export class HookRegistry {
@@ -32,7 +32,7 @@ export class HookRegistry {
   /**
    * Register a hook handler for one or more events.
    */
-  register(pluginId: string, events: PluginHookName[], handler: HookHandler<any>): void {
+  register(pluginId: string, events: PluginHookName[], handler: HookHandler): void {
     for (const event of events) {
       this.hooks.push({ pluginId, event, handler });
       this.log.debug(`Registered hook: ${pluginId} → ${event}`);
@@ -52,7 +52,7 @@ export class HookRegistry {
 
     for (const { pluginId, handler } of handlers) {
       try {
-        await handler(payload);
+        await (handler as any)(payload);
       } catch (err) {
         this.log.error(`Hook error in ${pluginId}/${event}:`, err);
       }
@@ -71,5 +71,18 @@ export class HookRegistry {
    */
   getRegistered(): Array<{ pluginId: string; event: PluginHookName }> {
     return this.hooks.map(({ pluginId, event }) => ({ pluginId, event }));
+  }
+
+  /**
+   * Remove all hooks registered by a specific plugin.
+   * Used during hot reload teardown.
+   */
+  removeByPlugin(pluginId: string): void {
+    const beforeCount = this.hooks.length;
+    this.hooks = this.hooks.filter((h) => h.pluginId !== pluginId);
+    const removed = beforeCount - this.hooks.length;
+    if (removed > 0) {
+      this.log.debug(`Removed ${removed} hook(s) for plugin: ${pluginId}`);
+    }
   }
 }

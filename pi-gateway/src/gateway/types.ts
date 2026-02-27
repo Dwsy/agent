@@ -25,8 +25,13 @@ import type { ModelHealthTracker } from "../core/model-health.ts";
 import type { Logger, SessionKey, InboundMessage } from "../core/types.ts";
 import type { buildCapabilityProfile } from "../core/capability-profile.ts";
 import type { GatewayPluginApi } from "../plugins/types.ts";
+import type { GatewayObservability } from "../core/gateway-observability.ts";
 
-export type TelegramMessageMode = "steer" | "follow-up" | "interrupt";
+/** Channel-agnostic message handling mode. */
+export type MessageMode = "steer" | "follow-up" | "interrupt";
+
+/** @deprecated Use `MessageMode` instead. Kept for backward compatibility. */
+export type TelegramMessageMode = MessageMode;
 
 /** Result of dispatching an inbound message through the gateway pipeline. */
 export interface DispatchResult {
@@ -86,14 +91,19 @@ export interface GatewayContext {
 
   // State
   noGui: boolean;
-  sessionMessageModeOverrides: Map<SessionKey, TelegramMessageMode>;
+  sessionMessageModeOverrides: Map<SessionKey, MessageMode>;
   activeInboundMessages: Map<SessionKey, InboundMessage>;
 
   // R2: plugin-api-factory dependencies (DarkUnion)
   /** Cached plugin API instances per channel — populated during channel init */
   channelApis: Map<string, GatewayPluginApi>;
-  /** Resolve Telegram message mode for a session (steer/follow-up/interrupt) */
-  resolveTelegramMessageMode: (sessionKey: SessionKey, sourceAccountId?: string) => TelegramMessageMode;
+  /** @deprecated Use `resolveMessageMode` instead. Kept for backward compatibility. */
+  resolveTelegramMessageMode: (sessionKey: SessionKey, sourceAccountId?: string) => MessageMode;
+  /** Resolve message mode for any channel (steer/follow-up/interrupt) */
+  resolveMessageMode: (sessionKey: SessionKey, source: import("../core/types.ts").MessageSource) => MessageMode;
+
+  // Gateway observability
+  observability: GatewayObservability;
 
   // Methods (bound from Gateway)
   broadcastToWs: (event: string, payload: unknown) => void;
@@ -102,6 +112,8 @@ export interface GatewayContext {
   compactSessionWithHooks: (sessionKey: SessionKey, instructions?: string) => Promise<void>;
   listAvailableRoles: () => string[];
   setSessionRole: (sessionKey: SessionKey, newRole: string) => Promise<boolean>;
+  createRole: (role: string) => Promise<{ ok: boolean; error?: string }>;
+  deleteRole: (role: string) => Promise<{ ok: boolean; error?: string }>;
   reloadConfig?: () => void;
   /** Track cron sessions that self-delivered messages (skip announce). */
   onCronDelivered?: (sessionKey: string) => void;

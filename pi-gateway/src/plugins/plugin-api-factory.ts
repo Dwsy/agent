@@ -19,10 +19,11 @@ import type {
   ToolPlugin,
   BackgroundService,
   CommandHandler,
+  CliProgram,
   HttpHandler,
   WsMethodHandler,
-} from "./types.ts";
-import type { SessionKey } from "../core/types.ts";
+  SessionKey,
+} from "../core/index.ts";
 
 export function createPluginApi(
   pluginId: string,
@@ -41,6 +42,23 @@ export function createPluginApi(
     pluginConfig: ctx.config.plugins.config?.[pluginId],
     logger: pluginLogger,
 
+    onHook(name: string, handler: any) {
+      ctx.registry.hooks.register(pluginId, [name as PluginHookName], handler);
+    },
+
+    emitEvent(event: any) {
+      // SystemEventsQueue uses inject(sessionKey, text)
+      pluginLogger.debug(`[emitEvent] ${JSON.stringify(event)}`);
+    },
+
+    getConfig<T = unknown>(): T {
+      return ctx.config as unknown as T;
+    },
+
+    broadcastToWs(event: string, payload: unknown) {
+      ctx.broadcastToWs?.(event, payload);
+    },
+
     registerChannel(channel: ChannelPlugin) {
       if (ctx.registry.channels.has(channel.id)) {
         pluginLogger.warn(`Channel ${channel.id} already registered, skipping`);
@@ -51,12 +69,17 @@ export function createPluginApi(
         });
         return;
       }
+      // Attach pluginId for hot reload teardown
+      (channel as any).__pluginId = pluginId;
       ctx.registry.channels.set(channel.id, channel);
       ctx.channelApis.set(channel.id, this);
       pluginLogger.info(`Registered channel: ${channel.id}`);
     },
 
-    registerTool(tool: ToolPlugin) {
+    registerTool(...args: [ToolPlugin] | [string, any]) {
+      const tool: ToolPlugin = typeof args[0] === "string"
+        ? { name: args[0], ...args[1] } as ToolPlugin
+        : args[0] as ToolPlugin;
       const existing = ctx.registry.tools.get(tool.name);
       if (existing) {
         pluginLogger.warn(`Tool "${tool.name}" already registered by another plugin, overwriting`);
@@ -65,6 +88,8 @@ export function createPluginApi(
           existingPlugin: "unknown", newPlugin: pluginId, resolution: "overwritten",
         });
       }
+      // Attach pluginId for hot reload teardown
+      (tool as any).__pluginId = pluginId;
       ctx.registry.tools.set(tool.name, tool);
       pluginLogger.info(`Registered tool: ${tool.name}`);
     },
@@ -119,20 +144,22 @@ export function createPluginApi(
     },
 
     registerService(service: BackgroundService) {
+      // Attach pluginId for hot reload teardown
+      (service as any).__pluginId = pluginId;
       ctx.registry.services.push(service);
       pluginLogger.info(`Registered service: ${service.name}`);
     },
 
-    registerCli(registrar: (program: unknown) => void) {
+    registerCli(registrar: (program: CliProgram) => void) {
       ctx.registry.cliRegistrars.push({ pluginId, registrar: registrar as any });
       pluginLogger.info("Registered CLI commands");
     },
 
-    on<T extends PluginHookName>(hook: T, handler: HookHandler<T>) {
-      ctx.registry.hooks.register(pluginId, [hook], handler);
+    on(hook: string, handler: any) {
+      ctx.registry.hooks.register(pluginId, [hook as PluginHookName], handler);
     },
 
-    async dispatch(msg) {
+    async dispatch(msg: any) {
       return ctx.dispatch(msg);
     },
 
@@ -157,10 +184,10 @@ export function createPluginApi(
       }
     },
 
-    async cycleThinkingLevel(sessionKey: SessionKey) {
+    async cycleThinkingLevel(sessionKey: SessionKey): Promise<string | undefined> {
       const rpc = ctx.pool.getForSession(sessionKey);
       if (!rpc) throw new Error(`No RPC process for session ${sessionKey}`);
-      return rpc.cycleThinkingLevel();
+      return rpc.cycleThinkingLevel() as Promise<string | undefined>;
     },
 
     async setModel(sessionKey: SessionKey, provider: string, modelId: string) {
@@ -257,16 +284,16 @@ export function createPluginApi(
       }
     },
 
-    async getSessionStats(sessionKey: SessionKey): Promise<unknown> {
+    async getSessionStats(sessionKey: SessionKey) {
       const rpc = ctx.pool.getForSession(sessionKey);
       if (!rpc) return null;
-      return rpc.getSessionStats();
+      return rpc.getSessionStats() as any;
     },
 
-    async getRpcState(sessionKey: SessionKey): Promise<unknown> {
+    async getRpcState(sessionKey: SessionKey) {
       const rpc = ctx.pool.getForSession(sessionKey);
       if (!rpc) return null;
-      return rpc.getState();
+      return rpc.getState() as any;
     },
 
     cronEngine: ctx.cron ?? undefined,
@@ -289,8 +316,24 @@ export function createPluginApi(
       ctx.pool.release(sessionKey);
     },
 
-    readTranscript(sessionKey: SessionKey, lastN = 100) {
+    readTranscript(sessionKey: SessionKey, lastN = 100): any[] {
       return ctx.transcripts.readTranscript(sessionKey, lastN);
+    },
+
+    listAvailableRoles() {
+      return ctx.listAvailableRoles();
+    },
+
+    async setSessionRole(sessionKey: SessionKey, role: string) {
+      return ctx.setSessionRole(sessionKey, role);
+    },
+
+    async createRole(role: string) {
+      return ctx.createRole(role);
+    },
+
+    async deleteRole(role: string) {
+      return ctx.deleteRole(role);
     },
   };
 }

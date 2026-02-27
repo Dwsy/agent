@@ -8,16 +8,17 @@
  */
 
 import type { Server, ServerWebSocket } from "bun";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { resolveAuthConfig, authenticateRequest, buildAuthExemptPrefixes } from "./core/auth.ts";
-import type { GatewayContext, TelegramMessageMode, WsClientData, DispatchResult } from "./gateway/types.ts";
+import type { GatewayContext, MessageMode, WsClientData, DispatchResult } from "./gateway/types.ts";
 import { tryHandleCommand, registerBuiltinCommands } from "./gateway/command-handler.ts";
 import { executeRegisteredTool } from "./gateway/tool-executor.ts";
 import { loadConfig, ensureDataDir, type Config, type CronJob, resolveConfigPath, watchConfig } from "./core/config.ts";
 import { RpcPool } from "./core/rpc-pool.ts";
 import { MessageQueueManager, type PrioritizedWork } from "./core/message-queue.ts";
-import { resolveSessionKey, resolveAgentId, getCwdForRole } from "./core/session-router.ts";
+import { resolveSessionKey, resolveAgentId, getCwdForRole, resolveRolesDir, extractAgentIdFromSessionKey } from "./core/session-router.ts";
 import { createLogger as createConsoleLogger, setLogLevel, type Logger, type InboundMessage, type SessionKey, type SessionState, type WsFrame } from "./core/types.ts";
 import { SessionStore } from "./core/session-store.ts";
 import { initFileLogger, createFileLogger } from "./core/logger-file.ts";
@@ -29,12 +30,13 @@ import { ExtensionUIForwarder } from "./core/extension-ui-forwarder.ts";
 import { DeduplicationCache } from "./core/dedup-cache.ts";
 import { MetricsCollector, type MetricsDataSource } from "./core/metrics.ts";
 import { DelegateExecutor } from "./core/delegate-executor.ts";
+import { GatewayObservability } from "./core/gateway-observability.ts";
 import { HeartbeatExecutor } from "./core/heartbeat-executor.ts";
 import { SystemEventsQueue } from "./core/system-events.ts";
 import { createWsRouter, dispatchWsFrame } from "./ws/ws-router.ts";
 import { routeHttp } from "./api/http-router.ts";
 import { processMessage } from "./gateway/message-pipeline.ts";
-import { dispatchMessage, resolveTelegramMsgMode } from "./gateway/dispatch.ts";
+import { dispatchMessage, resolveTelegramMsgMode, resolveMessageMode } from "./gateway/dispatch.ts";
 import { migrateTelegramSessionKeys } from "./gateway/telegram-helpers.ts";
 import {
   createPluginRegistry,
@@ -74,7 +76,7 @@ export class Gateway {
   private log: Logger;
   private nextClientId = 0;
   private dedup: DeduplicationCache;
-  private sessionMessageModeOverrides = new Map<SessionKey, TelegramMessageMode>();
+  private sessionMessageModeOverrides = new Map<SessionKey, MessageMode>();
   private activeInboundMessages = new Map<SessionKey, InboundMessage>();
   private delegateExecutor: DelegateExecutor | null = null;
   private heartbeatExecutor: HeartbeatExecutor | null = null;
@@ -85,6 +87,7 @@ export class Gateway {
   private wsRouter: Map<string, import("./ws/ws-router.ts").WsMethodFn> | null = null;
   /** 缓存每个 channel 注册时的 api 引用，供 init 调用 */
   private _channelApis = new Map<string, GatewayPluginApi>();
+  private observability: GatewayObservability;
 
   constructor(options: GatewayOptions = {}) {
     this.config = loadConfig(options.configPath);
@@ -100,6 +103,7 @@ export class Gateway {
       consoleEnabled: true,
       level: this.config.logging.level,
       retentionDays: this.config.logging.retentionDays,
+      maxFileSize: this.config.logging.maxFileSize,
     });
     this.log = this.config.logging.file ? createFileLogger("gateway") : createConsoleLogger("gateway");
 
@@ -115,9 +119,11 @@ export class Gateway {
 
     this.metrics = new MetricsCollector(this.execGuard);
 
+    // SessionStore must be created before RpcPool (pool needs it for skipAutoResume check)
+    this.sessions = new SessionStore(this.config.session.dataDir);
     this.pool = new RpcPool(this.config, this.metrics, this.execGuard, (sessionKey) => {
       this.registry.hooks.dispatch("session_end", { sessionKey }).catch(() => {});
-    });
+    }, this.sessions);
     const qc = this.config.queue;
     this.queue = new MessageQueueManager(
       qc.maxPerSession,
@@ -127,9 +133,12 @@ export class Gateway {
     );
     this.dedup = new DeduplicationCache({ cacheSize: qc.dedup.cacheSize, ttlMs: qc.dedup.ttlMs });
     this.registry = createPluginRegistry();
-    this.sessions = new SessionStore(this.config.session.dataDir);
     this.systemEvents = new SystemEventsQueue(30_000, this.config.session.dataDir.replace(/\/sessions$/, ""));
-    this.transcripts = new TranscriptLogger(join(this.config.session.dataDir, "transcripts"));
+    this.transcripts = new TranscriptLogger(join(this.config.session.dataDir, "transcripts"), {
+      maxFileSizeMB: 5,
+      maxRotations: 3,
+    });
+    this.observability = new GatewayObservability(500);
 
     // Initialize v3 delegate executor if multi-agent config exists
     if (this.config.agents && this.config.agents.list.length > 0) {
@@ -312,8 +321,14 @@ export class Gateway {
     migrateTelegramSessionKeys(this.sessions, this.config, this.log);
   }
 
-  private resolveTelegramMessageMode(sessionKey: SessionKey, sourceAccountId?: string): TelegramMessageMode {
+  /** @deprecated Use resolveMessageModeForSession instead. */
+  private resolveTelegramMessageMode(sessionKey: SessionKey, sourceAccountId?: string): MessageMode {
     return resolveTelegramMsgMode(sessionKey, this.ctx, sourceAccountId);
+  }
+
+  /** Resolve message mode for any channel via source metadata. */
+  private resolveMessageModeForSession(sessionKey: SessionKey, source: import("./core/types.ts").MessageSource): MessageMode {
+    return resolveMessageMode(sessionKey, source, this.ctx);
   }
 
 
@@ -327,7 +342,8 @@ export class Gateway {
   }
 
   private buildSessionProfile(sessionKey: SessionKey, role: string) {
-    const cwd = getCwdForRole(role, this.config);
+    const agentId = extractAgentIdFromSessionKey(sessionKey) ?? undefined;
+    const cwd = getCwdForRole(role, this.config, agentId);
     return buildCapabilityProfile({
       config: this.config,
       role,
@@ -350,6 +366,162 @@ export class Gateway {
     await this.registry.hooks.dispatch("after_compaction", { sessionKey, summary });
   }
 
+  private reloadConfig(): void {
+    const reloaded = loadConfig();
+    this.config = reloaded;
+    this.pool.setConfig(reloaded);
+    this.log.info("Gateway config reloaded (pool config refreshed)");
+  }
+
+  private listAvailableRoles(): string[] {
+    const roleSet = new Set<string>();
+
+    roleSet.add("default");
+
+    for (const role of Object.keys(this.config.roles.workspaceDirs ?? {})) {
+      if (role.trim()) roleSet.add(role.trim());
+    }
+
+    for (const role of Object.keys(this.config.roles.capabilities ?? {})) {
+      if (role.trim()) roleSet.add(role.trim());
+    }
+
+    for (const agent of this.config.agents?.list ?? []) {
+      const role = (agent.role ?? agent.id ?? "").trim();
+      if (role) roleSet.add(role);
+    }
+
+    const rolesDir = resolveRolesDir(this.config);
+    if (existsSync(rolesDir)) {
+      try {
+        for (const entry of readdirSync(rolesDir, { withFileTypes: true })) {
+          if (entry.isDirectory() && entry.name.trim()) {
+            roleSet.add(entry.name.trim());
+          }
+        }
+      } catch {
+        // ignore filesystem errors and return collected roles
+      }
+    }
+
+    return Array.from(roleSet).sort((a, b) => a.localeCompare(b));
+  }
+
+  private async setSessionRole(sessionKey: SessionKey, newRole: string): Promise<boolean> {
+    const role = newRole.trim();
+    if (!role) return false;
+    if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/.test(role)) return false;
+
+    const availableRoles = this.listAvailableRoles();
+    if (!availableRoles.includes(role)) return false;
+
+    const session = this.sessions.get(sessionKey);
+    if (!session) return false;
+
+    if (session.role === role) return true;
+
+    const rpc = this.pool.getForSession(sessionKey);
+    if (rpc) {
+      if (session.isStreaming || !rpc.isIdle) {
+        try {
+          await rpc.abort();
+        } catch (err) {
+          this.log.warn(`[role] abort before switch failed for ${sessionKey}: ${err instanceof Error ? err.message : String(err)}`);
+        }
+
+        try {
+          await rpc.waitForIdle(5_000);
+        } catch (err) {
+          this.log.warn(`[role] waitForIdle timeout for ${sessionKey}: ${err instanceof Error ? err.message : String(err)}`);
+          return false;
+        }
+      }
+
+      if (!rpc.isIdle) return false;
+      this.pool.release(sessionKey);
+    }
+
+    session.role = role;
+    session.isStreaming = false;
+    session.rpcProcessId = null;
+    session.lastActivity = Date.now();
+    this.sessions.set(sessionKey, session);
+
+    this.log.info(`[role] session ${sessionKey} switched to role=${role}`);
+    this.broadcastToWs("session.role.changed", { sessionKey, role });
+    return true;
+  }
+
+  private async createRole(roleName: string): Promise<{ ok: boolean; error?: string }> {
+    const role = roleName.trim();
+    if (!role) return { ok: false, error: "role is required" };
+    if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/.test(role)) {
+      return { ok: false, error: "invalid role name" };
+    }
+
+    const rolesDir = resolveRolesDir(this.config);
+    const roleDir = join(rolesDir, role);
+    if (existsSync(roleDir)) return { ok: false, error: "role already exists" };
+
+    try {
+      mkdirSync(roleDir, { recursive: true });
+      mkdirSync(join(roleDir, "memory"), { recursive: true });
+      writeFileSync(join(roleDir, "IDENTITY.md"), `# IDENTITY.md\n\n- **名字：** ${role}\n- **定位：** 角色助手\n`, "utf-8");
+      writeFileSync(join(roleDir, "SOUL.md"), "# SOUL.md\n\n简洁、直接、可执行。\n", "utf-8");
+      writeFileSync(join(roleDir, "USER.md"), "# USER.md\n\n- **如何称呼：** 你\n", "utf-8");
+      writeFileSync(join(roleDir, "MEMORY.md"), "# Learnings (High Priority)\n\n# Learnings (Normal)\n\n# Learnings (New)\n\n# Preferences: Communication\n\n# Preferences: Code\n\n# Preferences: Tools\n\n# Preferences: Workflow\n\n# Preferences: General\n\n# Events\n", "utf-8");
+      this.broadcastToWs("role.created", { role });
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  }
+
+  private async deleteRole(roleName: string): Promise<{ ok: boolean; error?: string }> {
+    const role = roleName.trim();
+    if (!role) return { ok: false, error: "role is required" };
+    if (role === "default") return { ok: false, error: "default role cannot be deleted" };
+
+    const rolesDir = resolveRolesDir(this.config);
+    const roleDir = join(rolesDir, role);
+    if (!existsSync(roleDir)) return { ok: false, error: "role not found" };
+
+    try {
+      rmSync(roleDir, { recursive: true, force: true });
+      const cfgPath = join(rolesDir, "config.json");
+      if (existsSync(cfgPath)) {
+        const raw = readFileSync(cfgPath, "utf-8");
+        const parsed = JSON.parse(raw || "{}") as { mappings?: Record<string, string> };
+        const mappings = parsed.mappings ?? {};
+        for (const [cwd, mappedRole] of Object.entries(mappings)) {
+          if (mappedRole === role) {
+            delete mappings[cwd];
+          }
+        }
+        parsed.mappings = mappings;
+        writeFileSync(cfgPath, JSON.stringify(parsed, null, 2), "utf-8");
+      }
+
+      // Reset sessions using deleted role back to default
+      for (const s of this.sessions.toArray()) {
+        if (s.role === role) {
+          s.role = "default";
+          s.rpcProcessId = null;
+          s.isStreaming = false;
+          s.lastActivity = Date.now();
+          this.sessions.set(s.sessionKey, s);
+          this.pool.release(s.sessionKey);
+          this.broadcastToWs("session.role.changed", { sessionKey: s.sessionKey, role: "default" });
+        }
+      }
+
+      this.broadcastToWs("role.deleted", { role });
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  }
+
 
   private startServer(): void {
     const self = this;
@@ -363,6 +535,19 @@ export class Gateway {
 
       async fetch(req, server) {
         const url = new URL(req.url);
+
+        // CORS preflight bypass — skip auth for OPTIONS
+        if (req.method === "OPTIONS") {
+          return new Response(null, {
+            status: 204,
+            headers: {
+              "Access-Control-Allow-Origin": "*",
+              "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, PATCH, OPTIONS",
+              "Access-Control-Allow-Headers": "Content-Type, Authorization",
+              "Access-Control-Max-Age": "86400",
+            },
+          });
+        }
 
         // Auth check — fail-closed (v3.4 S1)
         const authDenied = authenticateRequest(req, url, self.config.gateway.auth, self.resolvedToken, self.authExemptPrefixes);
@@ -414,7 +599,32 @@ export class Gateway {
 
 
   private async handleHttp(req: Request, url: URL): Promise<Response> {
-    return routeHttp(req, url, this.ctx);
+    // CORS preflight
+    if (req.method === "OPTIONS") {
+      return new Response(null, {
+        status: 204,
+        headers: {
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, PATCH, OPTIONS",
+          "Access-Control-Allow-Headers": "Content-Type, Authorization",
+          "Access-Control-Max-Age": "86400",
+        },
+      });
+    }
+
+    const response = await routeHttp(req, url, this.ctx);
+
+    // Add CORS headers to all responses
+    const headers = new Headers(response.headers);
+    headers.set("Access-Control-Allow-Origin", "*");
+    headers.set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS");
+    headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
+
+    return new Response(response.body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers,
+    });
   }
 
 
@@ -459,14 +669,18 @@ export class Gateway {
       sessionMessageModeOverrides: this.sessionMessageModeOverrides,
       activeInboundMessages: this.activeInboundMessages,
       channelApis: this._channelApis,
+      observability: this.observability,
       resolveTelegramMessageMode: (sk, accountId) => this.resolveTelegramMessageMode(sk, accountId),
+      resolveMessageMode: (sk, source) => this.resolveMessageModeForSession(sk, source),
       broadcastToWs: (event, payload) => this.broadcastToWs(event, payload),
       buildSessionProfile: (sk, role) => this.buildSessionProfile(sk, role),
       dispatch: (msg) => this.dispatch(msg),
       compactSessionWithHooks: (sk, inst) => this.compactSessionWithHooks(sk, inst),
-      listAvailableRoles: () => [],
-      setSessionRole: async () => false,
-      reloadConfig: () => { this.config = loadConfig(); },
+      listAvailableRoles: () => this.listAvailableRoles(),
+      setSessionRole: async (sk, newRole) => this.setSessionRole(sk, newRole),
+      createRole: async (role) => this.createRole(role),
+      deleteRole: async (role) => this.deleteRole(role),
+      reloadConfig: () => this.reloadConfig(),
       onCronDelivered: (sk) => {
         markCronSelfDelivered(sk);
       },

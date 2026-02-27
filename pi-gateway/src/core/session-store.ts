@@ -22,6 +22,18 @@ interface PersistedSession {
   role: string | null;
   lastActivity: number;
   messageCount: number;
+  lastChatId?: string;
+  lastChannel?: string;
+  lastAccountId?: string;
+  lastChatType?: "dm" | "group" | "channel" | "thread";
+  lastSenderId?: string;
+  lastSenderName?: string;
+  lastTopicId?: string;
+  lastThreadId?: string;
+  lastModel?: string;
+  lastModelSource?: string;
+  lastThinkingLevel?: string;
+  lastThinkingLevelSource?: string;
 }
 
 // ============================================================================
@@ -118,6 +130,18 @@ export class SessionStore {
           role: s.role,
           lastActivity: s.lastActivity,
           messageCount: s.messageCount,
+          lastChatId: s.lastChatId,
+          lastChannel: s.lastChannel,
+          lastAccountId: s.lastAccountId,
+          lastChatType: s.lastChatType,
+          lastSenderId: s.lastSenderId,
+          lastSenderName: s.lastSenderName,
+          lastTopicId: s.lastTopicId,
+          lastThreadId: s.lastThreadId,
+          lastModel: s.lastModel,
+          lastModelSource: s.lastModelSource,
+          lastThinkingLevel: s.lastThinkingLevel,
+          lastThinkingLevelSource: s.lastThinkingLevelSource,
         };
       }
 
@@ -165,6 +189,18 @@ export class SessionStore {
           lastActivity: p.lastActivity,
           messageCount: p.messageCount,
           rpcProcessId: null,          // Runtime state, null on load
+          lastChatId: p.lastChatId,
+          lastChannel: p.lastChannel,
+          lastAccountId: p.lastAccountId,
+          lastChatType: p.lastChatType,
+          lastSenderId: p.lastSenderId,
+          lastSenderName: p.lastSenderName,
+          lastTopicId: p.lastTopicId,
+          lastThreadId: p.lastThreadId,
+          lastModel: p.lastModel,
+          lastModelSource: p.lastModelSource,
+          lastThinkingLevel: p.lastThinkingLevel as any,
+          lastThinkingLevelSource: p.lastThinkingLevelSource,
         });
         count++;
       }

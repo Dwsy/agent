@@ -15,6 +15,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { homedir } from "node:os";
 import type { ThinkingLevel } from "./types.ts";
+import { ConfigValidator, type ValidationOptions, type ValidationResult } from "./config-validator.ts";
 
 // ============================================================================
 // Config Types
@@ -146,8 +147,15 @@ export interface AgentBinding {
     channel?: string;
     accountId?: string;
     guildId?: string;  // Discord specific
+    /** Discord member roles constraint (all listed roles must match at least one in source roles set). */
+    roles?: string[];
     peer?: {
-      kind?: "dm" | "group";
+      kind?: "dm" | "group" | "channel" | "thread";
+      id?: string;
+    };
+    /** Parent peer inheritance (e.g. thread parent channel/topic). */
+    parentPeer?: {
+      kind?: "group" | "channel";
       id?: string;
     };
   };
@@ -222,6 +230,10 @@ export interface AgentConfig {
   pool: AgentPoolConfig;
   tools?: ToolPolicyConfig;
   sandbox?: SandboxConfig;
+  /** Delegation configuration for sub-agent spawning */
+  delegation?: DelegationConfig;
+  /** Heartbeat configuration */
+  heartbeat?: HeartbeatConfig;
   /** Per-message timeout in milliseconds. Default: 120000 (2 min) */
   timeoutMs?: number;
   /** Message handling mode when agent is already running. Default: "steer" */
@@ -229,7 +241,7 @@ export interface AgentConfig {
 }
 
 export interface SessionConfig {
-  dmScope: "main" | "per-peer" | "per-channel-peer";
+  dmScope: "main" | "per-peer" | "per-channel-peer" | "per-account-channel-peer";
   dataDir: string;
   /** Auto-resume sessions on restart via --continue. Default: true */
   continueOnRestart?: boolean;
@@ -238,6 +250,8 @@ export interface SessionConfig {
 export interface TelegramGroupConfig {
   requireMention?: boolean;
   role?: string;
+  model?: string;
+  thinkingLevel?: ThinkingLevel;
   groupPolicy?: "open" | "disabled" | "allowlist";
   enabled?: boolean;
   allowFrom?: Array<string | number>;
@@ -251,6 +265,8 @@ export interface TelegramGroupConfig {
 export interface TelegramTopicConfig {
   requireMention?: boolean;
   role?: string;
+  model?: string;
+  thinkingLevel?: ThinkingLevel;
   groupPolicy?: "open" | "disabled" | "allowlist";
   enabled?: boolean;
   allowFrom?: Array<string | number>;
@@ -284,6 +300,8 @@ export interface TelegramAccountConfig {
   groupPolicy?: "open" | "disabled" | "allowlist";
   messageMode?: "steer" | "follow-up" | "interrupt";
   role?: string;
+  model?: string;
+  thinkingLevel?: ThinkingLevel;
   groups?: Record<string, TelegramGroupConfig>;
   mediaMaxMb?: number;
   /** Audio STT configuration */
@@ -322,10 +340,18 @@ export interface DiscordDmConfig {
   allowFrom?: string[];
 }
 
+export interface DiscordGuildChannelConfig {
+  role?: string;
+  model?: string;
+  thinkingLevel?: ThinkingLevel;
+}
+
 export interface DiscordGuildConfig {
   requireMention?: boolean;
   role?: string;
-  channels?: Record<string, { role?: string }>;
+  model?: string;
+  thinkingLevel?: ThinkingLevel;
+  channels?: Record<string, DiscordGuildChannelConfig>;
 }
 
 export interface DiscordChannelConfig {
@@ -333,6 +359,8 @@ export interface DiscordChannelConfig {
   token?: string;
   dmPolicy?: "pairing" | "allowlist" | "open" | "disabled";
   role?: string;
+  model?: string;
+  thinkingLevel?: ThinkingLevel;
   dm?: DiscordDmConfig;
   guilds?: Record<string, DiscordGuildConfig>;
 }
@@ -347,10 +375,61 @@ export interface WebChatChannelConfig {
   mediaMaxMb?: number;
 }
 
+export interface ChatSdkChannelConfig {
+  enabled?: boolean;
+  userName?: string;
+  agentId?: string;
+  adapters?: {
+    telegram?: {
+      botToken?: string;
+      webhook?: { url: string; secretToken?: string };
+      apiBaseUrl?: string;
+      proxy?: string;
+      groups?: Record<string, { allowFrom?: string[] | "*"; requireMention?: boolean; enabled?: boolean }>;
+      media?: { downloadDir?: string; maxImageSize?: number; retryCount?: number };
+    };
+    slack?: {
+      botToken?: string;
+      signingSecret?: string;
+      appToken?: string;
+    };
+    discord?: {
+      botToken?: string;
+      applicationId?: string;
+      publicKey?: string;
+      mentionRoleIds?: string[];
+    };
+    teams?: {
+      appId?: string;
+      appPassword?: string;
+      tenantId?: string;
+    };
+    gchat?: {
+      projectNumber?: string;
+      credentials?: string;
+    };
+    github?: {
+      appId?: string;
+      privateKey?: string;
+      webhookSecret?: string;
+    };
+    linear?: {
+      apiKey?: string;
+      webhookSecret?: string;
+    };
+    [key: string]: unknown;
+  };
+  state?: {
+    type: "memory" | "redis";
+    url?: string;
+  };
+}
+
 export interface ChannelsConfig {
   telegram?: TelegramChannelConfig;
   discord?: DiscordChannelConfig;
   webchat?: WebChatChannelConfig;
+  chatSdk?: ChatSdkChannelConfig;
   [key: string]: unknown;
 }
 
@@ -407,6 +486,8 @@ export interface CronJob {
   deleteAfterRun?: boolean;
   /** If true, job is paused (not scheduled). Default: false */
   paused?: boolean;
+  /** If true, resume prior context from previous runs. Default: false (fresh context per run) */
+  resumeContext?: boolean;
 }
 
 export interface CronConfig {
@@ -418,6 +499,8 @@ export interface LoggingConfig {
   file: boolean;
   level: "debug" | "info" | "warn" | "error";
   retentionDays: number;
+  /** Max log file size in MB before rotation. Default: 5 */
+  maxFileSize: number;
 }
 
 export interface QueueConfig {
@@ -529,6 +612,7 @@ export const DEFAULT_CONFIG: Config = {
     file: false,
     level: "info",
     retentionDays: 7,
+    maxFileSize: 5,
   },
   queue: {
     maxPerSession: 15,
@@ -559,7 +643,7 @@ export const DEFAULT_CONFIG: Config = {
   heartbeat: {
     enabled: true,
     every: "30m",
-    prompt: "Read HEARTBEAT.md if it exists. Follow it strictly — do not infer or repeat tasks from prior conversations. If nothing needs attention, reply HEARTBEAT_OK.",
+    prompt: "Read core/heartbeat.md if it exists. Follow it strictly — do not infer or repeat tasks from prior conversations. If nothing needs attention, reply HEARTBEAT_OK.",
     ackMaxChars: 300,
     skipWhenBusy: true,
     maxRetries: 2,
@@ -602,7 +686,16 @@ export function resolveConfigPath(): string {
  * Env override:
  * - PI_GATEWAY_PORT: force gateway port (1-65535)
  */
-export function loadConfig(configPath?: string): Config {
+export function loadConfig(configPath?: string): Config;
+/**
+ * Load config with validation.
+ *
+ * @param configPath - Path to config file
+ * @param validateOptions - Validation options
+ * @returns Object with config and validation result
+ */
+export function loadConfig(configPath: string | undefined, validateOptions: ValidationOptions & { validate: true }): Promise<{ config: Config; validation: ValidationResult }>;
+export function loadConfig(configPath?: string, validateOptions?: ValidationOptions & { validate?: boolean }): Config | Promise<{ config: Config; validation: ValidationResult }> {
   const path = configPath ?? resolveConfigPath();
 
   let fileConfig: Partial<Config> = {};
@@ -633,7 +726,32 @@ export function loadConfig(configPath?: string): Config {
   }
 
   validateTelegramConfig(merged);
+
+  // Handle validation if requested
+  if (validateOptions?.validate) {
+    const validator = new ConfigValidator(validateOptions);
+    return validator.validate(merged).then(validation => ({
+      config: merged,
+      validation,
+    }));
+  }
+
   return merged;
+}
+
+/**
+ * Validate a loaded configuration.
+ *
+ * @param config - The configuration to validate
+ * @param options - Validation options
+ * @returns Validation result with issues and stats
+ */
+export async function validateConfig(
+  config: Config,
+  options?: ValidationOptions,
+): Promise<ValidationResult> {
+  const validator = new ConfigValidator(options);
+  return validator.validate(config);
 }
 
 /**

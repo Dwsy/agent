@@ -37,6 +37,9 @@ export type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 /** Agent event types from the RPC stream */
 export type { AgentEvent, AgentMessage } from "@mariozechner/pi-agent-core";
 
+// Local type alias for use in this file
+type AgentEvent_ = import("@mariozechner/pi-agent-core").AgentEvent;
+
 /** Assistant message streaming event (text_delta, toolcall_delta, etc.) */
 export type { AssistantMessageEvent } from "@mariozechner/pi-ai";
 
@@ -180,7 +183,7 @@ export type RpcSessionEvent =
  * Full RPC wire event — union of AgentEvent (agent loop level) + RpcSessionEvent (session level).
  * This is what actually comes over stdout in `pi --mode rpc`.
  */
-export type RpcWireEvent = AgentEvent | RpcSessionEvent;
+export type RpcWireEvent = AgentEvent_ | RpcSessionEvent;
 
 // ============================================================================
 // Session Types (aligned with OpenClaw session key format)
@@ -203,26 +206,46 @@ export interface SessionState {
   lastChatId?: string;
   /** Channel name extracted from session key or message source */
   lastChannel?: string;
+  /** Last account id for multi-account channels (e.g. telegram account) */
+  lastAccountId?: string;
+  /** Last chat type for delivery routing (dm/group/channel/thread) */
+  lastChatType?: "dm" | "group" | "channel" | "thread";
+  /** Last sender id bound to this session (user-channel relationship tracking) */
+  lastSenderId?: string;
+  /** Last sender display name (optional) */
+  lastSenderName?: string;
+  /** Last topic id (telegram forum topic) */
+  lastTopicId?: string;
+  /** Last thread id (discord/web thread) */
+  lastThreadId?: string;
+  /** Last resolved model for this session turn */
+  lastModel?: string;
+  /** Source of last resolved model */
+  lastModelSource?: string;
+  /** Last resolved thinking level for this session turn */
+  lastThinkingLevel?: ThinkingLevel;
+  /** Source of last resolved thinking level */
+  lastThinkingLevelSource?: string;
   /** Auto-compaction in progress (to prevent message race) */
   isCompacting?: boolean;
+  /** Set to true after /new (reset) to skip --continue on next spawn */
+  skipAutoResume?: boolean;
 }
 
 // ============================================================================
 // Message Types
 // ============================================================================
 
-/** Source of an inbound message */
-export interface MessageSource {
-  channel: string;
-  /** Optional channel account id (e.g. telegram account) */
-  accountId?: string;
-  chatType: "dm" | "group" | "channel" | "thread";
-  chatId: string;
-  threadId?: string;
-  topicId?: string;
+import type { MessageSource as DomainMessageSource } from "./domain/types.ts";
+
+/** Source of an inbound message (extends domain MessageSource with gateway-specific fields) */
+export interface MessageSource extends DomainMessageSource {
   senderId: string;
-  senderName?: string;
   guildId?: string;
+  /** Discord member role IDs, used for guild+roles routing. */
+  memberRoleIds?: string[];
+  /** Parent peer context (e.g. thread parent channel) for inheritance routing. */
+  parentPeer?: { kind: "group" | "channel"; id: string };
   /** Target agent ID for routing (cron/delegation). */
   agentId?: string;
   /** Inbound message ID (platform-specific, for pin/reply/react). */
@@ -291,6 +314,10 @@ export type GatewayMethod =
   | "sessions.get"
   | "sessions.compact"
   | "sessions.delete"
+  | "roles.list"
+  | "roles.set"
+  | "roles.create"
+  | "roles.delete"
   | "plugins.list"
   | "tools.list"
   | "tools.call"

@@ -203,5 +203,12 @@ const telegramPlugin: ChannelPlugin = {
 };
 
 export default function register(api: GatewayPluginApi) {
+  // If chat-sdk telegram adapter is active, skip legacy plugin
+  const chatSdkConfig = (api.config.channels as any)?.chatSdk;
+  if (chatSdkConfig?.adapters?.telegram) {
+    api.logger.info("Skipping legacy Telegram plugin — chat-sdk adapter is active");
+    return;
+  }
+
   api.registerChannel(telegramPlugin);
 }

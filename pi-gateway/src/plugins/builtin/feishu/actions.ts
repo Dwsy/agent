@@ -99,7 +99,7 @@ export async function pinFeishuMessage(
 ): Promise<MessageActionResult> {
   try {
     if (unpin) {
-      const res = await client.im.pin.delete({
+      const res = await (client.im.pin as any).delete({
         data: { message_id: messageId },
       });
       if ((res as any).code !== 0) {

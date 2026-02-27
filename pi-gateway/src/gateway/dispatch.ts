@@ -6,7 +6,7 @@
  * @owner MintHawk (KeenUnion)
  */
 
-import type { GatewayContext, TelegramMessageMode, DispatchResult } from "./types.ts";
+import type { GatewayContext, MessageMode, DispatchResult } from "./types.ts";
 import type { InboundMessage, SessionKey, ImageContent, MessageSource } from "../core/types.ts";
 import type { RpcClient } from "../core/rpc-client.ts";
 import type { PrioritizedWork } from "../core/message-queue.ts";
@@ -14,52 +14,80 @@ import { processMessage } from "./message-pipeline.ts";
 import { resolveDeliveryTarget } from "../core/channel-resolver.ts";
 
 // ============================================================================
-// Telegram Helpers
+// Message Mode Helpers (channel-agnostic)
 // ============================================================================
 
-export function normalizeTelegramMessageMode(value: unknown): TelegramMessageMode | null {
+/** Normalize a raw value to a valid MessageMode, or null if invalid. */
+export function normalizeMessageMode(value: unknown): MessageMode | null {
   return value === "steer" || value === "follow-up" || value === "interrupt"
     ? value
     : null;
 }
 
-export function extractTelegramAccountId(sessionKey: SessionKey, sourceAccountId?: string): string {
-  if (sourceAccountId?.trim()) return sourceAccountId.trim();
-  const matched = sessionKey.match(/^agent:[^:]+:telegram:account:([^:]+):/);
+/** @deprecated Use `normalizeMessageMode` instead. */
+export const normalizeTelegramMessageMode = normalizeMessageMode;
+
+/** Extract account ID from session key or source. Works for any channel with account scoping. */
+export function extractAccountId(sessionKey: SessionKey, source?: MessageSource | string): string {
+  // If source is a MessageSource object, use its accountId
+  if (source && typeof source === "object" && "accountId" in source) {
+    const accountId = (source as MessageSource).accountId?.trim();
+    if (accountId) return accountId;
+  }
+  // If source is a string (legacy sourceAccountId parameter)
+  if (typeof source === "string" && source.trim()) return source.trim();
+  // Fallback: extract from session key pattern
+  const matched = sessionKey.match(/^agent:[^:]+:[^:]+:account:([^:]+):/);
   return matched?.[1] ?? "default";
 }
 
+/** @deprecated Use `extractAccountId` instead. */
+export function extractTelegramAccountId(sessionKey: SessionKey, sourceAccountId?: string): string {
+  return extractAccountId(sessionKey, sourceAccountId);
+}
+
+/** @deprecated Use `resolveMessageMode` instead. */
 export function resolveTelegramMsgMode(
   sessionKey: SessionKey,
   ctx: GatewayContext,
   sourceAccountId?: string,
-): TelegramMessageMode {
+): MessageMode {
   const override = ctx.sessionMessageModeOverrides.get(sessionKey);
   if (override) return override;
 
   const tg = ctx.config.channels.telegram;
-  const accountId = extractTelegramAccountId(sessionKey, sourceAccountId);
-  const accountMode = normalizeTelegramMessageMode(tg?.accounts?.[accountId]?.messageMode);
-  const channelMode = normalizeTelegramMessageMode(tg?.messageMode);
+  const accountId = extractAccountId(sessionKey, sourceAccountId);
+  const accountMode = normalizeMessageMode(tg?.accounts?.[accountId]?.messageMode);
+  const channelMode = normalizeMessageMode(tg?.messageMode);
   return accountMode ?? channelMode ?? "steer";
 }
 
 /**
  * Resolve message handling mode for any channel.
+ * Checks session override → channel-specific config → global default.
  */
 export function resolveMessageMode(
   sessionKey: SessionKey,
   source: MessageSource,
   ctx: GatewayContext,
-): TelegramMessageMode {
+): MessageMode {
   const override = ctx.sessionMessageModeOverrides.get(sessionKey);
   if (override) return override;
 
+  // Channel-specific config lookup
+  const channelConfig = (ctx.config.channels as Record<string, any>)?.[source.channel];
+
   if (source.channel === "telegram") {
-    return resolveTelegramMsgMode(sessionKey, ctx, source.accountId);
+    // Keep existing telegram-specific account resolution for backward compat
+    const accountId = extractAccountId(sessionKey, source);
+    const accountMode = normalizeMessageMode(channelConfig?.accounts?.[accountId]?.messageMode);
+    const channelMode = normalizeMessageMode(channelConfig?.messageMode);
+    return accountMode ?? channelMode ?? "steer";
   }
 
-  return ctx.config.agent.messageMode ?? "steer";
+  // Generic: check channel-level messageMode config
+  const channelMode = normalizeMessageMode(channelConfig?.messageMode);
+  return channelMode ?? "steer";
 }
 
 /**

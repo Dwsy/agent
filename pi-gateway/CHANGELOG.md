@@ -1,5 +1,64 @@
 # Changelog
 
+## [Unreleased]
+
+### Concise Mode Command & Callback Router (#19)
+- **`/concise` command**: Toggle concise mode per session — `/concise [on|off|reset|status]` with inline keyboard (by Dwsy)
+- **Session override**: `ConciseStateManager` gains `sessionOverrides` Map — explicit toggle survives hot-reload, `getEffectiveState()` computes override > config default (by Dwsy)
+- **Dynamic config**: concise-mode plugin reads live gateway config per message instead of startup snapshot; singleton manager preserved across reload (by Dwsy)
+- **Streaming fix**: `createConciseModeHandler` now reads effective state per sessionKey instead of hardcoded `true` (by Dwsy)
+- **Callback Router** (`callback-router.ts`): Prefix-based callback registry — `onCallback("prefix:", handler)` decouples feature callbacks from model-selector.ts (by Dwsy)
+- **Legacy migration**: Moved `role:*`, `cmd_page:*`, `skill_run:*`, `rsm:*` handlers from model-selector.ts to commands.ts via callback-router; model-selector.ts reduced from ~500 to 210 lines (by Dwsy)
+
+### Type System Unification (Tech Debt)
+- **125→0 TS errors**: Unified dual type system (domain vs legacy) across 20+ files (by Dwsy)
+- **`GatewayPluginApi.config`**: `Record<string,unknown>` → `Config` — eliminated 32 type mismatch errors at source (by Dwsy)
+- **`MessageSource` inheritance**: Legacy extends domain, `MessageChannel` gains `string` fallback for extensibility (by Dwsy)
+- **Typed hook handlers**: `api.on<T>()` overload with `TypedHookHandler<T>` for type-safe hook payloads (by Dwsy)
+- **Interface completeness**: Added `rpcPool`, `cronEngine`, `registerHook`, `broadcastToWs`, `emitEvent`, `getConfig` to `GatewayPluginApi` (by Dwsy)
+- **`PluginFactory`**: Gateway-specific `(api) => void` instead of domain `() => Plugin` (by Dwsy)
+
+---
+
+**Focus:** Cron Isolated Mode Context Isolation + RPC Log Rotation + Streaming send_message
+
+### Streaming send_message Tool
+- **Stream parameter**: `send_message({ text: "...", stream: true })` enables typing animation for long messages (by Dwsy)
+- **Auto-detect**: Messages > 200 chars automatically use streaming mode (can be overridden with `stream: false`) (by Dwsy)
+- **Chunked delivery**: Messages split into 80-char chunks, each sent with `…` suffix to indicate continuation (by Dwsy)
+- **Progress callback**: Tool uses `onPartialResult` to emit `tool_execution_update` events for live progress display (by Dwsy)
+- **New API endpoint**: `POST /api/message/edit` for updating previously sent messages during streaming (by Dwsy)
+- **Message ID tracking**: `/api/message/send` now returns `messageId` for subsequent edits (by Dwsy)
+
+### Cron Isolated Mode Context Isolation (Fixes #18)
+- **Fresh context by default**: Cron jobs now run with fresh RPC context per execution by default (by Dwsy)
+- **Config `resumeContext`**: New per-job option `cron.jobs[].resumeContext` — default `false` for stateless runs, set `true` to preserve context across runs (by Dwsy)
+- **Skip auto-resume**: Cron sessions (key pattern `cron:{jobId}`) bypass `--continue` auto-resume unless explicitly enabled (by Dwsy)
+- **Session flag injection**: CronEngine sets `session.skipAutoResume = !job.resumeContext` before dispatch to control RPC pool behavior (by Dwsy)
+
+### RPC Transcript Logger Enhancement
+- **Size-based rotation**: Each session's JSONL transcript now auto-rotates when reaching 5MB (hardcoded default) (by Dwsy)
+- **Rotation pattern**: `session.jsonl` → `session.1.jsonl` → `session.2.jsonl` (max 3 files per session) (by Dwsy)
+- **Automatic cleanup**: Oldest rotation (`.3.jsonl`) deleted when creating new rotation to prevent disk bloat (by Dwsy)
+- **No long-term archival**: Transcripts are debugging-only, not preserved beyond the 3-file rotation window (by Dwsy)
+
+### Gateway File Logger Enhancement
+- **Configurable max file size**: `logging.maxFileSize` config option (1-100MB, default: 5MB) (by Dwsy)
+- **Daily log rotation**: `gateway-YYYY-MM-DD.log` rotates by size within the same day (by Dwsy)
+- **Rotation pattern**: `gateway-2024-01-15.log` → `gateway-2024-01-15.1.log` → `gateway-2024-01-15.2.jsonl` (by Dwsy)
+
+---
+
+## [v3.12] - 2026-02-15
+
+**Focus:** Plugin Hot Reload Enhancement — Complete background services and channel plugins support
+
+### TODO (Not Started)
+- **T4**: Background services hot reload — graceful stop + state migration + restart
+- **T5**: Channel plugins hot reload — pause message flow + disconnect + reconnect + resume
+
+---
+
 ## [v3.12] - 2026-02-15
 
 **Focus:** Keyboard Interaction Tool & Resume Enhancement — AI agent can now send inline keyboards to users, /resume gains interactive session picker with preview

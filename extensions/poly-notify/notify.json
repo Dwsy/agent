@@ -1,0 +1,40 @@
+{
+  "enabled": false,
+  "minDurationSeconds": 10,
+  "sound": "silent",
+  "showPopup": false,
+  "sounds": [
+    {
+      "alias": "silent"
+    },
+    {
+      "alias": "random"
+    },
+    {
+      "alias": "Funk",
+      "path": "/System/Library/Sounds/Funk.aiff"
+    },
+    {
+      "alias": "Glass",
+      "path": "/System/Library/Sounds/Glass.aiff"
+    },
+    {
+      "alias": "Hero",
+      "path": "/System/Library/Sounds/Hero.aiff"
+    },
+    {
+      "alias": "Submarine",
+      "path": "/System/Library/Sounds/Submarine.aiff"
+    }
+  ],
+  "volume": {
+    "mode": "timeScaled",
+    "max": 1,
+    "min": 0.1
+  },
+  "pushover": {
+    "enabled": false,
+    "userKey": "",
+    "apiToken": ""
+  }
+}

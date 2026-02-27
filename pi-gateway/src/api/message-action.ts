@@ -13,6 +13,7 @@ import type { RpcPool } from "../core/rpc-pool.ts";
 import type { PluginRegistryState } from "../plugins/loader.ts";
 import type { SessionStore } from "../core/session-store.ts";
 import { getGatewayInternalToken } from "./media-send.ts";
+import { resolveChannelTarget } from "./channel-target.ts";
 
 export interface MessageActionContext {
   config: Config;
@@ -102,12 +103,14 @@ export async function handleMessageAction(
     return Response.json({ error: "Cannot resolve chatId from session" }, { status: 400 });
   }
 
+  const target = resolveChannelTarget(channel, chatId, sessionKey, session);
+
   const channelPlugin = ctx.registry.channels.get(channel);
   if (!channelPlugin) {
     return Response.json({ error: `Channel plugin not found: ${channel}` }, { status: 404 });
   }
 
-  ctx.log.info(`[message-action] ${action} channel=${channel} chatId=${chatId} messageId=${messageId}`);
+  ctx.log.info(`[message-action] ${action} channel=${channel} target=${target} messageId=${messageId}`);
 
   try {
     if (action === "react") {
@@ -118,7 +121,7 @@ export async function handleMessageAction(
         ? body.emoji.filter((e): e is string => typeof e === "string" && e.trim() !== "")
         : typeof body.emoji === "string" ? body.emoji.trim() : "";
       const remove = body.remove === true;
-      const result = await channelPlugin.outbound.sendReaction(chatId, messageId, emoji, { remove });
+      const result = await channelPlugin.outbound.sendReaction(target, messageId, emoji, { remove });
       if (!result.ok) {
         return Response.json({ error: result.error ?? "Reaction failed" }, { status: 502 });
       }
@@ -130,7 +133,7 @@ export async function handleMessageAction(
         return Response.json({ error: `Channel "${channel}" does not support message editing` }, { status: 501 });
       }
       const text = typeof body.text === "string" ? body.text : "";
-      const result = await channelPlugin.outbound.editMessage(chatId, messageId, text);
+      const result = await channelPlugin.outbound.editMessage(target, messageId, text);
       if (!result.ok) {
         return Response.json({ error: result.error ?? "Edit failed" }, { status: 502 });
       }
@@ -141,7 +144,7 @@ export async function handleMessageAction(
       if (!channelPlugin.outbound.deleteMessage) {
         return Response.json({ error: `Channel "${channel}" does not support message deletion` }, { status: 501 });
       }
-      const result = await channelPlugin.outbound.deleteMessage(chatId, messageId);
+      const result = await channelPlugin.outbound.deleteMessage(target, messageId);
       if (!result.ok) {
         return Response.json({ error: result.error ?? "Delete failed" }, { status: 502 });
       }
@@ -153,7 +156,7 @@ export async function handleMessageAction(
         return Response.json({ error: `Channel "${channel}" does not support pinning` }, { status: 501 });
       }
       const unpin = body.unpin === true;
-      const result = await channelPlugin.outbound.pinMessage(chatId, messageId, unpin);
+      const result = await channelPlugin.outbound.pinMessage(target, messageId, unpin);
       if (!result.ok) {
         return Response.json({ error: result.error ?? "Pin failed" }, { status: 502 });
       }
@@ -166,7 +169,7 @@ export async function handleMessageAction(
       }
       const limit = typeof body.limit === "number" ? Math.min(body.limit, 100) : 20;
       const before = typeof body.before === "string" ? body.before : undefined;
-      const result = await channelPlugin.outbound.readHistory(chatId, limit, before);
+      const result = await channelPlugin.outbound.readHistory(target, limit, before);
       if (!result.ok) {
         return Response.json({ error: result.error ?? "Read history failed" }, { status: 502 });
       }

@@ -2,11 +2,10 @@
  * API implementations for web fetch and search
  */
 
-import { getQwenAccessToken, getIlowApiKey, getIlowToken } from "./providers.js";
-import type { IlowWebFetchResponse, QwenSearchResult } from "./types.js";
+import { getQwenAccessToken } from "./providers.js";
+import type { QwenSearchResult } from "./types.js";
 
 // API URLs
-const ILOW_API_URL = "https://apis.iflow.cn/v1/chat/webFetch";
 const QWEN_WEB_SEARCH_URL = "https://portal.qwen.ai/api/v1/indices/plugin/web_search";
 const QWEN_CHAT_URL = "https://portal.qwen.ai/v1/chat/completions";
 
@@ -51,11 +50,11 @@ export async function qwenWebSearch(query: string, page = 1, rows = 10): Promise
 
 	const data = await response.json() as QwenSearchResult;
 
-	if (!data.success && !data.data?.list) {
+	if (!data.success && !data.data?.docs) {
 		throw new Error(data.message || "Search failed");
 	}
 
-	const results = data.data?.list || [];
+	const results = data.data?.docs || [];
 	if (results.length === 0) {
 		return "No results found.";
 	}
@@ -68,9 +67,8 @@ export async function qwenWebSearch(query: string, page = 1, rows = 10): Promise
 	for (const item of results) {
 		if (item.title) parts.push(`## ${item.title}`);
 		if (item.url) parts.push(`URL: ${item.url}`);
-		if (item.site) parts.push(`Site: ${item.site}`);
-		if (item.date) parts.push(`Date: ${item.date}`);
-		if (item.content) parts.push(`\n${item.content}`);
+		if (item.hostname) parts.push(`Site: ${item.hostname}`);
+		if (item.snippet) parts.push(`\n${item.snippet}`);
 		parts.push("\n---\n");
 	}
 
@@ -129,82 +127,10 @@ export async function qwenChat(
 	return reply || JSON.stringify(data, null, 2);
 }
 
-// ============ Ilow APIs ============
-
-function extractIlowContent(data: IlowWebFetchResponse): string {
-	if (!data.success) {
-		throw new Error(`API error: ${data.message || "Unknown error"}`);
-	}
-
-	const items = data.data?.outputs?.data?.data;
-	if (!items || items.length === 0) {
-		return "No content extracted from the URL.";
-	}
-
-	const item = items[0];
-	const parts: string[] = [];
-
-	if (item.title) {
-		parts.push(`# ${item.title}\n`);
-	}
-	if (item.url) {
-		parts.push(`URL: ${item.url}\n`);
-	}
-	if (item.site) {
-		parts.push(`Site: ${item.site}\n`);
-	}
-	if (item.publishTime) {
-		parts.push(`Published: ${item.publishTime}\n`);
-	}
-	if (parts.length > 0) {
-		parts.push("---\n");
-	}
-	if (item.content) {
-		parts.push(item.content);
-	}
-
-	return parts.join("\n") || "Empty content.";
-}
-
-export async function ilowWebFetch(url: string): Promise<string> {
-	const apiKey = await getIlowToken();
-	if (!apiKey) {
-		throw new Error("API key not found. Please configure iflow settings.");
-	}
-
-	// Validate URL
-	try {
-		new URL(url);
-	} catch {
-		throw new Error(`Invalid URL: ${url}`);
-	}
-
-	const traceId = generateTraceId();
-
-	const response = await fetch(ILOW_API_URL, {
-		method: "POST",
-		headers: {
-			"Content-Type": "application/json",
-			"Authorization": `Bearer ${apiKey}`,
-			"traceparent": traceId,
-		},
-		body: JSON.stringify({ url }),
-	});
-
-	if (!response.ok) {
-		const text = await response.text().catch(() => "Unknown error");
-		throw new Error(`HTTP ${response.status}: ${response.statusText}. ${text}`);
-	}
-
-	const data = await response.json() as IlowWebFetchResponse;
-	return extractIlowContent(data);
-}
-
 // ============ Unified APIs ============
 
 export async function webFetch(url: string): Promise<string> {
-	// Prefer iflow for web fetch (better support)
-	return await ilowWebFetch(url);
+	throw new Error("Web fetch not implemented. Please use web_search instead.");
 }
 
 export async function webSearch(query: string, page = 1, rows = 10): Promise<string> {

@@ -5,7 +5,7 @@
  * Encapsulates state transitions and validation logic.
  */
 
-import type { GatewayPluginApi } from "../../types.ts";
+import type { GatewayPluginApi } from "../../../../core/interface/plugins/types.ts";
 
 /**
  * Session state for concise-mode
@@ -30,6 +30,7 @@ export class ConciseStateManager {
   private enabledChannels: Set<string>;
   private activeSessions: Map<string, ConciseSessionState>;
   private suppressRoutes: Map<string, number>; // routeKey → expiryTimestamp
+  private sessionOverrides: Map<string, boolean>; // sessionKey → explicit on/off
   private metrics: ConciseMetrics;
 
   constructor(
@@ -39,6 +40,7 @@ export class ConciseStateManager {
     this.enabledChannels = new Set(channels);
     this.activeSessions = new Map();
     this.suppressRoutes = new Map();
+    this.sessionOverrides = new Map();
     this.metrics = { suppressedCount: 0, skippedCount: 0, errorCount: 0 };
   }
 
@@ -74,7 +76,6 @@ export class ConciseStateManager {
     this.suppressRoutes.set(routeKey, expiry);
     
     session.suppressCount++;
-    this.logger?.info(`[state] Added suppress route: ${routeKey} (TTL: ${this.ttlMs}ms)`);
     return true;
   }
 
@@ -115,6 +116,42 @@ export class ConciseStateManager {
 
     session.target = target;
     return true;
+  }
+
+  /**
+   * Set explicit session override (from /concise command)
+   */
+  setSessionOverride(sessionKey: string, enabled: boolean): void {
+    this.sessionOverrides.set(sessionKey, enabled);
+  }
+
+  /**
+   * Clear session override (revert to config default)
+   */
+  clearSessionOverride(sessionKey: string): void {
+    this.sessionOverrides.delete(sessionKey);
+  }
+
+  /**
+   * Get session override value, or undefined if not set
+   */
+  getSessionOverride(sessionKey: string): boolean | undefined {
+    return this.sessionOverrides.get(sessionKey);
+  }
+
+  /**
+   * Compute effective concise state: session override > config default
+   */
+  getEffectiveState(sessionKey: string, configDefault: boolean): boolean {
+    const override = this.sessionOverrides.get(sessionKey);
+    return override ?? configDefault;
+  }
+
+  /**
+   * Get override count (for diagnostics)
+   */
+  getOverrideCount(): number {
+    return this.sessionOverrides.size;
   }
 
   /**
@@ -161,6 +198,13 @@ export class ConciseStateManager {
    */
   isChannelEnabled(channel: string): boolean {
     return this.enabledChannels.has(channel);
+  }
+
+  /**
+   * Update enabled channels (for hot-reload)
+   */
+  updateChannels(channels: string[]): void {
+    this.enabledChannels = new Set(channels);
   }
 
   /**

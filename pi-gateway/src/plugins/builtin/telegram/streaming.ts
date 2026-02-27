@@ -12,6 +12,7 @@ import { resolveStreamCompat } from "./config-compat.ts";
 import { escapeHtml, markdownToTelegramHtml, splitTelegramText } from "./format.ts";
 import { parseOutboundMediaDirectives, sendTelegramMedia } from "./media-send.ts";
 import { recordSentMessage } from "./sent-message-cache.ts";
+import { getEffectiveConciseState } from "../concise-mode/index.ts";
 import type {
   TelegramAccountRuntime,
   TelegramContext,
@@ -154,13 +155,16 @@ class ConciseModeHandler {
 }
 
 /**
- * Factory function to create concise-mode handler
+ * Factory function to create concise-mode handler.
+ * Reads effective state dynamically: session override > config default.
  */
 function createConciseModeHandler(
   runtime: TelegramPluginRuntime,
-  account: TelegramAccountRuntime
+  account: TelegramAccountRuntime,
+  sessionKey?: string,
 ): ConciseModeHandler {
-  return new ConciseModeHandler(runtime, account, true);
+  const enabled = sessionKey ? getEffectiveConciseState(sessionKey) : false;
+  return new ConciseModeHandler(runtime, account, enabled);
 }
 
 // ============================================================================
@@ -192,8 +196,7 @@ export async function dispatchAgentTurn(params: {
   const { runtime, account, ctx, source, sessionKey, text, images } = params;
 
   // Concise-mode: inject prompt and disable streaming
-  // Note: message_received hook doesn't reach here, so we inject directly
-  const conciseMode = createConciseModeHandler(runtime, account);
+  const conciseMode = createConciseModeHandler(runtime, account, sessionKey);
   const textWithPrompt = conciseMode.injectPrompt(text);
   const streamCfg = conciseMode.resolveStreamConfig();
   const isConcise = conciseMode.isEnabled();
@@ -387,14 +390,13 @@ export async function dispatchAgentTurn(params: {
   let toolCallSinceLastText = false;
   let lastStreamAccumLen = 0;
 
-  const result = await runtime.api.dispatch({
-    source,
-    sessionKey,
-    text: textWithPrompt,
-    images: images.length > 0 ? images : undefined,
-    onStreamDelta: conciseMode.wrapStreamDelta(undefined),
-    onToolStart: conciseMode.wrapToolStart(undefined),
-    onSteerInjected: () => {
+  try {
+    const result = await runtime.api.dispatch({
+      source,
+      sessionKey,
+      text: textWithPrompt,
+      images: images.length > 0 ? images : undefined,
+      onSteerInjected: () => {
       if (typingInterval) {
         clearInterval(typingInterval);
         typingInterval = null;
@@ -500,6 +502,7 @@ export async function dispatchAgentTurn(params: {
       if (reply === SILENT_TOKEN || reply?.includes(SILENT_TOKEN)) {
         log.info(`[telegram:respond] concise-mode: suppressing all output for chatId=${chatId}`);
         // Clean up streaming state without sending anything
+        log.info(`[telegram:respond] clearing typingInterval=${!!typingInterval}`);
         if (typingInterval) {
           clearInterval(typingInterval);
           typingInterval = null;
@@ -638,22 +641,38 @@ export async function dispatchAgentTurn(params: {
         }
       }
     },
-    setTyping: async (typing) => {
-      if (!typing && typingInterval) {
-        clearInterval(typingInterval);
-        typingInterval = null;
+    setTyping: async (typing: boolean) => {
+      try {
+        runtime.api.logger.info(`[telegram:setTyping] typing=${typing}, current typingInterval=${!!typingInterval}`);
+        if (typing) {
+          ensureTypingInterval();
+          return;
+        }
+        if (typingInterval) {
+          clearInterval(typingInterval);
+          typingInterval = null;
+        }
+      } catch (e) {
+        runtime.api.logger.error(`[telegram:setTyping] error: ${e instanceof Error ? e.message : String(e)}`);
       }
     },
   });
 
-  if (result?.injected && typingInterval) {
-    clearInterval(typingInterval);
-    typingInterval = null;
-    return;
-  }
-
-  if (typingInterval) {
-    clearInterval(typingInterval);
-    typingInterval = null;
+    if (result?.injected && typingInterval) {
+      runtime.api.logger.info(`[telegram:streaming] result.injected=true, clearing typingInterval`);
+      clearInterval(typingInterval);
+      typingInterval = null;
+      stopSpinner();
+      return;
+    }
+  } catch (err) {
+    runtime.api.logger.error(`[telegram:dispatch] Error: ${err instanceof Error ? err.message : String(err)}`);
+  } finally {
+    runtime.api.logger.info(`[telegram:streaming] finally block: typingInterval=${!!typingInterval}`);
+    if (typingInterval) {
+      clearInterval(typingInterval);
+      typingInterval = null;
+    }
+    stopSpinner();
   }
 }

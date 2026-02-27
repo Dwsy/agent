@@ -15,6 +15,7 @@ import { createLogger, type Logger, type InboundMessage } from "./types.ts";
 import type { CronJob, CronDelivery, Config } from "./config.ts";
 import type { SystemEventsQueue } from "./system-events.ts";
 import { resolveMainSessionKey } from "./session-router.ts";
+import type { SessionStore } from "./session-store.ts";
 
 /** Normalize delivery config — string shorthand or full object → CronDelivery */
 function resolveDelivery(raw: CronJob["delivery"]): CronDelivery {
@@ -74,6 +75,7 @@ export class CronEngine {
     private announcer?: CronAnnouncer,
     private systemEvents?: SystemEventsQueue,
     private heartbeatWake?: (agentId: string, reason?: string) => void,
+    private sessionStore?: SessionStore,
   ) {
     this.jobsPath = join(dataDir, "cron", "jobs.json");
     this.runsDir = join(dataDir, "cron", "runs");
@@ -311,27 +313,51 @@ export class CronEngine {
 
     this.log.info(`Triggering job: ${job.id} → agent ${agentId}, session ${sessionKey}`);
 
+    // Set skipAutoResume based on job's resumeContext setting (default: true for fresh context)
+    if (this.sessionStore) {
+      const session = this.sessionStore.get(sessionKey);
+      if (session) {
+        const shouldResume = job.resumeContext ?? false;
+        session.skipAutoResume = !shouldResume;
+        this.log.debug(`[cron:${job.id}] resumeContext=${shouldResume}, skipAutoResume=${session.skipAutoResume}`);
+      }
+    }
+
     let responseText = "";
-    const respond = async (text: string) => { responseText = text; };
+    let responded = false;
+    let resolveResponded: (() => void) | null = null;
+    const respondedPromise = new Promise<void>((resolve) => {
+      resolveResponded = resolve;
+    });
+    const respond = async (text: string) => {
+      responseText = text;
+      if (!responded) {
+        responded = true;
+        resolveResponded?.();
+      }
+    };
 
     const timeoutMs = job.timeoutMs ?? this.config?.delegation?.timeoutMs ?? 120_000;
 
     try {
       await Promise.race([
-        this.dispatcher.dispatch({
-          source: {
-            channel: "cron",
-            chatType: "dm",
-            chatId: job.id,
-            senderId: "cron",
-            senderName: "Cron Scheduler",
-            agentId,
-          },
-          sessionKey,
-          text,
-          respond,
-          setTyping: async () => {},
-        }),
+        (async () => {
+          await this.dispatcher.dispatch({
+            source: {
+              channel: "cron",
+              chatType: "dm",
+              chatId: job.id,
+              senderId: "cron",
+              senderName: "Cron Scheduler",
+              agentId,
+            },
+            sessionKey,
+            text,
+            respond,
+            setTyping: async () => {},
+          });
+          await respondedPromise;
+        })(),
         new Promise<never>((_, reject) =>
           setTimeout(() => reject(new Error("CRON_TIMEOUT")), timeoutMs),
         ),

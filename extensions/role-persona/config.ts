@@ -56,10 +56,52 @@ export interface UIConfig {
   viewerDefaultFilter: "all" | "learnings" | "preferences" | "events";
 }
 
+export interface VectorMemoryConfig {
+  enabled: boolean;
+  provider: "openai" | "local";
+  model: string;
+  apiKey: string | null;
+  baseUrl: string;  // for local provider (pi-session-manager embedding service)
+  autoRecall: boolean;
+  autoIndex: boolean;
+  recallLimit: number;
+  recallMinScore: number;
+  hybridSearch: boolean;
+  vectorWeight: number;
+  dbPath: string;
+}
+
 export interface AdvancedConfig {
   shutdownFlushTimeoutMs: number;
   forceKeywords: string;
   evolutionReminderTurns: number;
+}
+
+export interface ExternalReadonlyConfig {
+  enabled: boolean;
+  baseUrl: string;
+  token: string | null;
+  timeoutMs: number;
+  topK: number;
+  experienceLimit: number;
+  minConfidence: number;
+}
+
+export interface KnowledgeExternalSource {
+  id: string;
+  path: string;
+  description?: string;
+}
+
+export interface KnowledgeConfig {
+  enabled: boolean;
+  vectorTable: string;
+  search: {
+    maxResults: number;
+    minScore: number;
+    roleBoost: number;
+  };
+  externalSources: KnowledgeExternalSource[];
 }
 
 export interface RolePersonaConfig {
@@ -68,6 +110,9 @@ export interface RolePersonaConfig {
   memory: MemoryConfig;
   ui: UIConfig;
   advanced: AdvancedConfig;
+  vectorMemory: VectorMemoryConfig;
+  externalReadonly: ExternalReadonlyConfig;
+  knowledge: KnowledgeConfig;
 }
 
 // ============================================================================
@@ -94,7 +139,7 @@ const DEFAULT_CONFIG: RolePersonaConfig = {
   },
   memory: {
     defaultCategories: ["Communication", "Code", "Tools", "Workflow", "General"],
-    dailyPathTemplate: "{rolePath}/memory/{date}.md",
+    dailyPathTemplate: "{rolePath}/memory/daily/{date}.md",
     dedupeThreshold: 0.9,
     onDemandSearch: {
       enabled: true,
@@ -118,6 +163,39 @@ const DEFAULT_CONFIG: RolePersonaConfig = {
     forceKeywords: "结束|总结|退出|收尾|结束会话|final|summary|wrap\\s?up|quit|exit",
     evolutionReminderTurns: 10,
   },
+  vectorMemory: {
+    enabled: false,
+    provider: "local",
+    model: "embeddinggemma-300m-qat-q8_0",
+    apiKey: null,
+    baseUrl: "http://127.0.0.1:52131",
+    autoRecall: true,
+    autoIndex: true,
+    hybridSearch: true,
+    vectorWeight: 1.0,
+    recallLimit: 3,
+    recallMinScore: 0.3,
+    dbPath: ".vector-db",
+  },
+  externalReadonly: {
+    enabled: false,
+    baseUrl: "http://127.0.0.1:52131",
+    token: null,
+    timeoutMs: 1200,
+    topK: 8,
+    experienceLimit: 8,
+    minConfidence: 0.35,
+  },
+  knowledge: {
+    enabled: true,
+    vectorTable: "knowledge",
+    search: {
+      maxResults: 5,
+      minScore: 0.2,
+      roleBoost: 1.2,
+    },
+    externalSources: [],
+  },
 };
 
 // ============================================================================
@@ -125,17 +203,130 @@ const DEFAULT_CONFIG: RolePersonaConfig = {
 // ============================================================================
 
 function stripJsoncComments(jsonc: string): string {
-  // 移除单行注释
-  let result = jsonc.replace(/\/\/.*$/gm, "");
-  // 移除多行注释
-  result = result.replace(/\/\*[\s\S]*?\*\//g, "");
-  // 移除尾部逗号（JSONC 允许）
-  result = result.replace(/,(\s*[}\]])/g, "$1");
-  return result;
+  let out = "";
+  let i = 0;
+  let inString = false;
+  let quote = '"';
+  let escaped = false;
+  let inLineComment = false;
+  let inBlockComment = false;
+
+  while (i < jsonc.length) {
+    const ch = jsonc[i];
+    const next = jsonc[i + 1];
+
+    if (inLineComment) {
+      if (ch === "\n") {
+        inLineComment = false;
+        out += ch;
+      }
+      i += 1;
+      continue;
+    }
+
+    if (inBlockComment) {
+      if (ch === "*" && next === "/") {
+        inBlockComment = false;
+        i += 2;
+        continue;
+      }
+      // 保留换行，避免错误行号漂移
+      if (ch === "\n") out += ch;
+      i += 1;
+      continue;
+    }
+
+    if (inString) {
+      out += ch;
+      if (escaped) {
+        escaped = false;
+      } else if (ch === "\\") {
+        escaped = true;
+      } else if (ch === quote) {
+        inString = false;
+      }
+      i += 1;
+      continue;
+    }
+
+    if (ch === '"' || ch === "'") {
+      inString = true;
+      quote = ch;
+      out += ch;
+      i += 1;
+      continue;
+    }
+
+    if (ch === "/" && next === "/") {
+      inLineComment = true;
+      i += 2;
+      continue;
+    }
+
+    if (ch === "/" && next === "*") {
+      inBlockComment = true;
+      i += 2;
+      continue;
+    }
+
+    out += ch;
+    i += 1;
+  }
+
+  return out;
+}
+
+function stripTrailingCommas(json: string): string {
+  let out = "";
+  let i = 0;
+  let inString = false;
+  let quote = '"';
+  let escaped = false;
+
+  while (i < json.length) {
+    const ch = json[i];
+
+    if (inString) {
+      out += ch;
+      if (escaped) {
+        escaped = false;
+      } else if (ch === "\\") {
+        escaped = true;
+      } else if (ch === quote) {
+        inString = false;
+      }
+      i += 1;
+      continue;
+    }
+
+    if (ch === '"' || ch === "'") {
+      inString = true;
+      quote = ch;
+      out += ch;
+      i += 1;
+      continue;
+    }
+
+    if (ch === ",") {
+      let j = i + 1;
+      while (j < json.length && /\s/.test(json[j])) j += 1;
+      const next = json[j];
+      if (next === "}" || next === "]") {
+        i += 1;
+        continue;
+      }
+    }
+
+    out += ch;
+    i += 1;
+  }
+
+  return out;
 }
 
 function parseJsonc(content: string): unknown {
-  const clean = stripJsoncComments(content);
+  const noComments = stripJsoncComments(content);
+  const clean = stripTrailingCommas(noComments);
   return JSON.parse(clean);
 }
 
@@ -176,6 +367,65 @@ function applyEnvOverrides(config: RolePersonaConfig): RolePersonaConfig {
   // logging.enabled
   if (process.env.ROLE_LOG !== undefined) {
     result.logging.enabled = process.env.ROLE_LOG !== "0" && process.env.ROLE_LOG !== "false";
+  }
+
+  // vectorMemory.enabled
+  if (process.env.ROLE_VECTOR_MEMORY !== undefined) {
+    result.vectorMemory.enabled = process.env.ROLE_VECTOR_MEMORY !== "0" && process.env.ROLE_VECTOR_MEMORY !== "false";
+  }
+  // vectorMemory.apiKey
+  if (process.env.ROLE_VECTOR_API_KEY) {
+    result.vectorMemory.apiKey = process.env.ROLE_VECTOR_API_KEY;
+  }
+  // vectorMemory.provider
+  if (process.env.ROLE_VECTOR_PROVIDER) {
+    const p = process.env.ROLE_VECTOR_PROVIDER;
+    if (p === "openai" || p === "local") {
+      result.vectorMemory.provider = p;
+    }
+  }
+  // vectorMemory.baseUrl
+  if (process.env.ROLE_VECTOR_BASE_URL) {
+    result.vectorMemory.baseUrl = process.env.ROLE_VECTOR_BASE_URL;
+  }
+  // 子代理模式强制禁用向量记忆
+  if (process.env.RHO_SUBAGENT === "1") {
+    result.vectorMemory.enabled = false;
+  }
+
+  // externalReadonly
+  if (process.env.ROLE_EXTERNAL_READONLY !== undefined) {
+    result.externalReadonly.enabled = process.env.ROLE_EXTERNAL_READONLY !== "0" && process.env.ROLE_EXTERNAL_READONLY !== "false";
+  }
+  if (process.env.ROLE_EXTERNAL_BASE_URL) {
+    result.externalReadonly.baseUrl = process.env.ROLE_EXTERNAL_BASE_URL;
+  }
+  if (process.env.ROLE_EXTERNAL_TOKEN !== undefined) {
+    result.externalReadonly.token = process.env.ROLE_EXTERNAL_TOKEN || null;
+  }
+  if (process.env.ROLE_EXTERNAL_TIMEOUT_MS) {
+    const val = parseInt(process.env.ROLE_EXTERNAL_TIMEOUT_MS, 10);
+    if (!isNaN(val) && val > 100) {
+      result.externalReadonly.timeoutMs = val;
+    }
+  }
+  if (process.env.ROLE_EXTERNAL_TOP_K) {
+    const val = parseInt(process.env.ROLE_EXTERNAL_TOP_K, 10);
+    if (!isNaN(val) && val > 0) {
+      result.externalReadonly.topK = val;
+    }
+  }
+  if (process.env.ROLE_EXTERNAL_EXP_LIMIT) {
+    const val = parseInt(process.env.ROLE_EXTERNAL_EXP_LIMIT, 10);
+    if (!isNaN(val) && val > 0) {
+      result.externalReadonly.experienceLimit = val;
+    }
+  }
+  if (process.env.ROLE_EXTERNAL_MIN_CONFIDENCE) {
+    const val = parseFloat(process.env.ROLE_EXTERNAL_MIN_CONFIDENCE);
+    if (!isNaN(val) && val >= 0 && val <= 1) {
+      result.externalReadonly.minConfidence = val;
+    }
   }
 
   return result;
@@ -268,5 +518,14 @@ export const config = {
   },
   get advanced(): AdvancedConfig {
     return getConfig().advanced;
+  },
+  get vectorMemory(): VectorMemoryConfig {
+    return getConfig().vectorMemory;
+  },
+  get externalReadonly(): ExternalReadonlyConfig {
+    return getConfig().externalReadonly;
+  },
+  get knowledge(): KnowledgeConfig {
+    return getConfig().knowledge;
   },
 };
