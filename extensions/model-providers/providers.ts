@@ -1,4 +1,14 @@
 import type { ProviderConfig } from "@mariozechner/pi-coding-agent";
+import { exec } from "node:child_process";
+import { promisify } from "node:util";
+import { readFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+
+const execAsync = promisify(exec);
+
+// Provider paths
+const QWEN_CREDS_PATH = `${process.env.HOME}/.qwen/oauth_creds.json`;
+const CLI_PROXY_API_PATH = `${process.env.HOME}/.cli-proxy-api`;
 
 export interface ProviderAdapter {
   name: string;
@@ -9,8 +19,12 @@ export interface ProviderAdapter {
 // ============ Token Resolver Scripts ============
 // These scripts are executed by pi because apiKey starts with "!"
 
+/**
+ * Build Qwen token resolver with priority:
+ * 1. ~/.cli-proxy-api/qwen-*.json (proxy service, preferred)
+ * 2. ~/.qwen/oauth_creds.json (official OAuth, fallback)
+ */
 function buildQwenTokenResolverCommand(): string {
-  // Self-healing resolver: read valid token, sync-refresh when expired, then fallback.
   const script = [
     "const fs=require('fs');const os=require('os');const path=require('path');const cp=require('child_process');",
     "const home=os.homedir();const now=Date.now();",
@@ -19,14 +33,27 @@ function buildQwenTokenResolverCommand(): string {
     "const read=(p)=>{try{return JSON.parse(fs.readFileSync(p,'utf8'))}catch{return null}};",
     "const write=(p,d)=>{try{fs.mkdirSync(path.dirname(p),{recursive:true});fs.writeFileSync(p,JSON.stringify(d,null,2));return true}catch{return false}};",
     "const valid=(d)=>{const t=d&&d.access_token;const e=Number(d&&d.expiry_date||0);return !!(t&&e>now+60*1000)};",
-    "const files=fs.existsSync(dir)?fs.readdirSync(dir).filter(f=>f.startsWith('qwen-')&&f.endsWith('.json')).map(f=>path.join(dir,f)).sort((a,b)=>fs.statSync(b).mtimeMs-fs.statSync(a).mtimeMs):[];",
-    "const refresh=(rt)=>{try{const body='grant_type=refresh_token&refresh_token='+encodeURIComponent(rt)+'&client_id=acmeshell';const out=cp.execFileSync('curl',['-s','-X','POST','https://oauth.qwen.ai/oauth/token','-H','Content-Type: application/x-www-form-urlencoded','-H','Accept: application/json','--data',body],{encoding:'utf8'});const j=JSON.parse(out);if(!j.access_token)return null;return {access_token:j.access_token,refresh_token:j.refresh_token||rt,expiry_date:now+Number(j.expires_in||3600)*1000};}catch{return null}};",
+    
+    // Priority 1: cli-proxy-api qwen-*.json (sorted by mtime, newest first)
+    "const cliFiles=fs.existsSync(dir)?fs.readdirSync(dir).filter(f=>f.startsWith('qwen-')&&f.endsWith('.json')).map(f=>path.join(dir,f)).sort((a,b)=>fs.statSync(b).mtimeMs-fs.statSync(a).mtimeMs):[];",
+    
+    // Check cli-proxy-api files first (preferred)
+    "for(const f of cliFiles){const x=read(f);if(!x||x.disabled)continue;if(valid(x)){console.log(x.access_token||x.api_key);process.exit(0)}}",
+    
+    // Check official oauth_creds.json (fallback)
     "let d=fs.existsSync(qwen)?read(qwen):null;",
-    "for(const f of files){const x=read(f);if(!x||x.disabled)continue;if(valid(x)){console.log(x.access_token||x.api_key);process.exit(0)}}",
     "if(valid(d)){console.log(d.access_token);process.exit(0)}",
-    "const cands=[];for(const f of files){const x=read(f);if(x&&x.refresh_token&&!x.disabled)cands.push({file:f,data:x});}if(d&&d.refresh_token)cands.push({file:qwen,data:d});",
+    
+    // Refresh logic: try to refresh expired tokens
+    "const files=[...cliFiles,qwen];",
+    "const refresh=(rt)=>{try{const body='grant_type=refresh_token&refresh_token='+encodeURIComponent(rt)+'&client_id=acmeshell';const out=cp.execFileSync('curl',['-s','-X','POST','https://oauth.qwen.ai/oauth/token','-H','Content-Type: application/x-www-form-urlencoded','-H','Accept: application/json','--data',body],{encoding:'utf8'});const j=JSON.parse(out);if(!j.access_token)return null;return {access_token:j.access_token,refresh_token:j.refresh_token||rt,expiry_date:now+Number(j.expires_in||3600)*1000};}catch{return null}};",
+    
+    // Try to refresh tokens
+    "const cands=[];for(const f of files){const x=read(f);if(!x||!x.refresh_token||x.disabled)continue;cands.push({file:f,data:x});}",
     "for(const c of cands){const r=refresh(c.data.refresh_token);if(!r)continue;const merged={...c.data,...r,last_refresh:Date.now()};write(c.file,merged);write(qwen,merged);console.log(merged.access_token);process.exit(0)}",
-    "for(const f of files){const x=read(f);if(!x||x.disabled)continue;const t=x.access_token||x.api_key;if(t){console.log(t);process.exit(0)}}",
+    
+    // Fallback: use any available token (even expired)
+    "for(const f of cliFiles){const x=read(f);if(!x||x.disabled)continue;const t=x.access_token||x.api_key;if(t){console.log(t);process.exit(0)}}",
     "if(d&&d.access_token){console.log(d.access_token);process.exit(0)}",
   ].join("");
 
