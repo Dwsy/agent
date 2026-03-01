@@ -1,0 +1,19 @@
+{
+  "name": "pi-session-state",
+  "version": "1.0.0",
+  "description": "Session state management with tags",
+  "type": "module",
+  "scripts": {
+    "check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@mariozechner/pi-coding-agent": "*",
+    "@sinclair/typebox": "^0.34.48"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  },
+  "pi": {
+    "extensions": ["./index.ts"]
+  }
+}
