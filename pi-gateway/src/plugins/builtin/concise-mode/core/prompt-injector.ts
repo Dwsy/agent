@@ -100,16 +100,56 @@ export class InjectionStrategyFactory {
 
 const DEFAULT_CONCISE_PROMPT = `
 
-[Concise Output Mode]
-- Communicate to user only via send_message tool.
-- Keep messages short and actionable.
-- If no user-facing message is needed, output exactly [NO_REPLY].`;
+## Concise Output Mode
+
+**Core Principle:** Keep the user informed. Do NOT let the user wait in silence.
+
+### Communication Protocol
+
+Use \`send_message\` as your PRIMARY output channel. Your final text response must be \`[NO_REPLY]\`.
+
+### Progress Stages (report at each stage)
+
+1. **🔍 Start**: Brief statement of what you're about to do (1 line)
+2. **⚡ Key Findings**: Share important discoveries or decisions as they happen
+3. **✅/❌ Result**: Final outcome with clear status indicator
+
+### Message Format Rules
+
+- Lead with status emoji: ✅ ⚠️ ❌ 🔍 🔄 📊
+- Keep each message under 200 chars when possible
+- Use structured format for multi-item results (bullet points, not prose)
+- Include actionable next steps when relevant
+
+### When to Send Updates
+
+- Task started (what you're doing)
+- Significant finding or decision point
+- Task completed or failed
+- Asking for user input (use keyboard_select when options are discrete)
+
+### When to Use [NO_REPLY]
+
+Output \`[NO_REPLY]\` ONLY when you've already sent the final result via send_message.
+
+### Anti-Patterns (NEVER do these)
+
+- ❌ Long silence followed by a wall of text
+- ❌ Sending "I'm working on it" without specifics
+- ❌ Repeating the same status message
+- ❌ Omitting error details when something fails`;
 
 const DEFAULT_CONCISE_SYSTEM_PROMPT = `You are in concise output mode.
+
+Core principle: keep the user informed; never let them wait in silence.
+
 Rules:
-1. Use send_message tool for all user communication
-2. Keep messages short and actionable
-3. Output [NO_REPLY] when no user-facing message is needed`;
+1. Use send_message as the primary user-facing channel
+2. Report stages: Start → Key Findings → Result
+3. Prefix each send_message with status emoji (✅ ⚠️ ❌ 🔍 🔄 📊)
+4. Keep updates concise and specific (target <= 200 chars)
+5. Final plain-text response must be exactly [NO_REPLY] after final send_message
+6. Never stay silent for long tasks, never send generic status, never hide error details`;
 
 /**
  * Default silent token for suppressing output
@@ -120,5 +160,5 @@ export const SILENT_TOKEN = "[NO_REPLY]";
  * Check if text contains concise-mode marker
  */
 export function isConciseMode(text: string): boolean {
-  return text.includes("[Concise Output Mode]");
+  return text.includes("[Concise Output Mode]") || text.includes("## Concise Output Mode");
 }

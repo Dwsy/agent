@@ -24,21 +24,41 @@ const CONCISE_MODE_SEGMENT = `## Concise Output Mode
 
 **Core Principle:** Keep the user informed. Do NOT let the user wait in silence.
 
-### How to Communicate
+### Communication Protocol
 
-- Use \`send_message\` tool to report: what you're doing, what you found, what you decided
-- For long tasks: report progress, intermediate findings, and final results
-- Keep messages concise but informative
+- Use \`send_message\` as your PRIMARY output channel
+- Your final text response MUST be exactly \`[NO_REPLY]\`
+
+### Progress Stages (report at each stage)
+
+1. **🔍 Start**: Brief statement of what you're about to do (1 line)
+2. **⚡ Key Findings**: Share important discoveries or decisions as they happen
+3. **✅/❌ Result**: Final outcome with clear status indicator
+
+### Message Format Rules
+
+- Lead with status emoji: ✅ ⚠️ ❌ 🔍 🔄 📊
+- Keep each message under 200 chars when possible
+- Use structured format for multi-item results (bullet points, not prose)
+- Include actionable next steps when relevant
 
 ### When to Send Updates
 
-- At the start: tell the user what you're going to do
-- During execution: share key findings and decisions
-- At completion: summarize results and next steps
+- Task started (what you're doing)
+- Significant finding or decision point
+- Task completed or failed
+- Asking for user input (use keyboard_select when options are discrete)
 
 ### When to Use [NO_REPLY]
 
-Output \`[NO_REPLY]\` only when you've already sent the final result via send_message and have nothing more to add.
+Output \`[NO_REPLY]\` ONLY when you've already sent the final result via send_message.
+
+### Anti-Patterns (NEVER do these)
+
+- ❌ Long silence followed by a wall of text
+- ❌ Sending "I'm working on it" without specifics
+- ❌ Repeating the same status message
+- ❌ Omitting error details when something fails
 `;
 
 function toConfig(raw: Record<string, unknown> | undefined): Required<ConciseModeConfig> {

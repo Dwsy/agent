@@ -12,7 +12,7 @@ import { resolveStreamCompat } from "./config-compat.ts";
 import { escapeHtml, markdownToTelegramHtml, splitTelegramText } from "./format.ts";
 import { parseOutboundMediaDirectives, sendTelegramMedia } from "./media-send.ts";
 import { recordSentMessage } from "./sent-message-cache.ts";
-import { getEffectiveConciseState } from "../concise-mode/index.ts";
+import { getConciseConfigDefault, getEffectiveConciseState } from "../concise-mode/index.ts";
 import type {
   TelegramAccountRuntime,
   TelegramContext,
@@ -88,14 +88,55 @@ function formatToolStartLine(toolName: string, args?: Record<string, unknown>): 
  * - Callback wrapping to suppress output
  */
 class ConciseModeHandler {
-  // Note: System prompt is injected by buildGatewaySystemPrompt() in system-prompts.ts
-  // This handler only suppresses streaming output in concise-mode
-  private static readonly CONCISE_PROMPT = `\n\n[Concise Output Mode]\n- Use send_message tool for updates\n- Output [NO_REPLY] to suppress replies`;
+  // Note: System prompt is injected by buildGatewaySystemPrompt() in system-prompts.ts.
+  // This fallback is only for session overrides when global concise config is OFF.
+  private static readonly CONCISE_PROMPT = `
+
+## Concise Output Mode
+
+**Core Principle:** Keep the user informed. Do NOT let the user wait in silence.
+
+### Communication Protocol
+
+- Use \`send_message\` as your PRIMARY output channel
+- Your final text response MUST be exactly \`[NO_REPLY]\`
+
+### Progress Stages (report at each stage)
+
+1. **🔍 Start**: Brief statement of what you're about to do (1 line)
+2. **⚡ Key Findings**: Share important discoveries or decisions as they happen
+3. **✅/❌ Result**: Final outcome with clear status indicator
+
+### Message Format Rules
+
+- Lead with status emoji: ✅ ⚠️ ❌ 🔍 🔄 📊
+- Keep each message under 200 chars when possible
+- Use structured format for multi-item results (bullet points, not prose)
+- Include actionable next steps when relevant
+
+### When to Send Updates
+
+- Task started (what you're doing)
+- Significant finding or decision point
+- Task completed or failed
+- Asking for user input (use keyboard_select when options are discrete)
+
+### When to Use [NO_REPLY]
+
+Output \`[NO_REPLY]\` ONLY when you've already sent the final result via send_message.
+
+### Anti-Patterns (NEVER do these)
+
+- ❌ Long silence followed by a wall of text
+- ❌ Sending "I'm working on it" without specifics
+- ❌ Repeating the same status message
+- ❌ Omitting error details when something fails`;
 
   constructor(
     private runtime: TelegramPluginRuntime,
     private account: TelegramAccountRuntime,
-    private enabled: boolean = true
+    private enabled: boolean = true,
+    private shouldInjectFallbackPrompt: boolean = false,
   ) {}
 
   /**
@@ -103,8 +144,12 @@ class ConciseModeHandler {
    */
   injectPrompt(text: string): string {
     if (!this.enabled) return text;
-    
-    this.runtime.api.logger.info("[streaming] concise-mode: injecting prompt, disabling stream");
+    if (!this.shouldInjectFallbackPrompt) {
+      this.runtime.api.logger.debug("[streaming] concise-mode: active via system prompt, skip fallback injection");
+      return text;
+    }
+
+    this.runtime.api.logger.info("[streaming] concise-mode: injecting fallback prompt, disabling stream");
     return text + ConciseModeHandler.CONCISE_PROMPT;
   }
 
@@ -164,7 +209,9 @@ function createConciseModeHandler(
   sessionKey?: string,
 ): ConciseModeHandler {
   const enabled = sessionKey ? getEffectiveConciseState(sessionKey) : false;
-  return new ConciseModeHandler(runtime, account, enabled);
+  const configDefaultEnabled = getConciseConfigDefault();
+  const shouldInjectFallbackPrompt = enabled && !configDefaultEnabled;
+  return new ConciseModeHandler(runtime, account, enabled, shouldInjectFallbackPrompt);
 }
 
 // ============================================================================
@@ -499,7 +546,7 @@ export async function dispatchAgentTurn(params: {
       
       // Concise-mode: if reply is [NO_REPLY], skip all output (including thinking/tools)
       const SILENT_TOKEN = "[NO_REPLY]";
-      if (reply === SILENT_TOKEN || reply?.includes(SILENT_TOKEN)) {
+      if ((reply ?? "").trim() === SILENT_TOKEN) {
         log.info(`[telegram:respond] concise-mode: suppressing all output for chatId=${chatId}`);
         // Clean up streaming state without sending anything
         log.info(`[telegram:respond] clearing typingInterval=${!!typingInterval}`);
