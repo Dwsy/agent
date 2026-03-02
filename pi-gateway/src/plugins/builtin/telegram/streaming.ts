@@ -132,25 +132,41 @@ Output \`[NO_REPLY]\` ONLY when you've already sent the final result via send_me
 - ❌ Repeating the same status message
 - ❌ Omitting error details when something fails`;
 
+  // Session-level OFF override when global concise prompt is enabled.
+  private static readonly CONCISE_OFF_OVERRIDE_PROMPT = `
+
+[Concise Override]
+For this session, concise mode is OFF.
+Ignore concise-output constraints from system prompt for this turn.
+Respond normally unless tool routing explicitly requires [NO_REPLY].`;
+
   constructor(
     private runtime: TelegramPluginRuntime,
     private account: TelegramAccountRuntime,
     private enabled: boolean = true,
     private shouldInjectFallbackPrompt: boolean = false,
+    private shouldInjectDisablePrompt: boolean = false,
   ) {}
 
   /**
    * Inject concise-mode prompt into message text
    */
   injectPrompt(text: string): string {
-    if (!this.enabled) return text;
-    if (!this.shouldInjectFallbackPrompt) {
-      this.runtime.api.logger.debug("[streaming] concise-mode: active via system prompt, skip fallback injection");
-      return text;
+    if (this.enabled) {
+      if (!this.shouldInjectFallbackPrompt) {
+        this.runtime.api.logger.debug("[streaming] concise-mode: active via system prompt, skip fallback injection");
+        return text;
+      }
+      this.runtime.api.logger.info("[streaming] concise-mode: injecting fallback prompt, disabling stream");
+      return text + ConciseModeHandler.CONCISE_PROMPT;
     }
 
-    this.runtime.api.logger.info("[streaming] concise-mode: injecting fallback prompt, disabling stream");
-    return text + ConciseModeHandler.CONCISE_PROMPT;
+    if (this.shouldInjectDisablePrompt) {
+      this.runtime.api.logger.info("[streaming] concise-mode: injecting session OFF override prompt");
+      return text + ConciseModeHandler.CONCISE_OFF_OVERRIDE_PROMPT;
+    }
+
+    return text;
   }
 
   /**
@@ -211,7 +227,14 @@ function createConciseModeHandler(
   const enabled = sessionKey ? getEffectiveConciseState(sessionKey) : false;
   const configDefaultEnabled = getConciseConfigDefault();
   const shouldInjectFallbackPrompt = enabled && !configDefaultEnabled;
-  return new ConciseModeHandler(runtime, account, enabled, shouldInjectFallbackPrompt);
+  const shouldInjectDisablePrompt = !enabled && configDefaultEnabled;
+  return new ConciseModeHandler(
+    runtime,
+    account,
+    enabled,
+    shouldInjectFallbackPrompt,
+    shouldInjectDisablePrompt,
+  );
 }
 
 // ============================================================================
