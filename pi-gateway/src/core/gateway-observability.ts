@@ -11,6 +11,7 @@ export type ObservabilityCategory =
   | "rpc"
   | "session"
   | "channel"
+  | "model-failover"
   | "system";
 
 export interface ObservabilityEvent {

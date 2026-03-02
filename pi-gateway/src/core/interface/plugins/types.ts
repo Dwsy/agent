@@ -22,6 +22,7 @@ import type {
 import type { Config } from "../../config.ts";
 import type { RpcPool } from "../../rpc-pool.ts";
 import type { CronEngine } from "../../cron.ts";
+import type { ModelHealthTracker } from "../../model-health.ts";
 
 // Re-export domain types for plugin convenience
 export type {
@@ -441,6 +442,9 @@ export interface GatewayPluginApi extends DomainPluginApi {
 
   /** Cron engine (optional, available when cron is enabled) */
   readonly cronEngine?: CronEngine;
+
+  /** Model health tracker (optional, available when failover is enabled) */
+  readonly modelHealth?: ModelHealthTracker | null;
 
   // Registration methods
 

@@ -308,6 +308,10 @@ export function createPluginApi(
 
     rpcPool: ctx.pool,
 
+    get modelHealth() {
+      return ctx.modelHealth;
+    },
+
     listSessions() {
       return ctx.sessions.toArray().sort((a, b) => (b.lastActivity ?? 0) - (a.lastActivity ?? 0));
     },

@@ -19,7 +19,7 @@ import type { PrioritizedWork } from "../core/message-queue.ts";
 import { extractAgentIdFromSessionKey, resolveModelForSessionAndAgent, resolveRoleForSessionAndAgent, resolveThinkingLevelForSessionAndAgent } from "../core/session-router.ts";
 import { isTuiCommand, tryHandleCommand } from "./command-handler.ts";
 import { getAssistantMessageEvent, getAmePartial } from "../core/rpc-events.ts";
-import { isTransient, classifyError } from "../core/model-health.ts";
+import { isTransient } from "../core/model-health.ts";
 
 // ============================================================================
 // Helpers
@@ -81,6 +81,24 @@ export async function processMessage(
   const roleResolution = resolveRoleForSessionAndAgent(source, ctx.config, agentId);
   const modelResolution = resolveModelForSessionAndAgent(source, ctx.config, agentId);
   const thinkingResolution = resolveThinkingLevelForSessionAndAgent(source, ctx.config, agentId);
+  const existingSession = ctx.sessions.get(sessionKey);
+  const failoverPinnedModel = existingSession?.lastModelSource === "model-failover"
+    ? existingSession.lastModel
+    : undefined;
+  const failoverPrimary = ctx.config.agent?.modelFailover?.primary?.trim();
+  const shouldProbePrimary = !!(
+    failoverPinnedModel
+    && failoverPrimary
+    && failoverPinnedModel !== failoverPrimary
+    && ctx.modelHealth
+    && !ctx.modelHealth.isInCooldown(failoverPrimary)
+  );
+  const effectiveModel = shouldProbePrimary
+    ? failoverPrimary
+    : (failoverPinnedModel ?? modelResolution.model);
+  const effectiveModelSource = shouldProbePrimary
+    ? "model-failover-probe"
+    : (failoverPinnedModel ? "model-failover" : modelResolution.source);
   const session = ctx.sessions.getOrCreate(sessionKey, {
     role: roleResolution.role,
     isStreaming: false,
@@ -95,8 +113,8 @@ export async function processMessage(
     lastSenderName: source.senderName,
     lastTopicId: source.topicId,
     lastThreadId: source.threadId,
-    lastModel: modelResolution.model ?? undefined,
-    lastModelSource: modelResolution.source,
+    lastModel: effectiveModel ?? undefined,
+    lastModelSource: effectiveModelSource,
     lastThinkingLevel: thinkingResolution.thinkingLevel ?? undefined,
     lastThinkingLevelSource: thinkingResolution.source,
   });
@@ -104,8 +122,8 @@ export async function processMessage(
     ctx.transcripts.logMeta(sessionKey, "session_created", {
       role: session.role,
       roleSource: roleResolution.source,
-      model: modelResolution.model,
-      modelSource: modelResolution.source,
+      model: effectiveModel,
+      modelSource: effectiveModelSource,
       thinkingLevel: thinkingResolution.thinkingLevel,
       thinkingSource: thinkingResolution.source,
     });
@@ -121,8 +139,8 @@ export async function processMessage(
   session.lastSenderName = source.senderName;
   session.lastTopicId = source.topicId;
   session.lastThreadId = source.threadId;
-  session.lastModel = modelResolution.model ?? undefined;
-  session.lastModelSource = modelResolution.source;
+  session.lastModel = effectiveModel ?? undefined;
+  session.lastModelSource = effectiveModelSource;
   session.lastThinkingLevel = thinkingResolution.thinkingLevel ?? undefined;
   session.lastThinkingLevelSource = thinkingResolution.source;
 
@@ -179,19 +197,19 @@ export async function processMessage(
     }
   }
 
-  if (modelResolution.model) {
-    const idx = modelResolution.model.indexOf("/");
-    if (idx > 0 && idx < modelResolution.model.length - 1) {
-      const provider = modelResolution.model.slice(0, idx);
-      const modelId = modelResolution.model.slice(idx + 1);
+  if (effectiveModel) {
+    const idx = effectiveModel.indexOf("/");
+    if (idx > 0 && idx < effectiveModel.length - 1) {
+      const provider = effectiveModel.slice(0, idx);
+      const modelId = effectiveModel.slice(idx + 1);
       try {
         await rpc.setModel(provider, modelId);
-        ctx.log.info(`[model-routing] ${sessionKey} model=${modelResolution.model} source=${modelResolution.source}`);
+        ctx.log.info(`[model-routing] ${sessionKey} model=${effectiveModel} source=${effectiveModelSource}`);
       } catch (err: unknown) {
-        ctx.log.warn(`[model-routing] failed to apply model=${modelResolution.model} source=${modelResolution.source}: ${err instanceof Error ? err.message : String(err)}`);
+        ctx.log.warn(`[model-routing] failed to apply model=${effectiveModel} source=${effectiveModelSource}: ${err instanceof Error ? err.message : String(err)}`);
       }
     } else {
-      ctx.log.warn(`[model-routing] invalid model format for ${sessionKey}: ${modelResolution.model}`);
+      ctx.log.warn(`[model-routing] invalid model format for ${sessionKey}: ${effectiveModel}`);
     }
   }
 
@@ -213,7 +231,59 @@ export async function processMessage(
 
   // Retry state tracking (for UX and timeout management)
   let retryState: { attempt: number; maxAttempts: number; delayMs: number } | null = null;
-  let lastAssistantError: { message: string; model: string } | null = null;
+  let lastAssistantError: { message: string; model: string } | undefined;
+  let hadFailureThisTurn = false;
+
+  const resolveFailoverChain = (currentModelName: string): { primary: string; fallbacks: string[] } => {
+    const fc = ctx.config.agent?.modelFailover;
+    const primary = fc?.primary?.trim() || currentModelName;
+    const fallbacks = (fc?.fallbacks ?? []).filter((m): m is string => typeof m === "string" && m.trim().length > 0).map((m) => m.trim());
+    return { primary, fallbacks };
+  };
+
+  let modelSwitchedThisTurn = false;
+  let modelSwitchMeta: { from: string; to: string; reason: string } | null = null;
+
+  const switchToModel = async (fromModel: string, reason: string): Promise<void> => {
+    if (!ctx.modelHealth) return;
+
+    const { primary, fallbacks } = resolveFailoverChain(fromModel);
+    if (fallbacks.length === 0) return;
+
+    const next = ctx.modelHealth.selectModel(primary, fallbacks);
+    if (!next || next === fromModel) return;
+
+    const parts = next.split("/");
+    if (parts.length !== 2) {
+      ctx.log.warn(`[model-health] Cannot switch to ${next}: expected "provider/model" format`);
+      return;
+    }
+
+    const [provider, modelId] = parts;
+    try {
+      await rpc.setModel(provider, modelId);
+      session.lastModel = next;
+      session.lastModelSource = "model-failover";
+      modelSwitchedThisTurn = true;
+      modelSwitchMeta = { from: fromModel, to: next, reason };
+      ctx.log.warn(`[model-health] Switched from ${fromModel} to ${next} (reason=${reason})`);
+      ctx.observability.record("warn", "model-failover", "switch", `Model switched: ${fromModel} -> ${next}`, {
+        sessionKey,
+        from: fromModel,
+        to: next,
+        reason,
+      });
+    } catch (e) {
+      ctx.log.error(`[model-health] Failed to switch to ${next}:`, e);
+      ctx.observability.record("error", "model-failover", "switch", `Model switch failed: ${fromModel} -> ${next}`, {
+        sessionKey,
+        from: fromModel,
+        to: next,
+        reason,
+        error: e instanceof Error ? e.message : String(e),
+      });
+    }
+  };
 
   const unsub = rpc.onEvent((event) => {
     if (rpc.sessionKey !== sessionKey) return;
@@ -329,24 +399,17 @@ export async function processMessage(
         if (agentEndStopReason === "error" && ctx.modelHealth) {
           const assistantMsg = msg_ as { stopReason: string; errorMessage?: string; api?: string; model?: string };
           const errorMsg = assistantMsg.errorMessage || "Unknown error";
-          const modelName = assistantMsg.model || ctx.config.agent?.model || "default";
+          const modelName = assistantMsg.model || session.lastModel || ctx.config.agent?.model || "default";
 
           lastAssistantError = { message: errorMsg, model: modelName };
 
           const category = ctx.modelHealth.recordFailure(modelName, errorMsg);
+          hadFailureThisTurn = true;
           ctx.log.warn(`[model-health] ${modelName} error in turn: ${category} - ${errorMsg.slice(0, 100)}`);
 
           // If this is the final failure (auto_retry exhausted or non-retryable), trigger failover
           if (!isTransient(category) || (retryState && retryState.attempt >= retryState.maxAttempts)) {
-            const fc = ctx.config.agent?.modelFailover;
-            const primary = fc?.primary ?? modelName;
-            const fallbacks = fc?.fallbacks ?? [];
-            if (fallbacks.length > 0) {
-              const next = ctx.modelHealth.selectModel(primary, fallbacks);
-              if (next && next !== modelName) {
-                ctx.log.warn(`[model-health] Will switch from ${modelName} to ${next} for next request`);
-              }
-            }
+            void switchToModel(modelName, category);
           }
         }
       }
@@ -469,10 +532,24 @@ export async function processMessage(
       stopReason: agentEndStopReason,
     });
 
-    // Model health: record success
-    if (ctx.modelHealth) {
+    // Model health: record success (including probe recovery).
+    // If auto-retry had transient failures but eventually recovered, we still clear cooldown.
+    if (ctx.modelHealth && agentEndStopReason !== "error") {
       const currentModel = session.lastModel ?? ctx.config.agent?.model ?? "default";
+      const wasProbe = shouldProbePrimary && !!failoverPrimary && effectiveModel === failoverPrimary;
       ctx.modelHealth.recordSuccess(currentModel);
+      if (wasProbe && failoverPrimary) {
+        ctx.observability.record("info", "model-failover", "probe_success", `Model probe recovered: ${failoverPrimary}`, {
+          sessionKey,
+          model: failoverPrimary,
+        });
+      }
+      if (hadFailureThisTurn) {
+        ctx.observability.record("info", "model-failover", "recovered_after_retry", `Model recovered after transient failures: ${currentModel}`, {
+          sessionKey,
+          model: currentModel,
+        });
+      }
     }
   } catch (err: unknown) {
     const errMsg = err instanceof Error ? err.message : "Unknown error";
@@ -484,27 +561,9 @@ export async function processMessage(
     if (ctx.modelHealth) {
       const currentModel = session.lastModel ?? ctx.config.agent?.model ?? "default";
       const category = ctx.modelHealth.recordFailure(currentModel, errMsg);
+      hadFailureThisTurn = true;
       if (isTransient(category)) {
-        const fc = ctx.config.agent?.modelFailover;
-        const primary = fc?.primary ?? currentModel;
-        const fallbacks = fc?.fallbacks ?? [];
-        if (fallbacks.length > 0) {
-          const next = ctx.modelHealth.selectModel(primary, fallbacks);
-          ctx.log.warn(`[model-health] ${currentModel} failed (${category}), switching to: ${next}`);
-
-          // Execute failover: actually switch the model in the RPC process
-          if (next && next !== currentModel) {
-            const parts = next.split("/");
-            if (parts.length === 2) {
-              const [provider, modelId] = parts;
-              rpc.setModel(provider, modelId)
-                .then(() => ctx.log.info(`[model-health] Switched to ${next}`))
-                .catch((e) => ctx.log.error(`[model-health] Failed to switch to ${next}:`, e));
-            } else {
-              ctx.log.warn(`[model-health] Cannot switch to ${next}: expected "provider/model" format`);
-            }
-          }
-        }
+        void switchToModel(currentModel, category);
       } else {
         ctx.log.warn(`[model-health] ${currentModel} failed (${category}), non-transient error`);
       }
@@ -518,7 +577,22 @@ export async function processMessage(
   }
 
   // Hook: message_sending
+  const hasToolCallInTurn = eventCount > 0 && toolLabels.length > 0;
   if (!fullText.trim()) {
+    // Empty response with no tool usage is treated as transient model failure
+    if (ctx.modelHealth && !hasToolCallInTurn) {
+      const currentModel = session.lastModel ?? ctx.config.agent?.model ?? "default";
+      const category = ctx.modelHealth.recordEmptyResponse(currentModel);
+      hadFailureThisTurn = true;
+      ctx.log.warn(`[model-health] ${currentModel} empty response (${category})`);
+      ctx.observability.record("warn", "model-failover", "empty_response", `Empty response detected on ${currentModel}`, {
+        sessionKey,
+        model: currentModel,
+        hasToolCallInTurn,
+      });
+      void switchToModel(currentModel, category);
+    }
+
     ctx.log.warn(`Empty assistant response for ${sessionKey}; sending fallback text.`);
     fullText = "我这次没有生成可发送的文本，请再发一次或换个问法。";
   }
@@ -551,6 +625,15 @@ export async function processMessage(
       ctx.log.info(`[processMessage] SILENT: agent declined to reply ${sessionKey}`);
       ctx.transcripts.logMeta(sessionKey, "silent_no_reply", { durationMs });
     } else {
+      // Optional failover notice to user when model switched this turn
+      const failoverConfig = ctx.config.agent?.modelFailover;
+      const currentPrimary = failoverConfig?.primary ?? (ctx.config.agent?.model ?? undefined);
+      if (failoverConfig && currentPrimary && modelSwitchedThisTurn && modelSwitchMeta !== null) {
+        const meta = modelSwitchMeta as { from: string; to: string; reason: string };
+        const reason = meta.reason || "unknown";
+        const notice = `⚠️ 主模型 ${currentPrimary} 出现 ${reason}，已切换到 ${meta.to}`;
+        await respond(notice).catch(() => {});
+      }
       ctx.log.info(`[processMessage] Calling respond for ${sessionKey}, text=${outbound.text.length} chars`);
       await respond(outbound.text);
       ctx.log.info(`[processMessage] respond completed for ${sessionKey}`);

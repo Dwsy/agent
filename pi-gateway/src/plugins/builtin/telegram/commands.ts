@@ -1,6 +1,7 @@
 import { resolveSessionKey, resolveAgentId } from "../../../core/session-router.ts";
 import { parseSlashCommand } from "../../../gateway/command-handler.ts";
 import type { SessionStats, RpcState } from "../../../core/interface/plugins/types.ts";
+import type { ModelHealthState } from "../../../core/model-health.ts";
 import { isSenderAllowed, type DmPolicy } from "../../../security/allowlist.ts";
 import { escapeHtml, markdownToTelegramHtml } from "./format.ts";
 import { parseMediaCommandArgs, sendTelegramMedia } from "./media-send.ts";
@@ -130,6 +131,58 @@ function redactSensitive(key: string, value: unknown): unknown {
     return typeof value === "string" && value.length > 0 ? "[REDACTED]" : value;
   }
   return value;
+}
+
+function buildModelFailoverStatus(runtime: TelegramPluginRuntime, currentModelName?: string): string[] {
+  const raw = runtime.api.config.agent?.modelFailover;
+  const agentModel = typeof runtime.api.config.agent?.model === "string" ? runtime.api.config.agent.model : undefined;
+  const failover = {
+    primary: typeof raw?.primary === "string" && raw.primary.trim().length > 0
+      ? raw.primary.trim()
+      : (agentModel ?? "default/default"),
+    fallbacks: Array.isArray(raw?.fallbacks)
+      ? raw.fallbacks.filter((v): v is string => typeof v === "string" && v.trim().length > 0).map((v) => v.trim())
+      : [],
+  };
+  if (!failover) {
+    return ["<b>Model Failover:</b> disabled"];
+  }
+
+  const trackedStates = (runtime.api.modelHealth?.getAllStates?.() ?? []) as ModelHealthState[];
+  const chain = [failover.primary, ...failover.fallbacks];
+  const stateByModel = new Map(trackedStates.map((s) => [s.model, s]));
+
+  const lines: string[] = [
+    `<b>Model Failover:</b> enabled (${chain.length} models)`,
+    `<b>Primary:</b> <code>${escapeHtml(failover.primary)}</code>`,
+  ];
+
+  const current = currentModelName && chain.includes(currentModelName)
+    ? currentModelName
+    : failover.primary;
+  if (current) {
+    lines.push(`<b>Active:</b> <code>${escapeHtml(current)}</code>`);
+  }
+
+  lines.push("<b>Health:</b>");
+
+  const now = Date.now();
+  for (const model of chain) {
+    const st = stateByModel.get(model);
+    const isActive = model === current;
+    const inCooldown = !!(st && now < st.cooldownUntil);
+    const statusEmoji = isActive ? "🟢" : inCooldown ? "🟠" : "⚪";
+    const pieces = [`${statusEmoji} <code>${escapeHtml(model)}</code>`];
+    if (isActive) pieces.push("(active)");
+    if (st?.lastCategory) pieces.push(`[${escapeHtml(st.lastCategory)}]`);
+    if (inCooldown) {
+      const remainSec = Math.max(0, Math.ceil((st.cooldownUntil - now) / 1000));
+      pieces.push(`cooldown ${remainSec}s`);
+    }
+    lines.push(`- ${pieces.join(" ")}`);
+  }
+
+  return lines;
 }
 
 function helpPage(page: number): { text: string; keyboard: { inline_keyboard: Array<Array<{ text: string; callback_data: string }>> } } {
@@ -611,6 +664,8 @@ export async function setupTelegramCommands(runtime: TelegramPluginRuntime, acco
       `<b>Queue Mode:</b> ${messageMode}${isOverridden ? " (override)" : " (config)"}`,
     ];
 
+    const currentModelName = (runtime.api.getSessionState(sessionKey) as any)?.lastModel ?? undefined;
+
     // Add context usage info
     try {
       const [stats, rpcState] = await Promise.all([
@@ -625,8 +680,13 @@ export async function setupTelegramCommands(runtime: TelegramPluginRuntime, acco
       const pct = contextWindow > 0 ? ((inputTokens / contextWindow) * 100).toFixed(1) : "?";
       lines.push(`<b>Context:</b> ${pct}% (${fmt(inputTokens)}/${fmt(contextWindow)})`);
       lines.push(`<b>Model:</b> ${st?.model?.id ?? "unknown"}`);
+
+      lines.push("");
+      lines.push(...buildModelFailoverStatus(runtime, currentModelName));
     } catch {
       // Ignore RPC errors - session state already shown above
+      lines.push("");
+      lines.push(...buildModelFailoverStatus(runtime, currentModelName));
     }
 
     await ctx.reply(lines.join("\n"), { parse_mode: "HTML" });

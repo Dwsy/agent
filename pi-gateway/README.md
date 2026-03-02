@@ -55,6 +55,12 @@ pi-gw config show                      # Show config
   "gateway": { "port": 52134, "bind": "loopback" },
   "agent": {
     "model": "claude-kiro-local/claude-haiku-4-5-20251001",
+    "modelFailover": {
+      "primary": "claude-kiro-local/claude-haiku-4-5-20251001",
+      "fallbacks": ["proxypal/claude-sonnet-4", "proxypal/gpt-4.1"],
+      "maxRetries": 2,
+      "cooldownMs": 60000
+    },
     "runtime": {
       "agentDir": "~/.pi/gateway/runtime-agent",
       "packageDir": "~/.pi/gateway/runtime-package"
@@ -104,6 +110,19 @@ Layered capability precedence:
 - `promptTemplates`: `roles.capabilities[role].promptTemplates` -> `agent.promptTemplates`
 
 For same absolute path, first one wins (role/gateway priority).
+
+### Model failover (fallback chain)
+
+`agent.modelFailover` enables automatic model fallback when a model fails due to transient errors
+(rate-limit, timeout, overloaded, connection) or empty response.
+
+- If `modelFailover.primary` is omitted, it is derived from `agent.model`.
+- `fallbacks` are tried in order.
+- Cooldown uses exponential backoff after failures and resets on successful probe.
+
+Status visibility:
+- Telegram `/status` includes active model + failover health states.
+- Observability records failover events under category `model-failover`.
 
 ## Plugin System
 

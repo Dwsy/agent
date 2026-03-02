@@ -11,7 +11,7 @@
  */
 
 import { Gateway } from "./server.ts";
-import { loadConfig, resolveConfigPath, type CronJob, type Config } from "./core/config.ts";
+import { loadConfig, resolveConfigPath, type CronJob, type Config, type ModelFailoverConfig } from "./core/config.ts";
 import { listPendingRequests, approvePairingRequest } from "./security/pairing.ts";
 import { CronEngine } from "./core/cron.ts";
 import { installDaemon, uninstallDaemon } from "./core/daemon.ts";
@@ -85,6 +85,20 @@ interface RegisteredCliEntry {
   handler: CliCommandHandler;
 }
 
+function normalizeModelFailoverForCli(config: Config): Required<ModelFailoverConfig> {
+  const raw = config.agent.modelFailover;
+  const agentModel = typeof config.agent.model === "string" ? config.agent.model : undefined;
+  const primary = typeof raw?.primary === "string" && raw.primary.trim().length > 0
+    ? raw.primary.trim()
+    : (agentModel ?? "default/default");
+  const fallbacks = Array.isArray(raw?.fallbacks)
+    ? raw.fallbacks.filter((v): v is string => typeof v === "string" && v.trim().length > 0).map((v) => v.trim())
+    : [];
+  const maxRetries = typeof raw?.maxRetries === "number" ? raw.maxRetries : 1;
+  const cooldownMs = typeof raw?.cooldownMs === "number" ? raw.cooldownMs : 60_000;
+  return { primary, fallbacks, maxRetries, cooldownMs };
+}
+
 function createCliOnlyPluginApi(
   config: Config,
   pluginId: string,
@@ -92,6 +106,7 @@ function createCliOnlyPluginApi(
   registry: ReturnType<typeof createPluginRegistry>,
 ): GatewayPluginApi {
   const logger = createLogger(`plugin-cli:${pluginId}`);
+  const failoverCfg = normalizeModelFailoverForCli(config);
 
   return {
     id: pluginId,
@@ -151,6 +166,7 @@ function createCliOnlyPluginApi(
     async getRpcState(_sessionKey: SessionKey): Promise<any> {
       return null;
     },
+    modelHealth: { getAllStates: () => [] } as any,
     listSessions(): import("./core/types.ts").SessionState[] {
       return [];
     },
@@ -175,6 +191,7 @@ function createCliOnlyPluginApi(
 
 async function loadPluginCliCommands(configPath?: string): Promise<Map<string, RegisteredCliEntry>> {
   const config = loadConfig(configPath);
+  config.agent.modelFailover = normalizeModelFailoverForCli(config);
   const registry = createPluginRegistry();
   const entries = new Map<string, RegisteredCliEntry>();
 

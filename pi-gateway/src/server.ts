@@ -15,7 +15,7 @@ import { resolveAuthConfig, authenticateRequest, buildAuthExemptPrefixes } from 
 import type { GatewayContext, TelegramMessageMode, WsClientData, DispatchResult } from "./gateway/types.ts";
 import { tryHandleCommand, registerBuiltinCommands } from "./gateway/command-handler.ts";
 import { executeRegisteredTool } from "./gateway/tool-executor.ts";
-import { loadConfig, ensureDataDir, type Config, type CronJob, resolveConfigPath, watchConfig } from "./core/config.ts";
+import { loadConfig, ensureDataDir, type Config, type CronJob, resolveConfigPath, watchConfig, type ModelFailoverConfig } from "./core/config.ts";
 import { RpcPool } from "./core/rpc-pool.ts";
 import { MessageQueueManager, type PrioritizedWork } from "./core/message-queue.ts";
 import { resolveSessionKey, resolveAgentId, getCwdForRole, resolveRolesDir, extractAgentIdFromSessionKey } from "./core/session-router.ts";
@@ -56,6 +56,20 @@ export interface GatewayOptions {
   port?: number;
   verbose?: boolean;
   noGui?: boolean;
+}
+
+function normalizeModelFailover(config: Config): Required<ModelFailoverConfig> {
+  const raw = config.agent.modelFailover;
+  const modelFromAgent = typeof config.agent.model === "string" ? config.agent.model : undefined;
+  const primary = typeof raw?.primary === "string" && raw.primary.trim().length > 0
+    ? raw.primary.trim()
+    : (modelFromAgent ?? "default/default");
+  const fallbacks = Array.isArray(raw?.fallbacks)
+    ? raw.fallbacks.filter((v): v is string => typeof v === "string" && v.trim().length > 0).map((v) => v.trim())
+    : [];
+  const maxRetries = typeof raw?.maxRetries === "number" ? raw.maxRetries : 1;
+  const cooldownMs = typeof raw?.cooldownMs === "number" ? raw.cooldownMs : 60_000;
+  return { primary, fallbacks, maxRetries, cooldownMs };
 }
 
 export class Gateway {
@@ -111,11 +125,11 @@ export class Gateway {
     this.execGuard = new ExecGuard();
     this.execGuard.validatePiCliPath(this.config.agent.piCliPath ?? "pi");
 
-    // Initialize model health tracker (T10) if failover configured
-    if (this.config.agent?.modelFailover) {
-      this.modelHealth = new ModelHealthTracker(this.config.agent.modelFailover);
-      this.log.info(`Model failover enabled: primary=${this.config.agent.modelFailover.primary ?? this.config.agent.model ?? "default"}, fallbacks=${(this.config.agent.modelFailover.fallbacks ?? []).join(",") || "none"}`);
-    }
+    // Initialize model health tracker with normalized failover config
+    const normalizedFailover = normalizeModelFailover(this.config);
+    this.config.agent.modelFailover = normalizedFailover;
+    this.modelHealth = new ModelHealthTracker(normalizedFailover);
+    this.log.info(`Model failover enabled: primary=${normalizedFailover.primary}, fallbacks=${normalizedFailover.fallbacks.join(",") || "none"}`);
 
     this.metrics = new MetricsCollector(this.execGuard);
 
@@ -362,12 +376,20 @@ export class Gateway {
   private applyReloadedConfig(reloaded: Config, reason: string): void {
     // Keep object identity stable so plugin API references (api.config / api.pluginConfig) stay live.
     Object.assign(this.config, reloaded);
+
+    const normalizedFailover = normalizeModelFailover(this.config);
+    this.config.agent.modelFailover = normalizedFailover;
+
     this.pool.setConfig(this.config);
 
     // Refresh auth cache derived from config
     const { resolvedToken } = resolveAuthConfig(this.config.gateway.auth, this.log);
     this.resolvedToken = resolvedToken;
     this.authExemptPrefixes = buildAuthExemptPrefixes(this.config);
+
+    // Keep modelHealth reference stable for plugin API getters; update in-place.
+    this.modelHealth?.updateConfig(normalizedFailover, { resetStates: false });
+    this.log.info(`Model failover reloaded: primary=${normalizedFailover.primary}, fallbacks=${normalizedFailover.fallbacks.join(",") || "none"}`);
 
     this.log.info(reason);
   }

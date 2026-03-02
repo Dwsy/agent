@@ -669,6 +669,16 @@ export function loadConfig(configPath?: string, validateOptions?: ValidationOpti
     migrated as Record<string, unknown>,
   ) as unknown as Config;
 
+  // Normalize model failover: if configured without primary, derive from agent.model.
+  if (merged.agent.modelFailover) {
+    if (!merged.agent.modelFailover.primary && typeof merged.agent.model === "string" && merged.agent.model.trim().length > 0) {
+      merged.agent.modelFailover.primary = merged.agent.model.trim();
+    }
+    if (!Array.isArray(merged.agent.modelFailover.fallbacks)) {
+      merged.agent.modelFailover.fallbacks = [];
+    }
+  }
+
   const envPort = Number.parseInt(process.env.PI_GATEWAY_PORT ?? "", 10);
   if (Number.isInteger(envPort) && envPort > 0 && envPort <= 65535) {
     merged.gateway.port = envPort;
@@ -793,6 +803,25 @@ function deepMerge<T extends Record<string, unknown>>(target: T, source: Partial
 
 function applyConfigMigrations(fileConfig: Record<string, unknown>): Record<string, unknown> {
   const cloned = JSON.parse(JSON.stringify(fileConfig ?? {})) as Record<string, unknown>;
+
+  // Legacy/default migration: if modelFailover exists without primary, derive from agent.model
+  const agent = (cloned.agent && typeof cloned.agent === "object")
+    ? cloned.agent as Record<string, unknown>
+    : null;
+  if (agent && agent.modelFailover && typeof agent.modelFailover === "object") {
+    const failover = agent.modelFailover as Record<string, unknown>;
+    if (typeof failover.primary !== "string" || failover.primary.trim().length === 0) {
+      const agentModel = typeof agent.model === "string" ? agent.model.trim() : "";
+      if (agentModel) {
+        failover.primary = agentModel;
+      }
+    }
+    if (!Array.isArray(failover.fallbacks)) {
+      failover.fallbacks = [];
+    }
+    agent.modelFailover = failover;
+    cloned.agent = agent;
+  }
 
   // Legacy: top-level telegram.* -> channels.telegram.*
   const legacyTelegram = cloned.telegram;

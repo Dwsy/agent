@@ -11,7 +11,7 @@ import type { ModelFailoverConfig } from "./config.ts";
 // Error Classification
 // ============================================================================
 
-export type ErrorCategory = "rate_limit" | "auth" | "billing" | "timeout" | "overloaded" | "connection" | "unknown";
+export type ErrorCategory = "rate_limit" | "auth" | "billing" | "timeout" | "overloaded" | "connection" | "empty_response" | "unknown";
 
 const ERROR_PATTERNS: Array<{ category: ErrorCategory; patterns: RegExp[] }> = [
   {
@@ -38,6 +38,10 @@ const ERROR_PATTERNS: Array<{ category: ErrorCategory; patterns: RegExp[] }> = [
     category: "connection",
     patterns: [/connection.?error/i, /ECONNREFUSED/i, /ECONNRESET/i, /ENOTFOUND/i, /EHOSTUNREACH/i, /socket.?hang.?up/i, /network.?error/i, /fetch.?failed/i],
   },
+  {
+    category: "empty_response",
+    patterns: [/empty.?response/i, /empty_response/i],
+  },
 ];
 
 export function classifyError(errorText: string): ErrorCategory {
@@ -49,7 +53,7 @@ export function classifyError(errorText: string): ErrorCategory {
 
 /** Whether this error category is transient (worth retrying with fallback). */
 export function isTransient(category: ErrorCategory): boolean {
-  return category === "rate_limit" || category === "timeout" || category === "overloaded" || category === "connection";
+  return category === "rate_limit" || category === "timeout" || category === "overloaded" || category === "connection" || category === "empty_response";
 }
 
 // ============================================================================
@@ -63,6 +67,7 @@ export interface ModelHealthState {
   lastError?: string;
   lastCategory?: ErrorCategory;
   cooldownUntil: number;
+  probeBackoffMs?: number;
 }
 
 // ============================================================================
@@ -77,6 +82,13 @@ export class ModelHealthTracker {
     this.config = config;
   }
 
+  updateConfig(config: ModelFailoverConfig, options?: { resetStates?: boolean }): void {
+    this.config = config;
+    if (options?.resetStates) {
+      this.states.clear();
+    }
+  }
+
   /** Record a failure for a model. Returns the error category. */
   recordFailure(model: string, errorText: string): ErrorCategory {
     const category = classifyError(errorText);
@@ -86,6 +98,7 @@ export class ModelHealthTracker {
       failures: 0,
       lastFailure: 0,
       cooldownUntil: 0,
+      probeBackoffMs: this.config.cooldownMs ?? 60_000,
     };
 
     state.failures++;
@@ -94,8 +107,11 @@ export class ModelHealthTracker {
     state.lastCategory = category;
 
     if (isTransient(category)) {
-      const cooldownMs = this.config.cooldownMs ?? 60_000;
-      state.cooldownUntil = now + cooldownMs;
+      const baseCooldownMs = this.config.cooldownMs ?? 60_000;
+      const prevBackoff = state.probeBackoffMs ?? baseCooldownMs;
+      const nextBackoff = Math.min(prevBackoff * 2, 10 * 60_000);
+      state.probeBackoffMs = nextBackoff;
+      state.cooldownUntil = now + nextBackoff;
     } else if (category === "auth" || category === "billing") {
       // Permanent errors: long cooldown
       state.cooldownUntil = now + 3_600_000; // 1 hour
@@ -113,7 +129,20 @@ export class ModelHealthTracker {
       state.cooldownUntil = 0;
       state.lastError = undefined;
       state.lastCategory = undefined;
+      state.probeBackoffMs = this.config.cooldownMs ?? 60_000;
     }
+  }
+
+  /** Explicitly record empty assistant response (treated as transient failure). */
+  recordEmptyResponse(model: string): ErrorCategory {
+    return this.recordFailure(model, "EMPTY_RESPONSE");
+  }
+
+  /** Whether cooldown just expired and this request is a probe attempt. */
+  shouldProbe(model: string): boolean {
+    const state = this.states.get(model);
+    if (!state) return false;
+    return state.cooldownUntil > 0 && Date.now() >= state.cooldownUntil;
   }
 
   /** Check if a model is currently in cooldown. */
@@ -125,15 +154,15 @@ export class ModelHealthTracker {
 
   /**
    * Select the best available model from the fallback chain.
-   * Returns the primary if healthy, otherwise the first non-cooldown fallback.
-   * Returns null if all models are in cooldown.
+   * Returns the first model not in cooldown. If all are in cooldown,
+   * returns the primary as probe candidate.
    */
   selectModel(primary: string, fallbacks: string[]): string | null {
     const chain = [primary, ...fallbacks];
     for (const model of chain) {
       if (!this.isInCooldown(model)) return model;
     }
-    // All in cooldown — return primary anyway (let it retry)
+    // All in cooldown — return primary as probe candidate.
     return primary;
   }
 
