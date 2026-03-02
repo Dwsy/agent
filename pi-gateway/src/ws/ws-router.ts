@@ -7,10 +7,6 @@
  */
 
 import type { ServerWebSocket } from "bun";
-import type { GatewayContext, WsClientData } from "../gateway/types.ts";
-import type { ExtensionUIResponse } from "../core/extension-ui-types.ts";
-import type { WsFrame } from "../core/types.ts";
-import { safeTokenCompare } from "../core/auth.ts";
 import {
   registerChatMethods,
   registerSessionMethods,
@@ -20,6 +16,16 @@ import {
   registerMemoryMethods,
   registerChannelMethods,
 } from "./ws-methods.ts";
+import type { GatewayContext, WsClientData } from "../gateway/types.ts";
+import type { ExtensionUIResponse } from "../core/extension-ui-types.ts";
+import type { WsFrame } from "../core/types.ts";
+import { safeTokenCompare } from "../core/auth.ts";
+
+interface WsRuntimeAuth {
+  mode: "off" | "token" | "password";
+  token?: string;
+  password?: string;
+}
 
 // ============================================================================
 // Types
@@ -49,17 +55,38 @@ export function createWsRouter(ctx: GatewayContext): Map<string, WsMethodFn> {
   registerMemoryMethods(methods, ctx);
   registerChannelMethods(methods, ctx);
 
+  const getRuntimeAuth = (): WsRuntimeAuth => {
+    const auth = ctx.config.gateway.auth;
+    if (auth.mode === "off") return { mode: "off" };
+    if (auth.mode === "token") {
+      const token = auth.token ?? ctx.resolvedGatewayToken ?? process.env.PI_GATEWAY_AUTH_TOKEN;
+      return { mode: "token", token };
+    }
+    return { mode: "password", password: auth.password };
+  };
+
   // --- Special methods that need ws/extensionUI access ---
 
   methods.set("connect", async (params, _ctx, ws) => {
-    const authMode = ctx.config.gateway.auth.mode;
-    if (authMode === "token" && ctx.config.gateway.auth.token) {
+    const auth = getRuntimeAuth();
+
+    if (auth.mode === "token" && auth.token) {
       const connectToken = (params?.auth as any)?.token ?? params?.token;
-      if (!connectToken || !safeTokenCompare(connectToken, ctx.config.gateway.auth.token)) {
+      if (!connectToken || !safeTokenCompare(String(connectToken), auth.token)) {
         ws.close(4001, "Unauthorized");
         throw new Error("Invalid auth token");
       }
     }
+
+    if (auth.mode === "password" && auth.password) {
+      const connectToken = (params?.auth as any)?.token ?? params?.token;
+      if (!connectToken || !safeTokenCompare(String(connectToken), auth.password)) {
+        ws.close(4001, "Unauthorized");
+        throw new Error("Invalid auth token");
+      }
+    }
+
+    ws.data.authenticated = true;
     return { protocol: 1, server: { name: "pi-gateway", version: "0.2.0" } };
   });
 
@@ -104,6 +131,13 @@ export async function dispatchWsFrame(
   };
 
   try {
+    const authMode = ctx.config.gateway.auth.mode;
+    const isConnect = method === "connect";
+    if (authMode !== "off" && !ws.data.authenticated && !isConnect) {
+      respond(false, undefined, "Unauthorized");
+      return;
+    }
+
     // Plugin-registered gateway methods first
     const pluginMethod = ctx.registry.gatewayMethods.get(method);
     if (pluginMethod) {
@@ -120,7 +154,18 @@ export async function dispatchWsFrame(
       return;
     }
 
-    respond(false, undefined, `Unknown method: ${method}`);
+    const normalizedMethod = method.trim().toLowerCase();
+    const looksLikeReloadMethod =
+      normalizedMethod === "reloadsession"
+      || normalizedMethod === "sessionreload"
+      || normalizedMethod === "session.relaod"
+      || normalizedMethod.includes("reload");
+
+    const unknownMethodError = looksLikeReloadMethod
+      ? `Unknown method: ${method}. Did you mean \"session.reload\"?`
+      : `Unknown method: ${method}`;
+
+    respond(false, undefined, unknownMethodError);
   } catch (err: unknown) {
     respond(false, undefined, err instanceof Error ? err.message : String(err));
   }

@@ -17,13 +17,13 @@ export default function reloadPlugin(api: GatewayPluginApi) {
     logger.info("Reload command triggered", { sessionKey: ctx.sessionKey, source: "slash" });
 
     try {
-      await ctx.respond("⏳ Reloading extensions, skills, prompts, and themes...");
+      await ctx.respond("⏳ Sending reload command to agent runtime...");
 
       // Forward /reload command to the agent via RPC
       // The agent will execute its native reload mechanism
       await api.forwardCommand(ctx.sessionKey, "/reload", "");
 
-      await ctx.respond("✅ Reload command sent to agent. The runtime will be reloaded after the current turn completes.");
+      await ctx.respond("✅ Reload command queued for agent runtime.");
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       logger.error("Reload failed", { sessionKey: ctx.sessionKey, error: message });
@@ -54,7 +54,7 @@ export default function reloadPlugin(api: GatewayPluginApi) {
 
       return Response.json({
         success: true,
-        message: "Reload command sent to agent",
+        message: "Reload command queued for agent runtime",
       });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
@@ -63,8 +63,10 @@ export default function reloadPlugin(api: GatewayPluginApi) {
     }
   });
 
-  // Register WS method for programmatic access
-  api.registerGatewayMethod("session.reload", async (params) => {
+  const handleReloadRequest = async (
+    params: Record<string, unknown>,
+    source: "ws" | "ws-legacy",
+  ) => {
     const sessionKey = params.sessionKey as string | undefined;
 
     if (!sessionKey) {
@@ -77,18 +79,28 @@ export default function reloadPlugin(api: GatewayPluginApi) {
       return { success: false, error: "Session not found" };
     }
 
-    logger.info("Reload triggered", { sessionKey, source: "ws" });
+    logger.info("Reload triggered", { sessionKey, source });
 
     try {
       // Forward /reload to the agent
       await api.forwardCommand(sessionKey, "/reload", "");
 
-      return { success: true, message: "Reload command sent to agent" };
+      return { success: true, message: "Reload command queued for agent runtime" };
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       logger.error("Reload failed", { sessionKey, error: message });
       return { success: false, error: message };
     }
+  };
+
+  // Register WS method for programmatic access
+  api.registerGatewayMethod("session.reload", async (params) => {
+    return handleReloadRequest(params, "ws");
+  });
+
+  // Backward-compatible alias for external callers
+  api.registerGatewayMethod("reloadsession", async (params) => {
+    return handleReloadRequest(params, "ws-legacy");
   });
 
   logger.info("Reload plugin registered");

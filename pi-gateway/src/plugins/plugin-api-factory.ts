@@ -228,32 +228,51 @@ export function createPluginApi(
       if (!rpc) {
         throw new Error(`No RPC process for session ${sessionKey}`);
       }
-      ctx.log.info(`[forwardCommand] ${sessionKey}: ${command} ${args}`);
 
-      switch (command) {
+      const rawCommand = String(command ?? "");
+      const normalizedCommand = rawCommand.trim().toLowerCase();
+      const canonicalCommand = normalizedCommand === "/relaod" ? "/reload" : normalizedCommand;
+      const normalizedArgs = typeof args === "string" ? args : "";
+
+      ctx.log.info("[forwardCommand] routing command", {
+        sessionKey,
+        rawCommand,
+        normalizedCommand: canonicalCommand,
+        args: normalizedArgs,
+      });
+
+      if (normalizedCommand === "/relaod") {
+        ctx.log.warn("[forwardCommand] corrected typo alias", {
+          sessionKey,
+          rawCommand,
+          normalizedCommand: canonicalCommand,
+        });
+      }
+
+      switch (canonicalCommand) {
         case "/compact":
-          await rpc.compact(args || undefined);
+          await rpc.compact(normalizedArgs || undefined);
           break;
         case "/stop":
           await rpc.abort();
           break;
         case "/think": {
-          const level = args || "medium";
+          const level = normalizedArgs || "medium";
           await rpc.setThinkingLevel(level);
           break;
         }
         case "/model": {
-          if (!args || !args.includes("/")) {
+          if (!normalizedArgs || !normalizedArgs.includes("/")) {
             throw new Error("Usage: /model provider/modelId");
           }
-          const slash = args.indexOf("/");
-          const provider = args.slice(0, slash);
-          const modelId = args.slice(slash + 1);
+          const slash = normalizedArgs.indexOf("/");
+          const provider = normalizedArgs.slice(0, slash);
+          const modelId = normalizedArgs.slice(slash + 1);
           await rpc.setModel(provider, modelId);
           break;
         }
         default: {
-          const fullCommand = args ? `${command} ${args}` : command;
+          const fullCommand = normalizedArgs ? `${canonicalCommand} ${normalizedArgs}` : canonicalCommand;
           await rpc.prompt(fullCommand);
         }
       }
