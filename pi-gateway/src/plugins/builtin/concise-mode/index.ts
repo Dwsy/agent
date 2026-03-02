@@ -71,6 +71,24 @@ function toConfig(raw: Record<string, unknown> | undefined): Required<ConciseMod
   };
 }
 
+function getRuntimeConfig(): Required<ConciseModeConfig> {
+  if (!pluginApi) {
+    return {
+      enabled: false,
+      channels: [...DEFAULT_CHANNELS],
+    };
+  }
+  const cfg = pluginApi.config as Record<string, any>;
+  const raw = cfg?.plugins?.config?.["concise-mode"] as Record<string, unknown> | undefined;
+  return toConfig(raw);
+}
+
+function syncRuntimeChannels(): Required<ConciseModeConfig> {
+  const runtimeCfg = getRuntimeConfig();
+  stateManager?.updateChannels(runtimeCfg.channels);
+  return runtimeCfg;
+}
+
 // ============================================================================
 // Singleton state manager — survives hot-reload, accessible from Telegram layer
 // ============================================================================
@@ -85,10 +103,7 @@ export function getConciseStateManager(): ConciseStateManager | null {
 
 /** Read current config default from live gateway config */
 export function getConciseConfigDefault(): boolean {
-  if (!pluginApi) return false;
-  const cfg = pluginApi.config as Record<string, any>;
-  const raw = cfg?.plugins?.config?.["concise-mode"] as Record<string, unknown> | undefined;
-  return typeof raw?.enabled === "boolean" ? raw.enabled : false;
+  return getRuntimeConfig().enabled;
 }
 
 /** Compute effective concise state for a session */
@@ -104,7 +119,7 @@ export function getEffectiveConciseState(sessionKey: string): boolean {
 
 export default function register(api: GatewayPluginApi): void {
   pluginApi = api;
-  const cfg = toConfig(api.pluginConfig);
+  const cfg = syncRuntimeChannels();
 
   // Register system prompt segment (Layer 2 Capability Prompt)
   registerSystemPromptSegment({
@@ -121,17 +136,17 @@ export default function register(api: GatewayPluginApi): void {
     stateManager.updateChannels(cfg.channels);
   }
 
-  if (!cfg.enabled) {
-    api.logger.info("concise-mode disabled (overrides still active)");
-    return;
+  if (cfg.enabled) {
+    api.logger.info(`concise-mode enabled for channels: ${cfg.channels.join(", ")}`);
+  } else {
+    api.logger.info(`concise-mode default disabled; session overrides available (channels: ${cfg.channels.join(", ")})`);
   }
-
-  api.logger.info(`concise-mode enabled for channels: ${cfg.channels.join(", ")}`);
 
   // Hook 1: message_received — track active sessions
   api.on("message_received", ({ message }) => {
     const { channel } = message.source;
     const sessionKey = message.sessionKey;
+    syncRuntimeChannels();
     if (sessionKey && stateManager!.isChannelEnabled(channel)) {
       stateManager!.activateSession(sessionKey, channel);
       api.logger.debug(`[concise] Activated session: ${sessionKey} (${channel})`);
@@ -141,6 +156,8 @@ export default function register(api: GatewayPluginApi): void {
   // Hook 2: after_tool_call — add suppress route after send_message
   api.on("after_tool_call", ({ sessionKey, toolName, isError }) => {
     if (isError || toolName !== "send_message") return;
+
+    syncRuntimeChannels();
 
     // Dynamic: check effective state for this session
     if (!getEffectiveConciseState(sessionKey)) return;
@@ -161,6 +178,7 @@ export default function register(api: GatewayPluginApi): void {
   // Hook 3: message_sending — suppress automatic replies
   api.on("message_sending", ({ message }) => {
     const { channel, target } = message;
+    syncRuntimeChannels();
     if (stateManager!.shouldSuppress(channel, target)) {
       message.text = SILENT_TOKEN;
       api.logger.info(`[concise] SUPPRESSED message to ${target}`);

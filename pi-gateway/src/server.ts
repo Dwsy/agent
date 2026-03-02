@@ -257,8 +257,7 @@ export class Gateway {
     // Config file watcher (hot reload)
     this.configWatcher = watchConfig(resolveConfigPath(), (newConfig) => {
       this.log.info("Config file changed, reloading...");
-      this.config = newConfig;
-      this.pool.setConfig(newConfig);
+      this.applyReloadedConfig(newConfig, "Gateway config hot-reloaded (pool + auth cache refreshed)");
     });
 
     this.log.info(`Gateway listening on ${this.config.gateway.bind}:${this.config.gateway.port}`);
@@ -360,11 +359,22 @@ export class Gateway {
     await this.registry.hooks.dispatch("after_compaction", { sessionKey, summary });
   }
 
+  private applyReloadedConfig(reloaded: Config, reason: string): void {
+    // Keep object identity stable so plugin API references (api.config / api.pluginConfig) stay live.
+    Object.assign(this.config, reloaded);
+    this.pool.setConfig(this.config);
+
+    // Refresh auth cache derived from config
+    const { resolvedToken } = resolveAuthConfig(this.config.gateway.auth, this.log);
+    this.resolvedToken = resolvedToken;
+    this.authExemptPrefixes = buildAuthExemptPrefixes(this.config);
+
+    this.log.info(reason);
+  }
+
   private reloadConfig(): void {
     const reloaded = loadConfig();
-    this.config = reloaded;
-    this.pool.setConfig(reloaded);
-    this.log.info("Gateway config reloaded (pool config refreshed)");
+    this.applyReloadedConfig(reloaded, "Gateway config reloaded (pool + auth cache refreshed)");
   }
 
   private listAvailableRoles(): string[] {

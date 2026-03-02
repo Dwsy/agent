@@ -1,4 +1,5 @@
 import { resolveSessionKey, resolveAgentId } from "../../../core/session-router.ts";
+import { parseSlashCommand } from "../../../gateway/command-handler.ts";
 import type { SessionStats, RpcState } from "../../../core/interface/plugins/types.ts";
 import { isSenderAllowed, type DmPolicy } from "../../../security/allowlist.ts";
 import { escapeHtml, markdownToTelegramHtml } from "./format.ts";
@@ -18,6 +19,8 @@ const LOCAL_COMMANDS = [
   { command: "new", description: "重置会话" },
   { command: "stop", description: "中断当前输出" },
   { command: "model", description: "查看/切换模型" },
+  { command: "models", description: "搜索模型" },
+  { command: "setmodel", description: "按关键词切换模型" },
   { command: "think", description: "设置思考等级" },
   { command: "compact", description: "压缩上下文" },
   { command: "status", description: "查看会话状态" },
@@ -28,7 +31,7 @@ const LOCAL_COMMANDS = [
   { command: "config", description: "查看运行配置" },
   { command: "restart", description: "重启 gateway" },
   { command: "sys", description: "系统状态" },
-  // { command: "role", description: "切换/查看角色" },
+  { command: "role", description: "切换/查看角色" },
   { command: "cron", description: "定时任务管理" },
   { command: "skills", description: "查看/调用技能" },
   { command: "sessions", description: "查看所有会话" },
@@ -138,6 +141,8 @@ function helpPage(page: number): { text: string; keyboard: { inline_keyboard: Ar
       "/new — 重置会话",
       "/status — 查看会话状态",
       "/model — 查看/切换模型",
+      "/models [关键词] — 搜索模型",
+      "/setmodel <provider/modelId|关键词> — 设置模型",
       "/think &lt;level&gt; — 设置思考等级",
       "/compact — 压缩上下文",
       "/stop — 中断当前输出",
@@ -148,6 +153,7 @@ function helpPage(page: number): { text: string; keyboard: { inline_keyboard: Ar
       "",
       "/context — 上下文详情",
       "/whoami — 查看发送者信息",
+      "/role [list|set|create|delete] — 角色管理",
       "/cron — 定时任务管理",
       "/skills — 查看/调用技能",
       "/sessions — 查看所有会话",
@@ -262,11 +268,13 @@ function buildConciseView(sessionKey: string): { text: string; keyboard: { inlin
   const override = manager?.getSessionOverride(sessionKey);
   const src = override !== undefined ? "override" : "config";
   return {
-    text: `<b>简洁模式</b>: ${effective ? "✅ ON" : "⭕ OFF"} <i>(${src})</i>`,
+    text: `<b>当前简洁模式</b>：${effective ? "✅ ON" : "⭕ OFF"} <i>(${src})</i>`,
     keyboard: {
       inline_keyboard: [[
         { text: effective ? "✅ ON" : "ON", callback_data: "csm:on" },
         { text: effective ? "OFF" : "⭕ OFF", callback_data: "csm:off" },
+        { text: "🔁 Refresh", callback_data: "csm:status" },
+      ], [
         { text: "🔄 Default", callback_data: "csm:reset" },
       ]],
     },
@@ -288,6 +296,8 @@ onCallback("csm:", async ({ data, ctx, bot, runtime, account, callbackQuery }) =
   } else if (data === "csm:reset") {
     manager?.clearSessionOverride(sessionKey);
     await ctx.answerCallbackQuery?.({ text: "Reset to config default" });
+  } else if (data === "csm:status") {
+    await ctx.answerCallbackQuery?.({ text: "Refreshed" });
   } else {
     await ctx.answerCallbackQuery?.();
     return;
@@ -327,8 +337,14 @@ onCallback("cmd_page:", async ({ data, ctx, bot, callbackQuery }) => {
 onCallback("role:", async ({ data, ctx, runtime, account }) => {
   const source = toSource(account.accountId, ctx);
   const sessionKey = resolveSessionKey(source, runtime.api.config);
+  const authorized = isAuthorizedSender(source.senderId, account);
 
   if (data.startsWith("role:set:")) {
+    if (!authorized) {
+      await ctx.answerCallbackQuery?.({ text: "Unauthorized" });
+      await ctx.reply("⛔ Unauthorized.");
+      return;
+    }
     const role = data.slice("role:set:".length).trim();
     const ok = await runtime.api.setSessionRole(sessionKey, role);
     await ctx.answerCallbackQuery?.({ text: ok ? `Switched: ${role}` : "Switch failed" });
@@ -339,6 +355,11 @@ onCallback("role:", async ({ data, ctx, runtime, account }) => {
   }
 
   if (data.startsWith("role:del:")) {
+    if (!authorized) {
+      await ctx.answerCallbackQuery?.({ text: "Unauthorized" });
+      await ctx.reply("⛔ Unauthorized.");
+      return;
+    }
     const role = data.slice("role:del:".length).trim();
     const deleted = await runtime.api.deleteRole(role);
     await ctx.answerCallbackQuery?.({ text: deleted.ok ? `Deleted: ${role}` : "Delete failed" });
@@ -1014,31 +1035,102 @@ export async function setupTelegramCommands(runtime: TelegramPluginRuntime, acco
 
     if (arg === "on") {
       manager?.setSessionOverride(sessionKey, true);
-      await ctx.reply("✅ Concise mode: <b>ON</b> (session override)", { parse_mode: "HTML" });
+      await ctx.reply("✅ 当前简洁模式：<b>ON</b> (session override)", { parse_mode: "HTML" });
       return;
     }
     if (arg === "off") {
       manager?.setSessionOverride(sessionKey, false);
-      await ctx.reply("⭕ Concise mode: <b>OFF</b> (session override)", { parse_mode: "HTML" });
+      await ctx.reply("⭕ 当前简洁模式：<b>OFF</b> (session override)", { parse_mode: "HTML" });
       return;
     }
     if (arg === "reset") {
       manager?.clearSessionOverride(sessionKey);
       const newEffective = manager?.getEffectiveState(sessionKey, configDefault) ?? configDefault;
-      await ctx.reply(`🔄 Concise mode: <b>${newEffective ? "ON" : "OFF"}</b> (config default)`, { parse_mode: "HTML" });
+      await ctx.reply(`🔄 当前简洁模式：<b>${newEffective ? "ON" : "OFF"}</b> (config default)`, { parse_mode: "HTML" });
       return;
     }
     if (arg === "status") {
       const effective = manager?.getEffectiveState(sessionKey, configDefault) ?? configDefault;
       const override = manager?.getSessionOverride(sessionKey);
       const src = override !== undefined ? "session override" : "config default";
-      await ctx.reply(`Concise mode: <b>${effective ? "ON" : "OFF"}</b> (${src})`, { parse_mode: "HTML" });
+      await ctx.reply(`当前简洁模式：<b>${effective ? "ON" : "OFF"}</b> (${src})`, { parse_mode: "HTML" });
       return;
     }
 
     // Default: show status + inline keyboard
     const view = buildConciseView(sessionKey);
     await ctx.reply(view.text, { parse_mode: "HTML", reply_markup: view.keyboard });
+  });
+
+  bot.command("role", async (ctx: any) => {
+    const source = toSource(account.accountId, ctx as TelegramContext);
+
+    const rawArgs = String(ctx.match ?? "").trim();
+    const forwarded = `/role${rawArgs ? ` ${rawArgs}` : ""}`;
+    const parsed = parseSlashCommand(forwarded);
+    const sessionKey = resolveSessionKey(source, runtime.api.config);
+    const currentRole = runtime.api.getSessionState(sessionKey)?.role ?? "default";
+
+    if (!parsed) {
+      await ctx.reply("Usage: /role | /role list | /role set <role> | /role create <role> | /role delete <role>");
+      return;
+    }
+
+    const [subRaw] = parsed.args ? parsed.args.split(/\s+/) : [""];
+    const action = (subRaw || "").toLowerCase();
+    const isMutating = action === "set" || action === "switch" || action === "create" || action === "delete";
+    if (isMutating && !isAuthorizedSender(source.senderId, account)) {
+      await ctx.reply("⛔ Unauthorized.");
+      return;
+    }
+
+    try {
+      const roles = runtime.api.listAvailableRoles().sort((a, b) => a.localeCompare(b));
+      if (!parsed.args || action === "list") {
+        if (roles.length === 0) {
+          await ctx.reply(`Current role: <b>${escapeHtml(currentRole)}</b>\nNo roles available.`, { parse_mode: "HTML" });
+          return;
+        }
+
+        const topRoles = roles.slice(0, 12);
+        const rows = topRoles.reduce<Array<Array<{ text: string; callback_data: string }>>>((acc, role, idx) => {
+          const button = { text: role === currentRole ? `✅ ${role}` : role, callback_data: `role:set:${role}` };
+          if (idx % 2 === 0) acc.push([button]);
+          else acc[acc.length - 1]!.push(button);
+          return acc;
+        }, []);
+
+        rows.push([{ text: "➕ Create role (use /role create <name>)", callback_data: "role:hint:create" }]);
+        if (roles.some((r) => r !== "default")) {
+          rows.push([{ text: "🗑 Delete role (use /role delete <name>)", callback_data: "role:hint:delete" }]);
+        }
+
+        await ctx.reply(
+          `Current role: <b>${escapeHtml(currentRole)}</b>\nSelect role:`,
+          { parse_mode: "HTML", reply_markup: { inline_keyboard: rows } },
+        );
+        return;
+      }
+
+      const { agentId, text: routedText } = resolveAgentId(source, forwarded, runtime.api.config);
+      const routedSessionKey = resolveSessionKey(source, runtime.api.config, agentId);
+      await runtime.api.dispatch({
+        source,
+        sessionKey: routedSessionKey,
+        text: routedText || forwarded,
+        respond: async (text: string) => {
+          if (!text?.trim()) return;
+          await ctx.reply(markdownToTelegramHtml(text), { parse_mode: "HTML" }).catch(async () => {
+            await ctx.reply(text);
+          });
+        },
+        setTyping: async () => {
+          await account.bot.api.sendChatAction(String(source.chatId), "typing").catch(() => {});
+        },
+      });
+    } catch (err: unknown) {
+      await ctx.reply(`❌ Failed to run /role: ${err instanceof Error ? err.message : String(err)}`);
+    }
   });
 
   bot.command("resume", async (ctx: any) => {
