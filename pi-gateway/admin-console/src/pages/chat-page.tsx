@@ -52,12 +52,6 @@ type UploadImage = {
 marked.setOptions({
   breaks: true,
   gfm: true,
-  highlight(code, lang) {
-    if (lang && hljs.getLanguage(lang)) {
-      return hljs.highlight(code, { language: lang }).value;
-    }
-    return hljs.highlightAuto(code).value;
-  },
 });
 
 function toBase64(file: File): Promise<string> {
@@ -78,7 +72,20 @@ function toBase64(file: File): Promise<string> {
 }
 
 function renderMarkdown(text: string) {
-  return marked.parse(text);
+  const html = marked.parse(text, { async: false });
+  return html.replace(/<pre><code class="language-([^"]*)">([\s\S]*?)<\/code><\/pre>/g, (_match, lang, code) => {
+    const decoded = code
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'");
+
+    if (lang && hljs.getLanguage(lang)) {
+      return `<pre><code class="hljs language-${lang}">${hljs.highlight(decoded, { language: lang }).value}</code></pre>`;
+    }
+    return `<pre><code class="hljs">${hljs.highlightAuto(decoded).value}</code></pre>`;
+  });
 }
 
 function formatSessionTitle(sessionKey: string) {

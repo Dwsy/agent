@@ -22,8 +22,8 @@ type WsEventFrame = {
 type WsFrame = WsResFrame | WsEventFrame;
 
 type PendingRequest = {
-  resolve: (value: unknown) => void;
-  reject: (reason?: unknown) => void;
+  resolve: (value: any) => void;
+  reject: (reason?: any) => void;
   timer: number;
 };
 

@@ -1,20 +1,19 @@
 import { useEffect } from 'react';
-import { AlertTriangle, CheckCircle2, Lightbulb } from 'lucide-react';
-import { PermissionGate, PermissionDisabledWrapper } from '../components/permission-gate';
-import { usePageDataSource, useDataMutation } from '../hooks/use-data-source';
+import { ActionIcon, Badge, Group, Paper, Stack, Table, Text, Title } from '@mantine/core';
+import { Pause, Play } from 'lucide-react';
+import { PageHeader } from '../components/atoms/page-header';
+import { PermissionGate } from '../components/permission-gate';
+import { useDataMutation, usePageDataSource } from '../hooks/use-data-source';
 import { trackRuntimeEvent } from '../hooks/use-observability';
 import { fetchCronJobs, pauseCronJob, resumeCronJob } from '../lib/api';
 
 export function AlertsPage() {
-  // 页面挂载埋点
   useEffect(() => {
     trackRuntimeEvent('info', 'Page mounted: Alerts', { page: 'alerts' });
   }, []);
 
-  // 使用 use-data-source 替换直接的 useQuery
   const cronQuery = usePageDataSource('alerts', ['cron-jobs'], fetchCronJobs);
 
-  // 使用 useDataMutation 替换 useMutation
   const pauseMutation = useDataMutation({
     mutationFn: pauseCronJob,
     invalidateKeys: [['cron-jobs']],
@@ -26,94 +25,78 @@ export function AlertsPage() {
   });
 
   const jobs = cronQuery.data ?? [];
-  const failed = jobs.filter((j) => j.lastRun?.status === 'error' || j.lastRun?.status === 'timeout');
+  const failed = jobs.filter((job) => job.lastRun?.status === 'error' || job.lastRun?.status === 'timeout');
 
   return (
-    <div className="space-y-4">
-      <div className="rounded-xl border border-slate-800 bg-card p-4">
-        <h2 className="mb-2 text-sm font-semibold">Alert Summary</h2>
-        <ul className="space-y-2 text-sm text-slate-300">
-          <li className="flex items-center gap-2"><AlertTriangle size={14} className="text-amber-400" />failed cron jobs: {failed.length}</li>
-          <li className="flex items-center gap-2"><CheckCircle2 size={14} className="text-emerald-400" />total cron jobs: {jobs.length}</li>
-          <li className="flex items-center gap-2"><Lightbulb size={14} className="text-sky-400" />action: pause noisy jobs / resume paused jobs directly here</li>
-        </ul>
-      </div>
+    <Stack gap="md">
+      <PageHeader title="Alerts & Cron" description="Cron runtime alerts and quick actions" />
 
-      <div className="rounded-xl border border-slate-800 bg-card p-4">
-        <h3 className="mb-3 text-sm font-semibold">Cron Jobs</h3>
-        <div className="overflow-x-auto">
-          <table className="min-w-[640px] w-full text-left text-sm">
-            <thead className="text-slate-400">
-              <tr>
-                <th className="pb-2">Job</th>
-                <th className="pb-2">Schedule</th>
-                <th className="pb-2">Last Run</th>
-                <th className="pb-2">Action</th>
-              </tr>
-            </thead>
-            <tbody className="text-slate-200">
-              {jobs.map((job) => {
-                const paused = job.paused === true || job.enabled === false;
-                return (
-                  <tr key={job.id} className="border-t border-slate-800">
-                    <td className="py-2 font-mono text-xs">{job.id}</td>
-                    <td className="py-2">{job.schedule ? `${job.schedule.kind}:${job.schedule.expr}` : '-'}</td>
-                    <td className="py-2">{job.lastRun?.status ?? 'never'}</td>
-                    <td className="py-2">
-                      {paused ? (
-                        <PermissionGate
-                          resource="cron"
-                          action="execute"
-                          fallback={
-                            <span className="inline-block rounded border border-slate-700 px-2 py-1 text-xs text-slate-500">
-                              resume
-                            </span>
-                          }
+      <Paper withBorder p="md">
+        <Group gap="xl">
+          <Text size="sm">failed cron jobs: <b>{failed.length}</b></Text>
+          <Text size="sm">total cron jobs: <b>{jobs.length}</b></Text>
+          <Text size="sm" c="dimmed">action: pause noisy jobs / resume paused jobs</Text>
+        </Group>
+      </Paper>
+
+      <Paper withBorder p="md">
+        <Title order={4} mb="sm">Cron Jobs</Title>
+        <Table striped highlightOnHover>
+          <Table.Thead>
+            <Table.Tr>
+              <Table.Th>Job</Table.Th>
+              <Table.Th>Schedule</Table.Th>
+              <Table.Th>Last Run</Table.Th>
+              <Table.Th>Action</Table.Th>
+            </Table.Tr>
+          </Table.Thead>
+          <Table.Tbody>
+            {jobs.map((job) => {
+              const paused = job.paused === true || job.enabled === false;
+              return (
+                <Table.Tr key={job.id}>
+                  <Table.Td><Text ff="monospace" size="xs">{job.id}</Text></Table.Td>
+                  <Table.Td>{job.schedule ? `${job.schedule.kind}:${job.schedule.expr}` : '-'}</Table.Td>
+                  <Table.Td>
+                    <Badge
+                      color={job.lastRun?.status === 'error' ? 'red' : job.lastRun?.status === 'timeout' ? 'yellow' : 'gray'}
+                      variant="light"
+                    >
+                      {job.lastRun?.status ?? 'never'}
+                    </Badge>
+                  </Table.Td>
+                  <Table.Td>
+                    {paused ? (
+                      <PermissionGate resource="cron" action="execute">
+                        <ActionIcon
+                          variant="light"
+                          color="green"
+                          onClick={() => resumeMutation.mutate(job.id)}
+                          disabled={resumeMutation.isPending}
                         >
-                          <button
-                            type="button"
-                            className="rounded border border-emerald-700 px-2 py-1 text-xs text-emerald-300"
-                            onClick={() => resumeMutation.mutate(job.id)}
-                            disabled={resumeMutation.isPending}
-                          >
-                            {resumeMutation.isPending ? 'resuming...' : 'resume'}
-                          </button>
-                        </PermissionGate>
-                      ) : (
-                        <PermissionGate
-                          resource="cron"
-                          action="execute"
-                          fallback={
-                            <span className="inline-block rounded border border-slate-700 px-2 py-1 text-xs text-slate-500">
-                              pause
-                            </span>
-                          }
+                          <Play size={14} />
+                        </ActionIcon>
+                      </PermissionGate>
+                    ) : (
+                      <PermissionGate resource="cron" action="execute">
+                        <ActionIcon
+                          variant="light"
+                          color="yellow"
+                          onClick={() => pauseMutation.mutate(job.id)}
+                          disabled={pauseMutation.isPending}
                         >
-                          <button
-                            type="button"
-                            className="rounded border border-amber-700 px-2 py-1 text-xs text-amber-300"
-                            onClick={() => pauseMutation.mutate(job.id)}
-                            disabled={pauseMutation.isPending}
-                          >
-                            {pauseMutation.isPending ? 'pausing...' : 'pause'}
-                          </button>
-                        </PermissionGate>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-              {jobs.length === 0 ? (
-                <tr>
-                  <td colSpan={4} className="py-4 text-center text-slate-500">
-                    cron disabled or no jobs
-                  </td>
-                </tr>
-              ) : null}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
+                          <Pause size={14} />
+                        </ActionIcon>
+                      </PermissionGate>
+                    )}
+                  </Table.Td>
+                </Table.Tr>
+              );
+            })}
+          </Table.Tbody>
+        </Table>
+        {!jobs.length ? <Text c="dimmed" size="sm" mt="sm">cron disabled or no jobs</Text> : null}
+      </Paper>
+    </Stack>
   );
 }
