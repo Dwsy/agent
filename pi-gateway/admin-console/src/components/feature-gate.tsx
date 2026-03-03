@@ -84,7 +84,7 @@ export function NotFoundPlaceholder() {
         <Text c="dimmed" size="sm">
           页面不存在或功能已关闭
         </Text>
-        <Anchor href="/">返回 Overview</Anchor>
+        <Anchor href="#/">返回 Overview</Anchor>
       </Stack>
     </Center>
   );
