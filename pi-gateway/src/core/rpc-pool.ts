@@ -46,7 +46,7 @@ export interface RpcPoolStats {
 export class RpcPool {
   private clients = new Map<string, RpcClient>();
   private sessionBindings = new Map<SessionKey, string>();  // sessionKey -> clientId
-  private waitingList = new PoolWaitingList();
+  private waitingList: PoolWaitingList;
   private nextId = 0;
   private maintenanceTimer: ReturnType<typeof setInterval> | null = null;
   private maintenanceRunning = false;
@@ -60,10 +60,14 @@ export class RpcPool {
     private sessions?: SessionStore,
   ) {
     this.log = createLogger("rpc-pool");
+    this.waitingList = new PoolWaitingList({
+      defaultTtlMs: this.config.queue.poolWaitTtlMs,
+    });
   }
 
   setConfig(config: Config): void {
     this.config = config;
+    this.waitingList.setDefaultTtlMs(this.config.queue.poolWaitTtlMs);
     this.recycleIdleClients("config-reload");
     void this.ensureMinProcesses();
   }

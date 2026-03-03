@@ -58,6 +58,11 @@ export class PoolWaitingList {
     return this.waiting.length;
   }
 
+  setDefaultTtlMs(defaultTtlMs: number): void {
+    if (!Number.isFinite(defaultTtlMs) || defaultTtlMs <= 0) return;
+    this.config.defaultTtlMs = defaultTtlMs;
+  }
+
   get stats() {
     return {
       waiting: this.waiting.length,

@@ -58,8 +58,9 @@ export class DeduplicationCache {
   }
 
   private fingerprint(msg: InboundMessage): string {
-    const hash = Bun.hash(msg.text.slice(0, 256)).toString(36);
-    return `${msg.source.senderId}:${msg.source.channel}:${hash}`;
+    const text = msg.text ?? "";
+    const hash = Bun.hash(text).toString(36);
+    return `${msg.source.senderId}:${msg.source.channel}:${text.length}:${hash}`;
   }
 
   private evictOldest(): void {
