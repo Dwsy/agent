@@ -10,7 +10,12 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@mantine/core": "^7.17.1",
+    "@mantine/hooks": "^7.17.1",
+    "@mantine/notifications": "^7.17.1",
     "@tanstack/react-query": "^5.66.8",
+    "highlight.js": "^11.11.1",
+    "marked": "^15.0.7",
     "axios": "^1.8.1",
     "clsx": "^2.1.1",
     "lucide-react": "^0.475.0",

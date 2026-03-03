@@ -1,8 +1,8 @@
 import axios from 'axios';
 
 export const api = axios.create({
-  baseURL: 'http://127.0.0.1:52134/api',
-  timeout: 10000
+  baseURL: '/api',
+  timeout: 10000,
 });
 
 // 请求拦截器：自动附加认证 token

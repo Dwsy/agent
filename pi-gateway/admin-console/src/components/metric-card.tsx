@@ -1,3 +1,6 @@
+import { Stack, Text, Title } from '@mantine/core';
+import { SurfaceCard } from './atoms/surface-card';
+
 type MetricCardProps = {
   label: string;
   value: string;
@@ -6,10 +9,18 @@ type MetricCardProps = {
 
 export function MetricCard({ label, value, delta }: MetricCardProps) {
   return (
-    <div className="metric-card">
-      <p className="text-xs uppercase tracking-wider text-slate-400">{label}</p>
-      <p className="mt-2 text-2xl font-semibold text-white">{value}</p>
-      {delta ? <p className="mt-2 text-xs text-emerald-400">{delta}</p> : null}
-    </div>
+    <SurfaceCard>
+      <Stack gap={4}>
+        <Text size="xs" c="dimmed" tt="uppercase" fw={600}>
+          {label}
+        </Text>
+        <Title order={3}>{value}</Title>
+        {delta ? (
+          <Text size="xs" c="green" fw={500}>
+            {delta}
+          </Text>
+        ) : null}
+      </Stack>
+    </SurfaceCard>
   );
 }

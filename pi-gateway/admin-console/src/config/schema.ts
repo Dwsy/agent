@@ -54,6 +54,7 @@ export const RealtimeConfigSchema = z.object({
 // ==================== Features 配置 ====================
 export const FeaturesConfigSchema = z.object({
   overview: z.boolean().default(true),
+  chat: z.boolean().default(true),
   agents: z.boolean().default(true),
   plugins: z.boolean().default(true),
   alerts: z.boolean().default(true),

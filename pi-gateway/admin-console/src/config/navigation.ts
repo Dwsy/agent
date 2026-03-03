@@ -18,12 +18,20 @@ export const defaultNavigation: NavItem[] = [
     order: 0,
   },
   {
+    id: 'chat',
+    path: '/chat',
+    label: 'Chat',
+    icon: 'MessageSquare',
+    feature: 'chat',
+    order: 1,
+  },
+  {
     id: 'agents',
     path: '/agents',
     label: 'Agents',
     icon: 'Bot',
     feature: 'agents',
-    order: 1,
+    order: 2,
   },
   {
     id: 'plugins',
@@ -31,7 +39,7 @@ export const defaultNavigation: NavItem[] = [
     label: 'Plugins',
     icon: 'Plug',
     feature: 'plugins',
-    order: 2,
+    order: 3,
   },
   {
     id: 'alerts',
@@ -39,7 +47,7 @@ export const defaultNavigation: NavItem[] = [
     label: 'Alerts',
     icon: 'Bell',
     feature: 'alerts',
-    order: 3,
+    order: 4,
   },
   {
     id: 'metrics',
@@ -47,7 +55,7 @@ export const defaultNavigation: NavItem[] = [
     label: 'Metrics',
     icon: 'BarChart3',
     feature: 'metrics',
-    order: 4,
+    order: 5,
   },
   {
     id: 'settings',
@@ -55,7 +63,7 @@ export const defaultNavigation: NavItem[] = [
     label: 'Settings',
     icon: 'Settings',
     feature: 'settings',
-    order: 5,
+    order: 6,
   },
 ];
 
@@ -103,6 +111,7 @@ export function getNavItemsByFeature(feature: string): NavItem[] {
  */
 export const iconNameMap: Record<string, string> = {
   LayoutDashboard: 'LayoutDashboard',
+  MessageSquare: 'MessageSquare',
   Bot: 'Bot',
   Plug: 'Plug',
   Bell: 'Bell',
