@@ -73,10 +73,31 @@ export abstract class BaseSegment implements ISystemPromptSegment {
   }
 
   /**
+   * Utility: Concatenate string array without using Array.join
+   */
+  protected concat(items: string[], separator: string): string {
+    let result = "";
+    for (let i = 0; i < items.length; i += 1) {
+      if (i > 0) {
+        result += separator;
+      }
+      result += items[i];
+    }
+    return result;
+  }
+
+  /**
    * Utility: Format a list as markdown
    */
   protected formatList(items: string[], bullet = "-"): string {
-    return items.map((item) => `${bullet} ${item}`).join("\n");
+    let result = "";
+    for (let i = 0; i < items.length; i += 1) {
+      if (i > 0) {
+        result += "\n";
+      }
+      result += `${bullet} ${items[i]}`;
+    }
+    return result;
   }
 
   /**
@@ -98,6 +119,39 @@ export abstract class BaseSegment implements ISystemPromptSegment {
    */
   protected codeBlock(code: string, lang = ""): string {
     return "```" + lang + "\n" + code + "\n```";
+  }
+
+  /**
+   * Utility: Wrap content with protocol tag
+   */
+  protected tag(
+    level: "critical" | "prohibited" | "important" | "instruction" | "conditions" | "avoid",
+    content: string,
+  ): string {
+    return `<${level}>\n${content}\n</${level}>`;
+  }
+
+  /**
+   * Utility: Build protocol blocks in fixed priority order
+   */
+  protected protocolBlocks(blocks: {
+    critical?: string;
+    prohibited?: string;
+    important?: string;
+    instruction?: string;
+    conditions?: string;
+    avoid?: string;
+  }): string {
+    const ordered: string[] = [];
+
+    if (blocks.critical) ordered.push(this.tag("critical", blocks.critical));
+    if (blocks.prohibited) ordered.push(this.tag("prohibited", blocks.prohibited));
+    if (blocks.important) ordered.push(this.tag("important", blocks.important));
+    if (blocks.instruction) ordered.push(this.tag("instruction", blocks.instruction));
+    if (blocks.conditions) ordered.push(this.tag("conditions", blocks.conditions));
+    if (blocks.avoid) ordered.push(this.tag("avoid", blocks.avoid));
+
+    return this.concat(ordered, "\n\n");
   }
 }
 

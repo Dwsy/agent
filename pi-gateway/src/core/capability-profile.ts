@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 import type { Config, RoleCapabilityConfig } from "./config.ts";
-import { buildGatewaySystemPrompt } from "./system-prompts.ts";
+import { buildGatewaySystemPrompt, type PromptFeatureFlags } from "./system-prompts.ts";
 import { getGatewayInternalToken } from "../api/media-send.ts";
 import type { SessionKey } from "./types.ts";
 
@@ -141,13 +141,13 @@ function appendToolArgs(args: string[], config: Config): void {
 
   // If allow list is specified, only enable those tools
   if (tools.allow && tools.allow.length > 0) {
-    args.push("--tools", tools.allow.join(","));
+    args.push("--tools", joinWithSeparator(tools.allow, ","));
   }
   // If deny list is specified without allow, enable all except denied
   else if (tools.deny && tools.deny.length > 0) {
     const allTools = ["read", "bash", "edit", "write", "grep", "find", "ls"];
     const allowed = allTools.filter(t => !tools.deny!.includes(t));
-    args.push("--tools", allowed.join(","));
+    args.push("--tools", joinWithSeparator(allowed, ","));
   }
 }
 
@@ -156,9 +156,10 @@ function appendRuntimePromptArgs(args: string[], config: Config): void {
     args.push("--system-prompt", expandHome(config.agent.systemPrompt.trim()));
   }
 
+  const flags = buildPromptFeatureFlags(config);
   const userAppend = config.agent.appendSystemPrompt?.trim() ?? "";
-  const gatewayAppend = buildGatewaySystemPrompt(config);
-  const combined = [userAppend, gatewayAppend].filter(Boolean).join("\n\n");
+  const gatewayAppend = buildGatewaySystemPrompt(config, undefined, flags);
+  const combined = combinePromptText(userAppend, gatewayAppend ?? "");
   if (combined) {
     args.push("--append-system-prompt", combined);
   }
@@ -174,6 +175,60 @@ function appendDiscoveryFlags(args: string[], config: Config): void {
   if (config.agent.noPromptTemplates) {
     args.push("--no-prompt-templates");
   }
+}
+
+function joinWithSeparator(items: string[], separator: string): string {
+  let result = "";
+  for (let i = 0; i < items.length; i += 1) {
+    if (i > 0) {
+      result += separator;
+    }
+    result += items[i];
+  }
+  return result;
+}
+
+function joinNonEmptyPromptParts(parts: string[]): string {
+  const filtered: string[] = [];
+  for (const part of parts) {
+    if (part && part.length > 0) {
+      filtered.push(part);
+    }
+  }
+  return joinWithSeparator(filtered, "\n\n");
+}
+
+function combinePromptText(userAppend: string, gatewayAppend: string): string {
+  return joinNonEmptyPromptParts([userAppend, gatewayAppend]);
+}
+
+function normalizePromptGate(value: boolean | "auto" | undefined): boolean | undefined {
+  if (value === "auto") {
+    return undefined;
+  }
+  return value;
+}
+
+function buildPromptFeatureFlags(config: Config): PromptFeatureFlags {
+  const gatewayPrompts = config.agent.gatewayPrompts;
+  const flags: PromptFeatureFlags = {
+    strictProtocol: true,
+    concise: true,
+  };
+
+  if (!gatewayPrompts) {
+    return flags;
+  }
+
+  flags.identity = normalizePromptGate(gatewayPrompts.identity);
+  flags.heartbeat = normalizePromptGate(gatewayPrompts.heartbeat);
+  flags.cron = normalizePromptGate(gatewayPrompts.cron);
+  flags.media = normalizePromptGate(gatewayPrompts.media);
+  flags.delegation = normalizePromptGate(gatewayPrompts.delegation);
+  flags.channel = normalizePromptGate(gatewayPrompts.channel);
+  flags.alwaysHeartbeat = gatewayPrompts.alwaysHeartbeat;
+
+  return flags;
 }
 
 function appendRepeatedArg(args: string[], flag: string, values: string[]): void {

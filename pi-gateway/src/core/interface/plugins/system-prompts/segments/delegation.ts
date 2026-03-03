@@ -25,12 +25,12 @@ export class DelegationSegment extends BaseSegment {
     const agents = config.agents?.list ?? [];
     if (agents.length <= 1) return null;
 
-    const agentLines = agents
-      .map((a: { id: string; description?: string }) => {
-        const desc = a.description ? ` — ${a.description}` : "";
-        return `  - ${a.id}${desc}`;
-      })
-      .join("\n");
+    const lines: string[] = [];
+    for (const a of agents as Array<{ id: string; description?: string }>) {
+      const desc = a.description ? ` — ${a.description}` : "";
+      lines.push(`- ${a.id}${desc}`);
+    }
+    const list = this.concat(lines, "\n");
 
     const delegation = config.agent?.delegation;
     const timeout = delegation?.timeoutMs ?? 120000;
@@ -39,27 +39,20 @@ export class DelegationSegment extends BaseSegment {
     const maxConcurrent = delegation?.maxConcurrent ?? 2;
     const onTimeout = delegation?.onTimeout ?? "abort";
 
-    return this.section("Gateway: Agent Delegation", [
-      "You can delegate tasks to other agents via the delegate_to_agent tool.",
-      "",
-      "**Available agents:**",
-      agentLines,
-      "",
-      "**Constraints:**",
-      `- Timeout: ${Math.round(timeout / 1000)}s per delegation (max ${Math.round(maxTimeout / 1000)}s)`,
-      `- Max chain depth: ${maxDepth} (nested A→B→C delegations)`,
-      `- Max concurrent: ${maxConcurrent} per agent`,
-      `- On timeout: ${onTimeout === "return-partial" ? "returns partial results" : "aborts the call"}`,
-      "",
-      "**When to delegate:**",
-      "- Task requires a different workspace or specialized skill set",
-      "- You want to run independent subtasks in parallel",
-      "- Task is better suited to a specific agent's configuration",
-      "",
-      "**Guidelines:**",
-      "- Keep delegation tasks focused and self-contained",
-      "- Include enough context for the target agent to work independently",
-      "- Delegation is synchronous — you wait for the result before continuing",
-    ].join("\n"));
+    const protocol = this.protocolBlocks({
+      important: `Available agents:\n${list}`,
+      conditions: `Constraints:
+- timeout=${Math.round(timeout / 1000)}s, max=${Math.round(maxTimeout / 1000)}s
+- maxDepth=${maxDepth}
+- maxConcurrent=${maxConcurrent}
+- onTimeout=${onTimeout}`,
+      instruction: `Delegation policy:
+- Delegate focused, self-contained tasks only
+- Provide complete context payload
+- Wait for result before parent flow continues`,
+      avoid: "Avoid deep delegation chains unless explicitly required.",
+    });
+
+    return this.section("Gateway: Agent Delegation", protocol);
   }
 }

@@ -24,6 +24,17 @@ const DEFAULT_OPTIONS: BuilderOptions = {
   debug: false,
 };
 
+function concatParts(parts: string[], separator: string): string {
+  let result = "";
+  for (let i = 0; i < parts.length; i += 1) {
+    if (i > 0) {
+      result += separator;
+    }
+    result += parts[i];
+  }
+  return result;
+}
+
 /**
  * System Prompt Builder
  */
@@ -107,7 +118,8 @@ export class SystemPromptBuilder {
     }
 
     // Join all parts
-    const prompt = parts.length > 0 ? parts.join(this.options.joinString) : null;
+    const separator = this.options.joinString ?? "\n\n";
+    const prompt = parts.length > 0 ? concatParts(parts, separator) : null;
 
     return {
       prompt,

@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Prompt Engineering Optimization (XML Protocol Alignment)
+- **Protocol tag hierarchy alignment**: gateway system prompt segments now emit structured XML-style blocks using `<critical> <prohibited> <important> <instruction> <conditions> <avoid>` semantics aligned with `APPEND_SYSTEM.md` (by Dwsy)
+- **Deterministic block ordering**: added `protocolBlocks()` helper to enforce stable priority order for all segments, reducing prompt drift and making behavior easier to audit (by Dwsy)
+- **Template-literal prompt construction**: refactored system prompt segments to use template-string composition instead of array-join style prose assembly, improving readability and control (by Dwsy)
+- **Feature-flag bridge completed**: `agent.gatewayPrompts.*` is now mapped into `PromptFeatureFlags` during capability profile build, so identity/heartbeat/cron/media/delegation/channel toggles actually affect injected prompts (by Dwsy)
+- **Prompt assembly hardening**: replaced prompt text joins in builder/runtime append path with explicit concatenation helpers for consistent output control (by Dwsy)
+- **Segment content tightened**: identity/heartbeat/cron/media/delegation/channel segments were simplified to high-signal protocol instructions with concise examples and clearer constraints (by Dwsy)
+- **Flag surface extension**: added `strictProtocol` and `concise` fields to `PromptFeatureFlags` for forward-compatible strict/compact prompt strategies (by Dwsy)
+
 ### send_message Auto-Split for Oversized Text
 - **Channel-aware chunking**: `POST /api/message/send` now reads `channelPlugin.outbound.maxLength` and auto-splits oversized text via `splitMessage()` before delivery (by Dwsy)
 - **Multi-message delivery**: split chunks are sent sequentially; only the first chunk keeps `replyTo` to avoid noisy threaded chains (by Dwsy)

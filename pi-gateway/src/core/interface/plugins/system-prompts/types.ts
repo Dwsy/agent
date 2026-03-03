@@ -49,6 +49,10 @@ export interface PromptFeatureFlags {
   media?: boolean;
   delegation?: boolean;
   channel?: boolean;
+  /** global strict XML/protocol mode for prompt segments */
+  strictProtocol?: boolean;
+  /** optional guidance to keep prompt concise */
+  concise?: boolean;
 }
 
 // ============================================================================

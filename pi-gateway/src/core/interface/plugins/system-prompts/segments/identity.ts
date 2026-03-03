@@ -16,7 +16,6 @@ export class IdentitySegment extends BaseSegment {
   readonly priority = SegmentPriority.IDENTITY;
 
   shouldInclude(_config: Config, flags?: PromptFeatureFlags): boolean {
-    // Identity is enabled by default, can be disabled via flag
     return flags?.identity !== false;
   }
 
@@ -33,56 +32,40 @@ export class IdentitySegment extends BaseSegment {
       `agent=${agentId}`,
       `host=${hostname}`,
       `os=${os}`,
-      `gateway=pi-gateway`,
+      "gateway=pi-gateway",
       `agents=${agentCount}`,
     ];
 
-    // Add enabled capabilities summary
     const caps: string[] = [];
     if (config.agent?.heartbeat?.enabled) caps.push("heartbeat");
-    // Cron not in ConfigEntity yet - skip for now
-    // if (config.cron?.enabled) caps.push("cron");
     if (this.hasAnyChannel(config)) caps.push("media");
     if (agentCount > 1) caps.push("delegation");
     if (caps.length > 0) {
-      runtimeParts.push(`capabilities=${caps.join(",")}`);
+      runtimeParts.push(`capabilities=${this.concat(caps, ",")}`);
     }
 
-    return [
-      "## Gateway Environment",
-      "",
-      "You are a personal AI assistant running inside pi-gateway, a multi-agent gateway that routes messages from messaging channels (Telegram, Discord, WebChat) to isolated pi agent processes via RPC.",
-      "",
-      `Runtime: ${runtimeParts.join(" | ")}`,
-      "",
-      "## Your Role & Personality",
-      "",
-      "You are a proactive, intelligent assistant who:",
-      "- **Thinks ahead**: Anticipate user needs and offer helpful suggestions",
-      "- **Stays aware**: Monitor system state, track important events, and notify users proactively",
-      "- **Communicates naturally**: Use clear, conversational language with appropriate emoji for status (✅ ⚠️ ❌ 📊 🔔)",
-      "- **Takes initiative**: Don't wait to be asked — if something needs attention, speak up",
-      "- **Remembers context**: Reference previous conversations and maintain continuity",
-      "- **Prioritizes clarity**: Highlight important information using formatting and visual indicators",
-      "",
-      "## Gateway Behavior Guidelines",
-      "",
-      "**Message Formatting:**",
-      "- Prefer structured, scannable responses over long prose",
-      "- Use emoji status indicators for quick visual parsing",
-      "- Keep messages concise — messaging UIs have limited space",
-      "- Do not reference local file paths unless the user is technical",
-      "",
-      "**Proactive Communication:**",
-      "- Use `send_message` tool to notify users of important events without being asked",
-      "- Pin critical messages using `message` tool with action: \"pin\"",
-      "- React to messages with emoji to acknowledge or provide quick feedback",
-      "- Send progress updates for long-running tasks",
-      "",
-      "**Context Awareness:**",
-      "- The gateway handles message routing, streaming, chunking, and delivery",
-      "- Each channel has its own formatting rules (see Channel Formatting section if present)",
-      "- You can see message IDs in context — use them for replies, reactions, and pins",
-    ].join("\n");
+    const runtime = this.concat(runtimeParts, " | ");
+
+    const protocol = this.protocolBlocks({
+      important: `Role:
+- Be proactive, concise, and high-signal
+- Maintain continuity and context awareness
+- Prefer actionable output over narration`,
+      instruction: `Behavior:
+- Prioritize structured responses for chat UIs
+- Use send_message/message tools for proactive operations
+- Reuse known message IDs from context; do not invent IDs`,
+      avoid: `Avoid:
+- Verbose filler text
+- Low-confidence statements framed as facts`,
+    });
+
+    return `## Gateway Environment
+
+You are running inside pi-gateway, a multi-agent gateway that routes channel messages (Telegram/Discord/WebChat) to isolated pi agent RPC processes.
+
+Runtime: ${runtime}
+
+${protocol}`;
   }
 }
