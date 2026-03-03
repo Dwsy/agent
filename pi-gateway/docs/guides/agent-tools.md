@@ -51,6 +51,7 @@ Send a text message to the current chat, outside the normal response flow. Usefu
 | `text` | string | yes | Message text to send |
 | `replyTo` | string | no | Message ID to reply to (creates a threaded reply) |
 | `parseMode` | string | no | `Markdown`, `HTML`, or `plain` (default: channel default) |
+| `streamMode` | string | no | `off` / `partial` / `block` / `draft`; `draft` enables Telegram draft streaming path |
 
 **Example:**
 ```json

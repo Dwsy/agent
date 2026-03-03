@@ -44,6 +44,12 @@ export async function handleMessageSendRequest(
   let text = typeof body.text === "string" ? body.text : "";
   let replyTo = typeof body.replyTo === "string" ? body.replyTo.trim() : undefined;
   const parseMode = typeof body.parseMode === "string" ? body.parseMode as "Markdown" | "HTML" | "plain" : undefined;
+  let streamMode = typeof body.streamMode === "string"
+    ? body.streamMode as "off" | "partial" | "block" | "draft"
+    : undefined;
+  let draftId = typeof body.draftId === "number" && Number.isFinite(body.draftId) && body.draftId > 0
+    ? Math.floor(body.draftId)
+    : undefined;
 
   if (!text) {
     return Response.json({ error: "Missing text" }, { status: 400 });
@@ -103,19 +109,33 @@ export async function handleMessageSendRequest(
   // Tool hook integration for send_message
   const toolInterceptor = new ToolCallInterceptor(ctx, sessionKey);
   ctx.log.info(`[message-send] Calling beforeCall hook, sessionKey=${sessionKey}`);
-  await toolInterceptor.beforeCall("send_message", { text, replyTo, parseMode });
+  await toolInterceptor.beforeCall("send_message", { text, replyTo, parseMode, streamMode, draftId });
   ctx.log.info(`[message-send] beforeCall hook completed`);
   
   // Apply hook modifications
   text = toolInterceptor.getText();
   replyTo = toolInterceptor.getReplyTo();
+  streamMode = toolInterceptor.getStreamMode() ?? streamMode;
+  draftId = toolInterceptor.getDraftId() ?? draftId;
 
   try {
-    const chunks = maxLength && maxLength > 0
-      ? splitMessage(text, maxLength)
-      : [text];
+    const allowDraftSingle =
+      channel === "telegram" &&
+      streamMode === "draft" &&
+      chunksEligibleForDraft(maxLength, text);
 
-    ctx.log.info(`[message-send] prepared chunks=${chunks.length} maxLength=${maxLength ?? "none"}`);
+    const chunks = allowDraftSingle
+      ? [text]
+      : maxLength && maxLength > 0
+        ? splitMessage(text, maxLength)
+        : [text];
+
+    const effectiveStreamMode = streamMode === "draft" && chunks.length > 1 ? undefined : streamMode;
+    const effectiveDraftId = effectiveStreamMode === "draft" ? draftId : undefined;
+
+    ctx.log.info(
+      `[message-send] prepared chunks=${chunks.length} maxLength=${maxLength ?? "none"} streamMode=${streamMode ?? "none"} effectiveStreamMode=${effectiveStreamMode ?? "none"} draftBypassSplit=${allowDraftSingle}`,
+    );
 
     // WebChat: broadcast via WS (sendText is no-op for webchat plugin)
     if (channel === "webchat" && ctx.broadcastToWs) {
@@ -148,7 +168,12 @@ export async function handleMessageSendRequest(
     for (let i = 0; i < chunks.length; i++) {
       const chunk = chunks[i]!;
       const chunkReplyTo = i === 0 ? replyTo : undefined;
-      const result = await channelPlugin.outbound.sendText(target, chunk, { replyTo: chunkReplyTo, parseMode });
+      const result = await channelPlugin.outbound.sendText(target, chunk, {
+        replyTo: chunkReplyTo,
+        parseMode,
+        streamMode: effectiveStreamMode,
+        draftId: effectiveDraftId,
+      });
 
       if (!result.ok) {
         const error = result.error ?? "Message delivery failed";
@@ -274,4 +299,25 @@ class ToolCallInterceptor {
   getReplyTo(): string | undefined {
     return this.modifiedArgs?.replyTo as string | undefined;
   }
+
+  getStreamMode(): "off" | "partial" | "block" | "draft" | undefined {
+    const raw = this.modifiedArgs?.streamMode;
+    if (raw === "off" || raw === "partial" || raw === "block" || raw === "draft") {
+      return raw;
+    }
+    return undefined;
+  }
+
+  getDraftId(): number | undefined {
+    const raw = this.modifiedArgs?.draftId;
+    if (typeof raw === "number" && Number.isFinite(raw) && raw > 0) {
+      return Math.floor(raw);
+    }
+    return undefined;
+  }
+}
+
+function chunksEligibleForDraft(maxLength: number | undefined, text: string): boolean {
+  if (!maxLength || maxLength <= 0) return true;
+  return text.length <= maxLength;
 }

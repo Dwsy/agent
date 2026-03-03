@@ -87,6 +87,10 @@ export interface SendOptions {
   parseMode?: "Markdown" | "HTML" | "plain";
   /** Thread/topic ID */
   threadId?: string;
+  /** Channel-specific streaming hint (e.g. telegram draft mode in DM topics) */
+  streamMode?: "off" | "partial" | "block" | "draft";
+  /** Draft stream identifier (channel-specific, Telegram uses numeric draft ID) */
+  draftId?: number;
 }
 
 /** Media send options */

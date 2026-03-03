@@ -10,7 +10,7 @@ import { markdownToTelegramHtml } from "./format.ts";
 import { sendTelegramMedia, sendTelegramTextAndMedia, IMAGE_EXTS, AUDIO_EXTS } from "./media-send.ts";
 import { recordSentMessage } from "./sent-message-cache.ts";
 import { isRecoverableTelegramNetworkError } from "./network-errors.ts";
-import type { MediaSendOptions, MediaSendResult, MessageSendResult, MessageActionResult, ReactionOptions, ReadHistoryResult } from "../../types.ts";
+import type { MediaSendOptions, MediaSendResult, MessageSendResult, MessageActionResult, ReactionOptions, ReadHistoryResult, SendOptions } from "../../types.ts";
 import type { TelegramPluginRuntime } from "./types.ts";
 
 const MEDIA_SEND_RETRY_DELAYS_MS = [600, 1500];
@@ -141,6 +141,7 @@ export async function sendOutboundViaAccount(params: {
   defaultAccountId: string;
   target: string;
   text: string;
+  opts?: SendOptions;
 }): Promise<MessageSendResult> {
   const parsed = parseTelegramTarget(params.target, params.defaultAccountId);
   const account = params.runtime.accounts.get(parsed.accountId)
@@ -151,6 +152,22 @@ export async function sendOutboundViaAccount(params: {
   }
 
   const threadId = parsed.topicId ? Number.parseInt(parsed.topicId, 10) : undefined;
+
+  const streamMode = params.opts?.streamMode;
+  const draftId = params.opts?.draftId;
+  const canUseDraft = streamMode === "draft" && !!threadId;
+
+  if (canUseDraft) {
+    const text = params.text.trim() || "…";
+    const nextDraftId = draftId && Number.isFinite(draftId) && draftId > 0 ? Math.floor(draftId) : Date.now();
+    await account.bot.api.sendMessageDraft(Number(parsed.chatId), nextDraftId, text, {
+      message_thread_id: threadId,
+    });
+    params.runtime.api.logger.info(
+      `[telegram:${account.accountId}] outbound draft to=${params.target} textLen=${params.text.length} draftId=${nextDraftId}`,
+    );
+    return { ok: true, messageId: String(nextDraftId) };
+  }
 
   let firstMessageId: string | undefined;
   const chunks = splitMessage(params.text, 4096);

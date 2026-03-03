@@ -103,13 +103,14 @@ const telegramPlugin: ChannelPlugin = {
   },
   outbound: {
     maxLength: 4096,
-    async sendText(target: string, text: string): Promise<MessageSendResult> {
+    async sendText(target: string, text: string, opts): Promise<MessageSendResult> {
       const rt = getRuntime();
       return sendOutboundViaAccount({
         runtime: rt,
         defaultAccountId,
         target,
         text,
+        opts,
       });
     },
     async sendMedia(target: string, filePath: string, opts?: MediaSendOptions): Promise<MediaSendResult> {
