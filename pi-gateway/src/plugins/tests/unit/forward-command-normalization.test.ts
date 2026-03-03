@@ -68,7 +68,7 @@ function createCtx(overrides: Record<string, unknown> = {}) {
     },
     compactSessionWithHooks: async () => {},
     sessionMessageModeOverrides: new Map(),
-    resolveTelegramMessageMode: () => "steer",
+    resolveSessionMessageMode: () => "steer",
     listAvailableRoles: () => [],
     setSessionRole: async () => false,
     createRole: async () => ({ ok: false }),

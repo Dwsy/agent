@@ -9,6 +9,10 @@ let runtime: DiscordPluginRuntime | null = null;
 
 const discordPlugin: ChannelPlugin = {
   id: "discord",
+  resolveTarget({ chatId, session }) {
+    const threadId = session?.lastThreadId;
+    return threadId ? `${chatId}:thread:${threadId}` : chatId;
+  },
   meta: {
     label: "Discord",
     blurb: "Discord bot via discord.js (streaming, slash commands, OpenClaw-aligned)",
@@ -20,6 +24,41 @@ const discordPlugin: ChannelPlugin = {
     media: true,
     streaming: true,
     security: true,
+    reactions: true,
+    editable: true,
+    deletable: true,
+    pinnable: true,
+    history: true,
+    matrix: {
+      messaging: {
+        post: true,
+        edit: true,
+        delete: true,
+        fileUpload: "full",
+        streaming: "post-edit",
+      },
+      richContent: {
+        cards: "partial",
+        buttons: "full",
+        modals: false,
+      },
+      conversation: {
+        mentions: true,
+        reactions: "full",
+        dms: true,
+        typing: true,
+        ephemeral: "none",
+      },
+      history: {
+        fetchMessages: "full",
+        fetchSingleMessage: "none",
+        fetchThreadInfo: "full",
+        fetchChannelMessages: "full",
+        listThreads: "partial",
+        fetchChannelInfo: "full",
+        postChannelMessage: "full",
+      },
+    },
   },
   outbound: {
     maxLength: 2000,

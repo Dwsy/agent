@@ -34,6 +34,10 @@ interface PersistedSession {
   lastModelSource?: string;
   lastThinkingLevel?: string;
   lastThinkingLevelSource?: string;
+  appliedModel?: string;
+  appliedModelRpcProcessId?: string;
+  appliedThinkingLevel?: string;
+  appliedThinkingRpcProcessId?: string;
 }
 
 // ============================================================================
@@ -142,6 +146,10 @@ export class SessionStore {
           lastModelSource: s.lastModelSource,
           lastThinkingLevel: s.lastThinkingLevel,
           lastThinkingLevelSource: s.lastThinkingLevelSource,
+          appliedModel: s.appliedModel,
+          appliedModelRpcProcessId: s.appliedModelRpcProcessId,
+          appliedThinkingLevel: s.appliedThinkingLevel,
+          appliedThinkingRpcProcessId: s.appliedThinkingRpcProcessId,
         };
       }
 
@@ -201,6 +209,10 @@ export class SessionStore {
           lastModelSource: p.lastModelSource,
           lastThinkingLevel: p.lastThinkingLevel as any,
           lastThinkingLevelSource: p.lastThinkingLevelSource,
+          appliedModel: p.appliedModel,
+          appliedModelRpcProcessId: p.appliedModelRpcProcessId,
+          appliedThinkingLevel: p.appliedThinkingLevel as any,
+          appliedThinkingRpcProcessId: p.appliedThinkingRpcProcessId,
         });
         count++;
       }

@@ -10,13 +10,14 @@ export function toChatType(chatType?: string): "dm" | "group" {
 }
 
 export function toSource(accountId: string, ctx: TelegramContext): MessageSource {
+  const carrier = (ctx.message ?? ctx.callbackQuery?.message ?? ctx.update?.edited_message) as any;
   return {
     channel: "telegram",
     accountId,
-    chatType: toChatType(ctx.chat?.type),
-    chatId: String(ctx.chat?.id ?? ""),
-    topicId: (ctx.message as any)?.message_thread_id
-      ? String((ctx.message as any).message_thread_id)
+    chatType: toChatType(ctx.chat?.type ?? carrier?.chat?.type),
+    chatId: String(ctx.chat?.id ?? carrier?.chat?.id ?? ""),
+    topicId: carrier?.message_thread_id
+      ? String(carrier.message_thread_id)
       : undefined,
     senderId: String(ctx.from?.id ?? "unknown"),
     senderName: ctx.from?.username ?? ctx.from?.first_name,

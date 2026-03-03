@@ -19,6 +19,9 @@ export type {
 export type {
   // Channel Plugin
   DmPolicy,
+  CapabilitySupportLevel,
+  StreamingSupportMode,
+  ChannelCapabilityMatrix,
   ChannelCapabilities,
   ChannelMeta,
   SendOptions,

@@ -420,9 +420,19 @@ export async function handleInteraction(rt: DiscordPluginRuntime, interaction: I
 
 // ── Outbound (for gateway.sendText) ─────────────────────────────────
 
+function parseDiscordTarget(target: string): { channelId: string; threadId?: string } {
+  const [channelId, scope, threadId] = target.split(":");
+  if (scope === "thread" && threadId) {
+    return { channelId, threadId };
+  }
+  return { channelId: target };
+}
+
 export async function sendOutbound(rt: DiscordPluginRuntime, target: string, text: string): Promise<MessageSendResult> {
   try {
-    const channel = await rt.client.channels.fetch(target);
+    const parsed = parseDiscordTarget(target);
+    const destination = parsed.threadId ?? parsed.channelId;
+    const channel = await rt.client.channels.fetch(destination);
     if (!channel?.isTextBased() || !("send" in channel)) {
       return { ok: false, error: "Channel not found or not text-based" };
     }
@@ -495,7 +505,9 @@ export async function sendReactionOutbound(
   opts?: ReactionOptions,
 ): Promise<MessageActionResult> {
   try {
-    const channel = await rt.client.channels.fetch(target);
+    const parsed = parseDiscordTarget(target);
+    const destination = parsed.threadId ?? parsed.channelId;
+    const channel = await rt.client.channels.fetch(destination);
     if (!channel?.isTextBased() || !("messages" in channel)) {
       return { ok: false, error: "Channel not found or not text-based" };
     }
@@ -525,7 +537,9 @@ export async function editMessageOutbound(
   text: string,
 ): Promise<MessageActionResult> {
   try {
-    const channel = await rt.client.channels.fetch(target);
+    const parsed = parseDiscordTarget(target);
+    const destination = parsed.threadId ?? parsed.channelId;
+    const channel = await rt.client.channels.fetch(destination);
     if (!channel?.isTextBased() || !("messages" in channel)) {
       return { ok: false, error: "Channel not found or not text-based" };
     }
@@ -544,7 +558,9 @@ export async function deleteMessageOutbound(
   messageId: string,
 ): Promise<MessageActionResult> {
   try {
-    const channel = await rt.client.channels.fetch(target);
+    const parsed = parseDiscordTarget(target);
+    const destination = parsed.threadId ?? parsed.channelId;
+    const channel = await rt.client.channels.fetch(destination);
     if (!channel?.isTextBased() || !("messages" in channel)) {
       return { ok: false, error: "Channel not found or not text-based" };
     }
@@ -564,7 +580,9 @@ export async function pinMessageOutbound(
   unpin?: boolean,
 ): Promise<MessageActionResult> {
   try {
-    const channel = await rt.client.channels.fetch(target);
+    const parsed = parseDiscordTarget(target);
+    const destination = parsed.threadId ?? parsed.channelId;
+    const channel = await rt.client.channels.fetch(destination);
     if (!channel?.isTextBased() || !("messages" in channel)) {
       return { ok: false, error: "Channel not found or not text-based" };
     }
@@ -588,7 +606,9 @@ export async function readHistoryOutbound(
   before?: string,
 ): Promise<ReadHistoryResult> {
   try {
-    const channel = await rt.client.channels.fetch(target);
+    const parsed = parseDiscordTarget(target);
+    const destination = parsed.threadId ?? parsed.channelId;
+    const channel = await rt.client.channels.fetch(destination);
     if (!channel?.isTextBased() || !("messages" in channel)) {
       return { ok: false, error: "Channel not found or not text-based" };
     }
@@ -620,7 +640,9 @@ export async function sendMediaOutbound(
   opts?: MediaSendOptions,
 ): Promise<MediaSendResult> {
   try {
-    const channel = await rt.client.channels.fetch(target);
+    const parsed = parseDiscordTarget(target);
+    const destination = parsed.threadId ?? parsed.channelId;
+    const channel = await rt.client.channels.fetch(destination);
     if (!channel?.isTextBased() || !("send" in channel)) {
       return { ok: false, error: "Channel not found or not text-based" };
     }

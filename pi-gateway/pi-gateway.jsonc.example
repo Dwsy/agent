@@ -53,7 +53,7 @@
       "dmPolicy": "allowlist",
       "allowFrom": [1050271633],
       "mediaMaxMb": 256,
-      "streamMode": "partial",
+      "streamMode": "draft",
       "groups": {
         "-5106685069": {
           "requireMention": false,

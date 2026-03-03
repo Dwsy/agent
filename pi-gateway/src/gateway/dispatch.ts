@@ -6,43 +6,17 @@
  * @owner MintHawk (KeenUnion)
  */
 
-import type { GatewayContext, TelegramMessageMode, DispatchResult } from "./types.ts";
+import type { GatewayContext, SessionMessageMode, DispatchResult } from "./types.ts";
 import type { InboundMessage, SessionKey, ImageContent, MessageSource } from "../core/types.ts";
 import type { RpcClient } from "../core/rpc-client.ts";
 import type { PrioritizedWork } from "../core/message-queue.ts";
 import { processMessage } from "./message-pipeline.ts";
 import { resolveDeliveryTarget } from "../core/channel-resolver.ts";
+import { resolveSessionMessageMode } from "./message-mode.ts";
 
 // ============================================================================
-// Telegram Helpers
+// Message mode
 // ============================================================================
-
-export function normalizeTelegramMessageMode(value: unknown): TelegramMessageMode | null {
-  return value === "steer" || value === "follow-up" || value === "interrupt"
-    ? value
-    : null;
-}
-
-export function extractTelegramAccountId(sessionKey: SessionKey, sourceAccountId?: string): string {
-  if (sourceAccountId?.trim()) return sourceAccountId.trim();
-  const matched = sessionKey.match(/^agent:[^:]+:telegram:account:([^:]+):/);
-  return matched?.[1] ?? "default";
-}
-
-export function resolveTelegramMsgMode(
-  sessionKey: SessionKey,
-  ctx: GatewayContext,
-  sourceAccountId?: string,
-): TelegramMessageMode {
-  const override = ctx.sessionMessageModeOverrides.get(sessionKey);
-  if (override) return override;
-
-  const tg = ctx.config.channels.telegram;
-  const accountId = extractTelegramAccountId(sessionKey, sourceAccountId);
-  const accountMode = normalizeTelegramMessageMode(tg?.accounts?.[accountId]?.messageMode);
-  const channelMode = normalizeTelegramMessageMode(tg?.messageMode);
-  return accountMode ?? channelMode ?? "steer";
-}
 
 /**
  * Resolve message handling mode for any channel.
@@ -51,15 +25,8 @@ export function resolveMessageMode(
   sessionKey: SessionKey,
   source: MessageSource,
   ctx: GatewayContext,
-): TelegramMessageMode {
-  const override = ctx.sessionMessageModeOverrides.get(sessionKey);
-  if (override) return override;
-
-  if (source.channel === "telegram") {
-    return resolveTelegramMsgMode(sessionKey, ctx, source.accountId);
-  }
-
-  return ctx.config.agent.messageMode ?? "steer";
+): SessionMessageMode {
+  return resolveSessionMessageMode(sessionKey, source, ctx);
 }
 
 /**

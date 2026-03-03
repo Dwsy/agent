@@ -169,6 +169,18 @@ describe("ConciseStateManager", () => {
     expect(manager.isChannelEnabled("discord")).toBe(true);
   });
 
+  test("should clear session suppress routes", () => {
+    const manager = new ConciseStateManager(["telegram"], 5000);
+    manager.activateSession("s1", "telegram");
+    manager.addSuppressRoute("s1", "chat-1");
+    manager.addSuppressRoute("s1", "chat-2");
+
+    expect(manager.getPendingSuppressCount()).toBe(2);
+    const removed = manager.clearSessionSuppressRoutes("s1");
+    expect(removed).toBe(2);
+    expect(manager.getPendingSuppressCount()).toBe(0);
+  });
+
   test("session overrides survive channel update", () => {
     const manager = new ConciseStateManager(["telegram"]);
     manager.setSessionOverride("s1", true);

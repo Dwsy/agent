@@ -2,7 +2,7 @@ import { resolveSessionKey, resolveAgentId } from "../../../core/session-router.
 import { parseSlashCommand } from "../../../gateway/command-handler.ts";
 import type { SessionStats, RpcState } from "../../../core/interface/plugins/types.ts";
 import type { ModelHealthState } from "../../../core/model-health.ts";
-import { isSenderAllowed, type DmPolicy } from "../../../security/allowlist.ts";
+import { isAdminSenderAllowed } from "../../../security/allowlist.ts";
 import { escapeHtml, markdownToTelegramHtml } from "./format.ts";
 import { parseMediaCommandArgs, sendTelegramMedia } from "./media-send.ts";
 import { registerModelCommand, registerCallbackHandler } from "./model-selector.ts";
@@ -62,10 +62,9 @@ export async function refreshPiCommands(account: TelegramAccountRuntime, config?
   return piCommands.length;
 }
 
-/** Check if sender is in allowFrom list (for privileged commands like /bash, /config, /restart). */
+/** Check if sender is admin-authorized for privileged commands. */
 export function isAuthorizedSender(senderId: string, account: TelegramAccountRuntime): boolean {
-  const policy: DmPolicy = account.cfg.dmPolicy ?? "pairing";
-  return isSenderAllowed("telegram", senderId, policy, account.cfg.allowFrom, account.accountId);
+  return isAdminSenderAllowed("telegram", senderId, account.cfg.allowFrom, account.accountId);
 }
 
 const BASH_OUTPUT_LIMIT = 4096;
@@ -345,6 +344,7 @@ onCallback("csm:", async ({ data, ctx, bot, runtime, account, callbackQuery }) =
     await ctx.answerCallbackQuery?.({ text: "Concise ON" });
   } else if (data === "csm:off") {
     manager?.setSessionOverride(sessionKey, false);
+    manager?.clearSessionSuppressRoutes(sessionKey);
     await ctx.answerCallbackQuery?.({ text: "Concise OFF" });
   } else if (data === "csm:reset") {
     manager?.clearSessionOverride(sessionKey);
@@ -394,8 +394,8 @@ onCallback("role:", async ({ data, ctx, runtime, account }) => {
 
   if (data.startsWith("role:set:")) {
     if (!authorized) {
-      await ctx.answerCallbackQuery?.({ text: "Unauthorized" });
-      await ctx.reply("⛔ Unauthorized.");
+      await ctx.answerCallbackQuery?.({ text: "Admin only" });
+      await ctx.reply("⛔ Admin access required.");
       return;
     }
     const role = data.slice("role:set:".length).trim();
@@ -409,8 +409,8 @@ onCallback("role:", async ({ data, ctx, runtime, account }) => {
 
   if (data.startsWith("role:del:")) {
     if (!authorized) {
-      await ctx.answerCallbackQuery?.({ text: "Unauthorized" });
-      await ctx.reply("⛔ Unauthorized.");
+      await ctx.answerCallbackQuery?.({ text: "Admin only" });
+      await ctx.reply("⛔ Admin access required.");
       return;
     }
     const role = data.slice("role:del:".length).trim();
@@ -833,7 +833,7 @@ export async function setupTelegramCommands(runtime: TelegramPluginRuntime, acco
   bot.command("bash", async (ctx: any) => {
     const source = toSource(account.accountId, ctx as TelegramContext);
     if (!isAuthorizedSender(source.senderId, account)) {
-      await ctx.reply("⛔ Unauthorized.");
+      await ctx.reply("⛔ Admin access required.");
       return;
     }
     const cmd = String(ctx.match ?? "").trim();
@@ -848,7 +848,7 @@ export async function setupTelegramCommands(runtime: TelegramPluginRuntime, acco
   bot.command("config", async (ctx: any) => {
     const source = toSource(account.accountId, ctx as TelegramContext);
     if (!isAuthorizedSender(source.senderId, account)) {
-      await ctx.reply("⛔ Unauthorized.");
+      await ctx.reply("⛔ Admin access required.");
       return;
     }
     const path = String(ctx.match ?? "").trim();
@@ -882,7 +882,7 @@ export async function setupTelegramCommands(runtime: TelegramPluginRuntime, acco
   bot.command("restart", async (ctx: any) => {
     const source = toSource(account.accountId, ctx as TelegramContext);
     if (!isAuthorizedSender(source.senderId, account)) {
-      await ctx.reply("⛔ Unauthorized.");
+      await ctx.reply("⛔ Admin access required.");
       return;
     }
     if (!runtime.api.config.gateway.commands?.restart) {
@@ -902,7 +902,7 @@ export async function setupTelegramCommands(runtime: TelegramPluginRuntime, acco
   bot.command("sys", async (ctx: any) => {
     const source = toSource(account.accountId, ctx as TelegramContext);
     if (!isAuthorizedSender(source.senderId, account)) {
-      await ctx.reply("⛔ Unauthorized.");
+      await ctx.reply("⛔ Admin access required.");
       return;
     }
     const info = await collectSysInfo();
@@ -1100,6 +1100,7 @@ export async function setupTelegramCommands(runtime: TelegramPluginRuntime, acco
     }
     if (arg === "off") {
       manager?.setSessionOverride(sessionKey, false);
+      manager?.clearSessionSuppressRoutes(sessionKey);
       await ctx.reply("⭕ 当前简洁模式：<b>OFF</b> (session override)", { parse_mode: "HTML" });
       return;
     }
@@ -1140,7 +1141,7 @@ export async function setupTelegramCommands(runtime: TelegramPluginRuntime, acco
     const action = (subRaw || "").toLowerCase();
     const isMutating = action === "set" || action === "switch" || action === "create" || action === "delete";
     if (isMutating && !isAuthorizedSender(source.senderId, account)) {
-      await ctx.reply("⛔ Unauthorized.");
+      await ctx.reply("⛔ Admin access required.");
       return;
     }
 

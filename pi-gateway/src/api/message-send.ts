@@ -14,7 +14,9 @@ import type { PluginRegistryState } from "../plugins/loader.ts";
 import type { SessionStore } from "../core/session-store.ts";
 import { getGatewayInternalToken } from "./media-send.ts";
 import { resolveChannelTarget } from "./channel-target.ts";
-import { splitMessage } from "../core/utils.ts";
+import { canPostMessage } from "./channel-capabilities.ts";
+import { splitMessage, shouldBypassSplitForChannel } from "../core/utils.ts";
+import { normalizeStreamHints } from "./message-send-normalizer.ts";
 
 export interface MessageSendContext {
   config: Config;
@@ -22,7 +24,6 @@ export interface MessageSendContext {
   registry: PluginRegistryState;
   sessions: SessionStore;
   log: Logger;
-  broadcastToWs?: (event: string, payload: unknown) => void;
   /** Called after successful delivery — used to track cron self-delivery. */
   onDelivered?: (sessionKey: string) => void;
 }
@@ -44,11 +45,18 @@ export async function handleMessageSendRequest(
   let text = typeof body.text === "string" ? body.text : "";
   let replyTo = typeof body.replyTo === "string" ? body.replyTo.trim() : undefined;
   const parseMode = typeof body.parseMode === "string" ? body.parseMode as "Markdown" | "HTML" | "plain" : undefined;
-  let streamMode = typeof body.streamMode === "string"
-    ? body.streamMode as "off" | "partial" | "block" | "draft"
-    : undefined;
-  let draftId = typeof body.draftId === "number" && Number.isFinite(body.draftId) && body.draftId > 0
+  let streamMode = typeof body.streamMode === "string" ? body.streamMode : undefined;
+  let streamId: string | number | undefined;
+  if ((typeof body.streamId === "string" && body.streamId.trim()) || typeof body.streamId === "number") {
+    streamId = body.streamId as string | number;
+  }
+  // Legacy compatibility for old clients
+  const rawDraftId = typeof body.draftId === "number" && Number.isFinite(body.draftId) && body.draftId > 0
     ? Math.floor(body.draftId)
+    : undefined;
+
+  let channelMeta = body.channelMeta && typeof body.channelMeta === "object"
+    ? body.channelMeta as Record<string, unknown>
     : undefined;
 
   if (!text) {
@@ -92,13 +100,16 @@ export async function handleMessageSendRequest(
     return Response.json({ error: "Cannot resolve chatId — no messages received in this session yet" }, { status: 400 });
   }
 
-  const target = resolveChannelTarget(channel, chatId, sessionKey, session);
-
   // Find channel plugin
   const channelPlugin = ctx.registry.channels.get(channel);
   if (!channelPlugin) {
     return Response.json({ error: `Channel plugin not found: ${channel}` }, { status: 404 });
   }
+  if (!canPostMessage(channelPlugin)) {
+    return Response.json({ error: `Channel ${channel} does not support posting messages` }, { status: 501 });
+  }
+
+  const target = resolveChannelTarget(channelPlugin, chatId, sessionKey, session);
 
   const maxLength = channelPlugin.outbound.maxLength;
 
@@ -109,58 +120,48 @@ export async function handleMessageSendRequest(
   // Tool hook integration for send_message
   const toolInterceptor = new ToolCallInterceptor(ctx, sessionKey);
   ctx.log.info(`[message-send] Calling beforeCall hook, sessionKey=${sessionKey}`);
-  await toolInterceptor.beforeCall("send_message", { text, replyTo, parseMode, streamMode, draftId });
+  await toolInterceptor.beforeCall("send_message", {
+    text,
+    replyTo,
+    parseMode,
+    streamMode,
+    streamId,
+    draftId: rawDraftId,
+    channelMeta,
+  });
   ctx.log.info(`[message-send] beforeCall hook completed`);
   
   // Apply hook modifications
   text = toolInterceptor.getText();
   replyTo = toolInterceptor.getReplyTo();
   streamMode = toolInterceptor.getStreamMode() ?? streamMode;
-  draftId = toolInterceptor.getDraftId() ?? draftId;
+  streamId = toolInterceptor.getStreamId() ?? streamId;
+  const legacyDraftId = toolInterceptor.getLegacyStreamId() ?? rawDraftId;
+  channelMeta = toolInterceptor.getChannelMeta() ?? channelMeta;
+
+  const normalizedStream = normalizeStreamHints({
+    streamMode,
+    streamId,
+    channelMeta,
+    legacyStreamId: legacyDraftId,
+  });
 
   try {
-    const allowDraftSingle =
-      channel === "telegram" &&
-      streamMode === "draft" &&
-      chunksEligibleForDraft(maxLength, text);
+    const normalizedChannelMeta = normalizedStream.channelMeta;
+    const bypassSplit = shouldBypassSplitForChannel(text, maxLength, normalizedChannelMeta);
 
-    const chunks = allowDraftSingle
+    const chunks = bypassSplit
       ? [text]
       : maxLength && maxLength > 0
         ? splitMessage(text, maxLength)
         : [text];
 
-    const effectiveStreamMode = streamMode === "draft" && chunks.length > 1 ? undefined : streamMode;
-    const effectiveDraftId = effectiveStreamMode === "draft" ? draftId : undefined;
+    const effectiveStreamMode = normalizedStream.streamMode;
+    const effectiveStreamId = normalizedStream.streamId;
 
     ctx.log.info(
-      `[message-send] prepared chunks=${chunks.length} maxLength=${maxLength ?? "none"} streamMode=${streamMode ?? "none"} effectiveStreamMode=${effectiveStreamMode ?? "none"} draftBypassSplit=${allowDraftSingle}`,
+      `[message-send] prepared chunks=${chunks.length} maxLength=${maxLength ?? "none"} streamMode=${effectiveStreamMode ?? "none"} bypassSplit=${bypassSplit}`,
     );
-
-    // WebChat: broadcast via WS (sendText is no-op for webchat plugin)
-    if (channel === "webchat" && ctx.broadcastToWs) {
-      for (const chunk of chunks) {
-        ctx.broadcastToWs("message_event", {
-          sessionKey,
-          type: "text",
-          text: chunk,
-          replyTo: replyTo ?? null,
-          parseMode: parseMode ?? null,
-          timestamp: Date.now(),
-        });
-      }
-      ctx.log.info(`[message-send] WebChat message_event broadcast for ${sessionKey} chunks=${chunks.length}`);
-
-      await toolInterceptor.afterCall({ ok: true, textLength: text.length, chunkCount: chunks.length }, false);
-      return Response.json({
-        ok: true,
-        channel,
-        textLength: text.length,
-        chunkCount: chunks.length,
-        delivered: true,
-        replyTo: replyTo ?? null,
-      });
-    }
 
     let firstMessageId: string | undefined;
     let lastMessageId: string | undefined;
@@ -169,10 +170,13 @@ export async function handleMessageSendRequest(
       const chunk = chunks[i]!;
       const chunkReplyTo = i === 0 ? replyTo : undefined;
       const result = await channelPlugin.outbound.sendText(target, chunk, {
+        sessionKey,
         replyTo: chunkReplyTo,
         parseMode,
         streamMode: effectiveStreamMode,
-        draftId: effectiveDraftId,
+        streamId: effectiveStreamId,
+        draftId: legacyDraftId,
+        channelMeta: normalizedChannelMeta,
       });
 
       if (!result.ok) {
@@ -300,24 +304,30 @@ class ToolCallInterceptor {
     return this.modifiedArgs?.replyTo as string | undefined;
   }
 
-  getStreamMode(): "off" | "partial" | "block" | "draft" | undefined {
+  getStreamMode(): string | undefined {
     const raw = this.modifiedArgs?.streamMode;
-    if (raw === "off" || raw === "partial" || raw === "block" || raw === "draft") {
-      return raw;
-    }
+    return typeof raw === "string" ? raw : undefined;
+  }
+
+  getStreamId(): string | number | undefined {
+    const raw = this.modifiedArgs?.streamId;
+    if (typeof raw === "string") return raw;
+    if (typeof raw === "number" && Number.isFinite(raw)) return raw;
     return undefined;
   }
 
-  getDraftId(): number | undefined {
+  getLegacyStreamId(): number | undefined {
     const raw = this.modifiedArgs?.draftId;
     if (typeof raw === "number" && Number.isFinite(raw) && raw > 0) {
       return Math.floor(raw);
     }
     return undefined;
   }
+
+  getChannelMeta(): Record<string, unknown> | undefined {
+    const raw = this.modifiedArgs?.channelMeta;
+    return raw && typeof raw === "object" ? raw as Record<string, unknown> : undefined;
+  }
 }
 
-function chunksEligibleForDraft(maxLength: number | undefined, text: string): boolean {
-  if (!maxLength || maxLength <= 0) return true;
-  return text.length <= maxLength;
-}
+

@@ -226,6 +226,14 @@ export interface SessionState {
   lastThinkingLevel?: ThinkingLevel;
   /** Source of last resolved thinking level */
   lastThinkingLevelSource?: string;
+  /** Last model that has been applied to current bound RPC process */
+  appliedModel?: string;
+  /** RPC process id for appliedModel */
+  appliedModelRpcProcessId?: string;
+  /** Last thinking level that has been applied to current bound RPC process */
+  appliedThinkingLevel?: ThinkingLevel;
+  /** RPC process id for appliedThinkingLevel */
+  appliedThinkingRpcProcessId?: string;
   /** Auto-compaction in progress (to prevent message race) */
   isCompacting?: boolean;
   /** Set to true after /new (reset) to skip --continue on next spawn */

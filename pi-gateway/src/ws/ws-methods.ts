@@ -16,6 +16,7 @@ import { redactConfig } from "../core/auth.ts";
 import { searchMemory, getMemoryStats, getRoleInfo, listRoles } from "../core/memory-access.ts";
 import { getRegisteredToolSpecs, executeRegisteredTool } from "../gateway/tool-executor.ts";
 import { processWebChatMediaDirectives } from "../api/media-routes.ts";
+import { collectChannelCapabilityMatrix } from "../api/channel-capability-matrix.ts";
 import type { WsMethodFn } from "./ws-router.ts";
 
 // ============================================================================
@@ -103,11 +104,11 @@ export function registerSessionMethods(
   });
 
   // Role management for gateway-side RPC integrations
-  methods.set("roles.list", async () => {
+  const listRolesHandler = async () => {
     return { roles: ctx.listAvailableRoles() };
-  });
+  };
 
-  methods.set("roles.set", async (params) => {
+  const setRoleHandler = async (params: Record<string, unknown>) => {
     const sKey = params?.sessionKey as string;
     const role = String(params?.role ?? "").trim();
     if (!sKey) throw new Error("sessionKey required");
@@ -115,7 +116,14 @@ export function registerSessionMethods(
     const ok = await ctx.setSessionRole(sKey, role);
     if (!ok) throw new Error("failed to set role");
     return { ok: true, sessionKey: sKey, role };
-  });
+  };
+
+  methods.set("roles.list", listRolesHandler);
+  methods.set("roles.set", setRoleHandler);
+
+  // Backward compatibility aliases used by legacy Web UI
+  methods.set("session.listRoles", listRolesHandler);
+  methods.set("session.setRole", setRoleHandler);
 
   methods.set("roles.create", async (params) => {
     const role = String(params?.role ?? "").trim();
@@ -311,6 +319,10 @@ export function registerChannelMethods(
       label: ch.meta.label,
       capabilities: ch.capabilities,
     }));
+  });
+
+  methods.set("channels.capability_matrix", async () => {
+    return collectChannelCapabilityMatrix(ctx.registry);
   });
 
   methods.set("plugins.list", async () => {

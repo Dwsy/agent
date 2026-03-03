@@ -179,6 +179,11 @@ export default function register(api: GatewayPluginApi): void {
   api.on("message_sending", ({ message }) => {
     const { channel, target } = message;
     syncRuntimeChannels();
+
+    const sessionKey = typeof message.sessionKey === "string" ? message.sessionKey : undefined;
+    if (!sessionKey) return;
+    if (!getEffectiveConciseState(sessionKey)) return;
+
     if (stateManager!.shouldSuppress(channel, target)) {
       message.text = SILENT_TOKEN;
       api.logger.info(`[concise] SUPPRESSED message to ${target}`);

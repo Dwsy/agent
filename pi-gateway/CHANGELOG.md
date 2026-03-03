@@ -2,6 +2,35 @@
 
 ## [Unreleased]
 
+### Channel Abstraction & Capability Matrix (Chat SDK-style)
+- **Channel target resolver pluginized**: `resolveChannelTarget()` now delegates to `ChannelPlugin.resolveTarget()`; removed Telegram hardcoded target formatting from API routes (by Dwsy)
+- **Send pipeline decoupling**: `/api/message/send` and `/api/media/send` no longer branch on `channel === "webchat"`; delivery now goes through channel outbound interfaces with `sessionKey` context (by Dwsy)
+- **WebChat outbound parity**: WebChat plugin now implements `sendText` + `sendMedia` with WS broadcast and signed media URL generation via `core/webchat-media.ts` (by Dwsy)
+- **Capability matrix introduced**: added `ChannelCapabilityMatrix` (`messaging/richContent/conversation/history`) with support levels (`full|partial|none`) and streaming modes (`native|post-edit|none`) (by Dwsy)
+- **Capability gates in API layer**: added `channel-capabilities.ts` and replaced method-existence checks with typed gates (`canPostMessage`, `canSendMedia`, `canEditMessage`, `canDeleteMessage`, `canSendReaction`, `canReadHistory`, `canSendKeyboard`) (by Dwsy)
+- **Builtin channel declarations completed**: Telegram/Discord/Feishu/WebChat now declare capability matrix + legacy flags in sync (by Dwsy)
+- **Capability matrix endpoint**: added WS method `channels.capability_matrix` for runtime inspection (by Dwsy)
+- **Startup capability audit**: added `channel-capability-audit.ts`; gateway startup now warns/errors on matrix↔method mismatch and legacy/matrix drift (by Dwsy)
+- **Coverage**: added unit tests for capability gates, matrix declarations, and capability audit rules (by Dwsy)
+
+### Session Message Mode Generalization
+- **Telegram-specific mode resolver removed**: replaced `resolveTelegramMessageMode` with channel-agnostic `resolveSessionMessageMode` (by Dwsy)
+- **Unified resolver module**: added `gateway/message-mode.ts`; mode resolution order is `session override > channel.account.messageMode > channel.messageMode > agent.messageMode > steer` (by Dwsy)
+- **Type rename for clarity**: `TelegramMessageMode` → `SessionMessageMode` across gateway context and plugin API integration (by Dwsy)
+- **Plugin API updated**: `getSessionMessageMode()` now resolves using session channel/account context, no telegram-only assumption (by Dwsy)
+
+### Keyboard Payload Normalization
+- **Core keyboard schema normalized**: `InlineKeyboardButton` now uses `callbackData` as canonical field; `callback_data` retained as deprecated alias for compatibility (by Dwsy)
+- **Adapter boundary conversion**: added `telegram/keyboard-adapter.ts` to map canonical `callbackData` to Telegram `callback_data` at outbound edge (by Dwsy)
+- **Upstream callers migrated**: keyboard builders in API and gateway command handler now emit `callbackData`, removing Telegram-specific naming from core flows (by Dwsy)
+- **Coverage**: added unit tests for keyboard adapter alias precedence and compatibility behavior (by Dwsy)
+
+### Draft Streaming Semantics Cleanup (Compatibility Preserved)
+- **Stream hint normalizer extracted**: added `message-send-normalizer.ts` to unify `streamMode + streamId + channelMeta` resolution (by Dwsy)
+- **Legacy bridge retained**: `draftId` remains accepted as compatibility input but is converted to `legacyStreamId -> streamId` in normalized flow (by Dwsy)
+- **Telegram adapter semantics aligned**: outbound draft logging/messages now use stream-oriented naming while still supporting legacy `draftId` callers (by Dwsy)
+- **Coverage**: added unit tests for stream normalizer fallback and precedence rules (by Dwsy)
+
 ### Prompt Engineering Optimization (XML Protocol Alignment)
 - **Protocol tag hierarchy alignment**: gateway system prompt segments now emit structured XML-style blocks using `<critical> <prohibited> <important> <instruction> <conditions> <avoid>` semantics aligned with `APPEND_SYSTEM.md` (by Dwsy)
 - **Deterministic block ordering**: added `protocolBlocks()` helper to enforce stable priority order for all segments, reducing prompt drift and making behavior easier to audit (by Dwsy)

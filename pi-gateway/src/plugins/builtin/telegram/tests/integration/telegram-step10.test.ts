@@ -21,6 +21,9 @@ const LOCAL_COMMANDS = [
   { command: "role", description: "Switch role" },
   { command: "queue", description: "Queue mode" },
   { command: "status", description: "Status" },
+  { command: "model", description: "Model" },
+  { command: "models", description: "Search models" },
+  { command: "setmodel", description: "Set model by keyword" },
 ];
 
 function buildCommandList(
@@ -103,12 +106,12 @@ describe("v3 Step 10: agent command registration", () => {
   test("agent commands coexist with pi native commands", () => {
     const piCmds = [
       { name: "compact", description: "Compact session" },
-      { name: "model", description: "Switch model" },
+      { name: "context", description: "Context usage" },
     ];
     const cmds = buildCommandList(["code"], piCmds);
 
     expect(cmds.find(c => c.command === "pi_compact")).toBeTruthy();
-    expect(cmds.find(c => c.command === "pi_model")).toBeTruthy();
+    expect(cmds.find(c => c.command === "pi_context")).toBeTruthy();
     expect(cmds.find(c => c.command === "code")).toBeTruthy();
   });
 
@@ -129,10 +132,10 @@ describe("v3 Step 10: agent command registration", () => {
   });
 
   test("empty agent list produces only local + pi commands", () => {
-    const cmds = buildCommandList([], [{ name: "model", description: "Switch model" }]);
+    const cmds = buildCommandList([], [{ name: "compact", description: "Compact session" }]);
 
     const agentCmds = cmds.filter(c => c.description.startsWith("Switch to agent:"));
     expect(agentCmds).toHaveLength(0);
-    expect(cmds.length).toBeGreaterThan(LOCAL_COMMANDS.length); // local + pi_model
+    expect(cmds.length).toBeGreaterThan(LOCAL_COMMANDS.length); // local + pi_compact
   });
 });

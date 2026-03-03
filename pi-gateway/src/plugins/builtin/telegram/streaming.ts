@@ -13,6 +13,28 @@ import { escapeHtml, markdownToTelegramHtml, splitTelegramText } from "./format.
 import { parseOutboundMediaDirectives, sendTelegramMedia } from "./media-send.ts";
 import { recordSentMessage } from "./sent-message-cache.ts";
 import { getConciseConfigDefault, getEffectiveConciseState } from "../concise-mode/index.ts";
+
+const DEFAULT_DRAFT_PLACEHOLDER = "…";
+
+function sanitizeDraftText(text: string): string {
+  const trimmed = text.trim();
+  if (!trimmed) return DEFAULT_DRAFT_PLACEHOLDER;
+  if (trimmed.length <= 4096) return trimmed;
+  return `${trimmed.slice(0, 4093)}...`;
+}
+
+function isTelegramErrorWithCode(err: unknown, code: number): boolean {
+  if (!err || typeof err !== "object") return false;
+  const maybe = err as Record<string, unknown>;
+  return maybe.error_code === code || maybe.statusCode === code;
+}
+
+function asTelegramErrorDescription(err: unknown): string {
+  if (!err || typeof err !== "object") return "";
+  const maybe = err as Record<string, unknown>;
+  const desc = maybe.description;
+  return typeof desc === "string" ? desc : "";
+}
 import type {
   TelegramAccountRuntime,
   TelegramContext,
@@ -327,6 +349,15 @@ export async function dispatchAgentTurn(params: {
   const contentSequence: { type: 'tool' | 'thinking' | 'text'; content: string }[] = [];
   const seenToolCalls = new Set<string>();
 
+  const draftEnabled = streamCfg.streamMode === "draft";
+  const canUseDraftStream = draftEnabled && source.chatType === "dm" && !!threadId;
+  const draftMode = canUseDraftStream;
+  let draftId: number = 0;
+  let lastDraftAt = 0;
+  let draftInFlight = false;
+  let draftThrottleBackoff = 0;
+  let draftFailed = false;
+
   const sendChatAction = () => {
     const now = Date.now();
     if (now - lastTypingAt < typingMinIntervalMs) return;
@@ -336,6 +367,7 @@ export async function dispatchAgentTurn(params: {
 
   const ensureReplyMessage = (textForFirstMessage?: string) => {
     if (replyMsgId || creatingReplyMsg) return;
+    if (draftMode && !draftFailed) return;
     creatingReplyMsg = true;
     const firstText = textForFirstMessage?.trim() ? markdownToTelegramHtml(textForFirstMessage) : streamCfg.placeholder;
     const replyToMessageId = maybeReplyTo();
@@ -397,8 +429,60 @@ export async function dispatchAgentTurn(params: {
 
   let throttleBackoff = 0;
 
+  const pushDraftUpdate = () => {
+    if (!draftMode || draftFailed || !threadId) return;
+
+    const renderedRaw = buildLiveText();
+    const rendered = sanitizeDraftText(renderedRaw);
+    if (!rendered.trim()) return;
+
+    const now = Date.now();
+    const effectiveThrottle = streamCfg.editThrottleMs + draftThrottleBackoff;
+    if (draftInFlight || now - lastDraftAt < effectiveThrottle) return;
+    draftInFlight = true;
+
+    const draftTimeout = setTimeout(() => {
+      draftInFlight = false;
+    }, 5000);
+
+    if (!draftId) {
+      draftId = Date.now();
+      if (draftId === 0) draftId = 1;
+    }
+
+    botClient.api.sendMessageDraft(Number(chatId), draftId, rendered, {
+      message_thread_id: threadId,
+    }).then(() => {
+      lastDraftAt = Date.now();
+      draftInFlight = false;
+      draftThrottleBackoff = Math.max(0, draftThrottleBackoff - 100);
+      clearTimeout(draftTimeout);
+    }).catch((err: unknown) => {
+      draftInFlight = false;
+      clearTimeout(draftTimeout);
+      if (isTelegramErrorWithCode(err, 429)) {
+        const tgErr = err as Record<string, unknown>;
+        const params = tgErr?.parameters as Record<string, unknown> | undefined;
+        const retryAfter = (typeof params?.retry_after === "number" ? params.retry_after : 1) * 1000;
+        draftThrottleBackoff = Math.max(draftThrottleBackoff, retryAfter);
+        lastDraftAt = Date.now();
+        return;
+      }
+      const desc = asTelegramErrorDescription(err);
+      draftFailed = true;
+      runtime.api.logger.warn(`[telegram:streaming] draft mode failed, fallback to edit mode: ${desc || String(err)}`);
+      pushLiveUpdate();
+    });
+  };
+
   const pushLiveUpdate = () => {
     if (streamCfg.streamMode === "off") return;
+
+    if (draftMode && !draftFailed) {
+      pushDraftUpdate();
+      return;
+    }
+
     const renderedRaw = buildLiveText();
     const rendered = renderedRaw.length > 4000 ? `${renderedRaw.slice(0, 4000)}\n...` : renderedRaw;
     if (!rendered.trim()) return;
@@ -451,7 +535,11 @@ export async function dispatchAgentTurn(params: {
     initialized = true;
     ensureTypingInterval();
     if (streamCfg.streamMode !== "off") {
-      ensureReplyMessage();
+      if (draftMode && !draftFailed) {
+        pushDraftUpdate();
+      } else {
+        ensureReplyMessage();
+      }
     }
     startSpinner();
   };

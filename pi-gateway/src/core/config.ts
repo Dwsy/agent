@@ -312,7 +312,7 @@ export interface TelegramAccountConfig {
     language?: string;
     timeoutSeconds?: number;
   };
-  streamMode?: "off" | "partial" | "block";
+  streamMode?: "off" | "partial" | "block" | "draft";
   replyToMode?: "off" | "first" | "all";
   proxy?: string;
   webhookUrl?: string;

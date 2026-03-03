@@ -14,6 +14,32 @@ import type { TelegramPluginRuntime } from "./types.ts";
 let runtime: TelegramPluginRuntime | null = null;
 let defaultAccountId = "default";
 
+function buildBotSessionKey(accountId: string, agentId: string): string {
+  return `agent:${agentId}:telegram:account:${accountId}:main`;
+}
+
+async function prewarmTelegramBotSessions(rt: TelegramPluginRuntime): Promise<void> {
+  const candidateAgentIds = new Set<string>(["main"]);
+  const defaultAgent = rt.api.config.agents?.default;
+  if (typeof defaultAgent === "string" && defaultAgent.trim()) {
+    candidateAgentIds.add(defaultAgent.trim());
+  }
+
+  for (const accountId of rt.accounts.keys()) {
+    for (const agentId of candidateAgentIds) {
+      const sessionKey = buildBotSessionKey(accountId, agentId);
+      try {
+        await rt.api.getAvailableModels(sessionKey);
+        rt.api.logger.info(`[telegram:prewarm] rpc ready for ${sessionKey}`);
+      } catch (err) {
+        rt.api.logger.warn(
+          `[telegram:prewarm] failed for ${sessionKey}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+  }
+}
+
 function getRuntime(): TelegramPluginRuntime {
   if (!runtime) throw new Error("Telegram runtime not initialized");
   return runtime;
@@ -91,6 +117,12 @@ function buildSecurityAdapter(cfg: TelegramChannelConfig): ChannelSecurityAdapte
 
 const telegramPlugin: ChannelPlugin = {
   id: "telegram",
+  resolveTarget({ chatId, sessionKey, session }) {
+    const accountFromKey = sessionKey?.match(/^agent:[^:]+:telegram:account:([^:]+):/)?.[1];
+    const accountId = session?.lastAccountId || accountFromKey || "default";
+    const topicId = session?.lastTopicId;
+    return `${accountId}:${chatId}${topicId ? `:topic:${topicId}` : ""}`;
+  },
   meta: {
     label: "Telegram",
     blurb: "Telegram bot via grammy (multi-account, OpenClaw-aligned)",
@@ -100,6 +132,43 @@ const telegramPlugin: ChannelPlugin = {
     group: true,
     thread: true,
     media: true,
+    streaming: true,
+    security: true,
+    reactions: true,
+    editable: true,
+    deletable: true,
+    pinnable: true,
+    history: true,
+    matrix: {
+      messaging: {
+        post: true,
+        edit: true,
+        delete: true,
+        fileUpload: "partial",
+        streaming: "post-edit",
+      },
+      richContent: {
+        cards: "partial",
+        buttons: "partial",
+        modals: false,
+      },
+      conversation: {
+        mentions: true,
+        reactions: "full",
+        dms: true,
+        typing: true,
+        ephemeral: "none",
+      },
+      history: {
+        fetchMessages: "partial",
+        fetchSingleMessage: "partial",
+        fetchThreadInfo: "partial",
+        fetchChannelMessages: "partial",
+        listThreads: "none",
+        fetchChannelInfo: "partial",
+        postChannelMessage: "full",
+      },
+    },
   },
   outbound: {
     maxLength: 4096,
@@ -192,6 +261,8 @@ const telegramPlugin: ChannelPlugin = {
     for (const account of runtime.accounts.values()) {
       await startAccountRuntime(runtime, account);
     }
+    // Prewarm bot-level RPC sessions (DM main), group/topic sessions remain lazy.
+    await prewarmTelegramBotSessions(runtime);
   },
 
   async stop() {

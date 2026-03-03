@@ -184,7 +184,7 @@ export async function routeHttp(req: Request, url: URL, ctx: GatewayContext): Pr
   if (pathname === "/api/media/send" && method === "POST") {
     return handleMediaSendRequest(req, {
       config: ctx.config, pool: ctx.pool, registry: ctx.registry,
-      sessions: ctx.sessions, log: ctx.log, broadcastToWs: ctx.broadcastToWs,
+      sessions: ctx.sessions, log: ctx.log,
       onDelivered: ctx.onCronDelivered,
     });
   }
@@ -193,7 +193,7 @@ export async function routeHttp(req: Request, url: URL, ctx: GatewayContext): Pr
   if (pathname === "/api/message/send" && method === "POST") {
     return handleMessageSendRequest(req, {
       config: ctx.config, pool: ctx.pool, registry: ctx.registry,
-      sessions: ctx.sessions, log: ctx.log, broadcastToWs: ctx.broadcastToWs,
+      sessions: ctx.sessions, log: ctx.log,
       onDelivered: ctx.onCronDelivered,
     });
   }

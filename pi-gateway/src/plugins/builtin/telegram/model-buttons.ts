@@ -1,5 +1,7 @@
 export type ModelProviderEntry = { provider: string; modelId: string };
 
+type InlineButton = { text: string; callback_data: string };
+
 export type ParsedModelCallback =
   | { type: "providers" }
   | { type: "list"; provider: string; page: number }
@@ -33,12 +35,40 @@ export function parseModelCallbackData(data: string): ParsedModelCallback | null
   return null;
 }
 
-export function buildProviderKeyboard(providers: string[]): Array<Array<{ text: string; callback_data: string }>> {
-  const rows: Array<Array<{ text: string; callback_data: string }>> = [];
-  for (const provider of providers) {
-    rows.push([{ text: provider, callback_data: `mdl_list:${encodeURIComponent(provider)}:1` }]);
+function chunkButtons(buttons: InlineButton[], columns: number): InlineButton[][] {
+  const rows: InlineButton[][] = [];
+  const safeColumns = Math.max(1, columns);
+  for (let i = 0; i < buttons.length; i += safeColumns) {
+    rows.push(buttons.slice(i, i + safeColumns));
   }
   return rows;
+}
+
+function modelLabel(entry: ModelProviderEntry): string {
+  const full = `${entry.provider}/${entry.modelId}`;
+  return full.length > 48 ? `${full.slice(0, 45)}…` : full;
+}
+
+export function buildProviderKeyboard(
+  providers: string[],
+  columns = 2,
+): Array<Array<{ text: string; callback_data: string }>> {
+  const buttons: InlineButton[] = providers.map((provider) => ({
+    text: provider,
+    callback_data: `mdl_list:${encodeURIComponent(provider)}:1`,
+  }));
+  return chunkButtons(buttons, columns);
+}
+
+export function buildModelSelectionKeyboard(
+  entries: ModelProviderEntry[],
+  columns = 2,
+): Array<Array<{ text: string; callback_data: string }>> {
+  const buttons: InlineButton[] = entries.map((entry) => ({
+    text: modelLabel(entry),
+    callback_data: `mdl_sel:${encodeURIComponent(entry.provider)}/${encodeURIComponent(entry.modelId)}`,
+  }));
+  return chunkButtons(buttons, columns);
 }
 
 export function buildModelsKeyboard(params: {
@@ -46,17 +76,18 @@ export function buildModelsKeyboard(params: {
   models: string[];
   page: number;
   pageSize?: number;
+  columns?: number;
 }): { rows: Array<Array<{ text: string; callback_data: string }>>; totalPages: number } {
-  const pageSize = Math.max(1, params.pageSize ?? 10);
+  const pageSize = Math.max(1, params.pageSize ?? 12);
   const totalPages = Math.max(1, Math.ceil(params.models.length / pageSize));
   const page = Math.min(totalPages, Math.max(1, params.page));
   const start = (page - 1) * pageSize;
   const items = params.models.slice(start, start + pageSize);
 
-  const rows: Array<Array<{ text: string; callback_data: string }>> = items.map((modelId) => [{
-    text: modelId,
-    callback_data: `mdl_sel:${encodeURIComponent(params.provider)}/${encodeURIComponent(modelId)}`,
-  }]);
+  const rows: InlineButton[][] = buildModelSelectionKeyboard(
+    items.map((modelId) => ({ provider: params.provider, modelId })),
+    params.columns ?? 2,
+  );
 
   if (totalPages > 1) {
     rows.push([

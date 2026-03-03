@@ -43,6 +43,41 @@ export type {
 /** DM access policy for channel security */
 export type DmPolicy = "open" | "allowlist" | "pairing" | "disabled";
 
+export type CapabilitySupportLevel = "full" | "partial" | "none";
+export type StreamingSupportMode = "native" | "post-edit" | "none";
+
+/** Fine-grained channel feature matrix (Chat SDK style) */
+export interface ChannelCapabilityMatrix {
+  messaging?: {
+    post?: boolean;
+    edit?: boolean;
+    delete?: boolean;
+    fileUpload?: CapabilitySupportLevel;
+    streaming?: StreamingSupportMode;
+  };
+  richContent?: {
+    cards?: CapabilitySupportLevel;
+    buttons?: CapabilitySupportLevel;
+    modals?: boolean;
+  };
+  conversation?: {
+    mentions?: boolean;
+    reactions?: CapabilitySupportLevel;
+    dms?: boolean;
+    typing?: boolean;
+    ephemeral?: CapabilitySupportLevel;
+  };
+  history?: {
+    fetchMessages?: CapabilitySupportLevel;
+    fetchSingleMessage?: CapabilitySupportLevel;
+    fetchThreadInfo?: CapabilitySupportLevel;
+    fetchChannelMessages?: CapabilitySupportLevel;
+    listThreads?: CapabilitySupportLevel;
+    fetchChannelInfo?: CapabilitySupportLevel;
+    postChannelMessage?: CapabilitySupportLevel;
+  };
+}
+
 /** Channel capabilities flags */
 export interface ChannelCapabilities {
   /** Supports direct messages */
@@ -67,6 +102,8 @@ export interface ChannelCapabilities {
   pinnable?: boolean;
   /** Supports read history */
   history?: boolean;
+  /** Fine-grained capability matrix for platform-agnostic feature negotiation */
+  matrix?: ChannelCapabilityMatrix;
 }
 
 /** Channel plugin metadata */
@@ -81,16 +118,22 @@ export interface ChannelMeta {
 
 /** Message send options */
 export interface SendOptions {
+  /** Session key for channel-side delivery context */
+  sessionKey?: SessionKey;
   /** Reply to message ID */
   replyTo?: string;
   /** Parse mode for formatting */
   parseMode?: "Markdown" | "HTML" | "plain";
   /** Thread/topic ID */
   threadId?: string;
-  /** Channel-specific streaming hint (e.g. telegram draft mode in DM topics) */
-  streamMode?: "off" | "partial" | "block" | "draft";
-  /** Draft stream identifier (channel-specific, Telegram uses numeric draft ID) */
+  /** Channel-specific streaming hint */
+  streamMode?: string;
+  /** Channel-specific stream identifier */
+  streamId?: string | number;
+  /** @deprecated legacy telegram field, use streamId/channelMeta */
   draftId?: number;
+  /** Generic channel extension bag for future decoupling */
+  channelMeta?: Record<string, unknown>;
 }
 
 /** Media send options */
@@ -142,6 +185,8 @@ export interface ReadHistoryResult {
 export interface InlineKeyboardButton {
   text: string;
   callbackData?: string;
+  /** @deprecated legacy snake_case alias */
+  callback_data?: string;
   url?: string;
 }
 
@@ -267,6 +312,13 @@ export interface ChannelPlugin {
 
   /** Outbound messaging interface */
   readonly outbound: ChannelOutbound;
+
+  /** Optional target resolver from session state to outbound target */
+  resolveTarget?(params: {
+    chatId: string;
+    sessionKey?: SessionKey;
+    session?: SessionState;
+  }): string;
 
   /** Initialize channel with gateway context */
   init(api: GatewayPluginApi): Promise<void>;
@@ -530,7 +582,7 @@ export interface GatewayPluginApi extends DomainPluginApi {
   /** Broadcast event to all WebSocket clients */
   broadcastToWs(event: string, payload: unknown): void;
 
-  /** Get session message mode (for Telegram) */
+  /** Get effective session message mode */
   getSessionMessageMode(sessionKey: SessionKey): Promise<"steer" | "follow-up" | "interrupt">;
 
   /** Set session message mode override */
@@ -662,6 +714,8 @@ export interface SessionState {
   lastChannel?: string;
   lastAccountId?: string;
   lastChatType?: "dm" | "group" | "channel" | "thread";
+  lastTopicId?: string;
+  lastThreadId?: string;
 }
 
 // ============================================================================

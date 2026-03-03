@@ -21,7 +21,7 @@ export async function handleApiSend(req: Request, ctx: GatewayContext): Promise<
 
     const colonIdx = body.to.indexOf(":");
     if (colonIdx === -1) {
-      return Response.json({ error: "Invalid 'to' format. Use 'channel:target' (e.g. 'telegram:123456')" }, { status: 400 });
+      return Response.json({ error: "Invalid 'to' format. Use 'channel:target'" }, { status: 400 });
     }
 
     const channel = body.to.slice(0, colonIdx);

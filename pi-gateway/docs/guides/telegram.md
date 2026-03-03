@@ -84,6 +84,7 @@ The bot edits its message in real-time as the agent generates output.
 | `off` | Send the full reply once complete. |
 | `partial` | Edit the message progressively as tokens arrive. |
 | `block` | Send in block chunks (less edits, fewer 429s). |
+| `draft` | Use Telegram native draft streaming (`sendMessageDraft`) in DM topic chats; final reply still sent as normal message. |
 
 The gateway has built-in adaptive backoff — if Telegram returns 429 (rate limit), it reads `retry_after` and recovers gradually.
 

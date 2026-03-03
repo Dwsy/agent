@@ -74,9 +74,28 @@ export class ConciseStateManager {
     const routeKey = this.makeRouteKey(session.channel, target);
     const expiry = Date.now() + this.ttlMs;
     this.suppressRoutes.set(routeKey, expiry);
-    
+
     session.suppressCount++;
     return true;
+  }
+
+  /**
+   * Remove all pending suppress routes for a specific session.
+   * Used when concise mode is explicitly turned OFF.
+   */
+  clearSessionSuppressRoutes(sessionKey: string): number {
+    const session = this.activeSessions.get(sessionKey);
+    if (!session) return 0;
+
+    const prefix = `${session.channel}::`;
+    let removed = 0;
+    for (const key of this.suppressRoutes.keys()) {
+      if (key.startsWith(prefix)) {
+        this.suppressRoutes.delete(key);
+        removed++;
+      }
+    }
+    return removed;
   }
 
   /**

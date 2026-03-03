@@ -607,6 +607,8 @@ async function dispatchInbound(params: {
       await executeBashCommand(ctx, text.slice(1).trim(), runtime, account.accountId);
       return;
     }
+    await ctx.reply("⛔ Admin access required.");
+    return;
   }
 
   scheduleDebounce({
@@ -872,7 +874,7 @@ export async function setupTelegramHandlers(runtime: TelegramPluginRuntime, acco
   const bot = account.bot;
 
   // 本地命令列表（由 bot.command() 处理）
-  const localCommands = new Set(["new", "stop", "status", "queue", "cron", "help", "media", "photo", "audio", "model", "refresh", "skills", "sys"]);
+  const localCommands = new Set(["new", "stop", "status", "queue", "cron", "help", "media", "photo", "audio", "model", "models", "setmodel", "refresh", "skills", "sys", "role", "bash", "config", "restart", "whoami", "reload_session", "sessions", "resume", "concise"]);
 
   bot.on("message", async (ctx: any) => {
     const updateId = Number((ctx.update as any)?.update_id ?? -1);

@@ -79,6 +79,7 @@ export const StreamModeSchema = Type.Union([
   Type.Literal("off"),
   Type.Literal("partial"),
   Type.Literal("block"),
+  Type.Literal("draft"),
 ]);
 
 export const ReactionLevelSchema = Type.Union([

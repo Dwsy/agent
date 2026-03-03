@@ -8,6 +8,7 @@ import { basename } from "node:path";
 import { splitMessage } from "../../../core/utils.ts";
 import { markdownToTelegramHtml } from "./format.ts";
 import { sendTelegramMedia, sendTelegramTextAndMedia, IMAGE_EXTS, AUDIO_EXTS } from "./media-send.ts";
+import { toTelegramInlineKeyboard } from "./keyboard-adapter.ts";
 import { recordSentMessage } from "./sent-message-cache.ts";
 import { isRecoverableTelegramNetworkError } from "./network-errors.ts";
 import type { MediaSendOptions, MediaSendResult, MessageSendResult, MessageActionResult, ReactionOptions, ReadHistoryResult, SendOptions } from "../../types.ts";
@@ -154,17 +155,34 @@ export async function sendOutboundViaAccount(params: {
   const threadId = parsed.topicId ? Number.parseInt(parsed.topicId, 10) : undefined;
 
   const streamMode = params.opts?.streamMode;
-  const draftId = params.opts?.draftId;
-  const canUseDraft = streamMode === "draft" && !!threadId;
+  const streamId = params.opts?.streamId;
+  const legacyStreamId = params.opts?.draftId; // legacy compatibility
+  const channelMeta = params.opts?.channelMeta;
+  const transportHint = channelMeta?.transport;
+  const useDraftTransport =
+    (streamMode === "draft" || transportHint === "draft") &&
+    !!threadId;
 
-  if (canUseDraft) {
+  if (useDraftTransport) {
     const text = params.text.trim() || "…";
-    const nextDraftId = draftId && Number.isFinite(draftId) && draftId > 0 ? Math.floor(draftId) : Date.now();
+    const metaStreamId =
+      (typeof channelMeta?.streamId === "number" && Number.isFinite(channelMeta.streamId) && channelMeta.streamId > 0)
+        ? Math.floor(channelMeta.streamId)
+        : (typeof channelMeta?.draftId === "number" && Number.isFinite(channelMeta.draftId) && channelMeta.draftId > 0)
+          ? Math.floor(channelMeta.draftId)
+          : undefined;
+    const explicitStreamId =
+      (typeof streamId === "number" && Number.isFinite(streamId) && streamId > 0)
+        ? Math.floor(streamId)
+        : undefined;
+    const nextDraftId = metaStreamId
+      ?? explicitStreamId
+      ?? (legacyStreamId && Number.isFinite(legacyStreamId) && legacyStreamId > 0 ? Math.floor(legacyStreamId) : Date.now());
     await account.bot.api.sendMessageDraft(Number(parsed.chatId), nextDraftId, text, {
       message_thread_id: threadId,
     });
     params.runtime.api.logger.info(
-      `[telegram:${account.accountId}] outbound draft to=${params.target} textLen=${params.text.length} draftId=${nextDraftId}`,
+      `[telegram:${account.accountId}] outbound draft to=${params.target} textLen=${params.text.length} streamId=${nextDraftId}`,
     );
     return { ok: true, messageId: String(nextDraftId) };
   }
@@ -461,7 +479,7 @@ export async function sendKeyboardViaAccount(params: {
   try {
     const sent = await account.bot.api.sendMessage(parsed.chatId, markdownToTelegramHtml(params.text), {
       parse_mode: "HTML",
-      reply_markup: params.keyboard as any,
+      reply_markup: toTelegramInlineKeyboard(params.keyboard) as any,
       ...(threadId ? { message_thread_id: threadId } : {}),
     });
     recordSentMessage(parsed.chatId, sent.message_id);
@@ -489,7 +507,7 @@ export async function editMessageMarkupViaAccount(params: {
       markdownToTelegramHtml(params.text),
       {
         parse_mode: "HTML",
-        ...(params.keyboard ? { reply_markup: params.keyboard as any } : {}),
+        ...(params.keyboard ? { reply_markup: toTelegramInlineKeyboard(params.keyboard) as any } : {}),
       },
     );
     return { ok: true };

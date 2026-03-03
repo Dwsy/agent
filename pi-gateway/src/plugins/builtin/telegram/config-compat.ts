@@ -5,7 +5,7 @@ export interface TelegramStreamCompat {
   editThrottleMs: number;
   streamStartChars: number;
   placeholder: string;
-  streamMode: "off" | "partial" | "block";
+  streamMode: "off" | "partial" | "block" | "draft";
 }
 
 const DEFAULT_DEBOUNCE_MS = 0;

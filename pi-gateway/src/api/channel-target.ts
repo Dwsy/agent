@@ -1,22 +1,20 @@
 import type { SessionState } from "../core/types.ts";
+import type { ChannelPlugin } from "../plugins/types.ts";
 
 /**
  * Resolve outbound channel target from session state.
  *
- * - Default: plain chatId
- * - Telegram: "{accountId}:{chatId}[:topic:{topicId}]"
+ * Default behavior is plain chatId.
+ * Channel-specific formatting is delegated to channel plugin.resolveTarget().
  */
 export function resolveChannelTarget(
-  channel: string,
+  channelPlugin: ChannelPlugin | undefined,
   chatId: string,
   sessionKey?: string,
   session?: SessionState,
 ): string {
-  if (channel !== "telegram") return chatId;
-
-  const accountFromKey = sessionKey?.match(/^agent:[^:]+:telegram:account:([^:]+):/)?.[1];
-  const accountId = session?.lastAccountId || accountFromKey || "default";
-  const topicId = session?.lastTopicId;
-
-  return `${accountId}:${chatId}${topicId ? `:topic:${topicId}` : ""}`;
+  if (channelPlugin?.resolveTarget) {
+    return channelPlugin.resolveTarget({ chatId, sessionKey, session });
+  }
+  return chatId;
 }

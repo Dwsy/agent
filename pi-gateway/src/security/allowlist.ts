@@ -22,6 +22,23 @@ const CREDENTIALS_DIR = join(homedir(), ".pi", "gateway", "credentials");
 
 export type DmPolicy = "pairing" | "allowlist" | "open" | "disabled";
 
+function normalizeAllowFrom(configAllowFrom?: Array<string | number>): string[] {
+  return (configAllowFrom ?? []).map((v) => String(v));
+}
+
+export function isAdminSenderAllowed(
+  channel: string,
+  senderId: string,
+  configAllowFrom?: Array<string | number>,
+  accountId?: string,
+): boolean {
+  const allow = normalizeAllowFrom(configAllowFrom);
+  if (allow.includes(senderId) || allow.includes("*")) {
+    return true;
+  }
+  return getPersistedAllowlist(channel, accountId).includes(senderId);
+}
+
 /**
  * Check if a sender is allowed for a channel.
  */
@@ -40,23 +57,11 @@ export function isSenderAllowed(
       return true;
 
     case "allowlist": {
-      // Check config allowFrom
-      const allow = (configAllowFrom ?? []).map((v) => String(v));
-      if (allow.includes(senderId) || allow.includes("*")) {
-        return true;
-      }
-      // Check persisted allowlist
-      return getPersistedAllowlist(channel, accountId).includes(senderId);
+      return isAdminSenderAllowed(channel, senderId, configAllowFrom, accountId);
     }
 
     case "pairing": {
-      // Check config allowFrom first
-      const allow = (configAllowFrom ?? []).map((v) => String(v));
-      if (allow.includes(senderId) || allow.includes("*")) {
-        return true;
-      }
-      // Check approved (persisted) allowlist
-      return getPersistedAllowlist(channel, accountId).includes(senderId);
+      return isAdminSenderAllowed(channel, senderId, configAllowFrom, accountId);
     }
 
     default:

@@ -82,6 +82,9 @@ export async function processMessage(
   const modelResolution = resolveModelForSessionAndAgent(source, ctx.config, agentId);
   const thinkingResolution = resolveThinkingLevelForSessionAndAgent(source, ctx.config, agentId);
   const existingSession = ctx.sessions.get(sessionKey);
+  const runtimePinnedModel = existingSession?.lastModelSource === "runtime.command"
+    ? existingSession.lastModel
+    : undefined;
   const failoverPinnedModel = existingSession?.lastModelSource === "model-failover"
     ? existingSession.lastModel
     : undefined;
@@ -95,10 +98,16 @@ export async function processMessage(
   );
   const effectiveModel = shouldProbePrimary
     ? failoverPrimary
-    : (failoverPinnedModel ?? modelResolution.model);
+    : (runtimePinnedModel ?? failoverPinnedModel ?? modelResolution.model);
   const effectiveModelSource = shouldProbePrimary
     ? "model-failover-probe"
-    : (failoverPinnedModel ? "model-failover" : modelResolution.source);
+    : (runtimePinnedModel ? "runtime.command" : (failoverPinnedModel ? "model-failover" : modelResolution.source));
+
+  const runtimePinnedThinking = existingSession?.lastThinkingLevelSource === "runtime.command"
+    ? existingSession.lastThinkingLevel
+    : undefined;
+  const effectiveThinkingLevel = runtimePinnedThinking ?? thinkingResolution.thinkingLevel;
+  const effectiveThinkingSource = runtimePinnedThinking ? "runtime.command" : thinkingResolution.source;
   const session = ctx.sessions.getOrCreate(sessionKey, {
     role: roleResolution.role,
     isStreaming: false,
@@ -115,8 +124,8 @@ export async function processMessage(
     lastThreadId: source.threadId,
     lastModel: effectiveModel ?? undefined,
     lastModelSource: effectiveModelSource,
-    lastThinkingLevel: thinkingResolution.thinkingLevel ?? undefined,
-    lastThinkingLevelSource: thinkingResolution.source,
+    lastThinkingLevel: effectiveThinkingLevel ?? undefined,
+    lastThinkingLevelSource: effectiveThinkingSource,
   });
   if (isNew) {
     ctx.transcripts.logMeta(sessionKey, "session_created", {
@@ -124,8 +133,8 @@ export async function processMessage(
       roleSource: roleResolution.source,
       model: effectiveModel,
       modelSource: effectiveModelSource,
-      thinkingLevel: thinkingResolution.thinkingLevel,
-      thinkingSource: thinkingResolution.source,
+      thinkingLevel: effectiveThinkingLevel,
+      thinkingSource: effectiveThinkingSource,
     });
     await ctx.registry.hooks.dispatch("session_start", { sessionKey });
   }
@@ -141,8 +150,8 @@ export async function processMessage(
   session.lastThreadId = source.threadId;
   session.lastModel = effectiveModel ?? undefined;
   session.lastModelSource = effectiveModelSource;
-  session.lastThinkingLevel = thinkingResolution.thinkingLevel ?? undefined;
-  session.lastThinkingLevelSource = thinkingResolution.source;
+  session.lastThinkingLevel = effectiveThinkingLevel ?? undefined;
+  session.lastThinkingLevelSource = effectiveThinkingSource;
 
   // Resolve role → capability profile for RPC process
   const role = session.role ?? "default";
@@ -188,25 +197,41 @@ export async function processMessage(
     capabilities: profile.resourceCounts,
   });
 
-  if (thinkingResolution.thinkingLevel) {
-    try {
-      await rpc.setThinkingLevel(thinkingResolution.thinkingLevel);
-      ctx.log.info(`[thinking-routing] ${sessionKey} level=${thinkingResolution.thinkingLevel} source=${thinkingResolution.source}`);
-    } catch (err: unknown) {
-      ctx.log.warn(`[thinking-routing] failed to apply level=${thinkingResolution.thinkingLevel} source=${thinkingResolution.source}: ${err instanceof Error ? err.message : String(err)}`);
+  if (effectiveThinkingLevel) {
+    const shouldApplyThinking =
+      session.appliedThinkingRpcProcessId !== rpc.id
+      || session.appliedThinkingLevel !== effectiveThinkingLevel;
+
+    if (shouldApplyThinking) {
+      try {
+        await rpc.setThinkingLevel(effectiveThinkingLevel);
+        session.appliedThinkingLevel = effectiveThinkingLevel;
+        session.appliedThinkingRpcProcessId = rpc.id;
+        ctx.log.info(`[thinking-routing] ${sessionKey} level=${effectiveThinkingLevel} source=${effectiveThinkingSource}`);
+      } catch (err: unknown) {
+        ctx.log.warn(`[thinking-routing] failed to apply level=${effectiveThinkingLevel} source=${effectiveThinkingSource}: ${err instanceof Error ? err.message : String(err)}`);
+      }
     }
   }
 
   if (effectiveModel) {
     const idx = effectiveModel.indexOf("/");
     if (idx > 0 && idx < effectiveModel.length - 1) {
-      const provider = effectiveModel.slice(0, idx);
-      const modelId = effectiveModel.slice(idx + 1);
-      try {
-        await rpc.setModel(provider, modelId);
-        ctx.log.info(`[model-routing] ${sessionKey} model=${effectiveModel} source=${effectiveModelSource}`);
-      } catch (err: unknown) {
-        ctx.log.warn(`[model-routing] failed to apply model=${effectiveModel} source=${effectiveModelSource}: ${err instanceof Error ? err.message : String(err)}`);
+      const shouldApplyModel =
+        session.appliedModelRpcProcessId !== rpc.id
+        || session.appliedModel !== effectiveModel;
+
+      if (shouldApplyModel) {
+        const provider = effectiveModel.slice(0, idx);
+        const modelId = effectiveModel.slice(idx + 1);
+        try {
+          await rpc.setModel(provider, modelId);
+          session.appliedModel = effectiveModel;
+          session.appliedModelRpcProcessId = rpc.id;
+          ctx.log.info(`[model-routing] ${sessionKey} model=${effectiveModel} source=${effectiveModelSource}`);
+        } catch (err: unknown) {
+          ctx.log.warn(`[model-routing] failed to apply model=${effectiveModel} source=${effectiveModelSource}: ${err instanceof Error ? err.message : String(err)}`);
+        }
       }
     } else {
       ctx.log.warn(`[model-routing] invalid model format for ${sessionKey}: ${effectiveModel}`);
@@ -264,6 +289,8 @@ export async function processMessage(
       await rpc.setModel(provider, modelId);
       session.lastModel = next;
       session.lastModelSource = "model-failover";
+      session.appliedModel = next;
+      session.appliedModelRpcProcessId = rpc.id;
       modelSwitchedThisTurn = true;
       modelSwitchMeta = { from: fromModel, to: next, reason };
       ctx.log.warn(`[model-health] Switched from ${fromModel} to ${next} (reason=${reason})`);
@@ -597,7 +624,7 @@ export async function processMessage(
     fullText = "我这次没有生成可发送的文本，请再发一次或换个问法。";
   }
 
-  const outbound = { channel: source.channel, target: source.chatId, text: fullText };
+  const outbound = { sessionKey, channel: source.channel, target: source.chatId, text: fullText };
   ctx.log.info(`[message-pipeline] before hook: outbound.text length=${outbound.text.length}`);
   await ctx.registry.hooks.dispatch("message_sending", { message: outbound });
   ctx.log.info(`[message-pipeline] after hook: outbound.text="${outbound.text.slice(0, 50)}..."`);

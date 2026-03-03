@@ -27,6 +27,7 @@ import type { PluginRegistryState } from "../plugins/loader.ts";
 import type { SessionStore } from "../core/session-store.ts";
 import { getGatewayInternalToken } from "./media-send.ts";
 import { resolveChannelTarget } from "./channel-target.ts";
+import { canEditKeyboardMarkup, canSendKeyboard } from "./channel-capabilities.ts";
 
 // ============================================================================
 // Types
@@ -150,7 +151,7 @@ export async function handleKeyboardRequest(
     if (!opt.id || !opt.text) {
       return Response.json({ error: "Each option must have id and text" }, { status: 400 });
     }
-    // Telegram callback_data limit is 64 bytes; reserve ~10 for prefix
+    // Keep callback payload compact across channel adapters
     if (opt.id.length > 50) {
       return Response.json({ error: `Option id too long (max 50 chars): ${opt.id.slice(0, 20)}...` }, { status: 400 });
     }
@@ -184,24 +185,24 @@ export async function handleKeyboardRequest(
   if (!channel) return Response.json({ error: "Cannot resolve channel" }, { status: 400 });
   if (!chatId) return Response.json({ error: "Cannot resolve chatId" }, { status: 400 });
 
-  const target = resolveChannelTarget(channel, chatId, sessionKey, session);
-
   const channelPlugin = ctx.registry.channels.get(channel);
   if (!channelPlugin) return Response.json({ error: `Channel not found: ${channel}` }, { status: 404 });
-  if (!channelPlugin.outbound.sendKeyboard) {
+
+  const target = resolveChannelTarget(channelPlugin, chatId, sessionKey, session);
+  if (!canSendKeyboard(channelPlugin)) {
     return Response.json({ error: `Channel ${channel} does not support inline keyboards` }, { status: 400 });
   }
 
-  // Generate short request ID (fits in Telegram's 64-byte callback_data limit)
+  // Generate short request ID (keeps callback payload compact)
   const requestId = `k${(++reqCounter).toString(36)}`;
 
   // Build inline keyboard rows
-  const rows: Array<Array<{ text: string; callback_data: string }>> = [];
-  let currentRow: Array<{ text: string; callback_data: string }> = [];
+  const rows: Array<Array<{ text: string; callbackData: string }>> = [];
+  let currentRow: Array<{ text: string; callbackData: string }> = [];
   for (const opt of options) {
     currentRow.push({
       text: opt.text,
-      callback_data: encodeKeyboardCallback(requestId, opt.id),
+      callbackData: encodeKeyboardCallback(requestId, opt.id),
     });
     if (currentRow.length >= columns) {
       rows.push(currentRow);
@@ -223,7 +224,7 @@ export async function handleKeyboardRequest(
     const timer = setTimeout(() => {
       pending.delete(requestId);
       // Edit message to show timeout
-      if (messageId && channelPlugin.outbound.editMessageMarkup) {
+      if (messageId && canEditKeyboardMarkup(channelPlugin)) {
         channelPlugin.outbound.editMessageMarkup(target, messageId, `⏰ ${title}\n<i>(timed out)</i>`).catch(() => {});
       }
       resolve({ ok: false, error: "timeout" });
@@ -242,9 +243,10 @@ export async function handleKeyboardRequest(
   });
 
   // Edit message to show selection result (remove keyboard)
-  if (result.ok && result.selected && messageId && channelPlugin.outbound.editMessageMarkup) {
+  if (result.ok && result.selected && messageId && canEditKeyboardMarkup(channelPlugin)) {
     channelPlugin.outbound.editMessageMarkup(
-      target, messageId,
+      target,
+      messageId,
       `${title}\n\n✅ <b>${result.selected.text}</b>`,
     ).catch(() => {});
   }

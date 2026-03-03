@@ -12,7 +12,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync
 import { join } from "node:path";
 
 import { resolveAuthConfig, authenticateRequest, buildAuthExemptPrefixes } from "./core/auth.ts";
-import type { GatewayContext, TelegramMessageMode, WsClientData, DispatchResult } from "./gateway/types.ts";
+import type { GatewayContext, SessionMessageMode, WsClientData, DispatchResult } from "./gateway/types.ts";
 import { tryHandleCommand, registerBuiltinCommands } from "./gateway/command-handler.ts";
 import { executeRegisteredTool } from "./gateway/tool-executor.ts";
 import { loadConfig, ensureDataDir, type Config, type CronJob, resolveConfigPath, watchConfig, type ModelFailoverConfig } from "./core/config.ts";
@@ -36,7 +36,8 @@ import { SystemEventsQueue } from "./core/system-events.ts";
 import { createWsRouter, dispatchWsFrame } from "./ws/ws-router.ts";
 import { routeHttp } from "./api/http-router.ts";
 import { processMessage } from "./gateway/message-pipeline.ts";
-import { dispatchMessage, resolveTelegramMsgMode } from "./gateway/dispatch.ts";
+import { dispatchMessage } from "./gateway/dispatch.ts";
+import { resolveSessionMessageMode } from "./gateway/message-mode.ts";
 import { migrateTelegramSessionKeys } from "./gateway/telegram-helpers.ts";
 import {
   createPluginRegistry,
@@ -47,6 +48,7 @@ import type {
   GatewayPluginApi,
 } from "./plugins/types.ts";
 import { createPluginApi } from "./plugins/plugin-api-factory.ts";
+import { auditChannelCapabilities } from "./plugins/channel-capability-audit.ts";
 import { ExecGuard } from "./core/exec-guard.ts";
 import { ModelHealthTracker } from "./core/model-health.ts";
 
@@ -90,7 +92,7 @@ export class Gateway {
   private log: Logger;
   private nextClientId = 0;
   private dedup: DeduplicationCache;
-  private sessionMessageModeOverrides = new Map<SessionKey, TelegramMessageMode>();
+  private sessionMessageModeOverrides = new Map<SessionKey, SessionMessageMode>();
   private activeInboundMessages = new Map<SessionKey, InboundMessage>();
   private delegateExecutor: DelegateExecutor | null = null;
   private heartbeatExecutor: HeartbeatExecutor | null = null;
@@ -237,6 +239,16 @@ export class Gateway {
       }
     }
 
+    const capabilityIssues = auditChannelCapabilities(this.registry);
+    for (const issue of capabilityIssues) {
+      const line = `[channel-capability-audit] ${issue.channelId} ${issue.code}: ${issue.message}`;
+      if (issue.severity === "error") {
+        this.log.error(line);
+      } else {
+        this.log.warn(line);
+      }
+    }
+
     // Register built-in commands
     registerBuiltinCommands(this.ctx);
 
@@ -334,8 +346,11 @@ export class Gateway {
     migrateTelegramSessionKeys(this.sessions, this.config, this.log);
   }
 
-  private resolveTelegramMessageMode(sessionKey: SessionKey, sourceAccountId?: string): TelegramMessageMode {
-    return resolveTelegramMsgMode(sessionKey, this.ctx, sourceAccountId);
+  private resolveSessionMessageMode(
+    sessionKey: SessionKey,
+    source: { channel: string; accountId?: string },
+  ): SessionMessageMode {
+    return resolveSessionMessageMode(sessionKey, source as any, this.ctx);
   }
 
 
@@ -583,7 +598,7 @@ export class Gateway {
         if (req.headers.get("upgrade")?.toLowerCase() === "websocket") {
           const clientId = `ws-${++self.nextClientId}`;
           self.log.debug(`WS upgrade request from ${clientId}`);
-          if (server.upgrade(req, { data: { clientId } })) {
+          if (server.upgrade(req, { data: { clientId, authenticated: false } })) {
             return; // Must return undefined for Bun WS upgrade
           }
           return new Response("WebSocket upgrade failed", { status: 400 });
@@ -675,6 +690,7 @@ export class Gateway {
   private get ctx(): GatewayContext {
     return {
       config: this.config,
+      resolvedGatewayToken: this.resolvedToken,
       pool: this.pool,
       queue: this.queue,
       registry: this.registry,
@@ -696,7 +712,7 @@ export class Gateway {
       activeInboundMessages: this.activeInboundMessages,
       channelApis: this._channelApis,
       observability: this.observability,
-      resolveTelegramMessageMode: (sk, accountId) => this.resolveTelegramMessageMode(sk, accountId),
+      resolveSessionMessageMode: (sk, source) => this.resolveSessionMessageMode(sk, source),
       broadcastToWs: (event, payload) => this.broadcastToWs(event, payload),
       buildSessionProfile: (sk, role) => this.buildSessionProfile(sk, role),
       dispatch: (msg) => this.dispatch(msg),

@@ -44,6 +44,10 @@ export async function resetSession(
     session.messageCount = 0;
     session.lastActivity = Date.now();
     session.skipAutoResume = true; // Mark to skip --continue on next spawn
+    session.appliedModel = undefined;
+    session.appliedModelRpcProcessId = undefined;
+    session.appliedThinkingLevel = undefined;
+    session.appliedThinkingRpcProcessId = undefined;
     ctx.sessions.touch(sessionKey);
     result.stateReset = true;
   }

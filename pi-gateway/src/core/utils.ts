@@ -75,6 +75,22 @@ export function splitMessage(text: string, maxLength: number): string[] {
   return chunks;
 }
 
+/**
+ * Should caller bypass split and send as a single message.
+ * Used by channel-specific transports that can accept oversized logical payloads
+ * (e.g. draft-like streaming transports).
+ */
+export function shouldBypassSplitForChannel(
+  text: string,
+  maxLength: number | undefined,
+  channelMeta?: Record<string, unknown>,
+): boolean {
+  const transport = channelMeta?.transport;
+  if (transport !== "draft") return false;
+  if (!maxLength || maxLength <= 0) return true;
+  return text.length <= maxLength;
+}
+
 // ============================================================================
 // Markdown Formatting Helpers
 // ============================================================================

@@ -14,6 +14,12 @@ import type { PluginRegistryState } from "../plugins/loader.ts";
 import type { SessionStore } from "../core/session-store.ts";
 import { getGatewayInternalToken } from "./media-send.ts";
 import { resolveChannelTarget } from "./channel-target.ts";
+import {
+  canDeleteMessage,
+  canEditMessage,
+  canReadHistory,
+  canSendReaction,
+} from "./channel-capabilities.ts";
 
 export interface MessageActionContext {
   config: Config;
@@ -103,18 +109,18 @@ export async function handleMessageAction(
     return Response.json({ error: "Cannot resolve chatId from session" }, { status: 400 });
   }
 
-  const target = resolveChannelTarget(channel, chatId, sessionKey, session);
-
   const channelPlugin = ctx.registry.channels.get(channel);
   if (!channelPlugin) {
     return Response.json({ error: `Channel plugin not found: ${channel}` }, { status: 404 });
   }
 
+  const target = resolveChannelTarget(channelPlugin, chatId, sessionKey, session);
+
   ctx.log.info(`[message-action] ${action} channel=${channel} target=${target} messageId=${messageId}`);
 
   try {
     if (action === "react") {
-      if (!channelPlugin.outbound.sendReaction) {
+      if (!canSendReaction(channelPlugin)) {
         return Response.json({ error: `Channel "${channel}" does not support reactions` }, { status: 501 });
       }
       const emoji = Array.isArray(body.emoji)
@@ -129,7 +135,7 @@ export async function handleMessageAction(
     }
 
     if (action === "edit") {
-      if (!channelPlugin.outbound.editMessage) {
+      if (!canEditMessage(channelPlugin)) {
         return Response.json({ error: `Channel "${channel}" does not support message editing` }, { status: 501 });
       }
       const text = typeof body.text === "string" ? body.text : "";
@@ -141,7 +147,7 @@ export async function handleMessageAction(
     }
 
     if (action === "delete") {
-      if (!channelPlugin.outbound.deleteMessage) {
+      if (!canDeleteMessage(channelPlugin)) {
         return Response.json({ error: `Channel "${channel}" does not support message deletion` }, { status: 501 });
       }
       const result = await channelPlugin.outbound.deleteMessage(target, messageId);
@@ -164,7 +170,7 @@ export async function handleMessageAction(
     }
 
     if (action === "read") {
-      if (!channelPlugin.outbound.readHistory) {
+      if (!canReadHistory(channelPlugin)) {
         return Response.json({ error: `Channel "${channel}" does not support read history` }, { status: 501 });
       }
       const limit = typeof body.limit === "number" ? Math.min(body.limit, 100) : 20;

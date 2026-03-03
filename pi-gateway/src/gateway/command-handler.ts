@@ -21,6 +21,8 @@ import type { GatewayContext } from "./types.ts";
 import type { InboundMessage } from "../core/types.ts";
 import type { RpcClient } from "../core/rpc-client.ts";
 import { isSenderAllowed } from "../security/allowlist.ts";
+import { resolveChannelTarget } from "../api/channel-target.ts";
+import { canSendKeyboard } from "../api/channel-capabilities.ts";
 
 // TUI-dependent commands that hang in RPC mode
 const TUI_COMMANDS = [
@@ -98,32 +100,47 @@ export async function tryHandleCommand(
   return false;
 }
 
-function canManageRole(
+async function canManageRole(
   ctx: GatewayContext,
   senderId: string,
   channel: string,
   accountId?: string,
-): boolean {
+): Promise<boolean> {
+  const channelPlugin = ctx.registry?.channels?.get?.(channel);
+  const security = channelPlugin?.security;
+
+  if (security?.checkAccess) {
+    const result = await security.checkAccess(senderId, {
+      channel,
+      chatType: "dm",
+      accountId,
+    });
+    return result.allowed;
+  }
+
+  if (security) {
+    return isSenderAllowed(
+      channel,
+      senderId,
+      security.dmPolicy,
+      security.dmAllowFrom,
+      accountId ?? security.accountId,
+    );
+  }
+
   const channels = ctx.config.channels as Record<string, any>;
+  const channelCfg = channels[channel] as Record<string, any> | undefined;
+  const accounts = (channelCfg?.accounts && typeof channelCfg.accounts === "object")
+    ? channelCfg.accounts as Record<string, any>
+    : undefined;
+  const accountCfg = accountId ? accounts?.[accountId] : accounts?.default;
+  const effectiveCfg = accountCfg ?? channelCfg;
 
-  if (channel === "telegram") {
-    const tg = channels.telegram;
-    const accountCfg = accountId ? tg?.accounts?.[accountId] : tg?.accounts?.default;
-    const cfg = accountCfg ?? tg;
-    const policy = cfg?.dmPolicy ?? "allowlist";
-    const allowFrom = cfg?.allowFrom;
-    return isSenderAllowed("telegram", senderId, policy, allowFrom, accountId ?? "default");
-  }
+  const policy = (effectiveCfg?.dmPolicy ?? channelCfg?.dmPolicy ?? "allowlist") as any;
+  const allowFrom = effectiveCfg?.allowFrom ?? channelCfg?.dm?.allowFrom ?? channelCfg?.allowFrom;
+  const scopedAccountId = accountCfg ? (accountId ?? "default") : undefined;
 
-  if (channel === "discord") {
-    const dc = channels.discord;
-    const allowFrom = dc?.dm?.allowFrom ?? dc?.allowFrom;
-    return isSenderAllowed("discord", senderId, "allowlist", allowFrom);
-  }
-
-  const generic = channels[channel];
-  const allowFrom = generic?.allowFrom;
-  return isSenderAllowed(channel, senderId, "allowlist", allowFrom);
+  return isSenderAllowed(channel, senderId, policy, allowFrom, scopedAccountId);
 }
 
 /**
@@ -150,22 +167,23 @@ export function registerBuiltinCommands(ctx: GatewayContext): void {
       const raw = (args ?? "").trim();
       if (!raw) {
         const currentRole = session.role ?? "default";
-        if (channel === "telegram" && chatId) {
+        if (chatId) {
           const ch = ctx.registry.channels.get(channel);
           const roles = ctx.listAvailableRoles();
-          if (ch?.outbound.sendKeyboard && roles.length > 0) {
+          if (ch && canSendKeyboard(ch) && roles.length > 0) {
+            const target = resolveChannelTarget(ch, chatId, sessionKey, session);
             const topRoles = roles.slice(0, 12);
             const rows = topRoles.map((role) => {
-              const row: Array<{ text: string; callback_data: string }> = [
-                { text: role === currentRole ? `✅ ${role}` : role, callback_data: `role:set:${role}` },
+              const row: Array<{ text: string; callbackData: string }> = [
+                { text: role === currentRole ? `✅ ${role}` : role, callbackData: `role:set:${role}` },
               ];
               if (role !== "default") {
-                row.push({ text: `🗑 ${role}`, callback_data: `role:del:${role}` });
+                row.push({ text: `🗑 ${role}`, callbackData: `role:del:${role}` });
               }
               return row;
             });
-            rows.push([{ text: "➕ Create role (use /role create <name>)", callback_data: "role:hint:create" }]);
-            await ch.outbound.sendKeyboard(chatId, `Current role: ${currentRole}\nSelect / Delete role:`, { inline_keyboard: rows });
+            rows.push([{ text: "➕ Create role (use /role create <name>)", callbackData: "role:hint:create" }]);
+            await ch.outbound.sendKeyboard(target, `Current role: ${currentRole}\nSelect / Delete role:`, { inline_keyboard: rows });
             return;
           }
         }
@@ -183,7 +201,7 @@ export function registerBuiltinCommands(ctx: GatewayContext): void {
       }
 
       if (action === "set" || action === "switch") {
-        if (!canManageRole(ctx, senderId, channel, accountId)) {
+        if (!(await canManageRole(ctx, senderId, channel, accountId))) {
           await respond("Unauthorized: /role set requires allowFrom authorization.");
           return;
         }
@@ -205,7 +223,7 @@ export function registerBuiltinCommands(ctx: GatewayContext): void {
       }
 
       if (action === "create") {
-        if (!canManageRole(ctx, senderId, channel, accountId)) {
+        if (!(await canManageRole(ctx, senderId, channel, accountId))) {
           await respond("Unauthorized: /role create requires allowFrom authorization.");
           return;
         }
@@ -224,18 +242,19 @@ export function registerBuiltinCommands(ctx: GatewayContext): void {
       }
 
       if (action === "delete") {
-        if (!canManageRole(ctx, senderId, channel, accountId)) {
+        if (!(await canManageRole(ctx, senderId, channel, accountId))) {
           await respond("Unauthorized: /role delete requires allowFrom authorization.");
           return;
         }
         const targetRole = rest.join(" ").trim();
         if (!targetRole) {
-          if (channel === "telegram" && chatId) {
+          if (chatId) {
             const ch = ctx.registry.channels.get(channel);
             const roles = ctx.listAvailableRoles().filter((r) => r !== "default");
-            if (ch?.outbound.sendKeyboard && roles.length > 0) {
-              const rows = roles.slice(0, 20).map((role) => ([{ text: `🗑 ${role}`, callback_data: `role:del:${role}` }]));
-              await ch.outbound.sendKeyboard(chatId, "Select role to delete:", { inline_keyboard: rows });
+            if (ch && canSendKeyboard(ch) && roles.length > 0) {
+              const target = resolveChannelTarget(ch, chatId, sessionKey, session);
+              const rows = roles.slice(0, 20).map((role) => ([{ text: `🗑 ${role}`, callbackData: `role:del:${role}` }]));
+              await ch.outbound.sendKeyboard(target, "Select role to delete:", { inline_keyboard: rows });
               return;
             }
           }
@@ -271,7 +290,7 @@ async function executeLocalCommand(
 
   const sendReply = async (rawText: string) => {
     const text = typeof rawText === "string" ? rawText : String(rawText ?? "");
-    const outbound = { channel: msg.source.channel, target: msg.source.chatId, text };
+    const outbound = { sessionKey: msg.sessionKey, channel: msg.source.channel, target: msg.source.chatId, text };
     await ctx.registry.hooks.dispatch("message_sending", { message: outbound });
     outbound.text = typeof outbound.text === "string" ? outbound.text : String(outbound.text ?? "");
     await msg.respond(outbound.text);

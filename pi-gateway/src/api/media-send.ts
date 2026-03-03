@@ -18,6 +18,7 @@ import type { Logger } from "../core/types.ts";
 import type { PluginRegistryState } from "../plugins/loader.ts";
 import type { SessionStore } from "../core/session-store.ts";
 import { resolveChannelTarget } from "./channel-target.ts";
+import { canSendMedia } from "./channel-capabilities.ts";
 
 /** Allowed absolute path prefixes for agent tool calls (send_media). */
 const ALLOWED_ABSOLUTE_PREFIXES = [
@@ -72,7 +73,6 @@ export interface MediaSendContext {
   registry: PluginRegistryState;
   sessions: SessionStore;
   log: Logger;
-  broadcastToWs?: (event: string, payload: unknown) => void;
   /** Called after successful delivery — used to track cron self-delivery. */
   onDelivered?: (sessionKey: string) => void;
 }
@@ -176,30 +176,9 @@ export async function handleMediaSendRequest(
     return Response.json({ error: `Channel plugin not found: ${channel}` }, { status: 404 });
   }
 
-  if (!channelPlugin.outbound.sendMedia) {
-    // WebChat: push signed URL via WS instead of returning a directive
-    if (channel === "webchat" && ctx.broadcastToWs) {
-      const { sendWebChatMedia } = await import("./media-routes.ts");
-      const result = sendWebChatMedia(sessionKey, filePath, ctx.config, ctx.broadcastToWs, {
-        caption,
-        type: resolvedType as "photo" | "audio" | "video" | "document" | "sticker",
-      });
-      if (result.ok) {
-        ctx.log.info(`[media-send] webchat push: sessionKey=${sessionKey} path=${filePath}`);
-        return Response.json({
-          ok: true,
-          delivered: true,
-          url: result.url,
-          path: filePath,
-          type: resolvedType,
-          channel,
-        });
-      }
-      return Response.json({ error: "Media path blocked or file not found" }, { status: 403 });
-    }
-
+  if (!canSendMedia(channelPlugin)) {
     // Other channels: return directive fallback
-    ctx.log.info(`[media-send] channel=${channel} lacks sendMedia, returning directive fallback`);
+    ctx.log.info(`[media-send] channel=${channel} has no media upload capability, returning directive fallback`);
     return Response.json({
       ok: true,
       delivered: false,
@@ -214,12 +193,13 @@ export async function handleMediaSendRequest(
     return Response.json({ error: "Cannot resolve chatId — no messages received in this session yet" }, { status: 400 });
   }
 
-  const target = resolveChannelTarget(channel, chatId, sessionKey, session);
+  const target = resolveChannelTarget(channelPlugin, chatId, sessionKey, session);
 
   ctx.log.info(`[media-send] direct delivery: channel=${channel} target=${target} path=${filePath} type=${resolvedType}`);
 
   try {
     const result = await channelPlugin.outbound.sendMedia(target, fullPath, {
+      sessionKey,
       type: resolvedType as "photo" | "audio" | "document" | "video" | "sticker",
       caption,
     });

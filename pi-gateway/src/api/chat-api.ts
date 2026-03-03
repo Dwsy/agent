@@ -11,6 +11,38 @@ import type { GatewayContext } from "../gateway/types.ts";
 import type { ImageContent } from "../core/types.ts";
 import { getAssistantMessageEvent } from "../core/rpc-events.ts";
 
+function normalizeAddress(value: string | null): string {
+  if (!value) return "";
+  const first = value.split(",")[0]?.trim() ?? "";
+  if (first.startsWith("[::ffff:")) {
+    return first.slice(8, -1);
+  }
+  return first;
+}
+
+function deriveApiSessionKey(req: Request): { sessionKey: string; source: "explicit" | "derived" } {
+  const explicit = req.headers.get("x-session-key")?.trim();
+  if (explicit) {
+    return { sessionKey: explicit, source: "explicit" };
+  }
+
+  const auth = req.headers.get("authorization")?.trim() ?? "";
+  const forwarded = normalizeAddress(req.headers.get("x-forwarded-for"));
+  const realIp = normalizeAddress(req.headers.get("x-real-ip"));
+  const ua = req.headers.get("user-agent")?.trim() ?? "";
+  const fingerprintSource = `${auth}|${forwarded || realIp}|${ua}`;
+  const fingerprint = Bun.hash(fingerprintSource).toString(36);
+  return { sessionKey: `agent:main:api:${fingerprint}`, source: "derived" };
+}
+
+function toApiErrorResponse(err: unknown, fallbackMessage: string): Response {
+  const message = err instanceof Error ? err.message : fallbackMessage;
+  const lower = message.toLowerCase();
+  const isTimeout = lower.includes("timeout") || lower.includes("timed out") || lower.includes("queue timeout");
+  const status = isTimeout ? 504 : 500;
+  return Response.json({ error: message }, { status });
+}
+
 /**
  * POST /api/chat — Synchronous chat. Sends message, waits for full reply.
  */
@@ -41,7 +73,13 @@ export async function handleApiChat(req: Request, ctx: GatewayContext): Promise<
       return Response.json({ error: "message is required" }, { status: 400 });
     }
 
-    const sessionKey = body.sessionKey ?? "agent:main:main:main";
+    const sessionFromBody = typeof body.sessionKey === "string" && body.sessionKey.trim().length > 0
+      ? body.sessionKey.trim()
+      : undefined;
+    const resolvedSession = sessionFromBody
+      ? { sessionKey: sessionFromBody, source: "explicit" as const }
+      : deriveApiSessionKey(req);
+    const sessionKey = resolvedSession.sessionKey;
     const startTime = Date.now();
 
     const role = ctx.sessions.get(sessionKey)?.role ?? "default";
@@ -76,8 +114,10 @@ export async function handleApiChat(req: Request, ctx: GatewayContext): Promise<
       }
     });
 
+    let executionError: unknown;
     try {
       const imgCount = normalizedImages?.length ?? 0;
+      ctx.log.info(`/api/chat: session key source=${resolvedSession.source} sessionKey=${sessionKey}`);
       ctx.log.info(`/api/chat: sending prompt (${body.message.length} chars, ${imgCount} images) to ${rpc.id}`);
       if (imgCount > 0) {
         ctx.log.info(`/api/chat: first image mimeType=${normalizedImages![0].mimeType}, data.length=${normalizedImages![0].data.length}`);
@@ -85,10 +125,14 @@ export async function handleApiChat(req: Request, ctx: GatewayContext): Promise<
       await rpc.prompt(body.message, normalizedImages);
       await rpc.waitForIdle();
     } catch (err: unknown) {
-      fullText = `Error: ${err instanceof Error ? err.message : "Unknown error"}`;
+      executionError = err;
     } finally {
       unsub();
       session.isStreaming = false;
+    }
+
+    if (executionError) {
+      return toApiErrorResponse(executionError, "Agent request failed");
     }
 
     return Response.json({
@@ -132,7 +176,13 @@ export async function handleApiChatStream(req: Request, ctx: GatewayContext): Pr
       })
     : undefined;
 
-  const sessionKey = body.sessionKey ?? "agent:main:main:main";
+  const sessionFromBody = typeof body.sessionKey === "string" && body.sessionKey.trim().length > 0
+    ? body.sessionKey.trim()
+    : undefined;
+  const resolvedSession = sessionFromBody
+    ? { sessionKey: sessionFromBody, source: "explicit" as const }
+    : deriveApiSessionKey(req);
+  const sessionKey = resolvedSession.sessionKey;
   const startTime = Date.now();
 
   const role = ctx.sessions.get(sessionKey)?.role ?? "default";
@@ -157,6 +207,8 @@ export async function handleApiChatStream(req: Request, ctx: GatewayContext): Pr
       const send = (data: unknown) => {
         controller.enqueue(`data: ${JSON.stringify(data)}\n\n`);
       };
+
+      ctx.log.info(`/api/chat/stream: session key source=${resolvedSession.source} sessionKey=${sessionKey}`);
 
       let fullText = "";
       let rpc: Awaited<ReturnType<typeof ctx.pool.acquire>>;
@@ -204,6 +256,8 @@ export async function handleApiChatStream(req: Request, ctx: GatewayContext): Pr
         await rpc.waitForIdle();
       } catch (err: unknown) {
         send({ type: "error", error: err instanceof Error ? err.message : "Agent error" });
+        controller.close();
+        return;
       } finally {
         unsub();
         session.isStreaming = false;

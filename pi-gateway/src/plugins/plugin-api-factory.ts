@@ -178,10 +178,28 @@ export function createPluginApi(
     },
 
     async setThinkingLevel(sessionKey: SessionKey, level: string) {
-      const rpc = ctx.pool.getForSession(sessionKey);
-      if (rpc) {
-        await rpc.setThinkingLevel(level);
+      const normalizedLevel = String(level ?? "").trim();
+      if (!normalizedLevel) {
+        throw new Error("level is required");
       }
+
+      const session = ctx.sessions.get(sessionKey);
+      if (session) {
+        session.lastThinkingLevel = normalizedLevel as any;
+        session.lastThinkingLevelSource = "runtime.command";
+        session.appliedThinkingLevel = undefined;
+        session.appliedThinkingRpcProcessId = undefined;
+        ctx.sessions.touch(sessionKey);
+      }
+
+      let rpc = ctx.pool.getForSession(sessionKey);
+      if (!rpc) {
+        const role = session?.role ?? "default";
+        const profile = ctx.buildSessionProfile(sessionKey, role);
+        rpc = await ctx.pool.acquire(sessionKey, profile);
+      }
+
+      await rpc.setThinkingLevel(normalizedLevel);
     },
 
     async cycleThinkingLevel(sessionKey: SessionKey): Promise<string | undefined> {
@@ -191,21 +209,48 @@ export function createPluginApi(
     },
 
     async setModel(sessionKey: SessionKey, provider: string, modelId: string) {
-      const rpc = ctx.pool.getForSession(sessionKey);
-      if (rpc) {
-        await rpc.setModel(provider, modelId);
+      const normalizedProvider = String(provider ?? "").trim();
+      const normalizedModelId = String(modelId ?? "").trim();
+      if (!normalizedProvider || !normalizedModelId) {
+        throw new Error("provider and modelId are required");
       }
+
+      const session = ctx.sessions.get(sessionKey);
+      if (session) {
+        session.lastModel = `${normalizedProvider}/${normalizedModelId}`;
+        session.lastModelSource = "runtime.command";
+        session.appliedModel = undefined;
+        session.appliedModelRpcProcessId = undefined;
+        ctx.sessions.touch(sessionKey);
+      }
+
+      let rpc = ctx.pool.getForSession(sessionKey);
+      if (!rpc) {
+        const role = session?.role ?? "default";
+        const profile = ctx.buildSessionProfile(sessionKey, role);
+        rpc = await ctx.pool.acquire(sessionKey, profile);
+      }
+
+      await rpc.setModel(normalizedProvider, normalizedModelId);
     },
 
     async getAvailableModels(sessionKey: SessionKey) {
-      const rpc = ctx.pool.getForSession(sessionKey);
-      if (!rpc) return [];
+      let rpc = ctx.pool.getForSession(sessionKey);
+      if (!rpc) {
+        const session = ctx.sessions.get(sessionKey);
+        const role = session?.role ?? "default";
+        const profile = ctx.buildSessionProfile(sessionKey, role);
+        rpc = await ctx.pool.acquire(sessionKey, profile);
+      }
       const models = await rpc.getAvailableModels();
       return Array.isArray(models) ? models : [];
     },
 
     async getSessionMessageMode(sessionKey: SessionKey) {
-      return ctx.resolveTelegramMessageMode(sessionKey);
+      const session = ctx.sessions.get(sessionKey);
+      const channel = session?.lastChannel || sessionKey.split(":")[2] || "telegram";
+      const accountId = session?.lastAccountId;
+      return ctx.resolveSessionMessageMode(sessionKey, { channel, accountId });
     },
 
     async setSessionMessageMode(sessionKey: SessionKey, mode: "steer" | "follow-up" | "interrupt") {
