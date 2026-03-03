@@ -1,5 +1,5 @@
 import { useMemo, type ReactNode } from 'react';
-import { createBrowserRouter, RouterProvider } from 'react-router-dom';
+import { createHashRouter, RouterProvider } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Center, Loader } from '@mantine/core';
 import { AppShell } from './layout/app-shell';
@@ -38,7 +38,7 @@ function AppContent() {
 
   const router = useMemo(
     () =>
-      createBrowserRouter([
+      createHashRouter([
         {
           path: '/',
           element: <AppShell />,
