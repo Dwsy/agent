@@ -14,6 +14,7 @@ import type { PluginRegistryState } from "../plugins/loader.ts";
 import type { SessionStore } from "../core/session-store.ts";
 import { getGatewayInternalToken } from "./media-send.ts";
 import { resolveChannelTarget } from "./channel-target.ts";
+import { splitMessage } from "../core/utils.ts";
 
 export interface MessageSendContext {
   config: Config;
@@ -93,7 +94,11 @@ export async function handleMessageSendRequest(
     return Response.json({ error: `Channel plugin not found: ${channel}` }, { status: 404 });
   }
 
-  ctx.log.info(`[message-send] channel=${channel} target=${target} text=${text.length} chars replyTo=${replyTo ?? "none"}`);
+  const maxLength = channelPlugin.outbound.maxLength;
+
+  ctx.log.info(
+    `[message-send] channel=${channel} target=${target} text=${text.length} chars replyTo=${replyTo ?? "none"} maxLength=${maxLength ?? "n/a"}`,
+  );
 
   // Tool hook integration for send_message
   const toolInterceptor = new ToolCallInterceptor(ctx, sessionKey);
@@ -104,36 +109,99 @@ export async function handleMessageSendRequest(
   // Apply hook modifications
   text = toolInterceptor.getText();
   replyTo = toolInterceptor.getReplyTo();
-  replyTo = toolInterceptor.getReplyTo();
 
   try {
+    const chunks = maxLength && maxLength > 0
+      ? splitMessage(text, maxLength)
+      : [text];
+
+    ctx.log.info(`[message-send] prepared chunks=${chunks.length} maxLength=${maxLength ?? "none"}`);
+
     // WebChat: broadcast via WS (sendText is no-op for webchat plugin)
     if (channel === "webchat" && ctx.broadcastToWs) {
-      ctx.broadcastToWs("message_event", {
-        sessionKey,
-        type: "text",
-        text,
+      for (const chunk of chunks) {
+        ctx.broadcastToWs("message_event", {
+          sessionKey,
+          type: "text",
+          text: chunk,
+          replyTo: replyTo ?? null,
+          parseMode: parseMode ?? null,
+          timestamp: Date.now(),
+        });
+      }
+      ctx.log.info(`[message-send] WebChat message_event broadcast for ${sessionKey} chunks=${chunks.length}`);
+
+      await toolInterceptor.afterCall({ ok: true, textLength: text.length, chunkCount: chunks.length }, false);
+      return Response.json({
+        ok: true,
+        channel,
+        textLength: text.length,
+        chunkCount: chunks.length,
+        delivered: true,
         replyTo: replyTo ?? null,
-        parseMode: parseMode ?? null,
-        timestamp: Date.now(),
       });
-      ctx.log.info(`[message-send] WebChat message_event broadcast for ${sessionKey}`);
-      
-      await toolInterceptor.afterCall({ ok: true, textLength: text.length }, false);
-      return Response.json({ ok: true, channel, textLength: text.length, delivered: true });
     }
 
-    const result = await channelPlugin.outbound.sendText(target, text, { replyTo, parseMode });
+    let firstMessageId: string | undefined;
+    let lastMessageId: string | undefined;
 
-    await toolInterceptor.afterCall({ ok: result.ok, textLength: text.length, messageId: result.messageId }, false);
+    for (let i = 0; i < chunks.length; i++) {
+      const chunk = chunks[i]!;
+      const chunkReplyTo = i === 0 ? replyTo : undefined;
+      const result = await channelPlugin.outbound.sendText(target, chunk, { replyTo: chunkReplyTo, parseMode });
+
+      if (!result.ok) {
+        const error = result.error ?? "Message delivery failed";
+        await toolInterceptor.afterCall(
+          {
+            ok: false,
+            textLength: text.length,
+            chunkCount: chunks.length,
+            failedChunk: i + 1,
+            error,
+            messageId: firstMessageId ?? null,
+          },
+          true,
+        );
+        return Response.json(
+          {
+            ok: false,
+            channel,
+            error,
+            textLength: text.length,
+            chunkCount: chunks.length,
+            failedChunk: i + 1,
+            messageId: firstMessageId ?? null,
+            replyTo: replyTo ?? null,
+          },
+          { status: 502 },
+        );
+      }
+
+      if (result.messageId && !firstMessageId) firstMessageId = result.messageId;
+      if (result.messageId) lastMessageId = result.messageId;
+    }
+
+    await toolInterceptor.afterCall(
+      {
+        ok: true,
+        textLength: text.length,
+        chunkCount: chunks.length,
+        messageId: firstMessageId ?? null,
+        lastMessageId: lastMessageId ?? null,
+      },
+      false,
+    );
 
     if (sessionKey) ctx.onDelivered?.(sessionKey);
 
     return Response.json({
-      ok: result.ok,
+      ok: true,
       channel,
       textLength: text.length,
-      messageId: result.messageId ?? null,
+      chunkCount: chunks.length,
+      messageId: firstMessageId ?? null,
+      lastMessageId: lastMessageId ?? null,
       replyTo: replyTo ?? null,
     });
   } catch (err: unknown) {

@@ -7,6 +7,8 @@ import { toolOk, toolError, gatewayHeaders, parseResponseJson } from "./helpers.
 const STREAM_CHUNK_SIZE = 80;
 // Delay between chunks in ms (simulates typing)
 const STREAM_CHUNK_DELAY_MS = 80;
+// Keep stream edits below the smallest channel max length (Discord: 2000)
+const MAX_STREAM_SAFE_LENGTH = 1800;
 
 export function createSendMessageTool(gatewayUrl: string, internalToken: string, authToken?: string) {
   return {
@@ -43,7 +45,8 @@ export function createSendMessageTool(gatewayUrl: string, internalToken: string,
       };
 
       const sessionKey = process.env.PI_GATEWAY_SESSION_KEY || "";
-      const shouldStream = stream ?? text.length > 200; // Auto-stream for long messages
+      const shouldStream = (stream ?? text.length > 200) && text.length <= MAX_STREAM_SAFE_LENGTH;
+      const streamSuppressedByLength = text.length > MAX_STREAM_SAFE_LENGTH;
 
       try {
         // Non-streaming: send in one go
@@ -67,9 +70,11 @@ export function createSendMessageTool(gatewayUrl: string, internalToken: string,
             return toolError(`Failed to send message: ${data.error || res.statusText}`);
           }
 
+          const chunkInfo = typeof data.chunkCount === "number" ? `, ${data.chunkCount} chunks` : "";
+          const streamInfo = streamSuppressedByLength ? "; stream disabled due to channel length limits" : "";
           const summary = replyTo
-            ? `Message sent (reply to ${replyTo}, ${data.textLength} chars)`
-            : `Message sent (${data.textLength} chars)`;
+            ? `Message sent (reply to ${replyTo}, ${data.textLength} chars${chunkInfo}${streamInfo})`
+            : `Message sent (${data.textLength} chars${chunkInfo}${streamInfo})`;
 
           return toolOk(summary);
         }

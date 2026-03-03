@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### send_message Auto-Split for Oversized Text
+- **Channel-aware chunking**: `POST /api/message/send` now reads `channelPlugin.outbound.maxLength` and auto-splits oversized text via `splitMessage()` before delivery (by Dwsy)
+- **Multi-message delivery**: split chunks are sent sequentially; only the first chunk keeps `replyTo` to avoid noisy threaded chains (by Dwsy)
+- **WebChat parity**: `message_event` broadcast now also sends chunked text instead of one oversized payload (by Dwsy)
+- **Response metadata**: `/api/message/send` now returns `chunkCount` and `lastMessageId` in addition to `messageId` (by Dwsy)
+- **Tool-side stream safety**: `send_message` tool disables stream-edit mode automatically for long texts (`>1800` chars) and falls back to API-level chunked send (by Dwsy)
+- **Summary visibility**: tool result now reports chunk count and stream fallback reason when applied (by Dwsy)
+
 ### Concise Mode Command & Callback Router (#19)
 - **`/concise` command**: Toggle concise mode per session — `/concise [on|off|reset|status]` with inline keyboard (by Dwsy)
 - **Session override**: `ConciseStateManager` gains `sessionOverrides` Map — explicit toggle survives hot-reload, `getEffectiveState()` computes override > config default (by Dwsy)
