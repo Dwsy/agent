@@ -1,13 +1,18 @@
 #!/usr/bin/env bun
 /**
  * Reads web UI files and generates `src/_web-assets.ts` with embedded content.
+ * Source of truth is admin-console/dist produced by vite build.
  * Run before `bun build --compile` to bake web assets into the binary.
  */
-import { readFileSync, writeFileSync, readdirSync } from "node:fs";
+import { readFileSync, writeFileSync, readdirSync, cpSync, rmSync } from "node:fs";
 import { join } from "node:path";
 
+const distDir = join(import.meta.dir, "../admin-console/dist");
 const webDir = join(import.meta.dir, "../src/web");
 const outFile = join(import.meta.dir, "../src/_web-assets.ts");
+
+rmSync(webDir, { recursive: true, force: true });
+cpSync(distDir, webDir, { recursive: true });
 
 const files = readdirSync(webDir).filter(f => !f.startsWith("."));
 const entries: string[] = [];
@@ -24,4 +29,4 @@ ${entries.join(",\n")},
 `;
 
 writeFileSync(outFile, code);
-console.log(`Embedded ${files.length} web assets → src/_web-assets.ts`);
+console.log(`Synced ${files.length} web assets from admin-console/dist → src/web and embedded into src/_web-assets.ts`);
