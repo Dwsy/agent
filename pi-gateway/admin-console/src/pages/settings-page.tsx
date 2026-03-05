@@ -10,13 +10,19 @@ import { fetchGatewayConfig, reloadGatewayConfig, restartGateway } from '../lib/
 function ApiTokenConfig() {
   const [token, setToken] = useState(() => localStorage.getItem('gateway_api_token') || '');
 
+  const notifyTokenUpdated = () => {
+    window.dispatchEvent(new Event('gateway-token-updated'));
+  };
+
   const handleSave = () => {
     localStorage.setItem('gateway_api_token', token);
+    notifyTokenUpdated();
     notifications.show({ color: 'green', title: 'Saved', message: 'Gateway API token saved' });
   };
 
   const handleClear = () => {
     localStorage.removeItem('gateway_api_token');
+    notifyTokenUpdated();
     setToken('');
     notifications.show({ color: 'gray', title: 'Cleared', message: 'Gateway API token removed' });
   };

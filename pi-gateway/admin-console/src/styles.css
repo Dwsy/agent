@@ -9,3 +9,32 @@ body,
 body {
   font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
 }
+
+.chat-message-body pre {
+  overflow-x: auto;
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.chat-message-body code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+}
+
+.chat-message-body .thinking-panel {
+  border: 1px solid var(--mantine-color-gray-3);
+  border-radius: 8px;
+  padding: 6px 10px;
+  margin: 8px 0;
+  background: var(--mantine-color-gray-0);
+}
+
+.chat-message-body .thinking-panel summary {
+  cursor: pointer;
+  user-select: none;
+  font-size: 13px;
+  color: var(--mantine-color-dimmed);
+}
+
+.chat-message-body .thinking-content {
+  margin-top: 8px;
+}

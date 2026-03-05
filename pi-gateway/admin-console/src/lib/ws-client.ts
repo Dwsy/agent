@@ -134,6 +134,11 @@ class GatewayWsClient {
     this.connected = false;
   }
 
+  reconnect() {
+    this.disconnect();
+    this.connect();
+  }
+
   request<T = unknown>(method: string, params: Record<string, unknown> = {}): Promise<T> {
     return new Promise((resolve, reject) => {
       if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {

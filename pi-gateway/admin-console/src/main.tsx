@@ -16,13 +16,19 @@ if (!rootElement) {
 
 const manager = localStorageColorSchemeManager({ key: 'pi-gateway-color-scheme' });
 
+const tokenFromUrl = new URL(window.location.href).searchParams.get('token');
+if (tokenFromUrl) {
+  localStorage.setItem('gateway_api_token', tokenFromUrl);
+  window.dispatchEvent(new Event('gateway-token-updated'));
+}
+
 const root = createRoot(rootElement);
 root.render(
   <StrictMode>
     <ColorSchemeScript defaultColorScheme="auto" />
     <MantineProvider theme={adminTheme} defaultColorScheme="auto" colorSchemeManager={manager}>
       <Notifications position="top-right" />
-      <ConfigProvider localConfigPath="/admin-console.config.json" enableEnvOverride={true} enableLogging={true}>
+      <ConfigProvider localConfigPath="/web/admin-console.config.json" enableEnvOverride={true} enableLogging={true}>
         <App />
       </ConfigProvider>
     </MantineProvider>

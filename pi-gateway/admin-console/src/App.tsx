@@ -1,17 +1,18 @@
-import { useMemo, type ReactNode } from 'react';
+import { lazy, Suspense, useMemo, type ReactNode } from 'react';
 import { createHashRouter, RouterProvider } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Center, Loader } from '@mantine/core';
 import { AppShell } from './layout/app-shell';
-import { OverviewPage } from './pages/overview-page';
-import { ChatPage } from './pages/chat-page';
-import { AgentsPage } from './pages/agents-page';
-import { PluginsPage } from './pages/plugins-page';
-import { AlertsPage } from './pages/alerts-page';
-import { SettingsPage } from './pages/settings-page';
-import { MetricsPage } from './pages/metrics-page';
 import { useConfig } from './config/config-provider';
 import { NotFoundPlaceholder } from './components/feature-gate';
+
+const OverviewPage = lazy(() => import('./pages/overview-page').then((module) => ({ default: module.OverviewPage })));
+const ChatPage = lazy(() => import('./pages/chat-page').then((module) => ({ default: module.ChatPage })));
+const AgentsPage = lazy(() => import('./pages/agents-page').then((module) => ({ default: module.AgentsPage })));
+const PluginsPage = lazy(() => import('./pages/plugins-page').then((module) => ({ default: module.PluginsPage })));
+const AlertsPage = lazy(() => import('./pages/alerts-page').then((module) => ({ default: module.AlertsPage })));
+const SettingsPage = lazy(() => import('./pages/settings-page').then((module) => ({ default: module.SettingsPage })));
+const MetricsPage = lazy(() => import('./pages/metrics-page').then((module) => ({ default: module.MetricsPage })));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -123,7 +124,15 @@ function AppContent() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
+      <Suspense
+        fallback={
+          <Center h="60vh">
+            <Loader />
+          </Center>
+        }
+      >
+        <RouterProvider router={router} />
+      </Suspense>
     </QueryClientProvider>
   );
 }
