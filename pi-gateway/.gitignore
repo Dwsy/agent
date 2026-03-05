@@ -2,3 +2,12 @@
 ms20-*.png
 pi-gateway/ms35-*.png
 log/
+
+# Bun temporary compile artifacts (can appear in cwd during bun build --compile)
+.bun-build
+*.bun-build
+.*.bun-build
+
+# Local compiled gateway binaries
+pi-gw
+dist/pi-gw
