@@ -243,7 +243,14 @@ export async function routeHttp(req: Request, url: URL, ctx: GatewayContext): Pr
   }
 
   // --- Static files ---
-  if (pathname === "/" || pathname.startsWith("/web/")) {
+  if (
+    pathname === "/"
+    || pathname.startsWith("/web/")
+    || pathname === "/web"
+    || pathname === "/index.html"
+    || pathname === "/admin-console.config.json"
+    || pathname === "/favicon.ico"
+  ) {
     return serveStaticFile(pathname, ctx.noGui);
   }
 

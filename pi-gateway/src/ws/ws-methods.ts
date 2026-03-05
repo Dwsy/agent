@@ -7,8 +7,7 @@
  * @owner MintHawk (KeenUnion)
  */
 
-import type { GatewayContext, WsClientData } from "../gateway/types.ts";
-import type { ServerWebSocket } from "bun";
+import type { GatewayContext } from "../gateway/types.ts";
 import type { CronJob } from "../core/config.ts";
 import { loadConfig } from "../core/config.ts";
 import type { ImageContent, SessionKey } from "../core/types.ts";

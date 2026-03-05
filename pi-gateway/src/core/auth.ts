@@ -80,6 +80,12 @@ export function buildAuthExemptPrefixes(config?: { channels?: Record<string, any
 /** Check if a URL path is exempt from auth */
 export function isAuthExempt(pathname: string, exemptPrefixes?: string[]): boolean {
   if (AUTH_EXEMPT_PATHS.has(pathname) || pathname === "/") return true;
+
+  // Allow root-level static assets required by the web shell (e.g. /favicon.ico).
+  if (/\.(ico|png|jpe?g|gif|webp|svg|css|js|map|woff2?|ttf|eot|json)$/i.test(pathname)) {
+    return true;
+  }
+
   const prefixes = exemptPrefixes ?? ["/web/"];
   return prefixes.some((p) => pathname.startsWith(p));
 }

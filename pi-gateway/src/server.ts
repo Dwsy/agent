@@ -567,6 +567,21 @@ export class Gateway {
   private startServer(): void {
     const self = this;
 
+    const isLoopbackAddress = (address?: string | null): boolean => {
+      if (!address) return false;
+      return address === "127.0.0.1"
+        || address === "::1"
+        || address === "::ffff:127.0.0.1";
+    };
+
+    const isLoopbackHost = (host?: string): boolean => {
+      if (!host) return false;
+      const normalized = host.replace(/^\[|\]$/g, "").toLowerCase();
+      return normalized === "localhost"
+        || normalized === "127.0.0.1"
+        || normalized === "::1";
+    };
+
     // Initialize WS method router (ctx is fully ready at this point)
     this.wsRouter = createWsRouter(this.ctx);
 
@@ -591,14 +606,24 @@ export class Gateway {
         }
 
         // Auth check — fail-closed (v3.4 S1)
-        const authDenied = authenticateRequest(req, url, self.config.gateway.auth, self.resolvedToken, self.authExemptPrefixes);
-        if (authDenied) return authDenied;
+        // Exception: local loopback access (localhost/127.0.0.1) is trusted for DX.
+        const remoteAddr = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim()
+          ?? req.headers.get("x-real-ip")?.trim()
+          ?? server.requestIP(req)?.address
+          ?? null;
+        const hostHeader = req.headers.get("host")?.split(":")[0];
+        const bypassLocalAuth = isLoopbackAddress(remoteAddr) && isLoopbackHost(hostHeader ?? undefined);
+
+        if (!bypassLocalAuth) {
+          const authDenied = authenticateRequest(req, url, self.config.gateway.auth, self.resolvedToken, self.authExemptPrefixes);
+          if (authDenied) return authDenied;
+        }
 
         // WebSocket upgrade — Bun requires returning `undefined` on success
         if (req.headers.get("upgrade")?.toLowerCase() === "websocket") {
           const clientId = `ws-${++self.nextClientId}`;
           self.log.debug(`WS upgrade request from ${clientId}`);
-          if (server.upgrade(req, { data: { clientId, authenticated: false } })) {
+          if (server.upgrade(req, { data: { clientId, authenticated: bypassLocalAuth } })) {
             return; // Must return undefined for Bun WS upgrade
           }
           return new Response("WebSocket upgrade failed", { status: 400 });

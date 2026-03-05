@@ -20,11 +20,26 @@ export function serveStaticFile(pathname: string, noGui: boolean): Response {
     return Response.json({ error: "Web UI disabled (--no-gui mode)" }, { status: 404 });
   }
 
+  // Browser nicety: avoid noisy favicon 404/401 in console.
+  if (pathname === "/favicon.ico") {
+    return new Response(null, { status: 204 });
+  }
+
   let filename: string;
-  if (pathname === "/" || pathname === "/index.html") {
+  if (
+    pathname === "/"
+    || pathname === "/index.html"
+    || pathname === "/web"
+    || pathname === "/web/"
+    || pathname === "/web/index.html"
+  ) {
     filename = "index.html";
+  } else if (pathname === "/admin-console.config.json") {
+    // Backward compatibility for cached old bundles that still request root config path.
+    filename = "admin-console.config.json";
   } else if (pathname.startsWith("/web/")) {
     filename = pathname.slice(5);
+    if (!filename) filename = "index.html";
   } else {
     return new Response("Not Found", { status: 404 });
   }

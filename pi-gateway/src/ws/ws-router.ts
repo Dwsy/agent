@@ -68,6 +68,11 @@ export function createWsRouter(ctx: GatewayContext): Map<string, WsMethodFn> {
   // --- Special methods that need ws/extensionUI access ---
 
   methods.set("connect", async (params, _ctx, ws) => {
+    // Already authenticated (e.g. local loopback bypass at HTTP upgrade stage)
+    if (ws.data.authenticated) {
+      return { protocol: 1, server: { name: "pi-gateway", version: "0.2.0" } };
+    }
+
     const auth = getRuntimeAuth();
 
     if (auth.mode === "token" && auth.token) {
