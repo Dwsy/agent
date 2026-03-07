@@ -8,7 +8,7 @@ import type { GatewayContext } from "../gateway/types.ts";
 import { serveStaticFile } from "../core/static-server.ts";
 import { handleWebhookWake, handleWebhookEvent } from "./webhook-api.ts";
 import { handleOpenAiChat } from "./openai-compat.ts";
-import { handleSessionReset, handleSessionThink, handleSessionModel, handleModelsList, handleSessionUsage, handleSessionStatus, handleSessionsList, handleSessionDetail } from "./session-api.ts";
+import { handleSessionReset, handleSessionThink, handleSessionModel, handleModelsList, handleSessionUsage, handleSessionStatus, handleSessionsList, handleSessionDetail, handleSessionMessages } from "./session-api.ts";
 import { handleToolsList, handleToolCall } from "../gateway/tool-executor.ts";
 import { handleCronApi } from "../core/cron-api.ts";
 import { searchMemory, getMemoryStats, getRoleInfo, listRoles } from "../core/memory-access.ts";
@@ -80,6 +80,7 @@ export async function routeHttp(req: Request, url: URL, ctx: GatewayContext): Pr
   if (pathname === "/api/session/model" && method === "POST") return handleSessionModel(req, url, ctx);
   if (pathname === "/api/models" && method === "GET") return handleModelsList(req, url, ctx);
   if (pathname === "/api/session/usage" && method === "GET") return handleSessionUsage(req, url, ctx);
+  if (pathname === "/api/session/messages" && method === "GET") return handleSessionMessages(req, url, ctx);
   if (pathname === "/api/session/status" && method === "GET") return handleSessionStatus(req, url, ctx);
 
   // --- Cron ---

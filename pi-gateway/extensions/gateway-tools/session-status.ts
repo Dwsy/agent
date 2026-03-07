@@ -21,14 +21,22 @@ export function createSessionStatusTool(gatewayUrl: string, internalToken: strin
 
       try {
         const qs = key ? `?sessionKey=${encodeURIComponent(key)}` : "";
-        const res = await fetch(`${gatewayUrl}/api/session/status${qs}`, {
-          headers: gatewayHeaders(authToken ?? internalToken),
-        });
+        
+        // Fetch both status and messages in parallel
+        const [statusRes, messagesRes] = await Promise.all([
+          fetch(`${gatewayUrl}/api/session/status${qs}`, {
+            headers: gatewayHeaders(authToken ?? internalToken),
+          }),
+          fetch(`${gatewayUrl}/api/session/messages${qs}`, {
+            headers: gatewayHeaders(authToken ?? internalToken),
+          }),
+        ]);
 
-        const data = await parseResponseJson(res);
+        const data = await parseResponseJson(statusRes);
+        const messagesData = await parseResponseJson(messagesRes);
 
-        if (!res.ok) {
-          return toolError(String(data.error || res.statusText));
+        if (!statusRes.ok) {
+          return toolError(String(data.error || statusRes.statusText));
         }
 
         const stats = data.stats as Record<string, unknown> | undefined;
@@ -36,6 +44,17 @@ export function createSessionStatusTool(gatewayUrl: string, internalToken: strin
         const model = state?.model as Record<string, unknown> | undefined;
         const tokens = stats?.tokens as Record<string, number> | undefined;
         const cost = stats?.cost as Record<string, number> | undefined;
+        const messages = (messagesData.messages ?? []) as Array<{role: string, usage?: {input?: number, output?: number, cacheRead?: number, cacheWrite?: number}}>;
+
+        // Calculate context from last assistant message (correct way)
+        // This fixes the bug where cumulative tokens were used instead of current context
+        const lastAssistantMsg = [...messages].reverse().find((m) => m.role === "assistant");
+        const contextTokens = lastAssistantMsg?.usage 
+          ? lastAssistantMsg.usage.input + 
+            lastAssistantMsg.usage.output + 
+            (lastAssistantMsg.usage.cacheRead ?? 0) + 
+            (lastAssistantMsg.usage.cacheWrite ?? 0)
+          : (tokens?.input ?? 0);
 
         const fmt = (n: number) =>
           n >= 1_000_000 ? (n / 1_000_000).toFixed(1) + "M" :
@@ -44,12 +63,14 @@ export function createSessionStatusTool(gatewayUrl: string, internalToken: strin
         const inputTokens = tokens?.input ?? 0;
         const outputTokens = tokens?.output ?? 0;
         const contextWindow = (model?.contextWindow as number) ?? 0;
-        const pct = contextWindow > 0 ? ((inputTokens / contextWindow) * 100).toFixed(1) : "?";
+        
+        // Use contextTokens (from last assistant) instead of cumulative inputTokens
+        const pct = contextWindow > 0 ? ((contextTokens / contextWindow) * 100).toFixed(1) : "?";
 
         const lines = [
           `Model: ${model?.id ?? "unknown"}`,
-          `Context: ${pct}% (${fmt(inputTokens)}/${fmt(contextWindow)})`,
-          `Tokens: ${fmt(inputTokens)} in / ${fmt(outputTokens)} out`,
+          `Context: ${pct}% (${fmt(contextTokens)}/${fmt(contextWindow)})`,
+          `Tokens: ${fmt(inputTokens)} in / ${fmt(outputTokens)} out (cumulative)`,
           `Cost: $${(cost?.total ?? 0).toFixed(4)}`,
           `Messages: ${data.messageCount ?? "?"}`,
           `Streaming: ${data.isStreaming ?? false}`,

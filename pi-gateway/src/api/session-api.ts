@@ -173,6 +173,28 @@ export async function handleSessionUsage(
 }
 
 // ============================================================================
+// GET /api/session/messages — get session messages for context calculation
+// ============================================================================
+
+export async function handleSessionMessages(
+  _req: Request,
+  url: URL,
+  ctx: GatewayContext,
+): Promise<Response> {
+  const sessionKey = (url.searchParams.get("sessionKey") ?? "agent:main:main:main") as SessionKey;
+  const rpc = ctx.pool.getForSession(sessionKey);
+  if (!rpc) {
+    return Response.json({ error: "No active session" }, { status: 404 });
+  }
+  try {
+    const messages = await rpc.getMessages();
+    return Response.json({ sessionKey, messages });
+  } catch (err: unknown) {
+    return Response.json({ error: (err instanceof Error ? err.message : String(err)) }, { status: 500 });
+  }
+}
+
+// ============================================================================
 // GET /api/session/status — combined stats + state + session info
 // ============================================================================
 
