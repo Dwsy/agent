@@ -33,8 +33,13 @@ function ensureBuiltinTags() {
 
 function log(msg: string) {
   const fs = require("node:fs")
+  const path = require("node:path")
+  const os = require("node:os")
+  // Cross-platform temp directory
+  const tmpDir = os.tmpdir()
+  const logPath = path.join(tmpDir, "pi-session-state.log")
   const line = `[${new Date().toISOString()}] ${msg}\n`
-  fs.appendFileSync("/tmp/pi-session-state.log", line)
+  fs.appendFileSync(logPath, line)
 }
 
 export default function (pi: ExtensionAPI) {
