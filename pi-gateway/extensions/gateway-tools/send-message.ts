@@ -152,80 +152,56 @@ export function createSendMessageTool(gatewayUrl: string, internalToken: string,
           return toolOk(summary);
         }
 
-        // Streaming: send first chunk, then edit
+        // Streaming: prefer channel-native stream via repeated /api/message/send calls.
         const chunks: string[] = [];
         for (let i = 0; i < text.length; i += STREAM_CHUNK_SIZE) {
           chunks.push(text.slice(i, i + STREAM_CHUNK_SIZE));
         }
 
-        // Send first chunk
-        let currentText = chunks[0]!;
-        const res = await fetch(`${gatewayUrl}/api/message/send`, {
-          method: "POST",
-          headers: gatewayHeaders(authToken ?? internalToken, true),
-          body: JSON.stringify({
-            token: internalToken,
-            pid: process.pid,
-            sessionKey: sessionKey || undefined,
-            text: currentText + "…", // Add ellipsis to indicate more coming
-            replyTo,
-            parseMode,
-            streamMode,
-            draftId: wantsDraft ? (normalizedDraftId ?? Date.now()) : undefined,
-            stream: true, // Mark as streaming message
-          }),
-        });
-
-        const data = await parseResponseJson(res);
-        if (!res.ok) {
-          return toolError(`Failed to send message: ${data.error || res.statusText}`);
-        }
-
-        const messageId = data.messageId as string | undefined;
+        let currentText = "";
+        let messageId: string | undefined;
         const totalChunks = chunks.length;
 
-        // Report first chunk
-        if (onPartialResult) {
-          onPartialResult({
-            content: [{ type: "text", text: currentText }],
-            details: { sent: 1, total: totalChunks, messageId },
-          });
-        }
-
-        // Send remaining chunks via edit
-        for (let i = 1; i < chunks.length; i++) {
-          // Check abort signal
+        for (let i = 0; i < chunks.length; i++) {
           if (signal?.aborted) {
             return toolError("Message sending aborted");
           }
 
-          // Wait a bit to simulate typing
-          await new Promise((resolve) => setTimeout(resolve, STREAM_CHUNK_DELAY_MS));
+          if (i > 0) {
+            await new Promise((resolve) => setTimeout(resolve, STREAM_CHUNK_DELAY_MS));
+          }
 
           currentText += chunks[i];
           const isLast = i === chunks.length - 1;
           const displayText = isLast ? currentText : currentText + "…";
 
-          // Edit message
-          const editRes = await fetch(`${gatewayUrl}/api/message/edit`, {
+          const sendRes = await fetch(`${gatewayUrl}/api/message/send`, {
             method: "POST",
             headers: gatewayHeaders(authToken ?? internalToken, true),
             body: JSON.stringify({
               token: internalToken,
               pid: process.pid,
               sessionKey: sessionKey || undefined,
-              messageId,
               text: displayText,
+              replyTo: i === 0 ? replyTo : undefined,
               parseMode,
+              streamMode: streamMode ?? "partial",
+              streamId: messageId,
+              streamIndex: i,
+              streamReset: i === 0,
+              streamFinal: isLast,
+              draftId: wantsDraft ? (normalizedDraftId ?? Date.now()) : undefined,
+              stream: true,
             }),
           });
 
-          if (!editRes.ok) {
-            // Edit failed, continue with final result
-            console.warn(`[send_message] Edit failed at chunk ${i + 1}/${totalChunks}`);
+          const data = await parseResponseJson(sendRes);
+          if (!sendRes.ok) {
+            return toolError(`Failed to stream message: ${data.error || sendRes.statusText}`);
           }
 
-          // Report progress
+          messageId = (data.lastMessageId as string | undefined) ?? (data.messageId as string | undefined) ?? messageId;
+
           if (onPartialResult) {
             onPartialResult({
               content: [{ type: "text", text: displayText }],
