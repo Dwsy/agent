@@ -41,3 +41,6 @@
 [submodule "extensions/pi-super-curl"]
 	path = extensions/pi-super-curl
 	url = https://github.com/Graffioh/pi-super-curl.git
+[submodule "extensions/interview"]
+	path = extensions/interview
+	url = https://github.com/nicobailon/pi-interview-tool.git
