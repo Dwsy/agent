@@ -22,12 +22,42 @@ Pi Agent is an autonomous AI orchestrator for software development — a monorep
 - [Pi Agent Core](https://github.com/nicepkg/pi) (`pi` CLI installed)
 - Node.js >= 18 (for some skills)
 
+## Installation
+
+### Windows
+
+```bash
+# Install Bun
+powershell -c "irm bun.sh/install.ps1 | iex"
+
+# Restart terminal after Bun installation
+```
+
+### Clone with Submodules
+
+```bash
+# Option 1: Clone with submodules
+git clone --recurse-submodules <repo-url> ~/.pi/agent
+
+# Option 2: If already cloned, initialize submodules
+git submodule init
+git submodule update --init --recursive
+```
+
+### Install Dependencies
+
+```bash
+# Install dependencies for all extensions with package.json
+cd extensions/pi-context && bun i
+cd ../pi-files && bun i
+cd ../pi-interactive-shell && bun i
+cd ../pi-messenger && bun i
+cd ../pi-subagents && bun i
+```
+
 ## Quick Start
 
 ```bash
-# Clone with submodules
-git clone --recurse-submodules <repo-url> ~/.pi/agent
-
 # Use workflow commands in any project
 /scout authentication flow      # Fast code reconnaissance
 /analyze database schema        # Deep analysis
