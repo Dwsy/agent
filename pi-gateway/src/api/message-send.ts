@@ -55,6 +55,12 @@ export async function handleMessageSendRequest(
     ? Math.floor(body.draftId)
     : undefined;
 
+  const streamIndex = typeof body.streamIndex === "number" && Number.isFinite(body.streamIndex)
+    ? Math.max(0, Math.floor(body.streamIndex))
+    : undefined;
+  const streamReset = typeof body.streamReset === "boolean" ? body.streamReset : undefined;
+  const streamFinal = typeof body.streamFinal === "boolean" ? body.streamFinal : undefined;
+
   let channelMeta = body.channelMeta && typeof body.channelMeta === "object"
     ? body.channelMeta as Record<string, unknown>
     : undefined;
@@ -169,6 +175,19 @@ export async function handleMessageSendRequest(
     for (let i = 0; i < chunks.length; i++) {
       const chunk = chunks[i]!;
       const chunkReplyTo = i === 0 ? replyTo : undefined;
+
+      // Merge per-chunk stream sequencing into channelMeta for the plugin.
+      // When the caller provides streamIndex/Reset/Final (e.g. from the send_message tool),
+      // pass them through so QQBot can consume native stream hints.
+      const chunkChannelMeta = (streamIndex !== undefined || streamReset !== undefined || streamFinal !== undefined)
+        ? {
+            ...normalizedChannelMeta,
+            ...(streamIndex !== undefined && { streamIndex: chunks.length === 1 ? streamIndex : streamIndex + i }),
+            ...(streamReset !== undefined && { streamReset: chunks.length === 1 ? streamReset : i === 0 && streamReset }),
+            ...(streamFinal !== undefined && { streamFinal: chunks.length === 1 ? streamFinal : i === chunks.length - 1 && streamFinal }),
+          }
+        : normalizedChannelMeta;
+
       const result = await channelPlugin.outbound.sendText(target, chunk, {
         sessionKey,
         replyTo: chunkReplyTo,
@@ -176,7 +195,7 @@ export async function handleMessageSendRequest(
         streamMode: effectiveStreamMode,
         streamId: effectiveStreamId,
         draftId: legacyDraftId,
-        channelMeta: normalizedChannelMeta,
+        channelMeta: chunkChannelMeta,
       });
 
       if (!result.ok) {
