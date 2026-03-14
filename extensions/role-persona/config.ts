@@ -104,7 +104,13 @@ export interface KnowledgeConfig {
   externalSources: KnowledgeExternalSource[];
 }
 
+export interface StorageConfig {
+  /** Roles directory path. Supports ~ expansion. Default: ~/.pi/roles */
+  rolesDir: string;
+}
+
 export interface RolePersonaConfig {
+  storage: StorageConfig;
   autoMemory: AutoMemoryConfig;
   logging: LoggingConfig;
   memory: MemoryConfig;
@@ -120,6 +126,9 @@ export interface RolePersonaConfig {
 // ============================================================================
 
 const DEFAULT_CONFIG: RolePersonaConfig = {
+  storage: {
+    rolesDir: "~/.pi/roles",
+  },
   autoMemory: {
     enabled: true,
     model: "openai-codex/gpt-5.1-codex-mini",
@@ -337,6 +346,15 @@ function parseJsonc(content: string): unknown {
 function applyEnvOverrides(config: RolePersonaConfig): RolePersonaConfig {
   const result = structuredClone(config);
 
+  // storage.rolesDir
+  if (process.env.PI_ROLES_DIR) {
+    result.storage.rolesDir = process.env.PI_ROLES_DIR;
+  }
+  // Legacy env var support (backward compat)
+  if (process.env.PI_AGENT_ROLES_DIR) {
+    result.storage.rolesDir = process.env.PI_AGENT_ROLES_DIR;
+  }
+
   // autoMemory.enabled
   if (process.env.ROLE_AUTO_MEMORY !== undefined) {
     result.autoMemory.enabled = process.env.ROLE_AUTO_MEMORY !== "0" && process.env.ROLE_AUTO_MEMORY !== "false";
@@ -504,6 +522,9 @@ function deepMerge<T extends Record<string, any>>(base: T, override: Partial<T>)
 
 // 便捷访问函数
 export const config = {
+  get storage(): StorageConfig {
+    return getConfig().storage;
+  },
   get autoMemory(): AutoMemoryConfig {
     return getConfig().autoMemory;
   },

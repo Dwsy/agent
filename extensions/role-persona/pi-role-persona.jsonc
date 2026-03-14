@@ -2,11 +2,19 @@
 // Path: ~/.pi/agent/extensions/role-persona/pi-role-persona.jsonc
 //
 // 配置优先级（高到低）：
-// 1. 环境变量（ROLE_*）
+// 1. 环境变量（PI_ROLES_DIR, PI_AGENT_ROLES_DIR 等）
 // 2. 本配置文件
 // 3. 内置默认值
 
 {
+  // ==================== 存储配置 ====================
+  "storage": {
+    // 角色数据存储目录（支持 ~ 展开）
+    // 默认: ~/.pi/roles
+    // 环境变量覆盖：PI_ROLES_DIR 或 PI_AGENT_ROLES_DIR（兼容旧版）
+    // "rolesDir": "~/.pi/roles"
+  },
+
   // ==================== 自动记忆配置 ====================
   "autoMemory": {
     // 总开关：是否启用自动记忆提取

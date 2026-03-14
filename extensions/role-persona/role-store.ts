@@ -1,16 +1,81 @@
-import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync, cpSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 
 import { ensureRoleMemoryFiles } from "./memory-md.ts";
 import { getDefaultPrompts, resolveTemplateLanguage } from "./role-template.ts";
+import { getConfig } from "./config.ts";
 
-function resolveRolesDir(): string {
-  const envPath = process.env.PI_AGENT_ROLES_DIR?.trim();
-  return envPath || join(homedir(), ".pi", "agent", "roles");
+/** Expand ~ to home directory */
+function expandPath(path: string): string {
+  if (path.startsWith("~")) {
+    return join(homedir(), path.slice(1));
+  }
+  return path;
 }
 
-export const ROLES_DIR = resolveRolesDir();
+/** Legacy roles directory path (for migration) */
+const LEGACY_ROLES_DIR = join(homedir(), ".pi", "agent", "roles");
+
+function resolveRolesDir(): string {
+  // Priority: PI_ROLES_DIR env > PI_AGENT_ROLES_DIR env (legacy) > config file > default
+  const envPath = process.env.PI_ROLES_DIR?.trim() || process.env.PI_AGENT_ROLES_DIR?.trim();
+  if (envPath) {
+    return expandPath(envPath);
+  }
+
+  const configPath = getConfig().storage?.rolesDir;
+  if (configPath) {
+    return expandPath(configPath);
+  }
+
+  // Default: ~/.pi/roles
+  return join(homedir(), ".pi", "roles");
+}
+
+/** Check if legacy directory exists and new directory doesn't (migration needed) */
+function needsMigration(newDir: string): boolean {
+  return existsSync(LEGACY_ROLES_DIR) && !existsSync(newDir);
+}
+
+/** Migrate roles from legacy path to new path */
+function migrateFromLegacy(newDir: string): { migrated: boolean; message: string } {
+  if (!needsMigration(newDir)) {
+    return { migrated: false, message: "No migration needed" };
+  }
+
+  try {
+    // Create parent directory if needed
+    const parentDir = join(newDir, "..");
+    if (!existsSync(parentDir)) {
+      mkdirSync(parentDir, { recursive: true });
+    }
+
+    // Copy the entire directory (preserving .git if exists)
+    cpSync(LEGACY_ROLES_DIR, newDir, { recursive: true });
+
+    return {
+      migrated: true,
+      message: `Migrated roles from ${LEGACY_ROLES_DIR} to ${newDir}`,
+    };
+  } catch (err) {
+    return {
+      migrated: false,
+      message: `Migration failed: ${err}. Please manually move ${LEGACY_ROLES_DIR} to ${newDir}`,
+    };
+  }
+}
+
+/** Perform migration if needed, then export the resolved path */
+const _resolvedRolesDir = resolveRolesDir();
+const _migrationResult = migrateFromLegacy(_resolvedRolesDir);
+if (_migrationResult.migrated) {
+  console.log(`[role-persona] ${_migrationResult.message}`);
+} else if (_migrationResult.message !== "No migration needed") {
+  console.warn(`[role-persona] ${_migrationResult.message}`);
+}
+
+export const ROLES_DIR = _resolvedRolesDir;
 export const ROLE_CONFIG_FILE = join(ROLES_DIR, "config.json");
 export const DEFAULT_ROLE = "default";
 
