@@ -22,18 +22,12 @@ export function createSessionStatusTool(gatewayUrl: string, internalToken: strin
       try {
         const qs = key ? `?sessionKey=${encodeURIComponent(key)}` : "";
         
-        // Fetch both status and messages in parallel
-        const [statusRes, messagesRes] = await Promise.all([
-          fetch(`${gatewayUrl}/api/session/status${qs}`, {
-            headers: gatewayHeaders(authToken ?? internalToken),
-          }),
-          fetch(`${gatewayUrl}/api/session/messages${qs}`, {
-            headers: gatewayHeaders(authToken ?? internalToken),
-          }),
-        ]);
+        // Fetch status first (required)
+        const statusRes = await fetch(`${gatewayUrl}/api/session/status${qs}`, {
+          headers: gatewayHeaders(authToken ?? internalToken),
+        });
 
         const data = await parseResponseJson(statusRes);
-        const messagesData = await parseResponseJson(messagesRes);
 
         if (!statusRes.ok) {
           return toolError(String(data.error || statusRes.statusText));
@@ -44,17 +38,35 @@ export function createSessionStatusTool(gatewayUrl: string, internalToken: strin
         const model = state?.model as Record<string, unknown> | undefined;
         const tokens = stats?.tokens as Record<string, number> | undefined;
         const cost = stats?.cost as Record<string, number> | undefined;
-        const messages = (messagesData.messages ?? []) as Array<{role: string, usage?: {input?: number, output?: number, cacheRead?: number, cacheWrite?: number}}>;
 
-        // Calculate context from last assistant message (correct way)
-        // This fixes the bug where cumulative tokens were used instead of current context
-        const lastAssistantMsg = [...messages].reverse().find((m) => m.role === "assistant");
-        const contextTokens = lastAssistantMsg?.usage 
-          ? lastAssistantMsg.usage.input + 
-            lastAssistantMsg.usage.output + 
-            (lastAssistantMsg.usage.cacheRead ?? 0) + 
-            (lastAssistantMsg.usage.cacheWrite ?? 0)
-          : (tokens?.input ?? 0);
+        // Fetch messages with graceful degradation
+        // If this fails, fallback to cumulative tokens (less accurate but still functional)
+        let contextTokens = tokens?.input ?? 0;
+        try {
+          const messagesRes = await fetch(`${gatewayUrl}/api/session/messages${qs}`, {
+            headers: gatewayHeaders(authToken ?? internalToken),
+          });
+          
+          if (messagesRes.ok) {
+            const messagesData = await parseResponseJson(messagesRes);
+            const messages = (messagesData.messages ?? []) as Array<{role: string, usage?: {input?: number, output?: number, cacheRead?: number, cacheWrite?: number}}>;
+
+            // Calculate context from last assistant message (correct way)
+            // This fixes the bug where cumulative tokens were used instead of current context
+            const lastAssistantMsg = [...messages].reverse().find((m) => m.role === "assistant");
+            if (lastAssistantMsg?.usage) {
+              contextTokens = 
+                lastAssistantMsg.usage.input + 
+                lastAssistantMsg.usage.output + 
+                (lastAssistantMsg.usage.cacheRead ?? 0) + 
+                (lastAssistantMsg.usage.cacheWrite ?? 0);
+            }
+          }
+          // Silent fallback on messages error - context will use cumulative tokens
+        } catch (_msgErr) {
+          // Graceful degradation: continue with cumulative tokens
+          // This ensures the tool still works even if messages endpoint is unavailable
+        }
 
         const fmt = (n: number) =>
           n >= 1_000_000 ? (n / 1_000_000).toFixed(1) + "M" :
