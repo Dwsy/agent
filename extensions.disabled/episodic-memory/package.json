@@ -1,0 +1,33 @@
+{
+  "name": "pi-episodic-memory",
+  "version": "0.1.0",
+  "description": "Episodic memory for pi – semantic search over past sessions",
+  "keywords": ["pi-package"],
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/rHedBull/pi-episodic-memory"
+  },
+  "files": [
+    "extensions",
+    "skills",
+    "README.md"
+  ],
+  "pi": {
+    "extensions": ["./extensions"],
+    "skills": ["./skills"]
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.8.0",
+    "sqlite-vec": "^0.1.6",
+    "@huggingface/transformers": "^3.4.1"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13"
+  },
+  "peerDependencies": {
+    "@mariozechner/pi-coding-agent": "*",
+    "@sinclair/typebox": "*"
+  },
+  "license": "MIT"
+}
