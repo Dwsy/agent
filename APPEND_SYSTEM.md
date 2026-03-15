@@ -312,16 +312,30 @@ EOF
 **禁止**重新执行原始命令（可能再次被截断）。
 </critical>
 
-### 1.6 网络搜索
+### 1.6 网络搜索与网页抓取
 
 <instruction>
-用户要求"搜索/介绍/最新消息"时使用 Tavily：
+**优先级：Tavily > Qwen CLI**
 
+**Tavily（首选）**：实时网络搜索
 ```bash
 cd ~/.pi/agent/skills/tavily-search-free && python3 scripts/tavily_search.py --query "关键词"
 ```
+**详细用法：** `~/.pi/agent/skills/tavily-search-free/SKILL.md`
 
-**详细用法参考：** `~/.pi/agent/skills/tavily-search-free/SKILL.md`
+**Qwen CLI（备选）**：Web 搜索 + 网页抓取
+```bash
+# Web 搜索（需要 -y 自动批准工具）
+qwen -y "搜索关键词"
+
+# 网页抓取
+qwen -y "读取 https://example.com 页面内容"
+
+# 非交互模式
+qwen "你的问题"              # 位置参数模式（推荐）
+qwen -p "你的问题"           # -p 模式（deprecated）
+```
+**注意**：Qwen 的 web_search 工具需要 `-y` (YOLO mode) 才能在非交互模式自动执行。
 
 **排除**：搜索本地代码 → fd/rg/ace。
 </instruction>
