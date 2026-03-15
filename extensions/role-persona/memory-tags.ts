@@ -14,13 +14,53 @@ import { join } from "node:path";
 import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { completeSimple } from "@mariozechner/pi-ai";
 import { log } from "./logger.ts";
-import { config } from "./config.ts";
+import { config, type ModelSpec } from "./config.ts";
 
 // ============ 配置 ============
 
 const TAG_MODEL = config.autoMemory.tagModel || config.autoMemory.model;
 const TAG_MIN_CONFIDENCE = 0.7;
 const TAG_MAX_PER_MEMORY = 8;
+
+/** 解析单个模型字符串（格式：provider/model-id，只分割第一个 /） */
+function parseModelString(spec: string): { provider: string; modelId: string } | null {
+  const trimmed = spec.trim();
+  if (!trimmed) return null;
+  
+  const slashIndex = trimmed.indexOf("/");
+  if (slashIndex === -1) {
+    return { provider: "", modelId: trimmed };
+  }
+  
+  return {
+    provider: trimmed.slice(0, slashIndex),
+    modelId: trimmed.slice(slashIndex + 1),
+  };
+}
+
+/** 将各种格式的模型配置标准化为 ModelSpec 数组 */
+function normalizeModelSpecs(spec: string | string[] | ModelSpec[] | undefined): ModelSpec[] {
+  if (!spec) return [];
+  
+  // 已经是对象数组
+  if (Array.isArray(spec) && spec.length > 0 && typeof spec[0] === "object") {
+    return spec as ModelSpec[];
+  }
+  
+  // 字符串数组
+  if (Array.isArray(spec)) {
+    return (spec as string[])
+      .map((s) => {
+        const parsed = parseModelString(s);
+        return parsed ? { provider: parsed.provider, model: parsed.modelId } : null;
+      })
+      .filter((s): s is ModelSpec => s !== null);
+  }
+  
+  // 单个字符串
+  const parsed = parseModelString(spec as string);
+  return parsed ? [{ provider: parsed.provider, model: parsed.modelId }] : [];
+}
 
 // ============ 类型定义 ============
 
@@ -82,47 +122,78 @@ Return JSON only:
 
 async function resolveTagModel(
   ctx: ExtensionContext,
-  requested?: string
-): Promise<{ provider: string; modelId: string; apiKey: string } | null> {
-  const needle = (requested || TAG_MODEL || "").trim().toLowerCase();
+  requested?: string | string[] | ModelSpec[]
+): Promise<{ provider: string; modelId: string; apiKey: string; label: string } | null> {
+  const specs = normalizeModelSpecs(requested || TAG_MODEL);
   
-  if (!needle && ctx.model) {
+  // 如果未指定模型，使用当前会话模型
+  if (specs.length === 0) {
+    if (!ctx.model) return null;
+    const apiKey = await ctx.modelRegistry.getApiKey(ctx.model);
+    if (!apiKey) return null;
+    return {
+      provider: ctx.model.provider,
+      modelId: ctx.model.id,
+      apiKey,
+      label: `${ctx.model.provider}/${ctx.model.id}`,
+    };
+  }
+  
+  // 按顺序尝试每个模型
+  const all = ctx.modelRegistry.getAll();
+  for (const spec of specs) {
+    const { provider, model } = spec;
+    const picked = all.find((m) => {
+      if (provider) {
+        return m.provider.toLowerCase() === provider.toLowerCase() &&
+               m.id.toLowerCase() === model.toLowerCase();
+      }
+      return m.id.toLowerCase() === model.toLowerCase() ||
+             m.name.toLowerCase() === model.toLowerCase();
+    });
+    
+    if (!picked) {
+      log("memory-tags", `model not available, skipping: ${provider}/${model}`);
+      continue;
+    }
+    
+    const apiKey = await ctx.modelRegistry.getApiKey(picked);
+    if (!apiKey) {
+      log("memory-tags", `no API key for model, skipping: ${provider}/${model}`);
+      continue;
+    }
+    
+    return {
+      provider: picked.provider,
+      modelId: picked.id,
+      apiKey,
+      label: `${picked.provider}/${picked.id}`,
+    };
+  }
+  
+  // 所有模型都不可用，尝试当前会话模型
+  if (ctx.model) {
     const apiKey = await ctx.modelRegistry.getApiKey(ctx.model);
     if (apiKey) {
       return {
         provider: ctx.model.provider,
         modelId: ctx.model.id,
         apiKey,
+        label: `${ctx.model.provider}/${ctx.model.id}`,
       };
     }
   }
   
-  if (!needle) return null;
-  
-  const all = ctx.modelRegistry.getAll();
-  const picked = all.find((m) => {
-    const full = `${m.provider}/${m.id}`.toLowerCase();
-    return full === needle || m.id.toLowerCase() === needle;
-  });
-  
-  if (!picked) return null;
-  const apiKey = await ctx.modelRegistry.getApiKey(picked);
-  if (!apiKey) return null;
-  
-  return {
-    provider: picked.provider,
-    modelId: picked.id,
-    apiKey,
-  };
+  return null;
 }
 
 /**
- * 使用 LLM 从内容提取标签
+ * 使用 LLM 从内容提取标签（支持 fallback）
  */
 export async function extractTagsWithLLM(
   content: string,
   ctx: ExtensionContext,
-  modelOverride?: string
+  modelOverride?: string | string[] | ModelSpec[]
 ): Promise<TagExtractionResult> {
   const modelInfo = await resolveTagModel(ctx, modelOverride);
   
@@ -146,7 +217,7 @@ export async function extractTagsWithLLM(
     );
     
     const result = parseTagResponse(response);
-    log("memory-tags", `LLM extracted ${result.tags.length} tags using ${modelInfo.provider}/${modelInfo.modelId}`);
+    log("memory-tags", `LLM extracted ${result.tags.length} tags using ${modelInfo.label}`);
     
     return result;
   } catch (err) {
@@ -268,11 +339,23 @@ function getTagsIndexPath(rolePath: string): string {
 export function loadTagsIndex(rolePath: string): TagsIndex {
   const path = getTagsIndexPath(rolePath);
   
+  // 获取当前配置的模型标签（用于显示）
+  let modelLabel: string | undefined;
+  const currentModel = TAG_MODEL;
+  if (Array.isArray(currentModel) && currentModel.length > 0) {
+    const first = currentModel[0];
+    modelLabel = typeof first === "object" 
+      ? `${first.provider}/${first.model}` 
+      : String(first);
+  } else if (typeof currentModel === "string" && currentModel) {
+    modelLabel = currentModel;
+  }
+  
   if (!existsSync(path)) {
     return {
       version: "1.1",
       lastUpdated: new Date().toISOString(),
-      extractionModel: TAG_MODEL || undefined,
+      extractionModel: modelLabel,
       learnedVocabulary: [],
       tags: {},
       associations: {},
@@ -290,7 +373,7 @@ export function loadTagsIndex(rolePath: string): TagsIndex {
     return {
       version: "1.1",
       lastUpdated: new Date().toISOString(),
-      extractionModel: TAG_MODEL || undefined,
+      extractionModel: modelLabel,
       learnedVocabulary: [],
       tags: {},
       associations: {},

@@ -1,7 +1,7 @@
 import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { convertToLlm, serializeConversation } from "@mariozechner/pi-coding-agent";
 import { complete, completeSimple } from "@mariozechner/pi-ai";
-import { config } from "./config.ts";
+import { config, type ModelSpec } from "./config.ts";
 
 import {
   addRoleLearning,
@@ -39,31 +39,134 @@ function parseAutoMemoryResponse(text: string): AutoMemoryResponse | null {
   }
 }
 
+/** 解析单个模型字符串（格式：provider/model-id，只分割第一个 /） */
+function parseModelString(spec: string): { provider: string; modelId: string } | null {
+  const trimmed = spec.trim();
+  if (!trimmed) return null;
+  
+  const slashIndex = trimmed.indexOf("/");
+  if (slashIndex === -1) {
+    // 没有 /，可能是纯 modelId
+    return { provider: "", modelId: trimmed };
+  }
+  
+  return {
+    provider: trimmed.slice(0, slashIndex),
+    modelId: trimmed.slice(slashIndex + 1),
+  };
+}
+
 async function resolveRequestedModel(
   ctx: ExtensionContext,
-  requested?: string
+  requested?: string | ModelSpec
 ): Promise<{ model: any; apiKey: string; label: string } | null> {
-  if (!requested || !requested.trim()) {
+  // 未指定时使用当前会话模型
+  if (!requested) {
     if (!ctx.model) return null;
     const apiKey = await ctx.modelRegistry.getApiKey(ctx.model);
     if (!apiKey) return null;
     return { model: ctx.model, apiKey, label: `${ctx.model.provider}/${ctx.model.id}` };
   }
 
-  const needle = requested.trim().toLowerCase();
+  // 对象格式 { provider, model }
+  if (typeof requested === "object") {
+    const { provider, model: modelId } = requested;
+    const all = ctx.modelRegistry.getAll();
+    const picked = all.find((m) => 
+      m.provider.toLowerCase() === provider.toLowerCase() &&
+      m.id.toLowerCase() === modelId.toLowerCase()
+    );
+    if (!picked) {
+      log("model-resolve", `model not found: provider=${provider}, model=${modelId}`);
+      return null;
+    }
+    const apiKey = await ctx.modelRegistry.getApiKey(picked);
+    if (!apiKey) {
+      log("model-resolve", `no API key for: ${provider}/${modelId}`);
+      return null;
+    }
+    return { model: picked, apiKey, label: `${picked.provider}/${picked.id}` };
+  }
+
+  // 字符串格式 "provider/model-id"
+  const parsed = parseModelString(requested);
+  if (!parsed) return null;
+
+  const { provider, modelId } = parsed;
   const all = ctx.modelRegistry.getAll();
+  
+  // 匹配逻辑：provider/modelId 或纯 modelId
   const picked = all.find((m) => {
-    const byId = `${m.provider}/${m.id}`.toLowerCase() === needle;
-    const byName = `${m.provider}/${m.name}`.toLowerCase() === needle;
-    const shortId = m.id.toLowerCase() === needle;
-    const shortName = m.name.toLowerCase() === needle;
-    return byId || byName || shortId || shortName;
+    if (provider) {
+      // 有 provider，精确匹配 provider + modelId
+      return m.provider.toLowerCase() === provider.toLowerCase() &&
+             m.id.toLowerCase() === modelId.toLowerCase();
+    } else {
+      // 没有 provider，只匹配 modelId（支持 name 匹配）
+      return m.id.toLowerCase() === modelId.toLowerCase() ||
+             m.name.toLowerCase() === modelId.toLowerCase();
+    }
   });
 
   if (!picked) return null;
   const apiKey = await ctx.modelRegistry.getApiKey(picked);
   if (!apiKey) return null;
   return { model: picked, apiKey, label: `${picked.provider}/${picked.id}` };
+}
+
+/** 将各种格式的模型配置标准化为 ModelSpec 数组 */
+function normalizeModelSpecs(spec: string | string[] | ModelSpec[] | undefined): ModelSpec[] {
+  if (!spec) return [];
+  
+  // 已经是对象数组
+  if (Array.isArray(spec) && spec.length > 0 && typeof spec[0] === "object") {
+    return spec as ModelSpec[];
+  }
+  
+  // 字符串数组
+  if (Array.isArray(spec)) {
+    return (spec as string[])
+      .map((s) => {
+        const parsed = parseModelString(s);
+        return parsed ? { provider: parsed.provider, model: parsed.modelId } : null;
+      })
+      .filter((s): s is ModelSpec => s !== null);
+  }
+  
+  // 单个字符串
+  const parsed = parseModelString(spec as string);
+  return parsed ? [{ provider: parsed.provider, model: parsed.modelId }] : [];
+}
+
+/**
+ * 解析模型配置，返回可用的模型列表（用于 fallback）
+ * 按顺序尝试每个模型，跳过不可用的
+ */
+async function resolveModelsWithFallback(
+  ctx: ExtensionContext,
+  modelSpec?: string | string[] | ModelSpec[]
+): Promise<Array<{ model: any; apiKey: string; label: string }>> {
+  // 如果未指定，使用当前会话模型
+  if (!modelSpec) {
+    if (!ctx.model) return [];
+    const apiKey = await ctx.modelRegistry.getApiKey(ctx.model);
+    if (!apiKey) return [];
+    return [{ model: ctx.model, apiKey, label: `${ctx.model.provider}/${ctx.model.id}` }];
+  }
+
+  const specs = normalizeModelSpecs(modelSpec);
+  const results: Array<{ model: any; apiKey: string; label: string }> = [];
+
+  for (const spec of specs) {
+    const resolved = await resolveRequestedModel(ctx, spec);
+    if (resolved) {
+      results.push(resolved);
+    } else {
+      log("model-resolve", `model not available, skipping: ${spec.provider}/${spec.model}`);
+    }
+  }
+
+  return results;
 }
 
 function buildLlmTidyPrompt(rolePath: string, roleName: string): string {
@@ -130,7 +233,7 @@ export async function runLlmMemoryTidy(
   rolePath: string,
   roleName: string,
   ctx: ExtensionContext,
-  requestedModel?: string
+  requestedModel?: string | string[]
 ): Promise<
   | {
       model: string;
@@ -139,83 +242,116 @@ export async function runLlmMemoryTidy(
     }
   | { error: string }
 > {
-  log("llm-tidy", `start role=${roleName} requestedModel=${requestedModel || "(session)"}`);
+  log("llm-tidy", `start role=${roleName} requestedModel=${Array.isArray(requestedModel) ? requestedModel.join(",") : requestedModel || "(session)"}`);
 
-  const resolved = await resolveRequestedModel(ctx, requestedModel);
-  if (!resolved) {
-    const err = requestedModel ? `Model not found or unauthorized: ${requestedModel}` : "No active model/api key available";
+  // 获取可用模型列表（支持 fallback）
+  const resolvedModels = await resolveModelsWithFallback(ctx, requestedModel);
+  if (resolvedModels.length === 0) {
+    const err = requestedModel
+      ? `No models available from: ${Array.isArray(requestedModel) ? requestedModel.join(", ") : requestedModel}`
+      : "No active model/api key available";
     log("llm-tidy", `abort: ${err}`);
     return { error: err };
   }
 
-  log("llm-tidy", `model resolved: ${resolved.label}`);
+  log("llm-tidy", `resolved ${resolvedModels.length} model(s): ${resolvedModels.map(m => m.label).join(", ")}`);
   const prompt = buildLlmTidyPrompt(rolePath, roleName);
   log("llm-tidy", `prompt length: ${prompt.length} chars (~${estimateTokensRough(prompt)} tokens)`);
 
-  let result;
-  try {
-    result = await complete(
-      resolved.model,
-      {
-        messages: [
-          {
-            role: "user" as const,
-            content: [{ type: "text" as const, text: prompt }],
-            timestamp: Date.now(),
-          },
-        ],
-      },
-      { apiKey: resolved.apiKey, maxTokens: Math.min(2048, resolved.model.maxTokens || 2048) }
-    );
-  } catch (error) {
-    const msg = error instanceof Error ? error.message : String(error);
-    log("llm-tidy", `LLM call error: ${msg}`);
-    return { error: msg };
+  // 按顺序尝试模型，直到成功
+  let lastError: string | null = null;
+  for (let i = 0; i < resolvedModels.length; i++) {
+    const resolved = resolvedModels[i];
+    const isLastModel = i === resolvedModels.length - 1;
+
+    log("llm-tidy", `trying model ${i + 1}/${resolvedModels.length}: ${resolved.label}`);
+
+    let result;
+    try {
+      result = await complete(
+        resolved.model,
+        {
+          messages: [
+            {
+              role: "user" as const,
+              content: [{ type: "text" as const, text: prompt }],
+              timestamp: Date.now(),
+            },
+          ],
+        },
+        { apiKey: resolved.apiKey, maxTokens: Math.min(2048, resolved.model.maxTokens || 2048) }
+      );
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error);
+      log("llm-tidy", `model ${resolved.label} call error: ${lastError}`);
+      if (!isLastModel) {
+        log("llm-tidy", `falling back to next model...`);
+        continue;
+      }
+      return { error: lastError };
+    }
+
+    if (!result || result.stopReason === "error") {
+      lastError = result?.errorMessage || "unknown error";
+      log("llm-tidy", `model ${resolved.label} returned error: ${lastError}`);
+      if (!isLastModel) {
+        log("llm-tidy", `falling back to next model...`);
+        continue;
+      }
+      return { error: lastError };
+    }
+
+    const text = result.content
+      .filter((c): c is { type: "text"; text: string } => c.type === "text")
+      .map((c) => c.text)
+      .join("\n")
+      .trim();
+
+    log("llm-tidy", `model ${resolved.label} response length: ${text.length} chars`);
+
+    if (!text) {
+      lastError = `Model ${resolved.label} returned empty response`;
+      log("llm-tidy", lastError);
+      if (!isLastModel) {
+        log("llm-tidy", `falling back to next model...`);
+        continue;
+      }
+      return { error: lastError };
+    }
+
+    const plan = parseLlmTidyPlan(text);
+    if (!plan) {
+      lastError = `Model ${resolved.label} output is not valid tidy JSON`;
+      log("llm-tidy", `parse failed, raw response: ${text.slice(0, 500)}`);
+      if (!isLastModel) {
+        log("llm-tidy", `falling back to next model...`);
+        continue;
+      }
+      return { error: lastError };
+    }
+
+    log("llm-tidy", `plan parsed from ${resolved.label}`, {
+      removeLearnings: plan.removeLearningIds?.length || 0,
+      removePreferences: plan.removePreferenceIds?.length || 0,
+      rewriteLearnings: plan.rewriteLearnings?.length || 0,
+      rewritePreferences: plan.rewritePreferences?.length || 0,
+      addLearnings: plan.addLearnings?.length || 0,
+      addPreferences: plan.addPreferences?.length || 0,
+    });
+
+    const apply = applyLlmTidyPlan(rolePath, roleName, plan);
+    log("llm-tidy", `applied`, {
+      L: `${apply.beforeLearnings}->${apply.afterLearnings}`,
+      P: `${apply.beforePreferences}->${apply.afterPreferences}`,
+      added: `${apply.addedLearnings}L ${apply.addedPreferences}P`,
+      rewritten: `${apply.rewrittenLearnings}L ${apply.rewrittenPreferences}P`,
+    });
+
+    return { model: resolved.label, plan, apply };
   }
 
-  if (!result || result.stopReason === "error") {
-    const msg = result?.errorMessage || "LLM tidy failed";
-    log("llm-tidy", `LLM returned error: ${msg}`);
-    return { error: msg };
-  }
-
-  const text = result.content
-    .filter((c): c is { type: "text"; text: string } => c.type === "text")
-    .map((c) => c.text)
-    .join("\n")
-    .trim();
-
-  log("llm-tidy", `LLM response length: ${text.length} chars`);
-
-  if (!text) {
-    log("llm-tidy", `empty response from model: ${resolved.label}`);
-    return { error: `Model ${resolved.label} returned empty response. Try a different model.` };
-  }
-
-  const plan = parseLlmTidyPlan(text);
-  if (!plan) {
-    log("llm-tidy", `parse failed, raw response: ${text.slice(0, 500)}`);
-    return { error: "LLM output is not valid tidy JSON" };
-  }
-
-  log("llm-tidy", `plan parsed`, {
-    removeLearnings: plan.removeLearningIds?.length || 0,
-    removePreferences: plan.removePreferenceIds?.length || 0,
-    rewriteLearnings: plan.rewriteLearnings?.length || 0,
-    rewritePreferences: plan.rewritePreferences?.length || 0,
-    addLearnings: plan.addLearnings?.length || 0,
-    addPreferences: plan.addPreferences?.length || 0,
-  });
-
-  const apply = applyLlmTidyPlan(rolePath, roleName, plan);
-  log("llm-tidy", `applied`, {
-    L: `${apply.beforeLearnings}->${apply.afterLearnings}`,
-    P: `${apply.beforePreferences}->${apply.afterPreferences}`,
-    added: `${apply.addedLearnings}L ${apply.addedPreferences}P`,
-    rewritten: `${apply.rewrittenLearnings}L ${apply.rewrittenPreferences}P`,
-  });
-
-  return { model: resolved.label, plan, apply };
+  log("llm-tidy", `all models failed, last error: ${lastError}`);
+  return { error: lastError || "All models failed" };
 }
 
 // ============================================================================
@@ -300,27 +436,27 @@ export async function runAutoMemoryExtraction(
   rolePath: string,
   ctx: ExtensionContext,
   messages: unknown[],
-  options?: { enabled?: boolean; model?: string; maxItems?: number; maxText?: number; reserveTokens?: number }
+  options?: { enabled?: boolean; model?: string | string[]; maxItems?: number; maxText?: number; reserveTokens?: number }
 ): Promise<{ storedLearnings: number; storedPrefs: number } | null> {
   if (options?.enabled === false) return null;
 
-  log("auto-extract", `start role=${roleName} messages=${messages.length} model=${options?.model || "(session)"}`);
+  const modelSpec = options?.model ?? config.autoMemory.model;
+  log("auto-extract", `start role=${roleName} messages=${messages.length} models=${Array.isArray(modelSpec) ? modelSpec.join(",") : modelSpec || "(session)"}`);
 
-  const resolved = await resolveRequestedModel(ctx, options?.model);
-  if (!resolved) {
-    log("auto-extract", "abort: no model resolved");
+  // 获取可用模型列表（支持 fallback）
+  const resolvedModels = await resolveModelsWithFallback(ctx, modelSpec);
+  if (resolvedModels.length === 0) {
+    log("auto-extract", "abort: no models resolved");
     return null;
   }
 
-  log("auto-extract", `model: ${resolved.label} contextWindow=${resolved.model.contextWindow || "?"}`);
+  log("auto-extract", `resolved ${resolvedModels.length} model(s): ${resolvedModels.map(m => m.label).join(", ")}`);
 
-  // Token-budget message selection (newest first, like pi's prepareBranchEntries)
+  // 使用第一个可用模型准备 prompt（contextWindow 可能不同，取最大）
+  const maxContextWindow = Math.max(...resolvedModels.map(m => m.model.contextWindow || 128000));
   const reserveTokens = options?.reserveTokens ?? config.autoMemory.reserveTokens;
-  const conversationText = prepareConversationWithBudget(
-    messages,
-    reserveTokens,
-    resolved.model.contextWindow,
-  );
+  const conversationText = prepareConversationWithBudget(messages, reserveTokens, maxContextWindow);
+
   if (!conversationText.trim()) {
     log("auto-extract", "abort: empty conversation after budget preparation");
     return null;
@@ -334,84 +470,109 @@ export async function runAutoMemoryExtraction(
   const prompt = buildAutoMemoryPrompt(conversationText, existing);
   log("auto-extract", `prompt total: ${prompt.length} chars (~${estimateTokensRough(prompt)} tokens)`);
 
-  // Use completeSimple with system prompt (like pi's generateBranchSummary)
-  let result;
-  try {
-    result = await completeSimple(
-      resolved.model,
-      {
-        systemPrompt: MEMORY_EXTRACTION_SYSTEM_PROMPT,
-        messages: [
-          {
-            role: "user" as const,
-            content: [{ type: "text" as const, text: prompt }],
-            timestamp: Date.now(),
-          },
-        ],
-      },
-      { apiKey: resolved.apiKey, maxTokens: Math.min(512, resolved.model.maxTokens || 512) },
-    );
-  } catch (error) {
-    log("auto-extract", `LLM call error: ${error instanceof Error ? error.message : String(error)}`);
-    return null;
-  }
+  // 按顺序尝试模型，直到成功
+  let lastError: string | null = null;
+  for (let i = 0; i < resolvedModels.length; i++) {
+    const resolved = resolvedModels[i];
+    const isLastModel = i === resolvedModels.length - 1;
 
-  if (!result || result.stopReason === "error") {
-    log("auto-extract", `LLM returned error: ${(result as any)?.errorMessage || "unknown"}`);
-    return null;
-  }
+    log("auto-extract", `trying model ${i + 1}/${resolvedModels.length}: ${resolved.label}`);
 
-  const responseText = result.content
-    .filter((c): c is { type: "text"; text: string } => c.type === "text")
-    .map((c) => c.text)
-    .join("\n")
-    .trim();
-
-  log("auto-extract", `LLM response: ${responseText.length} chars`);
-
-  const parsed = parseAutoMemoryResponse(responseText);
-  if (!parsed) {
-    log("auto-extract", `parse failed, raw: ${responseText.slice(0, 300)}`);
-    return null;
-  }
-
-  log("auto-extract", `parsed: ${parsed.learnings?.length || 0} learnings, ${parsed.preferences?.length || 0} preferences`);
-
-  const maxItems = options?.maxItems ?? config.autoMemory.maxItems;
-  const maxText = options?.maxText ?? config.autoMemory.maxText;
-
-  let remaining = maxItems;
-  let storedLearnings = 0;
-  let storedPrefs = 0;
-
-  for (const item of parsed.learnings || []) {
-    if (remaining <= 0) break;
-    const text = normalizeMemoryText(item.text || "");
-    if (!text || text.length > maxText) continue;
-    const stored = addRoleLearning(rolePath, roleName, text, { source: "auto", appendDaily: true });
-    if (stored.stored) {
-      log("auto-extract", `+learning: ${text}`);
-      storedLearnings += 1;
-      remaining -= 1;
-    } else {
-      log("auto-extract", `skip learning (${stored.reason}): ${text}`);
+    let result;
+    try {
+      result = await completeSimple(
+        resolved.model,
+        {
+          systemPrompt: MEMORY_EXTRACTION_SYSTEM_PROMPT,
+          messages: [
+            {
+              role: "user" as const,
+              content: [{ type: "text" as const, text: prompt }],
+              timestamp: Date.now(),
+            },
+          ],
+        },
+        { apiKey: resolved.apiKey, maxTokens: Math.min(512, resolved.model.maxTokens || 512) },
+      );
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error);
+      log("auto-extract", `model ${resolved.label} call error: ${lastError}`);
+      if (!isLastModel) {
+        log("auto-extract", `falling back to next model...`);
+        continue;
+      }
+      return null;
     }
-  }
 
-  for (const item of parsed.preferences || []) {
-    if (remaining <= 0) break;
-    const text = normalizeMemoryText(item.text || "");
-    if (!text || text.length > maxText) continue;
-    const stored = addRolePreference(rolePath, roleName, item.category || "General", text, { appendDaily: true });
-    if (stored.stored) {
-      log("auto-extract", `+preference [${stored.category}]: ${text}`);
-      storedPrefs += 1;
-      remaining -= 1;
-    } else {
-      log("auto-extract", `skip preference (${stored.reason}): ${text}`);
+    if (!result || result.stopReason === "error") {
+      lastError = (result as any)?.errorMessage || "unknown error";
+      log("auto-extract", `model ${resolved.label} returned error: ${lastError}`);
+      if (!isLastModel) {
+        log("auto-extract", `falling back to next model...`);
+        continue;
+      }
+      return null;
     }
+
+    const responseText = result.content
+      .filter((c): c is { type: "text"; text: string } => c.type === "text")
+      .map((c) => c.text)
+      .join("\n")
+      .trim();
+
+    log("auto-extract", `model ${resolved.label} response: ${responseText.length} chars`);
+
+    const parsed = parseAutoMemoryResponse(responseText);
+    if (!parsed) {
+      log("auto-extract", `model ${resolved.label} parse failed, raw: ${responseText.slice(0, 300)}`);
+      if (!isLastModel) {
+        log("auto-extract", `falling back to next model...`);
+        continue;
+      }
+      return null;
+    }
+
+    log("auto-extract", `parsed from ${resolved.label}: ${parsed.learnings?.length || 0} learnings, ${parsed.preferences?.length || 0} preferences`);
+
+    const maxItems = options?.maxItems ?? config.autoMemory.maxItems;
+    const maxText = options?.maxText ?? config.autoMemory.maxText;
+
+    let remaining = maxItems;
+    let storedLearnings = 0;
+    let storedPrefs = 0;
+
+    for (const item of parsed.learnings || []) {
+      if (remaining <= 0) break;
+      const text = normalizeMemoryText(item.text || "");
+      if (!text || text.length > maxText) continue;
+      const stored = addRoleLearning(rolePath, roleName, text, { source: "auto", appendDaily: true });
+      if (stored.stored) {
+        log("auto-extract", `+learning: ${text}`);
+        storedLearnings += 1;
+        remaining -= 1;
+      } else {
+        log("auto-extract", `skip learning (${stored.reason}): ${text}`);
+      }
+    }
+
+    for (const item of parsed.preferences || []) {
+      if (remaining <= 0) break;
+      const text = normalizeMemoryText(item.text || "");
+      if (!text || text.length > maxText) continue;
+      const stored = addRolePreference(rolePath, roleName, item.category || "General", text, { appendDaily: true });
+      if (stored.stored) {
+        log("auto-extract", `+preference [${stored.category}]: ${text}`);
+        storedPrefs += 1;
+        remaining -= 1;
+      } else {
+        log("auto-extract", `skip preference (${stored.reason}): ${text}`);
+      }
+    }
+
+    log("auto-extract", `done with ${resolved.label}: stored ${storedLearnings}L ${storedPrefs}P`);
+    return { storedLearnings, storedPrefs };
   }
 
-  log("auto-extract", `done: stored ${storedLearnings}L ${storedPrefs}P`);
-  return { storedLearnings, storedPrefs };
+  log("auto-extract", `all models failed, last error: ${lastError}`);
+  return null;
 }

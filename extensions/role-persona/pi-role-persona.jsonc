@@ -21,10 +21,21 @@
     // 环境变量覆盖：ROLE_AUTO_MEMORY
     "enabled": true,
 
-    // 自动记忆提取使用的模型
-    // 格式: "provider/model-id"
+    // 自动记忆提取使用的模型（按顺序 fallback）
+    // 格式支持：
+    //   - 单个字符串: "provider/model-id"
+    //   - 字符串数组: ["provider/model-id", "provider2/model-id"]
+    //   - 对象数组（推荐，模型名可含斜杠）:
+    //       [{ "provider": "nvidia", "model": "qwen/qwen3-coder-480b" }]
     // 环境变量覆盖：ROLE_AUTO_MEMORY_MODEL
-    "model": "openai-codex/gpt-5.1-codex-mini",
+    //   - 单个: "provider/model-id"
+    //   - 多个（逗号分隔）: "provider/model-id,provider2/model-id"
+    //   - JSON 数组: '[{"provider":"nvidia","model":"qwen/qwen3-coder"}]'
+    "model": [
+      { "provider": "openai-codex", "model": "gpt-5.1-codex-mini" },
+      { "provider": "nvidia", "model": "qwen/qwen3-coder-480b-a35b-instruct" },
+      { "provider": "anthropic", "model": "claude-sonnet-4" }
+    ],
 
     // 标签提取专用模型（默认继承 autoMemory.model）
     // 环境变量覆盖：ROLE_TAG_MODEL

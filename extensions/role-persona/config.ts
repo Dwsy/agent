@@ -14,9 +14,23 @@ import { join } from "node:path";
 // 配置类型定义
 // ============================================================================
 
+export interface ModelSpec {
+  /** 提供商 ID */
+  provider: string;
+  /** 模型 ID（可包含斜杠） */
+  model: string;
+}
+
 export interface AutoMemoryConfig {
   enabled: boolean;
-  model: string;
+  /** 模型配置（支持多种格式）：
+   * - 单个字符串: "provider/model-id"
+   * - 字符串数组: ["provider/model-id", ...]
+   * - 对象数组: [{ provider: "...", model: "..." }, ...]
+   * 按顺序尝试，失败自动 fallback
+   */
+  model: string | string[] | ModelSpec[];
+  /** 标签提取专用模型（默认继承 autoMemory.model） */
   tagModel: string | null;
   reserveTokens: number;
   maxItems: number;
@@ -366,7 +380,25 @@ function applyEnvOverrides(config: RolePersonaConfig): RolePersonaConfig {
 
   // autoMemory.model
   if (process.env.ROLE_AUTO_MEMORY_MODEL) {
-    result.autoMemory.model = process.env.ROLE_AUTO_MEMORY_MODEL;
+    const val = process.env.ROLE_AUTO_MEMORY_MODEL.trim();
+    // 尝试解析为 JSON（对象数组）
+    if (val.startsWith("[")) {
+      try {
+        const parsed = JSON.parse(val);
+        if (Array.isArray(parsed)) {
+          result.autoMemory.model = parsed;
+        }
+      } catch {
+        // JSON 解析失败，回退到逗号分隔
+        result.autoMemory.model = val.split(",").map((s) => s.trim()).filter(Boolean);
+      }
+    } else if (val.includes(",")) {
+      // 逗号分隔的多模型
+      result.autoMemory.model = val.split(",").map((s) => s.trim()).filter(Boolean);
+    } else {
+      // 单个模型
+      result.autoMemory.model = val;
+    }
   }
 
   // autoMemory.tagModel
