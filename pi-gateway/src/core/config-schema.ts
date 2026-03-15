@@ -341,10 +341,35 @@ export const WebChatChannelConfigSchema = Type.Object({
   mediaMaxMb: Type.Optional(Type.Number({ minimum: 0.1, maximum: 100 })),
 });
 
+export const QqbotStreamingConfigSchema = Type.Object({
+  enabled: Type.Optional(Type.Boolean()),
+  editThrottleMs: Type.Optional(Type.Integer({ minimum: 100, maximum: 10000 })),
+  streamStartChars: Type.Optional(Type.Integer({ minimum: 1, maximum: 10000 })),
+});
+
+export const QqbotChannelConfigSchema = Type.Object({
+  enabled: Type.Boolean(),
+  appId: Type.Optional(Type.String()),
+  clientSecret: Type.Optional(Type.String()),
+  clientSecretFile: Type.Optional(Type.String()),
+  dmPolicy: Type.Optional(DmPolicySchema),
+  allowFrom: Type.Optional(Type.Array(Type.Union([Type.String(), Type.Integer()]))),
+  groupPolicy: Type.Optional(GroupPolicySchema),
+  groupAllowFrom: Type.Optional(Type.Array(Type.Union([Type.String(), Type.Integer()]))),
+  requireMention: Type.Optional(Type.Boolean()),
+  role: Type.Optional(Type.String()),
+  model: Type.Optional(Type.String()),
+  thinkingLevel: Type.Optional(ThinkingLevelSchema),
+  textChunkLimit: Type.Optional(Type.Integer({ minimum: 1, maximum: 10000 })),
+  passiveReplyOnly: Type.Optional(Type.Boolean()),
+  streaming: Type.Optional(QqbotStreamingConfigSchema),
+});
+
 export const ChannelsConfigSchema = Type.Object({
   telegram: Type.Optional(TelegramChannelConfigSchema),
   discord: Type.Optional(DiscordChannelConfigSchema),
   webchat: Type.Optional(WebChatChannelConfigSchema),
+  qqbot: Type.Optional(QqbotChannelConfigSchema),
 });
 
 // ============================================================================

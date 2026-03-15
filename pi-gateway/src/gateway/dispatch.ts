@@ -11,6 +11,7 @@ import type { InboundMessage, SessionKey, ImageContent, MessageSource } from "..
 import type { RpcClient } from "../core/rpc-client.ts";
 import type { PrioritizedWork } from "../core/message-queue.ts";
 import { processMessage } from "./message-pipeline.ts";
+import { tryHandleCommand } from "./command-handler.ts";
 import { resolveDeliveryTarget } from "../core/channel-resolver.ts";
 import { resolveSessionMessageMode } from "./message-mode.ts";
 
@@ -96,6 +97,11 @@ export async function dispatchMessage(msg: InboundMessage, ctx: GatewayContext):
   const rpc = ctx.pool.getForSession(sessionKey);
 
   if (session?.isStreaming && rpc) {
+    const slashHandled = await tryHandleCommand(msg, ctx, Date.now(), rpc);
+    if (slashHandled) {
+      return { injected: false, enqueued: false };
+    }
+
     const mode = resolveMessageMode(sessionKey, source, ctx);
 
     if (mode === "interrupt") {

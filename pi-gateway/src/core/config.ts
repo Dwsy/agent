@@ -375,10 +375,35 @@ export interface WebChatChannelConfig {
   mediaMaxMb?: number;
 }
 
+export interface QqbotStreamingConfig {
+  enabled?: boolean;
+  editThrottleMs?: number;
+  streamStartChars?: number;
+}
+
+export interface QqbotChannelConfig {
+  enabled: boolean;
+  appId?: string;
+  clientSecret?: string;
+  clientSecretFile?: string;
+  dmPolicy?: "pairing" | "allowlist" | "open" | "disabled";
+  allowFrom?: Array<string | number>;
+  groupPolicy?: "disabled" | "open" | "allowlist";
+  groupAllowFrom?: Array<string | number>;
+  requireMention?: boolean;
+  role?: string;
+  model?: string;
+  thinkingLevel?: ThinkingLevel;
+  textChunkLimit?: number;
+  passiveReplyOnly?: boolean;
+  streaming?: QqbotStreamingConfig;
+}
+
 export interface ChannelsConfig {
   telegram?: TelegramChannelConfig;
   discord?: DiscordChannelConfig;
   webchat?: WebChatChannelConfig;
+  qqbot?: QqbotChannelConfig;
   [key: string]: unknown;
 }
 

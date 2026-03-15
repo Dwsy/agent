@@ -19,7 +19,8 @@ function createCtx(overrides: Record<string, unknown> = {}) {
       },
     },
     registry: {
-      commands: new Map<string, { pluginId: string; handler: Function }>(),
+      commands: new Map<string, { pluginId: string; handler: Function; meta?: any }>(),
+      channels: new Map(),
       hooks: { dispatch: async () => {} },
     },
     sessions: {
@@ -38,6 +39,7 @@ describe("registerBuiltinCommands", () => {
 
     const entry = ctx.registry.commands.get("role");
     expect(entry?.pluginId).toBe("gateway-core");
+    expect(entry?.meta?.name).toBe("role");
     expect(typeof entry?.handler).toBe("function");
   });
 
@@ -98,6 +100,30 @@ describe("registerBuiltinCommands", () => {
 
     expect(captured).toEqual({ sessionKey: "s1", role: "coder" });
     expect(output).toBe("Role switched to: coder");
+  });
+
+
+
+  test("/role without args can return rich keyboard response", async () => {
+    const ctx = createCtx();
+    registerBuiltinCommands(ctx);
+    const handler = ctx.registry.commands.get("role")!.handler;
+
+    let rich: any = null;
+    await handler({
+      sessionKey: "s1",
+      senderId: "u1",
+      channel: "telegram",
+      chatId: "chat-1",
+      args: "",
+      respond: async () => {},
+      respondWith: async (response: any) => {
+        rich = response;
+      },
+    });
+
+    expect(rich?.text).toContain("Current role");
+    expect(Array.isArray(rich?.keyboard?.inline_keyboard)).toBeTrue();
   });
 
   test("/role set blocks unauthorized sender", async () => {

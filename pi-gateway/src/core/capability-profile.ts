@@ -211,9 +211,14 @@ function normalizePromptGate(value: boolean | "auto" | undefined): boolean | und
 
 function buildPromptFeatureFlags(config: Config): PromptFeatureFlags {
   const gatewayPrompts = config.agent.gatewayPrompts;
+  
+  // Read concise-mode config from plugins
+  const conciseModeConfig = (config as any).plugins?.config?.["concise-mode"];
+  const conciseEnabled = conciseModeConfig?.enabled ?? false;
+  
   const flags: PromptFeatureFlags = {
     strictProtocol: true,
-    concise: true,
+    concise: conciseEnabled,
   };
 
   if (!gatewayPrompts) {

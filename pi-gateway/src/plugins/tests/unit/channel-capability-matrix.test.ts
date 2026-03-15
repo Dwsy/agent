@@ -3,6 +3,7 @@ import type { ChannelPlugin } from "../../types.ts";
 import telegramRegister from "../../builtin/telegram/index.ts";
 import discordRegister from "../../builtin/discord/index.ts";
 import feishuRegister from "../../builtin/feishu/index.ts";
+import qqbotRegister from "../../builtin/qqbot/index.ts";
 import webchatRegister from "../../builtin/webchat.ts";
 
 function makePlugin(
@@ -27,7 +28,7 @@ function makePlugin(
 
 describe("channel capability matrix declarations", () => {
   test("builtin telegram/discord/feishu/webchat declare matrix", () => {
-    const plugins = [telegramRegister, discordRegister, feishuRegister, webchatRegister];
+    const plugins = [telegramRegister, discordRegister, feishuRegister, qqbotRegister, webchatRegister];
 
     const registry = new Map<string, ChannelPlugin>();
     const fakeApi = {
@@ -38,7 +39,7 @@ describe("channel capability matrix declarations", () => {
       register(fakeApi);
     }
 
-    for (const id of ["telegram", "discord", "feishu", "webchat"]) {
+    for (const id of ["telegram", "discord", "feishu", "qqbot", "webchat"]) {
       const plugin = registry.get(id);
       expect(plugin).toBeDefined();
       expect(plugin?.capabilities.matrix).toBeDefined();

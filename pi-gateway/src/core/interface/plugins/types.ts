@@ -23,6 +23,7 @@ import type { Config } from "../../config.ts";
 import type { RpcPool } from "../../rpc-pool.ts";
 import type { CronEngine } from "../../cron.ts";
 import type { ModelHealthTracker } from "../../model-health.ts";
+import type { CommandResponse, InteractionEvent, NativeCommandSpec } from "../../../gateway/command-types.ts";
 
 // Re-export domain types for plugin convenience
 export type {
@@ -48,6 +49,11 @@ export type StreamingSupportMode = "native" | "post-edit" | "none";
 
 /** Fine-grained channel feature matrix (Chat SDK style) */
 export interface ChannelCapabilityMatrix {
+  interaction?: {
+    callbacks?: boolean;
+    ack?: boolean;
+    messageUpdate?: "native" | "resend" | "none";
+  };
   messaging?: {
     post?: boolean;
     edit?: boolean;
@@ -149,6 +155,11 @@ export interface MessageSendResult {
   ok: boolean;
   messageId?: string;
   error?: string;
+}
+
+export interface NativeCommandAdapter {
+  supportsNativeCommands?: boolean;
+  sync(commands: NativeCommandSpec[]): Promise<void>;
 }
 
 /** Media send result */
@@ -300,6 +311,10 @@ export interface ChannelSecurityAdapter {
 }
 
 /** Channel plugin - implements a messaging channel */
+export interface InteractionAdapter {
+  handle(event: InteractionEvent): Promise<boolean>;
+}
+
 export interface ChannelPlugin {
   /** Unique channel identifier (e.g., "telegram", "discord") */
   readonly id: string;
@@ -334,6 +349,12 @@ export interface ChannelPlugin {
 
   /** Optional: security adapter */
   security?: ChannelSecurityAdapter;
+
+  /** Optional: platform-native command sync adapter */
+  nativeCommands?: NativeCommandAdapter;
+
+  /** Optional: platform interaction adapter */
+  interactions?: InteractionAdapter;
 }
 
 // ============================================================================
@@ -409,6 +430,8 @@ export interface CommandContext {
   args: string;
   /** Response function */
   respond: (text: string) => Promise<void>;
+  /** Structured response for rich channel-native interactions */
+  respondWith?: (response: CommandResponse) => Promise<void>;
 }
 
 /** Command handler function */
@@ -524,7 +547,7 @@ export interface GatewayPluginApi extends DomainPluginApi {
   registerGatewayMethod(method: string, handler: WsMethodHandler): void;
 
   /** Register a slash command */
-  registerCommand(name: string, handler: CommandHandler): void;
+  registerCommand(name: string, handler: CommandHandler, meta?: { description?: string; exposeInNativeUi?: boolean; group?: string; supportsArgs?: boolean }): void;
 
   /** Register CLI commands */
   registerCli(registrar: (program: CliProgram) => void): void;
@@ -570,6 +593,7 @@ export interface GatewayPluginApi extends DomainPluginApi {
 
   /** Get available pi slash commands */
   getPiCommands(sessionKey: SessionKey): Promise<{ name: string; description?: string }[]>;
+  syncNativeCommands?(channelId: string, commands: NativeCommandSpec[]): Promise<void>;
 
   /** Get session statistics */
   getSessionStats(sessionKey: SessionKey): Promise<SessionStats | null>;

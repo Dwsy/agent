@@ -53,6 +53,7 @@ export type { AssistantMessageEvent } from "@mariozechner/pi-ai";
 
 import type { ImageContent } from "@mariozechner/pi-ai";
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
+import type { CommandResponse } from "../gateway/command-types.ts";
 
 /** RPC commands (aligned with pi-mono rpc-types.ts RpcCommand union) */
 export type RpcCommand =
@@ -270,14 +271,20 @@ export interface InboundMessage {
   images?: ImageContent[];
   /** Callback to send final reply back to the originating channel */
   respond: (text: string) => Promise<void>;
+  /** Structured rich response callback */
+  respondWith?: (response: CommandResponse) => Promise<void>;
   /** Callback to show typing indicator */
   setTyping: (typing: boolean) => Promise<void>;
   /** Optional: called on each streaming text delta for live editing */
   onStreamDelta?: (accumulated: string, delta: string) => void;
   /** Optional: called when tool execution starts (for live UI/tool hint rendering) */
   onToolStart?: (toolName: string, args?: Record<string, unknown>, toolCallId?: string) => void;
-  /** Optional: called on thinking content delta (for live thinking display) */
+  /** 可选：当一个新的 thinking 块开始时触发 */
+  onThinkingStart?: () => void;
+  /** 可选：thinking 内容增量更新时触发 */
   onThinkingDelta?: (accumulated: string, delta: string) => void;
+  /** 可选：当当前 thinking 块结束时触发 */
+  onThinkingEnd?: (accumulated: string) => void;
   /** Optional: called when a steer injection occurs — finalize current reply and reset state */
   onSteerInjected?: () => void;
 }

@@ -379,19 +379,64 @@ export async function processMessage(
             msg.onStreamDelta?.(fullText, partial.text);
           }
           break;
+        case 'thinking_start':
+          thinkingText = '';
+          msg.onThinkingStart?.();
+          if (partial.thinking) {
+            thinkingText = partial.thinking;
+            msg.onThinkingDelta?.(thinkingText, partial.thinking);
+          }
+          break;
         case 'thinking_delta': {
-          const thinkDelta = ame.delta || '';
+          const nextThinking = partial.thinking;
+          const thinkDelta = ame.delta
+            || (nextThinking
+              ? (nextThinking.startsWith(thinkingText) ? nextThinking.slice(thinkingText.length) : nextThinking)
+              : '');
           if (thinkDelta) {
-            thinkingText += thinkDelta;
+            thinkingText = nextThinking ?? `${thinkingText}${thinkDelta}`;
             msg.onThinkingDelta?.(thinkingText, thinkDelta);
           }
           break;
         }
-        case 'thinking_start':
-          thinkingText = '';
-          break;
         case 'thinking_end':
+          if (!thinkingText && partial.thinking) {
+            thinkingText = partial.thinking;
+          }
+          msg.onThinkingEnd?.(thinkingText);
           break;
+        case 'toolcall_start': {
+          // Tool call is starting - extract tool info from message content
+          const message = (event as any).message;
+          const toolContent = Array.isArray(message?.content)
+            ? message.content.find((c: { type: string }) => c.type === 'toolCall')
+            : null;
+          if (toolContent) {
+            const tc = toolContent as { id?: string; name?: string; arguments?: Record<string, unknown> };
+            if (tc.name) {
+              ctx.log.info(`[RPC] toolcall_start: ${tc.name}`);
+              msg.onToolStart?.(tc.name, tc.arguments, tc.id);
+            }
+          }
+          break;
+        }
+        case 'toolcall_delta':
+          // Tool call arguments are being streamed - currently no callback for this
+          break;
+        case 'toolcall_end': {
+          // Tool call is complete - extract final tool info from message content
+          const message = (event as any).message;
+          const toolContent = Array.isArray(message?.content)
+            ? message.content.find((c: { type: string }) => c.type === 'toolCall')
+            : null;
+          if (toolContent) {
+            const tc = toolContent as { id?: string; name?: string; arguments?: Record<string, unknown> };
+            if (tc.name) {
+              ctx.log.info(`[RPC] toolcall_end: ${tc.name}`);
+            }
+          }
+          break;
+        }
         case 'start':
           if (partial.text) {
             fullText = partial.text;

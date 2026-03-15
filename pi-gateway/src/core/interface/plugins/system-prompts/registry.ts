@@ -104,15 +104,15 @@ export class SegmentRegistry {
   /**
    * Get segments that should be included for the given config
    */
-  getActiveSegments(config: Config): ISystemPromptSegment[] {
-    return this.getAll().filter((segment) => segment.shouldInclude(config));
+  getActiveSegments(config: Config, flags?: import("./types.ts").PromptFeatureFlags): ISystemPromptSegment[] {
+    return this.getAll().filter((segment) => segment.shouldInclude(config, flags));
   }
 
   /**
    * Get sorted segments (by priority)
    */
-  getSortedSegments(config: Config): ISystemPromptSegment[] {
-    return this.getActiveSegments(config).sort((a, b) => a.priority - b.priority);
+  getSortedSegments(config: Config, flags?: import("./types.ts").PromptFeatureFlags): ISystemPromptSegment[] {
+    return this.getActiveSegments(config, flags).sort((a, b) => a.priority - b.priority);
   }
 
   // ========================================================================
@@ -140,8 +140,8 @@ class PluginSegmentAdapter implements ISystemPromptSegment {
     this.priority = pluginSegment.priority ?? 100;
   }
 
-  shouldInclude(config: Config): boolean {
-    return this.pluginSegment.shouldInclude(config);
+  shouldInclude(config: Config, flags?: import("./types.ts").PromptFeatureFlags): boolean {
+    return this.pluginSegment.shouldInclude(config, flags);
   }
 
   build(): string | null {
@@ -175,6 +175,6 @@ export function registerSystemPromptSegment(segment: PluginSystemPromptSegment):
 /**
  * Get all active segments for a config
  */
-export function getActiveSegments(config: Config): ISystemPromptSegment[] {
-  return registry.getActiveSegments(config);
+export function getActiveSegments(config: Config, flags?: import("./types.ts").PromptFeatureFlags): ISystemPromptSegment[] {
+  return registry.getActiveSegments(config, flags);
 }

@@ -23,6 +23,9 @@ import type { RpcClient } from "../core/rpc-client.ts";
 import { isSenderAllowed } from "../security/allowlist.ts";
 import { resolveChannelTarget } from "../api/channel-target.ts";
 import { canSendKeyboard } from "../api/channel-capabilities.ts";
+import { getBuiltinCommandCatalog } from "./command-catalog.ts";
+import type { CommandResponse } from "./command-types.ts";
+import { dispatchCommandResponse } from "./response-dispatcher.ts";
 
 // TUI-dependent commands that hang in RPC mode
 const TUI_COMMANDS = [
@@ -100,6 +103,18 @@ export async function tryHandleCommand(
   return false;
 }
 
+async function respondCommand(context: {
+  msg: InboundMessage;
+  ctx: GatewayContext;
+  response: CommandResponse;
+}): Promise<void> {
+  if (context.msg.respondWith) {
+    await context.msg.respondWith(context.response);
+    return;
+  }
+  await dispatchCommandResponse(context.msg, context.ctx, context.response);
+}
+
 async function canManageRole(
   ctx: GatewayContext,
   senderId: string,
@@ -155,9 +170,12 @@ export function registerBuiltinCommands(ctx: GatewayContext): void {
   // Keep plugin priority: don't override if plugin already registered /role.
   if (ctx.registry.commands.has("role")) return;
 
+  const builtinCatalog = new Map(getBuiltinCommandCatalog().map((entry) => [entry.name, entry]));
+
   ctx.registry.commands.set("role", {
     pluginId: "gateway-core",
-    handler: async ({ sessionKey, senderId, channel, chatId, accountId, args, respond }) => {
+    meta: builtinCatalog.get("role"),
+    handler: async ({ sessionKey, senderId, channel, chatId, accountId, args, respond, respondWith }) => {
       const session = ctx.sessions.get(sessionKey);
       if (!session) {
         await respond("No active session. Send a normal message first, then use /role.");
@@ -170,8 +188,7 @@ export function registerBuiltinCommands(ctx: GatewayContext): void {
         if (chatId) {
           const ch = ctx.registry.channels.get(channel);
           const roles = ctx.listAvailableRoles();
-          if (ch && canSendKeyboard(ch) && roles.length > 0) {
-            const target = resolveChannelTarget(ch, chatId, sessionKey, session);
+          if (roles.length > 0 && (respondWith || (ch && canSendKeyboard(ch)))) {
             const topRoles = roles.slice(0, 12);
             const rows = topRoles.map((role) => {
               const row: Array<{ text: string; callbackData: string }> = [
@@ -183,7 +200,19 @@ export function registerBuiltinCommands(ctx: GatewayContext): void {
               return row;
             });
             rows.push([{ text: "➕ Create role (use /role create <name>)", callbackData: "role:hint:create" }]);
-            await ch.outbound.sendKeyboard(target, `Current role: ${currentRole}\nSelect / Delete role:`, { inline_keyboard: rows });
+            if (respondWith) {
+              await respondWith({
+                text: `Current role: ${currentRole}\nSelect / Delete role:`,
+                keyboard: { inline_keyboard: rows },
+              });
+              return;
+            }
+            if (ch) {
+              const target = resolveChannelTarget(ch, chatId, sessionKey, session);
+              if (ch.outbound.sendKeyboard) {
+                await ch.outbound.sendKeyboard(target, `Current role: ${currentRole}\nSelect / Delete role:`, { inline_keyboard: rows });
+              }
+            }
             return;
           }
         }
@@ -251,10 +280,18 @@ export function registerBuiltinCommands(ctx: GatewayContext): void {
           if (chatId) {
             const ch = ctx.registry.channels.get(channel);
             const roles = ctx.listAvailableRoles().filter((r) => r !== "default");
-            if (ch && canSendKeyboard(ch) && roles.length > 0) {
-              const target = resolveChannelTarget(ch, chatId, sessionKey, session);
+            if (roles.length > 0 && (respondWith || (ch && canSendKeyboard(ch)))) {
               const rows = roles.slice(0, 20).map((role) => ([{ text: `🗑 ${role}`, callbackData: `role:del:${role}` }]));
-              await ch.outbound.sendKeyboard(target, "Select role to delete:", { inline_keyboard: rows });
+              if (respondWith) {
+                await respondWith({ text: "Select role to delete:", keyboard: { inline_keyboard: rows } });
+                return;
+              }
+              if (ch) {
+                const target = resolveChannelTarget(ch, chatId, sessionKey, session);
+                if (ch.outbound.sendKeyboard) {
+                  await ch.outbound.sendKeyboard(target, "Select role to delete:", { inline_keyboard: rows });
+                }
+              }
               return;
             }
           }
@@ -307,6 +344,9 @@ async function executeLocalCommand(
       accountId: msg.source.accountId,
       args: parsed.args,
       respond: sendReply,
+      respondWith: async (response: CommandResponse) => {
+        await respondCommand({ msg, ctx, response });
+      },
     });
     ctx.log.info(`[SLASH-CMD] ${msg.sessionKey} local command /${parsed.name} executed successfully`);
   } catch (err: unknown) {

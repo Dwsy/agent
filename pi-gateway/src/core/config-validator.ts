@@ -316,6 +316,28 @@ export const TokenFormatRule: ValidationRule = {
         });
       }
     }
+
+    const qqbot = config.channels.qqbot as { enabled?: boolean; appId?: string; clientSecret?: string; clientSecretFile?: string } | undefined;
+    if (qqbot?.enabled) {
+      if (!qqbot.appId || !isTokenFormatValid(String(qqbot.appId))) {
+        issues.push({
+          path: "channels.qqbot.appId",
+          message: "QQBot appId appears to be missing or placeholder",
+          severity: "error",
+          suggestion: "Set a valid QQ Bot appId from the QQ Open Platform",
+          autoFixable: false,
+        });
+      }
+      if (!qqbot.clientSecret && !qqbot.clientSecretFile) {
+        issues.push({
+          path: "channels.qqbot.clientSecret",
+          message: "QQBot enabled but clientSecret/clientSecretFile not configured",
+          severity: "error",
+          suggestion: "Set clientSecret directly or point clientSecretFile to a readable secret file",
+          autoFixable: false,
+        });
+      }
+    }
     
     return issues;
   },
@@ -460,6 +482,20 @@ export const SecurityBestPracticesRule: ValidationRule = {
         suggestion: "Set webhookSecret to verify incoming webhook requests",
         autoFixable: false,
       });
+    }
+
+    const qqbot = config.channels.qqbot as { enabled?: boolean; dmPolicy?: string; allowFrom?: Array<string | number> } | undefined;
+    if (qqbot?.enabled && qqbot.dmPolicy === "open") {
+      const allowFrom = qqbot.allowFrom?.map(String) ?? [];
+      if (!allowFrom.includes("*")) {
+        issues.push({
+          path: "channels.qqbot.dmPolicy",
+          message: 'dmPolicy is "open" but allowFrom does not include "*"',
+          severity: "error",
+          suggestion: 'Add "*" to allowFrom or change dmPolicy to "allowlist" or "pairing"',
+          autoFixable: false,
+        });
+      }
     }
     
     return issues;
