@@ -159,9 +159,18 @@ export async function sendOutboundViaAccount(params: {
   const legacyStreamId = params.opts?.draftId; // legacy compatibility
   const channelMeta = params.opts?.channelMeta;
   const transportHint = channelMeta?.transport;
+
+  // Draft mode only works in private chats (DM).
+  // Group chats have negative chatId (usually -100...), DMs have positive user ID.
+  const isGroupChat = parsed.chatId.startsWith("-");
   const useDraftTransport =
-    (streamMode === "draft" || transportHint === "draft") &&
-    !!threadId;
+    !isGroupChat &&
+    (streamMode === "draft" ||
+      transportHint === "draft" ||
+      typeof streamId === "number" ||
+      typeof legacyStreamId === "number" ||
+      typeof channelMeta?.streamId === "number" ||
+      typeof channelMeta?.draftId === "number");
 
   if (useDraftTransport) {
     const text = params.text.trim() || "…";
@@ -182,9 +191,16 @@ export async function sendOutboundViaAccount(params: {
       message_thread_id: threadId,
     });
     params.runtime.api.logger.info(
-      `[telegram:${account.accountId}] outbound draft to=${params.target} textLen=${params.text.length} streamId=${nextDraftId}`,
+      `[telegram:${account.accountId}] outbound draft to=${params.target} chatId=${parsed.chatId} textLen=${params.text.length} streamId=${nextDraftId}`,
     );
     return { ok: true, messageId: String(nextDraftId) };
+  }
+
+  // Log if draft was requested but not available (group chat)
+  if (streamMode === "draft" && isGroupChat) {
+    params.runtime.api.logger.info(
+      `[telegram:${account.accountId}] draft mode not available for group chat=${parsed.chatId}, falling back to normal send`,
+    );
   }
 
   let firstMessageId: string | undefined;

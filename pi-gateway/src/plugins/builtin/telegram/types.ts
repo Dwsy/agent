@@ -7,6 +7,7 @@ import type {
 } from "../../../core/config.ts";
 import type { MessageSource, ImageContent } from "../../../core/types.ts";
 import type { GatewayPluginApi } from "../../types.ts";
+import type { CommandResponse } from "../../../gateway/command-types.ts";
 
 export const DEFAULT_ACCOUNT_ID = "default";
 
@@ -141,6 +142,7 @@ export interface TelegramContext {
   };
   getFile: (fileId?: string) => Promise<{ file_path?: string }>;
   reply: (text: string, opts?: Record<string, unknown>) => Promise<unknown>;
+  replyWithResponse?: (response: CommandResponse) => Promise<unknown>;
   answerCallbackQuery?: (opts?: Record<string, unknown>) => Promise<unknown>;
 }
 

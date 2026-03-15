@@ -7,6 +7,7 @@ import type { DiscordPluginRuntime } from "./types.ts";
 import type { ChannelStreamingAdapter, MessageSendResult, MessageActionResult, ReactionOptions, ReadHistoryResult } from "../../types.ts";
 import { formatToolLine, splitDiscordText } from "./format.ts";
 import { helpText } from "./commands.ts";
+import { endThinkingBlock, removeThinkingBlocks, startThinkingBlock, type StreamingSequenceItem, updateThinkingBlock } from "../../streaming-thinking.ts";
 
 // ── Message handling ────────────────────────────────────────────────
 
@@ -95,7 +96,7 @@ async function dispatchWithStreaming(
   let editInFlight = false;
   let editStopped = false; // true when accumulated text exceeds cutoff
 
-  const contentSequence: { type: "tool" | "thinking" | "text"; content: string }[] = [];
+  const contentSequence: StreamingSequenceItem[] = [];
   const seenToolCalls = new Set<string>();
 
   // Typing indicator
@@ -160,21 +161,22 @@ async function dispatchWithStreaming(
     source,
     sessionKey,
     text,
+    onThinkingStart: () => {
+      sendTyping();
+      startThinkingBlock(contentSequence);
+    },
     onThinkingDelta: (accumulated: string) => {
       sendTyping();
-      const idx = contentSequence.findIndex((c) => c.type === "thinking");
-      if (idx >= 0) {
-        contentSequence[idx]!.content = accumulated;
-      } else {
-        contentSequence.push({ type: "thinking", content: accumulated });
-      }
+      updateThinkingBlock(contentSequence, accumulated);
       pushLiveUpdate();
+    },
+    onThinkingEnd: () => {
+      endThinkingBlock(contentSequence);
     },
     onStreamDelta: (accumulated: string) => {
       sendTyping();
-      // Remove thinking when text starts
-      const thinkIdx = contentSequence.findIndex((c) => c.type === "thinking");
-      if (thinkIdx >= 0) contentSequence.splice(thinkIdx, 1);
+      // Remove all thinking blocks when text starts.
+      removeThinkingBlocks(contentSequence);
 
       const lastText = contentSequence.findLast((c) => c.type === "text");
       if (lastText) {

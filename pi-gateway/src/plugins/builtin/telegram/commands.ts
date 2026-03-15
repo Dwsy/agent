@@ -1,4 +1,5 @@
 import { resolveSessionKey, resolveAgentId } from "../../../core/session-router.ts";
+import { getBuiltinCommandCatalog, buildNativeCommandSpecs, buildCommandHelpPage } from "../../../gateway/command-catalog.ts";
 import { parseSlashCommand } from "../../../gateway/command-handler.ts";
 import type { SessionStats, RpcState } from "../../../core/interface/plugins/types.ts";
 import type { ModelHealthState } from "../../../core/model-health.ts";
@@ -14,33 +15,10 @@ import type { TelegramAccountRuntime, TelegramContext, TelegramPluginRuntime } f
 
 type SessionMessageMode = "steer" | "follow-up" | "interrupt";
 
-// Gateway 本地命令列表
-const LOCAL_COMMANDS = [
-  { command: "help", description: "显示帮助" },
-  { command: "new", description: "重置会话" },
-  { command: "stop", description: "中断当前输出" },
-  { command: "model", description: "查看/切换模型" },
-  { command: "models", description: "搜索模型" },
-  { command: "setmodel", description: "按关键词切换模型" },
-  { command: "think", description: "设置思考等级" },
-  { command: "compact", description: "压缩上下文" },
-  { command: "status", description: "查看会话状态" },
-  { command: "context", description: "上下文使用情况" },
-  { command: "queue", description: "会话并发策略" },
-  { command: "whoami", description: "查看发送者信息" },
-  { command: "bash", description: "执行 shell 命令" },
-  { command: "config", description: "查看运行配置" },
-  { command: "restart", description: "重启 gateway" },
-  { command: "sys", description: "系统状态" },
-  { command: "role", description: "切换/查看角色" },
-  { command: "cron", description: "定时任务管理" },
-  { command: "skills", description: "查看/调用技能" },
-  { command: "sessions", description: "查看所有会话" },
-  { command: "resume", description: "恢复指定会话" },
-  { command: "concise", description: "简洁模式开关" },
-  { command: "refresh", description: "刷新命令列表" },
-  { command: "reload_session", description: "重载 agent 运行时" },
-];
+const LOCAL_COMMANDS = getBuiltinCommandCatalog().map((entry) => ({
+  command: entry.name,
+  description: entry.description,
+}));
 
 // Prefixes to collapse into grouped commands (not registered individually)
 const GROUPED_PREFIXES = ["skill:"];
@@ -58,7 +36,7 @@ export async function refreshPiCommands(account: TelegramAccountRuntime, config?
   if (piCommands === null) return null; // distinguish "failed" from "no commands"
   cachedPiCommands = piCommands;
   const agentIds = (config?.agents?.list ?? []).map(a => a.id).filter(id => id !== "main");
-  await registerNativeCommands(account, piCommands, agentIds.length > 0 ? agentIds : undefined);
+  await syncTelegramNativeCommands(account, piCommands, agentIds.length > 0 ? agentIds : undefined);
   return piCommands.length;
 }
 
@@ -184,70 +162,15 @@ function buildModelFailoverStatus(runtime: TelegramPluginRuntime, currentModelNa
   return lines;
 }
 
-function helpPage(page: number): { text: string; keyboard: { inline_keyboard: Array<Array<{ text: string; callback_data: string }>> } } {
-  const pages = [
-    [
-      "<b>Telegram Commands (1/3)</b>",
-      "",
-      "/help — 帮助",
-      "/new — 重置会话",
-      "/status — 查看会话状态",
-      "/model — 查看/切换模型",
-      "/models [关键词] — 搜索模型",
-      "/setmodel <provider/modelId|关键词> — 设置模型",
-      "/think &lt;level&gt; — 设置思考等级",
-      "/compact — 压缩上下文",
-      "/stop — 中断当前输出",
-      "/queue [mode] — 会话并发策略",
-    ],
-    [
-      "<b>Telegram Commands (2/3)</b>",
-      "",
-      "/context — 上下文详情",
-      "/whoami — 查看发送者信息",
-      "/role [list|set|create|delete] — 角色管理",
-      "/cron — 定时任务管理",
-      "/skills — 查看/调用技能",
-      "/sessions — 查看所有会话",
-      "/resume — 恢复指定会话",
-      "/refresh — 刷新命令列表",
-      "/reload_session — 重载 agent 运行时",
-    ],
-    [
-      "<b>Admin Commands (3/3)</b>",
-      "",
-      "/bash &lt;cmd&gt; — 执行 shell 命令",
-      "/config [section] — 查看运行配置",
-      "/restart — 重启 gateway",
-      "/sys — 系统状态",
-      "",
-      "<i>需要 allowFrom 授权</i>",
-    ],
-  ];
-  const idx = Math.max(0, Math.min(page - 1, pages.length - 1));
-  const prev = Math.max(1, idx);
-  const next = Math.min(pages.length, idx + 2);
-  return {
-    text: pages[idx]!.join("\n"),
-    keyboard: {
-      inline_keyboard: [[
-        { text: "◀", callback_data: `cmd_page:${prev}` },
-        { text: `${idx + 1}/${pages.length}`, callback_data: `cmd_page:${idx + 1}` },
-        { text: "▶", callback_data: `cmd_page:${next}` },
-      ]],
-    },
-  };
-}
-
 async function sendHelp(ctx: TelegramContext, page = 1): Promise<void> {
-  const view = helpPage(page);
+  const view = buildCommandHelpPage(page);
   await ctx.reply(view.text, {
     parse_mode: "HTML",
     reply_markup: view.keyboard,
   });
 }
 
-async function registerNativeCommands(
+export async function syncTelegramNativeCommands(
   account: TelegramAccountRuntime,
   piCommands: { name: string; description?: string }[],
   agentIds?: string[],
@@ -255,40 +178,21 @@ async function registerNativeCommands(
   const cfg = account.cfg.commands;
   if (cfg?.native === false) return;
 
-  // 合并本地命令和 pi 原生命令（pi 命令加 pi_ 前缀区分）
-  const allCommands = [
-    ...LOCAL_COMMANDS,
-    // Agent prefix commands (/{agentId} for multi-agent routing)
-    ...(agentIds ?? []).map(id => ({
-      command: id.toLowerCase().replace(/[^a-z0-9_]/g, "_").slice(0, 32),
-      description: `Switch to agent: ${id}`,
-    })),
-    ...piCommands
-    // game filter
-    .filter(cmd => !cmd.name.startsWith("game:"))
-      .filter(cmd => !GROUPED_PREFIXES.some(p => cmd.name.replace(/^\//, "").startsWith(p))) // skip grouped commands (shown via inline keyboard)
-      .map(cmd => (
-        {
-        command: `pi_${cmd.name.replace(/^\//, "")}`, // pi_role, pi_compact, etc.
-        description: cmd.description ?? `pi: ${cmd.name}`,
-      })),
-  ];
-  console.log(allCommands.map(cmd => cmd.command).join(","));
-
-  // Telegram 命令名只支持小写字母、数字和下划线，最多 32 字符
-  const validCommands = allCommands
+  const specs = buildNativeCommandSpecs({
+    builtin: getBuiltinCommandCatalog(),
+    piNative: piCommands,
+    agentIds,
+  });
+  await account.api.syncNativeCommands?.("telegram", specs);
+  const validCommands = specs
     .map(cmd => ({
-      command: cmd.command.toLowerCase().replace(/[^a-z0-9_]/g, "_").slice(0, 32),
+      command: cmd.name.toLowerCase().replace(/[^a-z0-9_]/g, "_").slice(0, 32),
       description: cmd.description.slice(0, 256),
     }))
-    .filter((cmd, idx, arr) => arr.findIndex(c => c.command === cmd.command) === idx) // 去重
-    .slice(0, 50); // Telegram setMyCommands 上限 100 条，先用 50 测试
+    .filter((cmd, idx, arr) => arr.findIndex(c => c.command === cmd.command) === idx)
+    .slice(0, 50);
 
-  await account.bot.api.setMyCommands(validCommands).catch((err) => {
-    account.api.logger.warn(`[telegram:${account.accountId}] setMyCommands failed: ${String(err)}`);
-  });
-
-  const truncated = allCommands.length > 100 ? ` (truncated from ${allCommands.length})` : "";
+  const truncated = validCommands.length < specs.length ? ` (truncated from ${specs.length})` : "";
   account.api.logger.info(`[telegram:${account.accountId}] Registered ${validCommands.length} commands (${LOCAL_COMMANDS.length} local + ${piCommands.length} pi)${truncated}`);
 }
 
@@ -333,46 +237,13 @@ function buildConciseView(sessionKey: string): { text: string; keyboard: { inlin
   };
 }
 
-// Register csm:* callback via callback-router (called once at module load)
-onCallback("csm:", async ({ data, ctx, bot, runtime, account, callbackQuery }) => {
-  const source = toSource(account.accountId, ctx);
-  const sessionKey = resolveSessionKey(source, runtime.api.config);
-  const manager = getConciseStateManager();
-
-  if (data === "csm:on") {
-    manager?.setSessionOverride(sessionKey, true);
-    await ctx.answerCallbackQuery?.({ text: "Concise ON" });
-  } else if (data === "csm:off") {
-    manager?.setSessionOverride(sessionKey, false);
-    manager?.clearSessionSuppressRoutes(sessionKey);
-    await ctx.answerCallbackQuery?.({ text: "Concise OFF" });
-  } else if (data === "csm:reset") {
-    manager?.clearSessionOverride(sessionKey);
-    await ctx.answerCallbackQuery?.({ text: "Reset to config default" });
-  } else if (data === "csm:status") {
-    await ctx.answerCallbackQuery?.({ text: "Refreshed" });
-  } else {
-    await ctx.answerCallbackQuery?.();
-    return;
-  }
-
-  const view = buildConciseView(sessionKey);
-  const msg = callbackQuery?.message as any;
-  if (msg?.chat?.id && msg?.message_id) {
-    await (bot.api as any).editMessageText(String(msg.chat.id), msg.message_id, view.text, {
-      parse_mode: "HTML",
-      reply_markup: view.keyboard,
-    }).catch(() => {});
-  }
-});
-
 // ============================================================================
 // Help pagination callback
 // ============================================================================
 
 onCallback("cmd_page:", async ({ data, ctx, bot, callbackQuery }) => {
   const page = Math.max(1, Number.parseInt(data.slice("cmd_page:".length), 10) || 1);
-  const view = helpPage(page);
+  const view = buildCommandHelpPage(page);
   const msg = callbackQuery?.message as any;
   await ctx.answerCallbackQuery?.();
   await (bot.api as any).editMessageText(String(msg.chat.id), msg.message_id, view.text, {
@@ -437,34 +308,6 @@ onCallback("role:", async ({ data, ctx, runtime, account }) => {
   }
 
   await ctx.answerCallbackQuery?.();
-});
-
-// ============================================================================
-// Skill execution callback
-// ============================================================================
-
-onCallback("skill_run:", async ({ data, ctx, bot, runtime, account, callbackQuery }) => {
-  const skillName = data.slice("skill_run:".length);
-  await ctx.answerCallbackQuery?.({ text: `Running /${skillName}...` });
-  const source = toSource(account.accountId, ctx);
-  const { agentId, text: routedText } = resolveAgentId(source, `/${skillName}`, runtime.api.config);
-  const sessionKey = resolveSessionKey(source, runtime.api.config, agentId);
-  const chatId = String(callbackQuery?.message?.chat?.id ?? "");
-  await runtime.api.dispatch({
-    source,
-    sessionKey,
-    text: routedText || `/${skillName}`,
-    respond: async (text: string) => {
-      if (text?.trim()) {
-        await bot.api.sendMessage(chatId, markdownToTelegramHtml(text), { parse_mode: "HTML" }).catch(() => {
-          bot.api.sendMessage(chatId, text).catch(() => {});
-        });
-      }
-    },
-    setTyping: async () => {
-      await bot.api.sendChatAction(chatId, "typing").catch(() => {});
-    },
-  });
 });
 
 // ============================================================================

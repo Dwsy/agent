@@ -103,14 +103,31 @@ export function getConciseStateManager(): ConciseStateManager | null {
 
 /** Read current config default from live gateway config */
 export function getConciseConfigDefault(): boolean {
-  return getRuntimeConfig().enabled;
+  const enabled = getRuntimeConfig().enabled;
+  // Diagnostic: log config reading
+  if (pluginApi) {
+    pluginApi.logger.debug(`[concise] getConciseConfigDefault: enabled=${enabled}`);
+  }
+  return enabled;
 }
 
 /** Compute effective concise state for a session */
 export function getEffectiveConciseState(sessionKey: string): boolean {
   const configDefault = getConciseConfigDefault();
-  if (!stateManager) return configDefault;
-  return stateManager.getEffectiveState(sessionKey, configDefault);
+  if (!stateManager) {
+    if (pluginApi) {
+      pluginApi.logger.warn(`[concise] getEffectiveConciseState: stateManager is null, returning configDefault=${configDefault}`);
+    }
+    return configDefault;
+  }
+  const result = stateManager.getEffectiveState(sessionKey, configDefault);
+  const override = stateManager.getSessionOverride(sessionKey);
+  if (pluginApi) {
+    pluginApi.logger.debug(
+      `[concise] getEffectiveConciseState: sessionKey=${sessionKey.slice(0, 30)} configDefault=${configDefault} override=${override} result=${result}`,
+    );
+  }
+  return result;
 }
 
 // ============================================================================
@@ -125,7 +142,13 @@ export default function register(api: GatewayPluginApi): void {
   registerSystemPromptSegment({
     id: "concise-mode",
     segment: CONCISE_MODE_SEGMENT,
-    shouldInclude: (gatewayConfig) => !!(gatewayConfig.plugins?.config?.["concise-mode"]?.enabled),
+    shouldInclude: (gatewayConfig, flags) => {
+      // Priority: flags.concise > config.plugins.config["concise-mode"].enabled
+      if (flags?.concise !== undefined) {
+        return flags.concise;
+      }
+      return !!(gatewayConfig.plugins?.config?.["concise-mode"]?.enabled);
+    },
     priority: 0,
   });
 

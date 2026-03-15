@@ -78,6 +78,8 @@ export type {
   AccessCheckContext,
   AccessResult,
   ChannelSecurityAdapter,
+  NativeCommandAdapter,
+  InteractionAdapter,
   CliProgram,
   CliCommandHandler,
   HookPayload,

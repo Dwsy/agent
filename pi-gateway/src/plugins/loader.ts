@@ -29,6 +29,7 @@ import type {
   PluginHookName,
   HookHandler,
 } from "./types.ts";
+import type { CommandCatalogEntry } from "../gateway/command-types.ts";
 import { HookRegistry } from "./hooks.ts";
 
 // ============================================================================
@@ -48,7 +49,7 @@ export interface RegistrationConflict {
 export interface PluginRegistryState {
   channels: Map<string, ChannelPlugin>;
   tools: Map<string, ToolPlugin>;
-  commands: Map<string, { pluginId: string; handler: CommandHandler }>;
+  commands: Map<string, { pluginId: string; handler: CommandHandler; meta?: CommandCatalogEntry }>;
   httpRoutes: Array<{ method: string; path: string; handler: HttpHandler; pluginId: string }>;
   gatewayMethods: Map<string, { handler: WsMethodHandler; pluginId: string }>;
   services: BackgroundService[];
@@ -230,7 +231,7 @@ export class PluginLoader {
     const builtinDir = join(import.meta.dir, "builtin");
     if (!existsSync(builtinDir)) return;
 
-    const builtins = ["telegram", "discord", "webchat", "feishu", "cron", "heartbeat", "concise-mode", "reload", "hot-reload"];
+    const builtins = ["telegram", "discord", "webchat", "feishu", "qqbot", "cron", "heartbeat", "concise-mode", "reload", "hot-reload"];
     for (const name of builtins) {
       // Support both single-file (name.ts) and modular (name/index.ts) layouts
       let path = join(builtinDir, `${name}.ts`);

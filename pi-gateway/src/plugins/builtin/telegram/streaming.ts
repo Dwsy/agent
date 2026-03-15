@@ -13,6 +13,7 @@ import { escapeHtml, markdownToTelegramHtml, splitTelegramText } from "./format.
 import { parseOutboundMediaDirectives, sendTelegramMedia } from "./media-send.ts";
 import { recordSentMessage } from "./sent-message-cache.ts";
 import { getConciseConfigDefault, getEffectiveConciseState } from "../concise-mode/index.ts";
+import { endThinkingBlock, startThinkingBlock, type StreamingSequenceItem, updateThinkingBlock } from "../../streaming-thinking.ts";
 
 const DEFAULT_DRAFT_PLACEHOLDER = "…";
 
@@ -110,49 +111,14 @@ function formatToolStartLine(toolName: string, args?: Record<string, unknown>): 
  * - Callback wrapping to suppress output
  */
 class ConciseModeHandler {
-  // Note: System prompt is injected by buildGatewaySystemPrompt() in system-prompts.ts.
-  // This fallback is only for session overrides when global concise config is OFF.
+  // Detailed prompt injected per-message when concise mode is enabled.
+  // This ensures the agent knows exactly how to use send_message.
   private static readonly CONCISE_PROMPT = `
 
-## Concise Output Mode
-
-**Core Principle:** Keep the user informed. Do NOT let the user wait in silence.
-
-### Communication Protocol
-
-- Use \`send_message\` as your PRIMARY output channel
-- Your final text response MUST be exactly \`[NO_REPLY]\`
-
-### Progress Stages (report at each stage)
-
-1. **🔍 Start**: Brief statement of what you're about to do (1 line)
-2. **⚡ Key Findings**: Share important discoveries or decisions as they happen
-3. **✅/❌ Result**: Final outcome with clear status indicator
-
-### Message Format Rules
-
-- Lead with status emoji: ✅ ⚠️ ❌ 🔍 🔄 📊
-- Keep each message under 200 chars when possible
-- Use structured format for multi-item results (bullet points, not prose)
-- Include actionable next steps when relevant
-
-### When to Send Updates
-
-- Task started (what you're doing)
-- Significant finding or decision point
-- Task completed or failed
-- Asking for user input (use keyboard_select when options are discrete)
-
-### When to Use [NO_REPLY]
-
-Output \`[NO_REPLY]\` ONLY when you've already sent the final result via send_message.
-
-### Anti-Patterns (NEVER do these)
-
-- ❌ Long silence followed by a wall of text
-- ❌ Sending "I'm working on it" without specifics
-- ❌ Repeating the same status message
-- ❌ Omitting error details when something fails`;
+[Concise Output Mode]
+Use send_message tool to send progress updates to the user.
+After sending all updates via send_message, output [NO_REPLY] as your final text response.
+Do NOT output the actual content - send it via send_message instead.`;
 
   // Session-level OFF override when global concise prompt is enabled.
   private static readonly CONCISE_OFF_OVERRIDE_PROMPT = `
@@ -166,20 +132,20 @@ Respond normally unless tool routing explicitly requires [NO_REPLY].`;
     private runtime: TelegramPluginRuntime,
     private account: TelegramAccountRuntime,
     private enabled: boolean = true,
-    private shouldInjectFallbackPrompt: boolean = false,
     private shouldInjectDisablePrompt: boolean = false,
   ) {}
 
   /**
-   * Inject concise-mode prompt into message text
+   * Inject concise-mode prompt into message text.
+   *
+   * Simple logic:
+   * - If concise enabled: inject CONCISE_PROMPT
+   * - If concise disabled but config says enabled: inject CONCISE_OFF_OVERRIDE_PROMPT
+   * - Otherwise: no injection
    */
   injectPrompt(text: string): string {
     if (this.enabled) {
-      if (!this.shouldInjectFallbackPrompt) {
-        this.runtime.api.logger.debug("[streaming] concise-mode: active via system prompt, skip fallback injection");
-        return text;
-      }
-      this.runtime.api.logger.info("[streaming] concise-mode: injecting fallback prompt, disabling stream");
+      this.runtime.api.logger.info("[streaming] concise-mode: injecting prompt, disabling stream");
       return text + ConciseModeHandler.CONCISE_PROMPT;
     }
 
@@ -193,16 +159,16 @@ Respond normally unless tool routing explicitly requires [NO_REPLY].`;
 
   /**
    * Resolve stream configuration with concise-mode override
+   *
+   * NOTE: Concise mode should NOT disable streaming for send_message tool.
+   * It only controls:
+   * 1. Prompt injection (via injectPrompt)
+   * 2. Reply suppression (via SILENT_TOKEN in hooks)
+   *
+   * The stream mode should respect the channel configuration.
    */
   resolveStreamConfig(): ReturnType<typeof resolveStreamCompat> {
-    const base = resolveStreamCompat(this.account.cfg);
-    
-    if (!this.enabled) return base;
-    
-    return {
-      ...base,
-      streamMode: "off" as const,
-    };
+    return resolveStreamCompat(this.account.cfg);
   }
 
   /**
@@ -248,13 +214,17 @@ function createConciseModeHandler(
 ): ConciseModeHandler {
   const enabled = sessionKey ? getEffectiveConciseState(sessionKey) : false;
   const configDefaultEnabled = getConciseConfigDefault();
-  const shouldInjectFallbackPrompt = enabled && !configDefaultEnabled;
   const shouldInjectDisablePrompt = !enabled && configDefaultEnabled;
+
+  // Diagnostic logging for concise mode state
+  runtime.api.logger.info(
+    `[streaming] concise-mode: sessionKey=${sessionKey?.slice(0, 20)} enabled=${enabled} configDefault=${configDefaultEnabled} injectDisable=${shouldInjectDisablePrompt}`,
+  );
+
   return new ConciseModeHandler(
     runtime,
     account,
     enabled,
-    shouldInjectFallbackPrompt,
     shouldInjectDisablePrompt,
   );
 }
@@ -346,11 +316,12 @@ export async function dispatchAgentTurn(params: {
   let lastTypingAt = 0;
   const typingMinIntervalMs = 4000;
 
-  const contentSequence: { type: 'tool' | 'thinking' | 'text'; content: string }[] = [];
+  const contentSequence: StreamingSequenceItem[] = [];
   const seenToolCalls = new Set<string>();
 
   const draftEnabled = streamCfg.streamMode === "draft";
-  const canUseDraftStream = draftEnabled && source.chatType === "dm" && !!threadId;
+  // Draft mode works in both DM and groups. Previously required threadId which blocked DM usage.
+  const canUseDraftStream = draftEnabled && source.chatType === "dm";
   const draftMode = canUseDraftStream;
   let draftId: number = 0;
   let lastDraftAt = 0;
@@ -430,7 +401,7 @@ export async function dispatchAgentTurn(params: {
   let throttleBackoff = 0;
 
   const pushDraftUpdate = () => {
-    if (!draftMode || draftFailed || !threadId) return;
+    if (!draftMode || draftFailed) return;
 
     const renderedRaw = buildLiveText();
     const rendered = sanitizeDraftText(renderedRaw);
@@ -587,6 +558,10 @@ export async function dispatchAgentTurn(params: {
       hasNativeReply = false;
       initialized = false;
     },
+    onThinkingStart: () => {
+      if (isConcise) return;
+      startThinkingBlock(contentSequence);
+    },
     onThinkingDelta: (accumulated: string, _delta: string) => {
       // In concise-mode, suppress thinking output
       if (isConcise) return;
@@ -597,13 +572,12 @@ export async function dispatchAgentTurn(params: {
         stopSpinner();
         hasReceivedContent = true;
       }
-      const thinkIdx = contentSequence.findIndex(c => c.type === 'thinking');
-      if (thinkIdx >= 0) {
-        contentSequence[thinkIdx].content = accumulated;
-      } else {
-        contentSequence.push({ type: 'thinking', content: accumulated });
-      }
+      updateThinkingBlock(contentSequence, accumulated);
       pushLiveUpdate();
+    },
+    onThinkingEnd: () => {
+      if (isConcise) return;
+      endThinkingBlock(contentSequence);
     },
     onStreamDelta: (accumulated: string, delta?: string) => {
       // In concise-mode, suppress streaming output

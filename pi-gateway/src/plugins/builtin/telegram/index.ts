@@ -10,6 +10,8 @@ import { sendOutboundViaAccount, sendMediaViaAccount, sendReactionViaAccount, ed
 import { markdownToTelegramHtml } from "./format.ts";
 import { recordSentMessage } from "./sent-message-cache.ts";
 import type { TelegramPluginRuntime } from "./types.ts";
+import { buildNativeCommandSpecs, getBuiltinCommandCatalog } from "../../../gateway/command-catalog.ts";
+import { routeInteractionAction } from "../../../gateway/interaction-router.ts";
 
 let runtime: TelegramPluginRuntime | null = null;
 let defaultAccountId = "default";
@@ -159,6 +161,11 @@ const telegramPlugin: ChannelPlugin = {
         typing: true,
         ephemeral: "none",
       },
+      interaction: {
+        callbacks: true,
+        ack: true,
+        messageUpdate: "native",
+      },
       history: {
         fetchMessages: "partial",
         fetchSingleMessage: "partial",
@@ -219,6 +226,40 @@ const telegramPlugin: ChannelPlugin = {
     async editMessageMarkup(target: string, messageId: string, text: string, keyboard?: import("../../types.ts").InlineKeyboardMarkup) {
       const rt = getRuntime();
       return editMessageMarkupViaAccount({ runtime: rt, defaultAccountId, target, messageId, text, keyboard });
+    },
+  },
+
+  nativeCommands: {
+    supportsNativeCommands: true,
+    async sync(commands) {
+      const rt = getRuntime();
+      for (const account of rt.accounts.values()) {
+        await account.bot.api.setMyCommands(
+          commands
+            .map((cmd) => ({
+              command: cmd.name.toLowerCase().replace(/[^a-z0-9_]/g, "_").slice(0, 32),
+              description: cmd.description.slice(0, 256),
+            }))
+            .filter((cmd, idx, arr) => arr.findIndex((item) => item.command == cmd.command) === idx)
+            .slice(0, 50),
+        ).catch((err) => {
+          rt.api.logger.warn(`[telegram:${account.accountId}] native command sync failed: ${String(err)}`);
+        });
+      }
+    },
+  },
+
+  interactions: {
+    async handle(event) {
+      if (!runtime) return false;
+      // Inject API if not provided by caller
+      if (!event.api) {
+        (event as any).api = {
+          setModel: runtime.api.setModel.bind(runtime.api),
+          getAvailableModels: runtime.api.getAvailableModels.bind(runtime.api),
+        };
+      }
+      return routeInteractionAction(event);
     },
   },
 

@@ -15,8 +15,8 @@ import {
   parseModelCallbackData,
   type ModelProviderEntry,
 } from "./model-buttons.ts";
-import { parseKeyboardCallback, resolveKeyboard } from "../../../api/keyboard-interact.ts";
 import { dispatchCallback } from "./callback-router.ts";
+import { routeInteractionAction } from "../../../gateway/interaction-router.ts";
 import { toSource } from "./helpers.ts";
 import type {
   TelegramAccountRuntime,
@@ -399,44 +399,41 @@ export function registerCallbackHandler(
     });
     if (handled) return;
 
-    // 2. Keyboard interaction (infrastructure, not a feature callback)
-    const kbParsed = parseKeyboardCallback(data);
-    if (kbParsed) {
-      const resolved = resolveKeyboard(kbParsed.requestId, kbParsed.optionId);
-      await ctx.answerCallbackQuery?.(resolved ? { text: "✅" } : { text: "Expired" });
-      return;
-    }
+    const source = toSource(account.accountId, ctx as TelegramContext);
+    const callbackTextHint = String(callbackQuery?.message?.text ?? callbackQuery?.message?.caption ?? "").trim();
+    const route = resolveAgentRoute(source, callbackTextHint, runtime.api.config);
+    const sessionKey = resolveSessionKey(source, runtime.api.config, route.agentId);
 
-    // 3. Model selection callbacks
+    const interactionHandled = await routeInteractionAction({
+      channel: "telegram",
+      sessionKey,
+      chatId: String(callbackQuery?.message?.chat?.id ?? ""),
+      senderId: String(callbackQuery?.from?.id ?? source.senderId ?? "unknown"),
+      accountId: account.accountId,
+      messageId: callbackQuery?.message?.message_id ? String(callbackQuery.message.message_id) : undefined,
+      actionData: data,
+      api: {
+        setModel: runtime.api.setModel.bind(runtime.api),
+        getAvailableModels: runtime.api.getAvailableModels.bind(runtime.api),
+      },
+      ack: async (result) => {
+        await ctx.answerCallbackQuery?.(result?.message ? { text: result.message } : undefined);
+      },
+      respondWith: async (response) => {
+        if (response.text) {
+          await ctx.reply(response.text, { parse_mode: response.parseMode === "HTML" ? "HTML" : undefined });
+        }
+      },
+    });
+    if (interactionHandled) return;
+
+    // 3. Model page callbacks not yet fully abstracted
     const parsed = parseModelCallbackData(data);
     if (!parsed) {
       await ctx.answerCallbackQuery?.();
       return;
     }
 
-    const callbackTextHint = String(callbackQuery?.message?.text ?? callbackQuery?.message?.caption ?? "").trim();
-    const sessionKey = resolveTelegramSessionKey({
-      account,
-      ctx: ctx as TelegramContext,
-      runtime,
-      textHint: callbackTextHint,
-    });
-
-    if (parsed.type === "providers" || parsed.type === "back") {
-      const models = await runtime.api.getAvailableModels(sessionKey);
-      const grouped = groupModelsByProvider(models);
-      const providers = Object.keys(grouped).sort((a, b) => a.localeCompare(b));
-      const msg = callbackQuery?.message as any;
-      await ctx.answerCallbackQuery?.();
-      await (bot.api as any).editMessageText(String(msg.chat.id), msg.message_id, "选择 Provider：", {
-        reply_markup: { inline_keyboard: buildProviderKeyboard(providers, 2) },
-      }).catch(async () => {
-        await ctx.reply("选择 Provider：", {
-          reply_markup: { inline_keyboard: buildProviderKeyboard(providers, 2) },
-        });
-      });
-      return;
-    }
 
     if (parsed.type === "list") {
       await ctx.answerCallbackQuery?.();
@@ -451,23 +448,5 @@ export function registerCallbackHandler(
       return;
     }
 
-    if (parsed.type === "select") {
-      try {
-        await runtime.api.setModel(sessionKey, parsed.provider, parsed.modelId);
-        await ctx.answerCallbackQuery?.({ text: `已切换到 ${parsed.provider}/${parsed.modelId}` });
-        const sourceLabel = sessionKey.includes(":topic:")
-          ? "(topic)"
-          : sessionKey.includes(":group:")
-            ? "(group)"
-            : sessionKey.includes(":dm:")
-              ? "(dm)"
-              : "";
-        const message = `Model${sourceLabel ? ` ${sourceLabel}` : ""}: <b>${parsed.provider}/${parsed.modelId}</b>`;
-        await ctx.reply(markdownToTelegramHtml(message), { parse_mode: "HTML" });
-      } catch (err: unknown) {
-        await ctx.answerCallbackQuery?.({ text: "切换失败" });
-        await ctx.reply(`Failed to set model: ${err instanceof Error ? err.message : String(err)}`);
-      }
-    }
   });
 }

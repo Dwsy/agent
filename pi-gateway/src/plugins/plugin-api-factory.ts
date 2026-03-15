@@ -24,6 +24,7 @@ import type {
   WsMethodHandler,
   SessionKey,
 } from "../core/index.ts";
+import type { CommandCatalogEntry, NativeCommandSpec } from "../gateway/command-types.ts";
 
 export function createPluginApi(
   pluginId: string,
@@ -125,7 +126,7 @@ export function createPluginApi(
       pluginLogger.info(`Registered gateway method: ${method}`);
     },
 
-    registerCommand(name: string, handler: CommandHandler) {
+    registerCommand(name: string, handler: CommandHandler, meta?: { description?: string; exposeInNativeUi?: boolean; group?: string; supportsArgs?: boolean }) {
       const normalized = name.replace(/^\//, "").trim().toLowerCase();
       if (!normalized) {
         pluginLogger.warn("Skipped empty command registration");
@@ -139,7 +140,18 @@ export function createPluginApi(
           existingPlugin: existing.pluginId, newPlugin: pluginId, resolution: "overwritten",
         });
       }
-      ctx.registry.commands.set(normalized, { pluginId, handler });
+      ctx.registry.commands.set(normalized, {
+        pluginId,
+        handler,
+        meta: meta ? {
+          name: normalized,
+          description: meta.description ?? `/${normalized}`,
+          source: "builtin",
+          exposeInNativeUi: meta.exposeInNativeUi,
+          group: meta.group,
+          supportsArgs: meta.supportsArgs,
+        } satisfies CommandCatalogEntry : undefined,
+      });
       pluginLogger.info(`Registered command: /${normalized}`);
     },
 
