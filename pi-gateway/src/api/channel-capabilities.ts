@@ -56,7 +56,22 @@ export function supportsKeyboardButtons(channel: ChannelPlugin): boolean {
 }
 
 export function supportsKeyboardMarkupEdit(channel: ChannelPlugin): boolean {
+  const matrix = channel.capabilities.matrix?.interaction?.messageUpdate;
+  if (matrix === "native") return typeof channel.outbound.editMessageMarkup === "function";
+  if (matrix === "resend" || matrix === "none") return false;
   return typeof channel.outbound.editMessageMarkup === "function";
+}
+
+export function supportsInteractionCallbacks(channel: ChannelPlugin): boolean {
+  const matrix = channel.capabilities.matrix?.interaction?.callbacks;
+  if (typeof matrix === "boolean") return matrix;
+  return Boolean(channel.interactions);
+}
+
+export function supportsInteractionAck(channel: ChannelPlugin): boolean {
+  const matrix = channel.capabilities.matrix?.interaction?.ack;
+  if (typeof matrix === "boolean") return matrix;
+  return Boolean(channel.interactions);
 }
 
 export function canSendMedia(channel: ChannelPlugin): channel is ChannelWithOutbound<"sendMedia"> {

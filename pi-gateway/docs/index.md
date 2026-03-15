@@ -20,6 +20,7 @@
 | [Architecture Overview](architecture/ARCHITECTURE.md) | Module dependency graph, data flow |
 | [Core Modules](architecture/CORE-MODULES.md) | RPC pool, session router, message pipeline |
 | [Plugins & Channels](architecture/PLUGINS-AND-CHANNELS.md) | Channel plugin interface, Telegram/Discord/Feishu/WebChat |
+| [QQBot Implementation](architecture/QQBOT-IMPLEMENTATION-ARCHITECTURE.md) | QQBot runtime modules, inbound/outbound flow, target/session model |
 | [Security](architecture/SECURITY.md) | 7-layer defense: auth, SSRF, exec guard, media validation |
 | [Cron & Config](architecture/CRON-AND-CONFIG.md) | CronEngine, config loading, hot-reload |
 | [Testing](architecture/TESTING.md) | Test strategy, BBD test suites |
@@ -34,6 +35,7 @@
 | [BG-001: Tool Bridge](design/BG-001-TOOL-BRIDGE-DESIGN.md) | Auto-generate pi extension from registerTool plugins |
 | [BG-004: Hot Reload](design/BG-004-HOT-RELOAD-DESIGN.md) | Scoped plugin reload, 5 tiers, file watcher |
 | [Feishu Channel](design/FEISHU-CHANNEL-DESIGN.md) | Feishu integration: WebSocket, CardKit, DM policy |
+| [QQBot Channel](design/QQBOT-CHANNEL-DESIGN.md) | QQ Bot integration: HTTP + WSS, passive reply, target model |
 | [Media Tool Architecture](design/MEDIA-TOOL-ARCHITECTURE.md) | send_media direct delivery, path validation |
 | [Message Queue & Backpressure](design/MESSAGE-QUEUE-BACKPRESSURE-DESIGN.md) | Queue drop policies, priority dispatch |
 | [Multi-Agent Routing](design/MULTI-AGENT-ROUTING-DESIGN.md) | Agent binding, prefix routing, delegation |

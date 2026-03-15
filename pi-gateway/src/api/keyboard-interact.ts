@@ -41,7 +41,7 @@ export interface KeyboardOption {
 export interface KeyboardResult {
   ok: boolean;
   selected?: KeyboardOption;
-  messageId?: number;
+  messageId?: string;
   error?: string;
 }
 
@@ -72,7 +72,7 @@ export function resolveKeyboard(requestId: string, selectedId: string): boolean 
 
   clearTimeout(req.timer);
   pending.delete(requestId);
-  req.resolve({ ok: true, selected, messageId: req.messageId ? Number(req.messageId) : undefined });
+  req.resolve({ ok: true, selected, messageId: req.messageId ?? undefined });
   return true;
 }
 

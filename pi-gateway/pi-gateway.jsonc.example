@@ -95,6 +95,24 @@
         }
       }
     }
+,
+
+    "qqbot": {
+      "enabled": false,
+      "appId": "${QQBOT_APPID}",
+      "clientSecret": "${QQBOT_CLIENT_SECRET}",
+      "dmPolicy": "allowlist",
+      "allowFrom": ["*"],
+      "groupPolicy": "allowlist",
+      "groupAllowFrom": ["YOUR_GROUP_OPENID"],
+      "requireMention": true,
+      "textChunkLimit": 1500,
+      "streaming": {
+        "enabled": true,
+        "editThrottleMs": 1200,
+        "streamStartChars": 80
+      }
+    }
   },
 
   "roles": {

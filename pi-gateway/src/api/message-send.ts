@@ -119,6 +119,27 @@ export async function handleMessageSendRequest(
 
   const maxLength = channelPlugin.outbound.maxLength;
 
+  // Get default streamMode from channel config if not provided
+  if (!streamMode) {
+    const channelCfg = (ctx.config.channels as Record<string, unknown> | undefined)?.[channel] as Record<string, unknown> | undefined;
+    const accountCfg = session?.lastAccountId && channelCfg
+      ? (channelCfg.accounts as Record<string, Record<string, unknown>> | undefined)?.[session.lastAccountId]
+      : undefined;
+    // Priority: account.streamMode > channel.streamMode > undefined
+    streamMode = (accountCfg?.streamMode ?? channelCfg?.streamMode) as "off" | "partial" | "block" | "draft" | undefined;
+  }
+
+  // Draft mode only works in private chats (DM). Group chats have negative chatId.
+  // Auto-downgrade draft to partial for group chats (partial uses editMessageText).
+  if (streamMode === "draft" && chatId.startsWith("-")) {
+    ctx.log.info(`[message-send] draft mode not available for group chat=${chatId}, falling back to partial`);
+    streamMode = "partial";
+  }
+
+  if (streamMode) {
+    ctx.log.info(`[message-send] using streamMode=${streamMode}`);
+  }
+
   ctx.log.info(
     `[message-send] channel=${channel} target=${target} text=${text.length} chars replyTo=${replyTo ?? "none"} maxLength=${maxLength ?? "n/a"}`,
   );
@@ -251,6 +272,7 @@ export async function handleMessageSendRequest(
       messageId: firstMessageId ?? null,
       lastMessageId: lastMessageId ?? null,
       replyTo: replyTo ?? null,
+      streamMode: effectiveStreamMode ?? null,
     });
   } catch (err: unknown) {
     ctx.log.error(`[message-send] delivery failed: ${(err instanceof Error ? err.message : String(err))}`);
