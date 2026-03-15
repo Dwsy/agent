@@ -187,3 +187,8 @@ run-history.jsonl
 
 # Vector memory database (per-role, generated)
 **/.vector-db/
+
+# Episodic memory database files (contains sensitive session data)
+episodic-memory/*.db
+episodic-memory/*.db-shm
+episodic-memory/*.db-wal
