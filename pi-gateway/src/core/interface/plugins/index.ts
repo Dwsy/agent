@@ -41,6 +41,8 @@ export type {
   AccessCheckContext,
   AccessResult,
   ChannelSecurityAdapter,
+  NativeCommandAdapter,
+  InteractionAdapter,
   ChannelPlugin,
   // Tool Plugin
   ToolContext,

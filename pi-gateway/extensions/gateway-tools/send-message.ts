@@ -7,8 +7,7 @@ import { toolOk, toolError, gatewayHeaders, parseResponseJson } from "./helpers.
 const STREAM_CHUNK_SIZE = 80;
 // Delay between chunks in ms (simulates typing)
 const STREAM_CHUNK_DELAY_MS = 80;
-// Keep stream edits below the smallest channel max length (Discord: 2000)
-const MAX_STREAM_SAFE_LENGTH = 1800;
+// Max length for Telegram draft mode
 const MAX_DRAFT_TEXT_LENGTH = 4096;
 
 export function createSendMessageTool(gatewayUrl: string, internalToken: string, authToken?: string) {
@@ -19,7 +18,7 @@ export function createSendMessageTool(gatewayUrl: string, internalToken: string,
       "Send a text message to the current chat via pi-gateway. " +
       "Optionally reply to a specific message by providing replyTo (message ID). " +
       "Use this when you need to send an additional message outside the normal response flow. " +
-      "Set stream=true for long messages to show typing animation.",
+      "Set streamMode='draft' for Telegram draft-mode streaming (edit same message).",
     parameters: Type.Object({
       text: Type.String({ description: "Message text to send" }),
       replyTo: Type.Optional(
@@ -28,11 +27,8 @@ export function createSendMessageTool(gatewayUrl: string, internalToken: string,
       parseMode: Type.Optional(
         Type.String({ description: "Parse mode: Markdown, HTML, or plain (default: channel default)" }),
       ),
-      stream: Type.Optional(
-        Type.Boolean({ description: "Stream the message with typing animation (default: auto-detect based on length)" }),
-      ),
       streamMode: Type.Optional(
-        Type.String({ description: "Streaming mode hint: off | partial | block | draft (Telegram supports draft mode)" }),
+        Type.String({ description: "Streaming mode: off | partial | block | draft (draft = edit same message)" }),
       ),
       draftId: Type.Optional(
         Type.Number({ description: "Optional draft stream identifier (used with streamMode=draft)" }),
@@ -44,11 +40,10 @@ export function createSendMessageTool(gatewayUrl: string, internalToken: string,
       signal: AbortSignal,
       onPartialResult?: (partial: { content: Array<{ type: "text"; text: string }>; details: { sent: number; total: number; messageId?: string } }) => void
     ) {
-      const { text, replyTo, parseMode, stream, streamMode, draftId } = params as {
+      const { text, replyTo, parseMode, streamMode, draftId } = params as {
         text: string;
         replyTo?: string;
         parseMode?: string;
-        stream?: boolean;
         streamMode?: "off" | "partial" | "block" | "draft";
         draftId?: number;
       };
@@ -58,11 +53,16 @@ export function createSendMessageTool(gatewayUrl: string, internalToken: string,
         ? Math.floor(draftId)
         : undefined;
       const wantsDraft = streamMode === "draft";
-      const shouldStream = !wantsDraft && (stream ?? text.length > 200) && text.length <= MAX_STREAM_SAFE_LENGTH;
-      const streamSuppressedByLength = !wantsDraft && text.length > MAX_STREAM_SAFE_LENGTH;
+      const wantsPartial = streamMode === "partial";
+      const wantsStreaming = streamMode === "draft" || streamMode === "partial";
       const draftSuppressedByLength = wantsDraft && text.length > MAX_DRAFT_TEXT_LENGTH;
 
+      // When streamMode is not specified but text is long enough, default to partial streaming
+      const shouldAutoStream = !wantsStreaming && text.length > STREAM_CHUNK_SIZE * 2;
+      const effectivePartial = wantsPartial || shouldAutoStream;
+
       try {
+        // Draft mode: use draft streaming (edit same message for each chunk)
         if (wantsDraft && !draftSuppressedByLength) {
           const draftStreamId = normalizedDraftId ?? Date.now();
           const chunks: string[] = [];
@@ -92,7 +92,7 @@ export function createSendMessageTool(gatewayUrl: string, internalToken: string,
                 text: displayText,
                 replyTo,
                 parseMode,
-                streamMode,
+                streamMode: "draft",
                 draftId: draftStreamId,
               }),
             });
@@ -119,100 +119,130 @@ export function createSendMessageTool(gatewayUrl: string, internalToken: string,
           );
         }
 
-        // Non-streaming: send in one go
-        if (!shouldStream || text.length <= STREAM_CHUNK_SIZE) {
-          const res = await fetch(`${gatewayUrl}/api/message/send`, {
-            method: "POST",
-            headers: gatewayHeaders(authToken ?? internalToken, true),
-            body: JSON.stringify({
-              token: internalToken,
-              pid: process.pid,
-              sessionKey: sessionKey || undefined,
-              text,
-              replyTo,
-              parseMode,
-              streamMode,
-              draftId: wantsDraft ? (normalizedDraftId ?? Date.now()) : undefined,
-            }),
-          });
-
-          const data = await parseResponseJson(res);
-
-          if (!res.ok) {
-            return toolError(`Failed to send message: ${data.error || res.statusText}`);
+        // Partial mode or auto-streaming: send first message, then edit for each chunk (works in groups)
+        if (effectivePartial) {
+          const chunks: string[] = [];
+          for (let i = 0; i < text.length; i += STREAM_CHUNK_SIZE) {
+            chunks.push(text.slice(i, i + STREAM_CHUNK_SIZE));
           }
 
-          const chunkInfo = typeof data.chunkCount === "number" ? `, ${data.chunkCount} chunks` : "";
-          const streamInfo = streamSuppressedByLength ? "; stream disabled due to channel length limits" : "";
-          const draftInfo = draftSuppressedByLength ? "; draft stream disabled due to Telegram draft length limit" : "";
-          const summary = replyTo
-            ? `Message sent (reply to ${replyTo}, ${data.textLength} chars${chunkInfo}${streamInfo}${draftInfo})`
-            : `Message sent (${data.textLength} chars${chunkInfo}${streamInfo}${draftInfo})`;
+          let currentText = "";
+          let messageId: string | undefined;
+          const totalChunks = chunks.length;
 
-          return toolOk(summary);
+          for (let i = 0; i < chunks.length; i++) {
+            if (signal?.aborted) {
+              return toolError("Message sending aborted");
+            }
+
+            currentText += chunks[i];
+            const isLast = i === chunks.length - 1;
+            const displayText = isLast ? currentText : `${currentText}…`;
+
+            // First chunk: send message, subsequent chunks: edit message
+            if (i === 0) {
+              const res = await fetch(`${gatewayUrl}/api/message/send`, {
+                method: "POST",
+                headers: gatewayHeaders(authToken ?? internalToken, true),
+                body: JSON.stringify({
+                  token: internalToken,
+                  pid: process.pid,
+                  sessionKey: sessionKey || undefined,
+                  text: displayText,
+                  replyTo,
+                  parseMode,
+                  streamMode: "off", // first message is always new
+                }),
+              });
+
+              const data = await parseResponseJson(res);
+              if (!res.ok) {
+                return toolError(`Failed to send partial stream: ${data.error || res.statusText}`);
+              }
+              messageId = data.messageId;
+            } else {
+              // Subsequent chunks: edit the existing message
+              const res = await fetch(`${gatewayUrl}/api/message/action`, {
+                method: "POST",
+                headers: gatewayHeaders(authToken ?? internalToken, true),
+                body: JSON.stringify({
+                  token: internalToken,
+                  pid: process.pid,
+                  sessionKey: sessionKey || undefined,
+                  action: "edit",
+                  messageId,
+                  text: displayText,
+                  parseMode,
+                }),
+              });
+
+              const data = await parseResponseJson(res);
+              if (!res.ok) {
+                // If edit fails, send as new message instead
+                const sendRes = await fetch(`${gatewayUrl}/api/message/send`, {
+                  method: "POST",
+                  headers: gatewayHeaders(authToken ?? internalToken, true),
+                  body: JSON.stringify({
+                    token: internalToken,
+                    pid: process.pid,
+                    sessionKey: sessionKey || undefined,
+                    text: displayText,
+                    replyTo,
+                    parseMode,
+                    streamMode: "off",
+                  }),
+                });
+                const sendData = await parseResponseJson(sendRes);
+                if (sendRes.ok) {
+                  messageId = sendData.messageId;
+                }
+              }
+            }
+
+            if (onPartialResult) {
+              onPartialResult({
+                content: [{ type: "text", text: displayText }],
+                details: { sent: i + 1, total: totalChunks, messageId },
+              });
+            }
+
+            if (!isLast) {
+              await new Promise((resolve) => setTimeout(resolve, STREAM_CHUNK_DELAY_MS));
+            }
+          }
+
+          return toolOk(
+            `Partial streamed message sent (${text.length} chars in ${totalChunks} chunks, messageId=${messageId})`,
+          );
         }
 
-        // Streaming: prefer channel-native stream via repeated /api/message/send calls.
-        const chunks: string[] = [];
-        for (let i = 0; i < text.length; i += STREAM_CHUNK_SIZE) {
-          chunks.push(text.slice(i, i + STREAM_CHUNK_SIZE));
+        // Non-streaming: send in one go (text is short or streamMode=off)
+        const res = await fetch(`${gatewayUrl}/api/message/send`, {
+          method: "POST",
+          headers: gatewayHeaders(authToken ?? internalToken, true),
+          body: JSON.stringify({
+            token: internalToken,
+            pid: process.pid,
+            sessionKey: sessionKey || undefined,
+            text,
+            replyTo,
+            parseMode,
+            streamMode: "off",
+            draftId: normalizedDraftId,
+          }),
+        });
+
+        const data = await parseResponseJson(res);
+
+        if (!res.ok) {
+          return toolError(`Failed to send message: ${data.error || res.statusText}`);
         }
 
-        let currentText = "";
-        let messageId: string | undefined;
-        const totalChunks = chunks.length;
-
-        for (let i = 0; i < chunks.length; i++) {
-          if (signal?.aborted) {
-            return toolError("Message sending aborted");
-          }
-
-          if (i > 0) {
-            await new Promise((resolve) => setTimeout(resolve, STREAM_CHUNK_DELAY_MS));
-          }
-
-          currentText += chunks[i];
-          const isLast = i === chunks.length - 1;
-          const displayText = isLast ? currentText : currentText + "…";
-
-          const sendRes = await fetch(`${gatewayUrl}/api/message/send`, {
-            method: "POST",
-            headers: gatewayHeaders(authToken ?? internalToken, true),
-            body: JSON.stringify({
-              token: internalToken,
-              pid: process.pid,
-              sessionKey: sessionKey || undefined,
-              text: displayText,
-              replyTo: i === 0 ? replyTo : undefined,
-              parseMode,
-              streamMode: streamMode ?? "partial",
-              streamId: messageId,
-              streamIndex: i,
-              streamReset: i === 0,
-              streamFinal: isLast,
-              draftId: wantsDraft ? (normalizedDraftId ?? Date.now()) : undefined,
-              stream: true,
-            }),
-          });
-
-          const data = await parseResponseJson(sendRes);
-          if (!sendRes.ok) {
-            return toolError(`Failed to stream message: ${data.error || sendRes.statusText}`);
-          }
-
-          messageId = (data.lastMessageId as string | undefined) ?? (data.messageId as string | undefined) ?? messageId;
-
-          if (onPartialResult) {
-            onPartialResult({
-              content: [{ type: "text", text: displayText }],
-              details: { sent: i + 1, total: totalChunks, messageId },
-            });
-          }
-        }
-
+        const chunkInfo = typeof data.chunkCount === "number" ? `, ${data.chunkCount} chunks` : "";
+        const draftInfo = draftSuppressedByLength ? "; draft stream disabled due to length limit" : "";
         const summary = replyTo
-          ? `Streamed message sent (reply to ${replyTo}, ${text.length} chars in ${totalChunks} chunks)`
-          : `Streamed message sent (${text.length} chars in ${totalChunks} chunks)`;
+          ? `Message sent (reply to ${replyTo}, ${data.textLength} chars${chunkInfo}${draftInfo})`
+          : `Message sent (${data.textLength} chars${chunkInfo}${draftInfo})`;
 
         return toolOk(summary);
       } catch (err) {

@@ -221,6 +221,8 @@ export {
   type ChannelOutbound,
   type StreamingConfig,
   type ChannelStreamingAdapter,
+  type NativeCommandAdapter,
+  type InteractionAdapter,
   type AccessCheckContext,
   type AccessResult,
   type ChannelSecurityAdapter,

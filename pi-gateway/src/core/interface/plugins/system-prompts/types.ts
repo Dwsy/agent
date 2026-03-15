@@ -104,7 +104,7 @@ export type SegmentConstructor = new () => ISystemPromptSegment;
 export interface PluginSystemPromptSegment {
   id: string;
   segment: string;
-  shouldInclude: (config: Config) => boolean;
+  shouldInclude: (config: Config, flags?: PromptFeatureFlags) => boolean;
   priority?: number;
 }
 
