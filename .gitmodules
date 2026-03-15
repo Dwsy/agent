@@ -13,12 +13,8 @@
 [submodule "skills/ace-tool"]
 	path = skills/ace-tool
 	url = https://github.com/Dwsy/ace-tool-skill
-[submodule "extensions/pi-interactive-shell"]
-	path = extensions/pi-interactive-shell
-	url = https://github.com/nicobailon/pi-interactive-shell.git
-[submodule "extensions/pi-subagents"]
-	path = extensions/pi-subagents
-	url = https://github.com/nicobailon/pi-subagents.git
+
+
 [submodule "skills/pi-extensions"]
 	path = skills/pi-extensions
 	url = https://github.com/dwsy/pi-extensions-skill.git
@@ -35,12 +31,8 @@
 [submodule "extensions/pi-files-widget"]
 	path = extensions/pi-files-widget
 	url = https://github.com/tmustier/pi-extensions.git
-[submodule "extensions/pi-messenger"]
-	path = extensions/pi-messenger
-	url = https://github.com/nicobailon/pi-messenger.git
+
 [submodule "extensions/pi-super-curl"]
 	path = extensions/pi-super-curl
 	url = https://github.com/Graffioh/pi-super-curl.git
-[submodule "extensions/interview"]
-	path = extensions/interview
-	url = https://github.com/nicobailon/pi-interview-tool.git
+
