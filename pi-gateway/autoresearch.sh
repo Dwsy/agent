@@ -30,8 +30,8 @@ if [ -d "src/plugins/builtin/discord/tests" ]; then
   echo "=== Discord Tests ===" >&2
   DISCORD_OUTPUT=$(bun test src/plugins/builtin/discord/tests/ 2>&1) || true
   echo "$DISCORD_OUTPUT" >&2
-  DISCORD_TEST_COUNT=$(echo "$DISCORD_OUTPUT" | grep -cE "^\s+✓" || echo "0")
-  DISCORD_TEST_PASS=$(echo "$DISCORD_OUTPUT" | grep "METRIC test_pass=" | tail -1 | sed 's/.*METRIC test_pass=//' | tr -d ' ' || echo "0")
+  DISCORD_TEST_COUNT=$(echo "$DISCORD_OUTPUT" | grep -cE "^\s+\(pass\)" || echo "0")
+  DISCORD_TEST_PASS=$(echo "$DISCORD_OUTPUT" | grep -E "^\s+[0-9]+ pass" | awk '{print $1}' | tr -d ' ' || echo "0")
 else
   DISCORD_TEST_PASS=0
 fi
