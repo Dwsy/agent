@@ -24,6 +24,7 @@ function createRuntime(streamingEnabled = false): QqbotPluginRuntime {
     dedup: new Map(),
     replyState: new Map(),
     streamPlaceholders: new Map(),
+    dispatchLock: new Map(),
     seq: null,
     ws: null,
     heartbeatTimer: null,

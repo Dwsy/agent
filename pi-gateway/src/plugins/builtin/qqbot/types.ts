@@ -176,4 +176,6 @@ export interface QqbotPluginRuntime {
   dedup: Map<string, number>;
   replyState: Map<string, QqbotSendMeta>;
   streamPlaceholders: Map<string, { target: string; messageId: string }>;
+  /** 按用户并发锁：防止同一用户快速发送多条消息导致响应乱序 */
+  dispatchLock: Map<string, number>;
 }

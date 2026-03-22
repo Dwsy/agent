@@ -144,6 +144,7 @@ const qqbotPlugin: ChannelPlugin = {
       dedup: new Map(),
       replyState: new Map(),
       streamPlaceholders: new Map(),
+      dispatchLock: new Map(),
       seq: null,
       ws: null,
       heartbeatTimer: null,

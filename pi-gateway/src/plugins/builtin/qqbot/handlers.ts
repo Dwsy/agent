@@ -10,6 +10,7 @@ import { getPendingRequest, parseKeyboardCallback, resolveKeyboard } from "../..
 
 const DEDUP_TTL_MS = 30 * 60 * 1000;
 const DEDUP_MAX_SIZE = 1000;
+const DISPATCH_LOCK_TTL_MS = 30_000; // 30s lock to prevent concurrent dispatch
 
 /** 斜杠命令定义 */
 interface SlashCommand {
@@ -397,6 +398,15 @@ export async function handleQqbotEvent(runtime: QqbotPluginRuntime, eventType: s
   let lastEditAt = 0;
   let streamingStopped = false;
 
+  // 按用户并发锁：防止同一用户快速发送多条消息导致响应乱序
+  const dispatchLockKey = `dispatch:${ctx.chatId}:${ctx.senderId}`;
+  const now = Date.now();
+  if (runtime.dispatchLock.has(dispatchLockKey) && now - (runtime.dispatchLock.get(dispatchLockKey) ?? 0) < DISPATCH_LOCK_TTL_MS) {
+    runtime.api.logger.info(`QQBot dispatch dropped: user ${ctx.senderId} is already processing a request`);
+    return;
+  }
+  runtime.dispatchLock.set(dispatchLockKey, now);
+
   // 发送输入状态通知（C2C 私聊显示"正在输入..."）
   if (ctx.peerType === "c2c") {
     const { sendC2CInputNotify } = await import("./api.ts");
@@ -404,7 +414,8 @@ export async function handleQqbotEvent(runtime: QqbotPluginRuntime, eventType: s
   }
 
   runtime.api.logger.info(`QQBot dispatching: session=${sessionKey} target=${target}`);
-  await runtime.api.dispatch({
+  try {
+    await runtime.api.dispatch({
     source: routedSource,
     sessionKey,
     text: route.text,
@@ -462,4 +473,7 @@ export async function handleQqbotEvent(runtime: QqbotPluginRuntime, eventType: s
       await sendQqbotText(runtime, target, response.text);
     },
   });
+  } finally {
+    runtime.dispatchLock.delete(dispatchLockKey);
+  }
 }
