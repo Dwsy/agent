@@ -1,7 +1,7 @@
 import { Client, GatewayIntentBits, Partials } from "discord.js";
 import type { ChannelPlugin, GatewayPluginApi, MediaSendResult, MediaSendOptions, ChannelStreamingAdapter, ChannelSecurityAdapter, MessageSendResult, MessageActionResult, ReactionOptions, ReadHistoryResult } from "../../types.ts";
 import type { DiscordChannelConfig, DiscordPluginRuntime } from "./types.ts";
-import { handleMessage, handleInteraction, sendOutbound, sendMediaOutbound, createDiscordStreamingAdapter, sendReactionOutbound, editMessageOutbound, deleteMessageOutbound, pinMessageOutbound, readHistoryOutbound } from "./handlers.ts";
+import { handleMessage, handleInteraction, sendOutbound, sendMediaOutbound, createDiscordStreamingAdapter, sendReactionOutbound, editMessageOutbound, deleteMessageOutbound, pinMessageOutbound, readHistoryOutbound, sendPollOutbound } from "./handlers.ts";
 import { registerGuildCommands } from "./commands.ts";
 import { splitDiscordText } from "./format.ts";
 
@@ -61,9 +61,6 @@ const discordPlugin: ChannelPlugin = {
         postChannelMessage: "full",
       },
     },
-  },
-  streaming: {
-    blockStreamingCoalesceDefaults: { minChars: 1500, idleMs: 1000 },
   },
   outbound: {
     maxLength: 2000,

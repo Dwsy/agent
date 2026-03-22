@@ -86,6 +86,10 @@ export interface ChannelCapabilityMatrix {
 
 /** Channel capabilities flags */
 export interface ChannelCapabilities {
+  /** Supports native commands (slash commands) */
+  nativeCommands?: boolean;
+  /** Supports polls */
+  polls?: boolean;
   /** Supports direct messages */
   direct?: boolean;
   /** Supports group chats */
@@ -229,6 +233,9 @@ export interface ChannelOutbound {
   /** Read recent messages */
   readHistory?(target: string, limit?: number, before?: string): Promise<ReadHistoryResult>;
 
+  /** Send poll */
+  sendPoll?(target: string, question: string, options: string[], opts?: { duration?: number }): Promise<MessageSendResult>;
+
   /** Send inline keyboard */
   sendKeyboard?(target: string, text: string, keyboard: InlineKeyboardMarkup): Promise<MessageSendResult>;
 
@@ -278,6 +285,12 @@ export interface ChannelStreamingAdapter {
 
   /** Channel-specific streaming config */
   config?: StreamingConfig;
+
+  /** Block streaming: wait until minChars before sending first chunk */
+  blockStreaming?: boolean;
+
+  /** Block streaming coalescing defaults: wait until minChars or idleMs before delivery */
+  blockStreamingCoalesceDefaults?: { minChars?: number; idleMs?: number };
 }
 
 /** Access check context */

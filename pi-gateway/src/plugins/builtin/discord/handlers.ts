@@ -494,6 +494,8 @@ export function createDiscordStreamingAdapter(
       editThrottleMs: 500,
       editCutoffChars: 1800,
     },
+    blockStreaming: false, // Discord uses edit-based streaming
+    blockStreamingCoalesceDefaults: { minChars: 1500, idleMs: 1000 },
   };
 }
 
@@ -663,9 +665,6 @@ export async function sendMediaOutbound(
 
 // ── Outbound Poll ─────────────────────────────────────────────────
 
-import type { MessageSendResult } from "../../types.ts";
-import { MessagePollCreate } from "discord.js";
-
 export async function sendPollOutbound(
   rt: DiscordPluginRuntime,
   target: string,
@@ -677,19 +676,19 @@ export async function sendPollOutbound(
     const parsed = parseDiscordTarget(target);
     const destination = parsed.threadId ?? parsed.channelId;
     const channel = await rt.client.channels.fetch(destination);
-    if (!channel?.isTextBased() || !("send" as any)) {
+    if (!channel?.isTextBased()) {
       return { ok: false, error: "Channel not found or not text-based" };
     }
 
-    const pollOptions = options.slice(0, 10).map((text) => ({ text }));
-    const pollData = new MessagePollCreate({
-      question: { text: question },
-      answers: pollOptions,
-      duration: opts?.duration ?? 1440, // Discord default: 1 day in minutes
-      allowMultiselect: false,
+    const pollAnswers = options.slice(0, 10).map((text) => ({ text }));
+    const msg = await (channel as any).send({
+      poll: {
+        question: { text: question },
+        answers: pollAnswers,
+        duration: opts?.duration ?? 1440,
+        allowMultiselect: false,
+      },
     });
-
-    const msg = await (channel as any).send({ poll: pollData });
     return { ok: true, messageId: msg.id };
   } catch (err: unknown) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
