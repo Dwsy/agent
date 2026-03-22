@@ -668,6 +668,81 @@ export function loadConfig(configPath?: string): Config;
  * @param validateOptions - Validation options
  * @returns Object with config and validation result
  */
+/**
+ * Strip JSON5 comments while preserving strings.
+ * Properly handles // and /* */ comments outside of string literals.
+ */
+function stripJsonComments(raw: string): string {
+  const result: string[] = [];
+  let i = 0;
+  let inString = false;
+  let stringChar = "";
+
+  while (i < raw.length) {
+    const c = raw[i];
+    const next = raw[i + 1];
+
+    // Handle string boundaries
+    if (!inString && (c === '"' || c === "'")) {
+      inString = true;
+      stringChar = c;
+      result.push(c);
+      i++;
+      continue;
+    }
+
+    if (inString) {
+      // Check for escape sequence
+      if (c === "\\" && next) {
+        result.push(c, next);
+        i += 2;
+        continue;
+      }
+      // Check for end of string
+      if (c === stringChar) {
+        inString = false;
+        stringChar = "";
+        result.push(c);
+        i++;
+        continue;
+      }
+      // Regular character inside string
+      result.push(c);
+      i++;
+      continue;
+    }
+
+    // Not in string - check for comments
+    // Single-line comment
+    if (c === "/" && next === "/") {
+      // Skip until end of line
+      while (i < raw.length && raw[i] !== "\n") {
+        i++;
+      }
+      continue;
+    }
+
+    // Multi-line comment
+    if (c === "/" && next === "*") {
+      i += 2;
+      while (i < raw.length - 1) {
+        if (raw[i] === "*" && raw[i + 1] === "/") {
+          i += 2;
+          break;
+        }
+        i++;
+      }
+      continue;
+    }
+
+    // Regular character
+    result.push(c);
+    i++;
+  }
+
+  return result.join("");
+}
+
 export function loadConfig(configPath: string | undefined, validateOptions: ValidationOptions & { validate: true }): Promise<{ config: Config; validation: ValidationResult }>;
 export function loadConfig(configPath?: string, validateOptions?: ValidationOptions & { validate?: boolean }): Config | Promise<{ config: Config; validation: ValidationResult }> {
   const path = configPath ?? resolveConfigPath();
@@ -676,10 +751,8 @@ export function loadConfig(configPath?: string, validateOptions?: ValidationOpti
   if (existsSync(path)) {
     try {
       const raw = readFileSync(path, "utf-8");
-      // Strip JSON5 comments (// and /* */)
-      const cleaned = raw
-        .replace(/\/\/.*$/gm, "")
-        .replace(/\/\*[\s\S]*?\*\//g, "")
+      // Strip JSON5 comments (preserving strings with // in URLs)
+      const cleaned = stripJsonComments(raw)
         // Allow trailing commas
         .replace(/,\s*([\]}])/g, "$1");
       fileConfig = JSON.parse(cleaned);
