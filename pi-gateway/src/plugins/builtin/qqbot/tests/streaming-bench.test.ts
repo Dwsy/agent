@@ -90,6 +90,13 @@ describe("qqbot streaming benchmark", () => {
     expect(result!.cmd.name).toBe("bot-version");
   });
 
+  test("METRIC: slash command /bot-logs recognized", () => {
+    const result = matchSlashCommand("/bot-logs");
+    console.log(`METRIC command_recognized=${result ? 1 : 0}`);
+    expect(result).not.toBeNull();
+    expect(result!.cmd.name).toBe("bot-logs");
+  });
+
   test("METRIC: non-slash text NOT matched as command", () => {
     expect(matchSlashCommand("hello")).toBeNull();
     expect(matchSlashCommand("/unknown-cmd")).toBeNull();
