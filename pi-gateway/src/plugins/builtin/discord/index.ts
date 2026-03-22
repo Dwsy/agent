@@ -32,6 +32,9 @@ const discordPlugin: ChannelPlugin = {
     deletable: true,
     pinnable: true,
     history: true,
+    mentions: {
+      stripPatterns: () => ["<@!?\\d+>"],
+    },
     matrix: {
       messaging: {
         post: true,
