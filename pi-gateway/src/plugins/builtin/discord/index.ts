@@ -18,6 +18,8 @@ const discordPlugin: ChannelPlugin = {
     blurb: "Discord bot via discord.js (streaming, slash commands, OpenClaw-aligned)",
   },
   capabilities: {
+    nativeCommands: true,
+    polls: true,
     direct: true,
     group: true,
     thread: true,
@@ -60,6 +62,9 @@ const discordPlugin: ChannelPlugin = {
       },
     },
   },
+  streaming: {
+    blockStreamingCoalesceDefaults: { minChars: 1500, idleMs: 1000 },
+  },
   outbound: {
     maxLength: 2000,
     async sendText(target: string, text: string): Promise<MessageSendResult> {
@@ -89,6 +94,10 @@ const discordPlugin: ChannelPlugin = {
     async readHistory(target: string, limit?: number, before?: string): Promise<ReadHistoryResult> {
       if (!runtime) return { ok: false, error: "Discord not initialized" };
       return readHistoryOutbound(runtime, target, limit, before);
+    },
+    async sendPoll(target: string, question: string, options: string[], opts?: { duration?: number }): Promise<MessageSendResult> {
+      if (!runtime) return { ok: false, error: "Discord not initialized" };
+      return sendPollOutbound(runtime, target, question, options, opts);
     },
   },
 

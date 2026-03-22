@@ -639,13 +639,13 @@ export function resolveConfigPath(): string {
     return process.env.PI_GATEWAY_CONFIG;
   }
 
-  // ~/.pi/gateway/ 优先，.jsonc > .json
+  // ~/.pi/gateway/ first, .jsonc > .json
   for (const ext of [".jsonc", ".json"]) {
     const p = join(DEFAULT_DATA_DIR, `pi-gateway${ext}`);
     if (existsSync(p)) return p;
   }
 
-  // cwd 回退，.jsonc > .json
+  // cwd fallback, .jsonc > .json
   for (const ext of [".jsonc", ".json"]) {
     const p = join(process.cwd(), `pi-gateway${ext}`);
     if (existsSync(p)) return p;
