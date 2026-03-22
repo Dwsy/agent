@@ -57,8 +57,13 @@ export function createSendMessageTool(gatewayUrl: string, internalToken: string,
       const wantsStreaming = streamMode === "draft" || streamMode === "partial";
       const draftSuppressedByLength = wantsDraft && text.length > MAX_DRAFT_TEXT_LENGTH;
 
-      // When streamMode is not specified but text is long enough, default to partial streaming
+      // Limit total display text to Telegram's 4096 char limit to avoid edit failures
+      const maxDisplayLength = 4096;
+
+      // Auto-streaming: enable for longer messages to show typing effect
       const shouldAutoStream = !wantsStreaming && text.length > STREAM_CHUNK_SIZE * 2;
+      // Partial mode: show typing effect via message edits
+      // For messages > 4096 chars, we'll create multiple messages as needed
       const effectivePartial = wantsPartial || shouldAutoStream;
 
       try {
@@ -120,6 +125,7 @@ export function createSendMessageTool(gatewayUrl: string, internalToken: string,
         }
 
         // Partial mode or auto-streaming: send first message, then edit for each chunk (works in groups)
+        // For messages > 4096 chars, we send multiple messages and continue editing the latest one
         if (effectivePartial) {
           const chunks: string[] = [];
           for (let i = 0; i < text.length; i += STREAM_CHUNK_SIZE) {
@@ -137,10 +143,18 @@ export function createSendMessageTool(gatewayUrl: string, internalToken: string,
 
             currentText += chunks[i];
             const isLast = i === chunks.length - 1;
-            const displayText = isLast ? currentText : `${currentText}…`;
+            let displayText = isLast ? currentText : `${currentText}…`;
 
-            // First chunk: send message, subsequent chunks: edit message
-            if (i === 0) {
+            // Check if we need to start a new message (current display would exceed limit)
+            const wouldExceedLimit = displayText.length > maxDisplayLength;
+
+            if (i === 0 || wouldExceedLimit) {
+              // Truncate to fit limit for intermediate chunks
+              if (!isLast && displayText.length > maxDisplayLength) {
+                displayText = displayText.slice(0, maxDisplayLength - 1) + "…";
+              }
+              
+              // Send new message (first chunk or when exceeding limit)
               const res = await fetch(`${gatewayUrl}/api/message/send`, {
                 method: "POST",
                 headers: gatewayHeaders(authToken ?? internalToken, true),
@@ -151,7 +165,7 @@ export function createSendMessageTool(gatewayUrl: string, internalToken: string,
                   text: displayText,
                   replyTo,
                   parseMode,
-                  streamMode: "off", // first message is always new
+                  streamMode: "off",
                 }),
               });
 
@@ -160,9 +174,16 @@ export function createSendMessageTool(gatewayUrl: string, internalToken: string,
                 return toolError(`Failed to send partial stream: ${data.error || res.statusText}`);
               }
               messageId = data.messageId;
-            } else {
-              // Subsequent chunks: edit the existing message
-              const res = await fetch(`${gatewayUrl}/api/message/action`, {
+              
+              // Reset currentText for next message
+              if (wouldExceedLimit && !isLast) {
+                // Truncate current text to match what we sent
+                // Next message will start fresh from this point
+                currentText = chunks[i]!;
+              }
+            } else if (messageId) {
+              // Edit existing message
+              await fetch(`${gatewayUrl}/api/message/action`, {
                 method: "POST",
                 headers: gatewayHeaders(authToken ?? internalToken, true),
                 body: JSON.stringify({
@@ -175,28 +196,6 @@ export function createSendMessageTool(gatewayUrl: string, internalToken: string,
                   parseMode,
                 }),
               });
-
-              const data = await parseResponseJson(res);
-              if (!res.ok) {
-                // If edit fails, send as new message instead
-                const sendRes = await fetch(`${gatewayUrl}/api/message/send`, {
-                  method: "POST",
-                  headers: gatewayHeaders(authToken ?? internalToken, true),
-                  body: JSON.stringify({
-                    token: internalToken,
-                    pid: process.pid,
-                    sessionKey: sessionKey || undefined,
-                    text: displayText,
-                    replyTo,
-                    parseMode,
-                    streamMode: "off",
-                  }),
-                });
-                const sendData = await parseResponseJson(sendRes);
-                if (sendRes.ok) {
-                  messageId = sendData.messageId;
-                }
-              }
             }
 
             if (onPartialResult) {

@@ -24,4 +24,20 @@ describe("telegram helpers toSource", () => {
     expect(source.senderId).toBe("123");
     expect(source.senderName).toBe("dwsy");
   });
+
+  test("maps Telegram channel chats to gateway channel type", () => {
+    const source = toSource("default", {
+      chat: { id: -100999, type: "channel" },
+      from: { id: 456, first_name: "channel-bot" },
+      message: {
+        message_id: 99,
+        chat: { id: -100999, type: "channel" },
+      } as any,
+    } as any);
+
+    expect(source.chatType).toBe("channel");
+    expect(source.chatId).toBe("-100999");
+    expect(source.senderId).toBe("456");
+    expect(source.senderName).toBe("channel-bot");
+  });
 });

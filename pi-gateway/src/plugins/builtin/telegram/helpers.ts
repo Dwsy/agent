@@ -3,10 +3,20 @@
  */
 
 import type { MessageSource } from "../../../core/types.ts";
+import type { ChatType } from "../../../core/domain/types.ts";
 import type { TelegramContext } from "./types.ts";
 
-export function toChatType(chatType?: string): "dm" | "group" {
-  return chatType === "private" ? "dm" : "group";
+export function toChatType(chatType?: string): ChatType {
+  switch (chatType) {
+    case "private":
+      return "dm";
+    case "channel":
+      return "channel";
+    case "group":
+    case "supergroup":
+    default:
+      return "group";
+  }
 }
 
 export function toSource(accountId: string, ctx: TelegramContext): MessageSource {
