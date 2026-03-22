@@ -31,6 +31,8 @@ export function filterInternalMarkers(text: string): string {
   result = result.replace(/\[\[[a-z_]+:\s*[^\]]*\]\]/gi, "");
   // 移除框架内部图片/语音引用：@image:xxx.png、@voice:xxx.silk
   result = result.replace(/@(?:image|voice|video|file):[a-zA-Z0-9_.-]+/g, "");
+  // 压缩多余空格（移除标记后可能产生连续空格）
+  result = result.replace(/ {2,}/g, " ");
   // 压缩多余空行
   result = result.replace(/\n{3,}/g, "\n\n").trim();
   return result;

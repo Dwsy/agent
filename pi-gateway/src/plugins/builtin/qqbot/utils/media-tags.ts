@@ -35,7 +35,7 @@ const TAG_NAME_PATTERN = ALL_TAG_NAMES.join("|");
 const SELF_CLOSING_REGEX = new RegExp(
   "[<＜<]\\s*(" + TAG_NAME_PATTERN + ")" +
   "(?:\\s+(?!file|src|path|url)[a-z_-]+\\s*=\\s*[\"']?[^\"'/>＞>]*?[\"']?)*" +
-  "\\s+(?:file|src|path|url)\\s*=\\s*[\"']?([^\"'/>＞>]+?)[\"']?" +
+  "\\s+(?:file|src|path|url)\\s*=\\s*[\"']?([^\"'>＞]+?)[\"']?" +
   "(?:\\s+[a-z_-]+\\s*=\\s*[\"']?[^\"'/>＞>]*?[\"']?)*" +
   "\\s*/?\\s*[>＞>]",
   "gi"
