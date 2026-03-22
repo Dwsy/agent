@@ -15,6 +15,8 @@ import { isDuplicate } from "./session.ts";
 import { handleSlashCommand, buildSlashCommandContext } from "./commands.ts";
 import { logger } from "./logger.ts";
 import { recordWechatUser } from "./known-users.ts";
+import { isWechatDebugMode } from "./debug-mode.ts";
+import { sendWechatErrorNotice } from "./error-notice.ts";
 
 /**
  * Store context token for a user (userId -> token).
@@ -285,6 +287,9 @@ export async function handleWechatMessage(
   logger.info(`[wechat:handlers] dispatching: session=${sessionKey} target=${target.id}`);
 
   // TODO: Add streaming support (similar to QQBot)
+  const debug = isWechatDebugMode(runtime.accountId);
+  const inboundAt = receivedAt;
+
   await runtime.api.dispatch({
     source: routedSource,
     sessionKey,
@@ -298,8 +303,14 @@ export async function handleWechatMessage(
       
       runtime.lastOutboundAt = Date.now();
       runtime.lastEventAt = runtime.lastOutboundAt;
+
+      let output = reply;
+      if (debug) {
+        const ms = Date.now() - inboundAt;
+        output = `${reply}\n\n⏱ AI处理耗时: ${ms}ms`;
+      }
       
-      await sendWechatText(runtime, `c2c|${target.id}`, reply);
+      await sendWechatText(runtime, `c2c|${target.id}`, output);
     },
     setTyping: async () => {
       // Weixin doesn't support typing indicators

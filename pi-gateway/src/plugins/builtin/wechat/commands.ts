@@ -6,6 +6,7 @@
 
 import type { WechatAccountRuntime } from "./types.ts";
 import { logger } from "./logger.ts";
+import { toggleWechatDebugMode } from "./debug-mode.ts";
 
 /**
  * Slash command handler context.
@@ -126,6 +127,14 @@ const COMMANDS: SlashCommand[] = [
         `└ 处理耗时: ${receivedAt > 0 ? `${Date.now() - receivedAt}ms` : "N/A"}`,
       ];
       await ctx.send(lines.join("\n"));
+    },
+  },
+  {
+    name: "/toggle-debug",
+    description: "切换调试模式",
+    handler: async (args, ctx) => {
+      const enabled = toggleWechatDebugMode(ctx.accountId);
+      await ctx.send(enabled ? "🔧 Debug 模式已开启" : "🔧 Debug 模式已关闭");
     },
   },
   {
