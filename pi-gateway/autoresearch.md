@@ -1,5 +1,8 @@
 # Autoresearch: qqbot 完全对齐 openclaw-qqbot
 
+## 参考版本
+**openclaw-qqbot@1.5.5** — npm 最新版，2026-03 对齐
+
 ## 状态：完成 ✅
 25 次实验，指标持续稳定。
 

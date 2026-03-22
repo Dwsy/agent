@@ -21,6 +21,7 @@ import { loadCredentialBackup } from "./credential-backup.ts";
 import { triggerUpdateCheck } from "./utils/update-checker.ts";
 import { flushRefIndex } from "./ref-index-store.ts";
 import { flushKnownUsers } from "./known-users.ts";
+import { registerImageServer } from "./image-server.ts";
 
 let runtime: QqbotPluginRuntime | null = null;
 
@@ -186,6 +187,7 @@ const qqbotPlugin: ChannelPlugin = {
   },
   async start() {
     if (!runtime) return;
+    registerImageServer(runtime.api, runtime);
     await startQqbotGateway(runtime, async (eventType, data) => {
       await handleQqbotEvent(runtime!, eventType, data);
     });

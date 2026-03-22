@@ -420,11 +420,13 @@ export async function handleQqbotEvent(runtime: QqbotPluginRuntime, eventType: s
 
   const streamCfg = runtime.channelCfg.streaming ?? {};
   const streamEnabled = streamCfg.enabled !== false;
+  const blockStreaming = streamCfg.blockStreaming === true;
   const editThrottleMs = streamCfg.editThrottleMs ?? 1200;
   const streamStartChars = streamCfg.streamStartChars ?? 80;
   let placeholderId: string | null = null;
   let lastEditAt = 0;
   let streamingStopped = false;
+  let streamedContent: string | null = null;
 
   // 按用户并发锁：防止同一用户快速发送多条消息导致响应乱序
   const dispatchLockKey = `dispatch:${ctx.chatId}:${ctx.senderId}`;
@@ -448,8 +450,10 @@ export async function handleQqbotEvent(runtime: QqbotPluginRuntime, eventType: s
     sessionKey,
     text: route.text,
     respond: async (reply: string) => {
-      runtime.api.logger.info(`QQBot respond called: len=${reply.length}`);
-      if (!reply.trim()) {
+      runtime.api.logger.info(`QQBot respond called: len=${reply.length} streamedContent=${streamedContent?.length ?? 0}`);
+      // blockStreaming 优先使用流式累积内容，否则用 respond 参数
+      const finalContent = blockStreaming && streamedContent ? streamedContent : reply;
+      if (!finalContent.trim()) {
         runtime.api.logger.info("QQBot respond skipped: empty reply");
         return;
       }
@@ -460,10 +464,11 @@ export async function handleQqbotEvent(runtime: QqbotPluginRuntime, eventType: s
           runtime.api.logger.warn(`QQBot placeholder delete failed: ${deleted.error}`);
         }
       }
-      await sendQqbotText(runtime, target, reply);
+      await sendQqbotText(runtime, target, finalContent);
+      streamedContent = null; // 重置
     },
     setTyping: async () => {},
-    onStreamDelta: streamEnabled ? async (accumulated: string) => {
+    onStreamDelta: streamEnabled && !blockStreaming ? async (accumulated: string) => {
       if (streamingStopped || accumulated.length < streamStartChars) return;
       const now = Date.now();
       if (now - lastEditAt < editThrottleMs) return;
@@ -495,6 +500,9 @@ export async function handleQqbotEvent(runtime: QqbotPluginRuntime, eventType: s
         return;
       }
       placeholderId = resent.messageId;
+    } : blockStreaming ? async (accumulated: string) => {
+      // blockStreaming 模式：累积内容，不发任何中间消息
+      streamedContent = accumulated;
     } : undefined,
     respondWith: async (response: { text?: string }) => {
       if (!response?.text) return;

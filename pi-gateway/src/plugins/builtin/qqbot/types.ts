@@ -9,6 +9,8 @@ export interface QqbotStreamingConfig {
   enabled?: boolean;
   editThrottleMs?: number;
   streamStartChars?: number;
+  /** 不发中间占位消息，累积内容后由 respond 最终发送 */
+  blockStreaming?: boolean;
 }
 
 export interface QqbotChannelConfig {
@@ -16,6 +18,8 @@ export interface QqbotChannelConfig {
   appId?: string;
   clientSecret?: string;
   clientSecretFile?: string;
+  /** 图片服务器的公开地址（用于构造图片 URL），默认从请求推导 */
+  baseUrl?: string;
   dmPolicy?: "open" | "allowlist" | "pairing" | "disabled";
   allowFrom?: Array<string | number>;
   groupPolicy?: "disabled" | "open" | "allowlist";
