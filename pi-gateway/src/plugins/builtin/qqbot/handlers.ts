@@ -8,6 +8,7 @@ import { deleteQqbotOutbound } from "./actions.ts";
 import { ackQqbotInteraction } from "./api.ts";
 import { getPendingRequest, parseKeyboardCallback, resolveKeyboard } from "../../../api/keyboard-interact.ts";
 import { parseRefIndices, setRefIndex, getRefIndex, formatRefEntryForAgent } from "./ref-index-store.ts";
+import { parseFaceTags } from "./utils/text-parsing.ts";
 import { matchSlashCommandEx, getCommandCount, type SlashCommandContext, type SlashCommandResult } from "./slash-commands.ts";
 
 /** 同步兼容接口：匹配命令名，不执行 handler（供测试使用） */
@@ -49,7 +50,9 @@ function isDuplicate(runtime: QqbotPluginRuntime, key: string): boolean {
 }
 
 function stripMentions(text: string): string {
-  return text.replace(/<@!?.+?>/g, "").replace(/\s+/g, " ").trim();
+  // 解析 QQ 表情标签 → 可读文本
+  const withFaces = parseFaceTags(text);
+  return withFaces.replace(/<@!?.+?>/g, "").replace(/\s+/g, " ").trim();
 }
 
 export function parseQqbotInteraction(eventType: string, data: QqbotInboundEvent): QqbotInteractionContext | null {

@@ -8,6 +8,8 @@ import {
   rememberQqbotReplyState,
   resolveQqbotSendTarget,
 } from "./outbound.ts";
+import { normalizeMediaTags } from "./utils/media-tags.ts";
+import { filterInternalMarkers } from "./utils/text-parsing.ts";
 
 export async function sendQqbotMedia(
   runtime: QqbotPluginRuntime,
@@ -23,7 +25,7 @@ export async function sendQqbotMedia(
     const fileType = guessFileType(opts, filePath);
 
     if (target.peerType !== "c2c" && target.peerType !== "group") {
-      const caption = opts?.caption?.trim() || filePath;
+      const caption = filterInternalMarkers(normalizeMediaTags(opts?.caption ?? "")) || filePath;
       const meta: OutboundMeta = { text: caption };
       const result = await sendQqbotMessage(runtime, target, {
         content: `[media] ${caption}`,
