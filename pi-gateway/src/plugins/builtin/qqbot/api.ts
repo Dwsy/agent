@@ -150,6 +150,28 @@ export async function ackQqbotInteraction(runtime: QqbotPluginRuntime, interacti
   });
 }
 
+/**
+ * 发送 C2C 输入状态通知（"正在输入..."）
+ * 仅 C2C 私聊有效，QQ 群聊不支持。
+ */
+export async function sendC2CInputNotify(runtime: QqbotPluginRuntime, openid: string, msgId?: string): Promise<void> {
+  if (!runtime.token) return;
+  try {
+    const msgSeq = msgId ? 1 : 1; // 简化：始终使用 1
+    const payload = {
+      msg_type: 6,
+      input_notify: {
+        input_type: 1,
+        ...(msgId ? { msg_id: msgId } : {}),
+      },
+      ...(msgId ? { msg_id: msgId, msg_seq: msgSeq } : {}),
+    };
+    await qqbotRequest(runtime, `/v2/users/${encodeURIComponent(openid)}/messages`, { body: payload });
+  } catch {
+    // 输入状态通知失败不影响主流程，静默忽略
+  }
+}
+
 export async function uploadQqbotFile(runtime: QqbotPluginRuntime, target: QqbotTarget, filePath: string, fileType: QqbotFileType, srvSendMsg = false): Promise<any> {
   const form = new FormData();
   form.set("file_type", String(fileType));

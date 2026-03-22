@@ -397,6 +397,12 @@ export async function handleQqbotEvent(runtime: QqbotPluginRuntime, eventType: s
   let lastEditAt = 0;
   let streamingStopped = false;
 
+  // 发送输入状态通知（C2C 私聊显示"正在输入..."）
+  if (ctx.peerType === "c2c") {
+    const { sendC2CInputNotify } = await import("./api.ts");
+    sendC2CInputNotify(runtime, ctx.senderId, ctx.messageId).catch(() => {});
+  }
+
   runtime.api.logger.info(`QQBot dispatching: session=${sessionKey} target=${target}`);
   await runtime.api.dispatch({
     source: routedSource,
