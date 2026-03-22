@@ -14,6 +14,7 @@ import { sendWechatText } from "./outbound.ts";
 import { isDuplicate } from "./session.ts";
 import { handleSlashCommand, buildSlashCommandContext } from "./commands.ts";
 import { logger } from "./logger.ts";
+import { recordWechatUser } from "./known-users.ts";
 
 /**
  * Store context token for a user (userId -> token).
@@ -276,6 +277,9 @@ export async function handleWechatMessage(
   // Update timestamps
   runtime.lastInboundAt = Date.now();
   runtime.lastEventAt = runtime.lastInboundAt;
+
+  // 记录已知用户交互（异步，不阻塞消息处理）
+  recordWechatUser(ctx.senderId, "c2c", runtime.accountId, ctx.senderName);
 
   logger.info(`[wechat:handlers] dispatching: session=${sessionKey} target=${target.id}`);
 

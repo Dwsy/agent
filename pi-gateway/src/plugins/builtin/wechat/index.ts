@@ -13,6 +13,7 @@ import { resolveWechatConfig, hasWechatCredentials } from "./config.ts";
 import { resolveWechatAccounts, resolveDefaultAccountId } from "./accounts.ts";
 import { sendWechatText, sendWechatMedia, sendWechatKeyboard } from "./outbound.ts";
 import { startWechatGateway, stopWechatGateway } from "./gateway.ts";
+import { flushWechatKnownUsers } from "./known-users.ts";
 import { handleWechatMessage } from "./handlers.ts";
 import { logger } from "./logger.ts";
 
@@ -271,6 +272,9 @@ const wechatPlugin: ChannelPlugin = {
     for (const account of runtime.accounts.values()) {
       await stopWechatGateway(account);
     }
+    
+    // 持久化缓存数据到磁盘
+    flushWechatKnownUsers();
     
     runtime.accounts.clear();
     runtime = null;
