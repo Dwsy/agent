@@ -77,7 +77,7 @@ const qqbotPlugin: ChannelPlugin = {
         mentions: true,
         reactions: "none",
         dms: true,
-        typing: false,
+        typing: true,
         ephemeral: "none",
       },
       interaction: {
