@@ -23,6 +23,7 @@ export async function handleMessage(rt: DiscordPluginRuntime, message: Message):
   const isThread = message.channel.isThread();
   const threadId = isThread ? channelId : undefined;
   const parentChannelId = isThread ? (message.channel as any).parentId : channelId;
+  const repliedToMsgId = message.reference?.messageId;
 
   // DM access policy
   if (isDM) {
@@ -63,6 +64,11 @@ export async function handleMessage(rt: DiscordPluginRuntime, message: Message):
     memberRoleIds,
     parentPeer: isThread && parentChannelId ? { kind: "channel", id: parentChannelId } : undefined,
   };
+
+  // Log reply context for debugging
+  if (repliedToMsgId) {
+    rt.api.logger.debug(`[discord] reply to messageId=${repliedToMsgId}`);
+  }
 
   // v3.0 routing: resolve agent via binding/prefix/default
   const route = resolveAgentRoute(source, text, rt.api.config);

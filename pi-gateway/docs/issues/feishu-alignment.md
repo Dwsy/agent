@@ -22,8 +22,8 @@
 ## Phase 1: Core Messaging (Current)
 - [x] Multi-account config structure
 - [x] Account resolution (resolveFeishuAccount, listEnabledFeishuAccounts)
-- [ ] Complete actions implementation
-- [ ] Directory API
+- [x] Complete actions implementation (send/read/edit/pin/member-info/channel-info/channel-list/react/reactions/list-pins)
+- [ ] Directory API (live query users/groups)
 - [ ] Setup Wizard
 
 ## Phase 2: Tool Registration
@@ -40,6 +40,11 @@
 - [ ] Streaming cards
 
 ## Progress
+- 2026-03-23: Phase 1 actions completed
+  - ✅ Added listFeishuReactions, listFeishuPins
+  - ✅ Added getFeishuChatInfo, getFeishuChatMembers, getFeishuUserInfo
+  - ✅ Added listFeishuChats for directory API (basic)
+  - ✅ All actions now have proper error handling and type definitions
 - 2026-03-23: Phase 1 core completed (types.ts, accounts.ts, client.ts, index.ts)
   - ✅ Multi-account config structure (accounts field + merge logic)
   - ✅ Account resolution (resolveFeishuAccount, listEnabledFeishuAccounts)
