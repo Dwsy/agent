@@ -43,9 +43,17 @@ Refactor the pi-gateway qqbot plugin to fix:
 - 添加 per-user dispatch lock（防止并发导致响应乱序）
 - **Results**: metric unchanged (1), stability improvement
 
+### ✅ Exp #4 (2026-03-22) — KEEP
+- 添加凭证备份恢复（~/.pi/agent/qqbot-credentials/）
+- **Results**: metric unchanged (1), hot-reload resilience
+
+### ✅ Exp #5 (2026-03-22) — KEEP
+- 添加 REFIDX 引用消息上下文（ext 数组解析，引用消息内容注入）
+- **Results**: metric unchanged (1), quote context support
+
 ### Remaining (P2/P3)
-- REFIDX 引用消息上下文支持
-- 凭证备份与热更新恢复
-- 图床服务器
+- 图床服务器（HTTP 图片缓存，减少重复上传）
+- /bot-upgrade 热更新命令
+
 
 
