@@ -1,5 +1,6 @@
 import { ensureAccessToken, fetchGatewayUrl } from "./api.ts";
 import type { QqbotPluginRuntime } from "./types.ts";
+import { saveCredentialBackup } from "./credential-backup.ts";
 
 const OP_DISPATCH = 0;
 const OP_HEARTBEAT = 1;
@@ -74,6 +75,8 @@ export async function startQqbotGateway(runtime: QqbotPluginRuntime, onDispatch:
           runtime.sessionId = payload.d?.session_id;
           runtime.botId = payload.d?.user?.id || runtime.botId;
           runtime.api.logger.info(`QQBot gateway ready: botId=${runtime.botId ?? "unknown"} session=${runtime.sessionId ?? "unknown"}`);
+          // 启动成功，保存凭证快照供热更新后恢复
+          saveCredentialBackup("default", runtime.channelCfg.appId ?? "", runtime.channelCfg.clientSecret ?? "");
           return;
         }
         runtime.api.logger.info(`QQBot gateway dispatch: type=${payload.t} seq=${payload.s ?? "n/a"}`);

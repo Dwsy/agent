@@ -17,6 +17,7 @@ import { deleteQqbotOutbound, editQqbotOutbound, readQqbotHistory } from "./acti
 import { startQqbotGateway, stopQqbotGateway } from "./gateway.ts";
 import { handleQqbotEvent } from "./handlers.ts";
 import { routeInteractionAction } from "../../../gateway/interaction-router.ts";
+import { loadCredentialBackup } from "./credential-backup.ts";
 
 let runtime: QqbotPluginRuntime | null = null;
 
@@ -158,6 +159,16 @@ const qqbotPlugin: ChannelPlugin = {
       supportsPairing: channelCfg.dmPolicy === "pairing",
       accountId: "default",
     } satisfies ChannelSecurityAdapter;
+
+    // 凭证恢复：热更新打断可能导致配置丢失，尝试从备份文件恢复
+    if (!hasQqbotCredentials(channelCfg)) {
+      const restored = loadCredentialBackup();
+      if (restored) {
+        (channelCfg as any).appId = restored.appId;
+        (channelCfg as any).clientSecret = restored.clientSecret;
+        api.logger.info(`QQBot: credentials restored from backup (appId=${restored.appId})`);
+      }
+    }
 
     if (!hasQqbotCredentials(channelCfg)) {
       api.logger.warn("QQBot: enabled but appId/clientSecret missing");

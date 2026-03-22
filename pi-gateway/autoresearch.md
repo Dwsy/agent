@@ -35,9 +35,17 @@ Refactor the pi-gateway qqbot plugin to fix:
 - 添加 3 个斜杠命令：`/bot-ping`, `/bot-help`, `/bot-version`
 - **Results**: outbound_msg_count=1, command_count=3, test_pass=24/24
 
-### Next Ideas
-- P1: 按用户消息队列，防乱序
-- P1: Typing Indicator 输入状态
-- P2: 引用消息上下文 (REFIDX)
-- P2: 凭证备份与恢复
+### ✅ Exp #2 (2026-03-22) — KEEP
+- 添加 C2C Typing Indicator（"正在输入..."通知）
+- **Results**: metric unchanged (1), feature improvement
+
+### ✅ Exp #3 (2026-03-22) — KEEP
+- 添加 per-user dispatch lock（防止并发导致响应乱序）
+- **Results**: metric unchanged (1), stability improvement
+
+### Remaining (P2/P3)
+- REFIDX 引用消息上下文支持
+- 凭证备份与热更新恢复
+- 图床服务器
+
 
