@@ -9,6 +9,7 @@ import { ackQqbotInteraction } from "./api.ts";
 import { getPendingRequest, parseKeyboardCallback, resolveKeyboard } from "../../../api/keyboard-interact.ts";
 import { parseRefIndices, setRefIndex, getRefIndex, formatRefEntryForAgent } from "./ref-index-store.ts";
 import { parseFaceTags } from "./utils/text-parsing.ts";
+import { recordUserInteraction } from "./known-users.ts";
 import { matchSlashCommandEx, getCommandCount, type SlashCommandContext, type SlashCommandResult } from "./slash-commands.ts";
 
 /** 同步兼容接口：匹配命令名，不执行 handler（供测试使用） */
@@ -313,6 +314,15 @@ export async function handleQqbotEvent(runtime: QqbotPluginRuntime, eventType: s
     runtime.api.logger.info(`QQBot event dropped: empty content ${eventType}`);
     return;
   }
+
+  // 记录已知用户交互（异步，不阻塞消息处理）
+  recordUserInteraction(
+    ctx.senderId,
+    ctx.chatType === "dm" ? "c2c" : "group",
+    "default",
+    ctx.senderName,
+    ctx.chatType === "group" ? ctx.chatId : undefined,
+  );
 
   if (ctx.chatType === "dm") {
     const dm = checkDmPolicy(runtime, ctx.senderId);

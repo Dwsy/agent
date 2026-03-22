@@ -18,6 +18,9 @@ import { startQqbotGateway, stopQqbotGateway } from "./gateway.ts";
 import { handleQqbotEvent } from "./handlers.ts";
 import { routeInteractionAction } from "../../../gateway/interaction-router.ts";
 import { loadCredentialBackup } from "./credential-backup.ts";
+import { triggerUpdateCheck } from "./utils/update-checker.ts";
+import { flushRefIndex } from "./ref-index-store.ts";
+import { flushKnownUsers } from "./known-users.ts";
 
 let runtime: QqbotPluginRuntime | null = null;
 
@@ -177,6 +180,8 @@ const qqbotPlugin: ChannelPlugin = {
     (api as any).dispatchInteraction = async (event: any) => {
       return qqbotPlugin.interactions?.handle(event) ?? false;
     };
+    // 启动时预热版本检查（后台异步，不阻塞启动）
+    triggerUpdateCheck({ info: api.logger.info.bind(api.logger), error: api.logger.error.bind(api.logger) });
     api.logger.info("QQBot: initialized");
   },
   async start() {
@@ -191,6 +196,9 @@ const qqbotPlugin: ChannelPlugin = {
     await stopQqbotGateway(runtime);
     runtime.replyState.clear();
     runtime.streamPlaceholders.clear();
+    // 持久化缓存数据到磁盘
+    flushRefIndex();
+    flushKnownUsers();
     runtime = null;
   },
 };
