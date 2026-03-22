@@ -19,12 +19,20 @@
 - Tool registration (docx/bitable/drive/wiki/perm/chat)
 - Advanced features (monitoring, streaming cards, state management)
 
-## Phase 1: Core Messaging (Current)
+## Phase 1: Core Messaging (Completed)
 - [x] Multi-account config structure
 - [x] Account resolution (resolveFeishuAccount, listEnabledFeishuAccounts)
 - [x] Complete actions implementation (send/read/edit/pin/member-info/channel-info/channel-list/react/reactions/list-pins)
-- [ ] Directory API (live query users/groups)
-- [ ] Setup Wizard
+- [x] Directory API (listFeishuDirectoryPeers, listFeishuDirectoryGroups, searchFeishuDirectory)
+- [ ] Setup Wizard (deferred to Phase 3)
+
+## Phase 2: Tool Registration (Current)
+- [ ] docx tools
+- [ ] bitable tools
+- [ ] drive tools
+- [ ] wiki tools
+- [ ] perm tools
+- [ ] chat tools
 
 ## Phase 2: Tool Registration
 - [ ] docx tools
