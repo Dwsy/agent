@@ -2,6 +2,8 @@ import type { ChannelStreamingAdapter } from "../../types.ts";
 import type { QqbotPluginRuntime } from "./types.ts";
 import { sendQqbotNativeStream, sendQqbotText } from "./outbound.ts";
 import { deleteQqbotOutbound } from "./actions.ts";
+import { parseQqbotTarget } from "./outbound.ts";
+import { sendC2CInputNotify } from "./api.ts";
 
 export function createQqbotStreamingAdapter(getRuntime: () => QqbotPluginRuntime | null): ChannelStreamingAdapter {
   return {
@@ -40,8 +42,16 @@ export function createQqbotStreamingAdapter(getRuntime: () => QqbotPluginRuntime
       runtime.streamPlaceholders.set(target, { target, messageId: resent.messageId });
       return true;
     },
-    async setTyping() {
-      return;
+    async setTyping(target: string, active: boolean) {
+      const runtime = getRuntime();
+      if (!runtime || !active) return;
+      // 从 target 字符串解析出 openid（C2C 目标）
+      try {
+        const parsed = parseQqbotTarget(target);
+        if (parsed.peerType === "c2c") {
+          await sendC2CInputNotify(runtime, parsed.id);
+        }
+      } catch {}
     },
   };
 }

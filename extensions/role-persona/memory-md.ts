@@ -799,6 +799,113 @@ export function reinforceRoleLearning(
   return { updated: true, id: fuzzy.id, used: fuzzy.used, text: fuzzy.text };
 }
 
+export function updateRoleLearning(
+  rolePath: string,
+  roleName: string,
+  idOrQuery: string,
+  newText: string
+): { updated: boolean; id?: string; oldText?: string; newText?: string; reason?: string } {
+  const query = normalizeText(idOrQuery).toLowerCase();
+  const normalizedNew = normalizeText(newText);
+  if (!query) return { updated: false, reason: "empty query" };
+  if (!normalizedNew) return { updated: false, reason: "empty new text" };
+
+  const data = readRoleMemory(rolePath, roleName);
+  const direct = data.learnings.find((l) => l.id === idOrQuery);
+  const fuzzy = direct || data.learnings.find((l) => l.text.toLowerCase().includes(query));
+  if (!fuzzy) return { updated: false, reason: "not found" };
+
+  // Check for duplicate (excluding the item being updated)
+  const duplicate = data.learnings.find(
+    (l) => l.id !== fuzzy.id && normalizeText(l.text).toLowerCase() === normalizedNew.toLowerCase()
+  );
+  if (duplicate) return { updated: false, reason: "duplicate", id: duplicate.id };
+
+  const oldText = fuzzy.text;
+  fuzzy.text = normalizedNew;
+  fuzzy.id = hashId("learning", normalizedNew); // Regenerate ID based on new text
+  fuzzy.lastAccessed = today();
+  saveRoleMemory(rolePath, data);
+
+  return { updated: true, id: fuzzy.id, oldText, newText: normalizedNew };
+}
+
+export function updateRolePreference(
+  rolePath: string,
+  roleName: string,
+  idOrQuery: string,
+  newText: string,
+  newCategory?: string
+): { updated: boolean; id?: string; oldText?: string; newText?: string; category?: string; reason?: string } {
+  const query = normalizeText(idOrQuery).toLowerCase();
+  const normalizedNew = normalizeText(newText);
+  const safeCategory = sanitizeCategory(newCategory);
+  if (!query) return { updated: false, reason: "empty query" };
+  if (!normalizedNew) return { updated: false, reason: "empty new text" };
+
+  const data = readRoleMemory(rolePath, roleName);
+  const direct = data.preferences.find((p) => p.id === idOrQuery);
+  const fuzzy = direct || data.preferences.find((p) => p.text.toLowerCase().includes(query));
+  if (!fuzzy) return { updated: false, reason: "not found" };
+
+  // Check for duplicate (excluding the item being updated)
+  const duplicate = data.preferences.find(
+    (p) =>
+      p.id !== fuzzy.id &&
+      p.category.toLowerCase() === safeCategory.toLowerCase() &&
+      normalizeText(p.text).toLowerCase() === normalizedNew.toLowerCase()
+  );
+  if (duplicate) return { updated: false, reason: "duplicate", id: duplicate.id };
+
+  const oldText = fuzzy.text;
+  fuzzy.text = normalizedNew;
+  fuzzy.category = safeCategory;
+  fuzzy.id = hashId("preference", normalizedNew, safeCategory); // Regenerate ID
+  saveRoleMemory(rolePath, data);
+
+  return { updated: true, id: fuzzy.id, oldText, newText: normalizedNew, category: safeCategory };
+}
+
+export function deleteRoleLearning(
+  rolePath: string,
+  roleName: string,
+  idOrQuery: string
+): { deleted: boolean; id?: string; text?: string; reason?: string } {
+  const query = normalizeText(idOrQuery).toLowerCase();
+  if (!query) return { deleted: false, reason: "empty query" };
+
+  const data = readRoleMemory(rolePath, roleName);
+  const index = data.learnings.findIndex((l) => l.id === idOrQuery);
+  const fuzzyIndex = index >= 0 ? index : data.learnings.findIndex((l) => l.text.toLowerCase().includes(query));
+
+  if (fuzzyIndex < 0) return { deleted: false, reason: "not found" };
+
+  const removed = data.learnings.splice(fuzzyIndex, 1)[0];
+  saveRoleMemory(rolePath, data);
+
+  return { deleted: true, id: removed.id, text: removed.text };
+}
+
+export function deleteRolePreference(
+  rolePath: string,
+  roleName: string,
+  idOrQuery: string
+): { deleted: boolean; id?: string; text?: string; category?: string; reason?: string } {
+  const query = normalizeText(idOrQuery).toLowerCase();
+  if (!query) return { deleted: false, reason: "empty query" };
+
+  const data = readRoleMemory(rolePath, roleName);
+  const index = data.preferences.findIndex((p) => p.id === idOrQuery);
+  const fuzzyIndex = index >= 0 ? index : data.preferences.findIndex((p) => p.text.toLowerCase().includes(query));
+
+  if (fuzzyIndex < 0) return { deleted: false, reason: "not found" };
+
+  const removed = data.preferences.splice(fuzzyIndex, 1)[0];
+  saveRoleMemory(rolePath, data);
+
+  return { deleted: true, id: removed.id, text: removed.text, category: removed.category };
+}
+
 /**
  * Score a candidate text against a query using multiple signals.
  * Returns 0-1 score (0 = no match, 1 = perfect match).

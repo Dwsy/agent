@@ -1,5 +1,8 @@
-import { ensureAccessToken, fetchGatewayUrl } from "./api.ts";
+import { ensureAccessToken, fetchGatewayUrl, onMessageSent } from "./api.ts";
 import type { QqbotPluginRuntime } from "./types.ts";
+import { saveCredentialBackup } from "./credential-backup.ts";
+import { setRefIndex, getRefIndex, formatRefEntryForAgent } from "./ref-index-store.ts";
+import { checkStartupGreeting } from "./startup-greeting.ts";
 
 const OP_DISPATCH = 0;
 const OP_HEARTBEAT = 1;
@@ -47,6 +50,23 @@ async function identify(runtime: QqbotPluginRuntime, ws: WebSocket): Promise<voi
 }
 
 export async function startQqbotGateway(runtime: QqbotPluginRuntime, onDispatch: (eventType: string, data: unknown) => Promise<void>): Promise<void> {
+  // 注册出站消息 refIdx 缓存钩子（所有 sendQqbotMessage 调用后自动触发）
+  onMessageSent((refIdx, meta) => {
+    runtime.api.logger.info(`QQBot onMessageSent: refIdx=${refIdx}, text=${(meta.text ?? "").slice(0, 40)}`);
+    setRefIndex(refIdx, {
+      content: meta.text ?? "",
+      senderId: runtime.botId ?? runtime.channelCfg.appId ?? "bot",
+      senderName: "Bot",
+      timestamp: Date.now(),
+      isBot: true,
+      attachments: meta.mediaType ? [{
+        type: meta.mediaType,
+        localPath: meta.mediaLocalPath,
+        url: meta.mediaUrl,
+      }] : undefined,
+    });
+  });
+
   const url = await fetchGatewayUrl(runtime);
   runtime.api.logger.info(`QQBot gateway connecting: ${url}`);
   const ws = new WebSocket(url);
@@ -74,6 +94,9 @@ export async function startQqbotGateway(runtime: QqbotPluginRuntime, onDispatch:
           runtime.sessionId = payload.d?.session_id;
           runtime.botId = payload.d?.user?.id || runtime.botId;
           runtime.api.logger.info(`QQBot gateway ready: botId=${runtime.botId ?? "unknown"} session=${runtime.sessionId ?? "unknown"}`);
+          // 启动成功，保存凭证快照 + 发送启动问候
+          saveCredentialBackup("default", runtime.channelCfg.appId ?? "", runtime.channelCfg.clientSecret ?? "");
+          checkStartupGreeting(runtime);
           return;
         }
         runtime.api.logger.info(`QQBot gateway dispatch: type=${payload.t} seq=${payload.s ?? "n/a"}`);

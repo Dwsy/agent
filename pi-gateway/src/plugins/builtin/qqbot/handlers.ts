@@ -7,9 +7,25 @@ import { encodeQqbotTarget, sendQqbotText } from "./outbound.ts";
 import { deleteQqbotOutbound } from "./actions.ts";
 import { ackQqbotInteraction } from "./api.ts";
 import { getPendingRequest, parseKeyboardCallback, resolveKeyboard } from "../../../api/keyboard-interact.ts";
+import { parseRefIndices, setRefIndex, getRefIndex, formatRefEntryForAgent } from "./ref-index-store.ts";
+import { parseFaceTags } from "./utils/text-parsing.ts";
+import { recordUserInteraction } from "./known-users.ts";
+import { matchSlashCommandEx, getCommandCount, type SlashCommandContext, type SlashCommandResult } from "./slash-commands.ts";
+
+/** 同步兼容接口：匹配命令名，不执行 handler（供测试使用） */
+export function matchSlashCommand(text: string): { cmd: { name: string; description: string }; args: string } | null {
+  const trimmed = text.trim();
+  if (!trimmed.startsWith("/")) return null;
+  const parts = trimmed.slice(1).split(/\s+/);
+  const name = parts[0].toLowerCase();
+  const COMMANDS = ["bot-ping", "bot-help", "bot-version", "bot-logs"];
+  if (!COMMANDS.includes(name)) return null;
+  return { cmd: { name, description: "" }, args: parts.slice(1).join(" ") };
+}
 
 const DEDUP_TTL_MS = 30 * 60 * 1000;
 const DEDUP_MAX_SIZE = 1000;
+const DISPATCH_LOCK_TTL_MS = 30_000; // 30s lock to prevent concurrent dispatch
 
 export function resetQqbotDedup(runtime: QqbotPluginRuntime): void {
   runtime.dedup.clear();
@@ -35,7 +51,9 @@ function isDuplicate(runtime: QqbotPluginRuntime, key: string): boolean {
 }
 
 function stripMentions(text: string): string {
-  return text.replace(/<@!?.+?>/g, "").replace(/\s+/g, " ").trim();
+  // 解析 QQ 表情标签 → 可读文本
+  const withFaces = parseFaceTags(text);
+  return withFaces.replace(/<@!?.+?>/g, "").replace(/\s+/g, " ").trim();
 }
 
 export function parseQqbotInteraction(eventType: string, data: QqbotInboundEvent): QqbotInteractionContext | null {
@@ -154,6 +172,7 @@ export function parseQqbotEvent(eventType: string, data: QqbotInboundEvent, botI
   if (!messageId) return null;
 
   if (eventType === "C2C_MESSAGE_CREATE") {
+    const { refMsgIdx, msgIdx } = parseRefIndices(data.ext);
     return {
       eventType,
       peerType: "c2c",
@@ -167,11 +186,14 @@ export function parseQqbotEvent(eventType: string, data: QqbotInboundEvent, botI
       mentionedBot: true,
       attachments: data.attachments,
       timestamp: data.timestamp ? Date.parse(data.timestamp) : undefined,
+      refMsgIdx,
+      msgIdx,
     };
   }
   if (eventType === "GROUP_AT_MESSAGE_CREATE") {
     const groupId = data.group_openid || data.group_id;
     if (!groupId) return null;
+    const { refMsgIdx, msgIdx } = parseRefIndices(data.ext);
     return {
       eventType,
       peerType: "group",
@@ -185,10 +207,13 @@ export function parseQqbotEvent(eventType: string, data: QqbotInboundEvent, botI
       mentionedBot,
       attachments: data.attachments,
       timestamp: data.timestamp ? Date.parse(data.timestamp) : undefined,
+      refMsgIdx,
+      msgIdx,
     };
   }
   if (eventType === "AT_MESSAGE_CREATE") {
     if (!data.channel_id) return null;
+    const { refMsgIdx, msgIdx } = parseRefIndices(data.ext);
     return {
       eventType,
       peerType: "guild",
@@ -204,10 +229,13 @@ export function parseQqbotEvent(eventType: string, data: QqbotInboundEvent, botI
       mentionedBot,
       attachments: data.attachments,
       timestamp: data.timestamp ? Date.parse(data.timestamp) : undefined,
+      refMsgIdx,
+      msgIdx,
     };
   }
   if (eventType === "DIRECT_MESSAGE_CREATE") {
     if (!data.guild_id) return null;
+    const { refMsgIdx, msgIdx } = parseRefIndices(data.ext);
     return {
       eventType,
       peerType: "dm",
@@ -223,6 +251,8 @@ export function parseQqbotEvent(eventType: string, data: QqbotInboundEvent, botI
       mentionedBot: true,
       attachments: data.attachments,
       timestamp: data.timestamp ? Date.parse(data.timestamp) : undefined,
+      refMsgIdx,
+      msgIdx,
     };
   }
   return null;
@@ -262,6 +292,7 @@ function checkGroupPolicy(runtime: QqbotPluginRuntime, ctx: QqbotMessageContext)
 }
 
 export async function handleQqbotEvent(runtime: QqbotPluginRuntime, eventType: string, data: unknown): Promise<void> {
+  const receivedAt = Date.now();
   runtime.api.logger.info(`QQBot inbound event: ${eventType}`);
   if (eventType === "INTERACTION_CREATE") {
     await handleQqbotInteraction(runtime, data as QqbotInboundEvent);
@@ -283,6 +314,15 @@ export async function handleQqbotEvent(runtime: QqbotPluginRuntime, eventType: s
     runtime.api.logger.info(`QQBot event dropped: empty content ${eventType}`);
     return;
   }
+
+  // 记录已知用户交互（异步，不阻塞消息处理）
+  recordUserInteraction(
+    ctx.senderId,
+    ctx.chatType === "dm" ? "c2c" : "group",
+    "default",
+    ctx.senderName,
+    ctx.chatType === "group" ? ctx.chatId : undefined,
+  );
 
   if (ctx.chatType === "dm") {
     const dm = checkDmPolicy(runtime, ctx.senderId);
@@ -307,6 +347,29 @@ export async function handleQqbotEvent(runtime: QqbotPluginRuntime, eventType: s
     }
   }
 
+  // 引用消息上下文注入：用户引用了某条历史消息
+  let textWithRef = ctx.text;
+  if (ctx.refMsgIdx) {
+    const refEntry = getRefIndex(ctx.refMsgIdx);
+    if (refEntry) {
+      const quotedText = formatRefEntryForAgent(refEntry);
+      textWithRef = `${quotedText}\n\n${ctx.text}`;
+      runtime.api.logger.info(`QQBot quote injected: ref=${ctx.refMsgIdx} content="${quotedText.slice(0, 60)}..."`);
+    } else {
+      runtime.api.logger.info(`QQBot quote ref not found in cache: ${ctx.refMsgIdx}`);
+    }
+  }
+
+  // 存储当前消息索引，以便后续被引用时可查找
+  if (ctx.msgIdx) {
+    setRefIndex(ctx.msgIdx, {
+      content: ctx.text,
+      senderId: ctx.senderId,
+      senderName: ctx.senderName,
+      timestamp: ctx.timestamp ?? Date.now(),
+    });
+  }
+
   const source: MessageSource = {
     channel: "qqbot",
     chatType: ctx.chatType,
@@ -322,27 +385,75 @@ export async function handleQqbotEvent(runtime: QqbotPluginRuntime, eventType: s
     if (ctx.guildId) source.threadId = ctx.guildId;
   }
 
-  const route = resolveAgentRoute(source, ctx.text, runtime.api.config);
+  const route = resolveAgentRoute(source, textWithRef, runtime.api.config);
   runtime.api.logger.info(`QQBot route resolved: agent=${route.agentId} text=${JSON.stringify((route.text || "").slice(0, 120))}`);
   const routedSource: MessageSource = { ...source, agentId: route.agentId };
   const sessionKey = resolveSessionKey(routedSource, runtime.api.config, route.agentId);
   const target = encodeQqbotTarget(buildTarget(ctx));
+
+  // 斜杠命令拦截：在 dispatch 之前处理内置命令
+  const slashResult = await matchSlashCommandEx({
+    runtime,
+    target,
+    rawContent: ctx.text,
+    args: "",
+    receivedAt,
+    senderId: ctx.senderId,
+    senderName: ctx.senderName,
+    messageId: ctx.messageId,
+    chatType: ctx.chatType,
+  });
+  if (slashResult !== null) {
+    runtime.api.logger.info(`QQBot slash command matched`);
+    try {
+      if (typeof slashResult === "string") {
+        await sendQqbotText(runtime, target, slashResult);
+      } else {
+        await sendQqbotText(runtime, target, slashResult.text);
+      }
+    } catch (err) {
+      runtime.api.logger.warn(`QQBot slash command failed: ${err instanceof Error ? err.message : String(err)}`);
+      await sendQqbotText(runtime, target, "命令执行失败，请稍后重试。");
+    }
+    return;
+  }
+
   const streamCfg = runtime.channelCfg.streaming ?? {};
   const streamEnabled = streamCfg.enabled !== false;
+  const blockStreaming = streamCfg.blockStreaming === true;
   const editThrottleMs = streamCfg.editThrottleMs ?? 1200;
   const streamStartChars = streamCfg.streamStartChars ?? 80;
   let placeholderId: string | null = null;
   let lastEditAt = 0;
   let streamingStopped = false;
+  let streamedContent: string | null = null;
+
+  // 按用户并发锁：防止同一用户快速发送多条消息导致响应乱序
+  const dispatchLockKey = `dispatch:${ctx.chatId}:${ctx.senderId}`;
+  const now = Date.now();
+  if (runtime.dispatchLock.has(dispatchLockKey) && now - (runtime.dispatchLock.get(dispatchLockKey) ?? 0) < DISPATCH_LOCK_TTL_MS) {
+    runtime.api.logger.info(`QQBot dispatch dropped: user ${ctx.senderId} is already processing a request`);
+    return;
+  }
+  runtime.dispatchLock.set(dispatchLockKey, now);
+
+  // 发送输入状态通知（C2C 私聊显示"正在输入..."）
+  if (ctx.peerType === "c2c") {
+    const { sendC2CInputNotify } = await import("./api.ts");
+    sendC2CInputNotify(runtime, ctx.senderId, ctx.messageId).catch(() => {});
+  }
 
   runtime.api.logger.info(`QQBot dispatching: session=${sessionKey} target=${target}`);
-  await runtime.api.dispatch({
+  try {
+    await runtime.api.dispatch({
     source: routedSource,
     sessionKey,
     text: route.text,
     respond: async (reply: string) => {
-      runtime.api.logger.info(`QQBot respond called: len=${reply.length}`);
-      if (!reply.trim()) {
+      runtime.api.logger.info(`QQBot respond called: len=${reply.length} streamedContent=${streamedContent?.length ?? 0}`);
+      // blockStreaming 优先使用流式累积内容，否则用 respond 参数
+      const finalContent = blockStreaming && streamedContent ? streamedContent : reply;
+      if (!finalContent.trim()) {
         runtime.api.logger.info("QQBot respond skipped: empty reply");
         return;
       }
@@ -353,10 +464,11 @@ export async function handleQqbotEvent(runtime: QqbotPluginRuntime, eventType: s
           runtime.api.logger.warn(`QQBot placeholder delete failed: ${deleted.error}`);
         }
       }
-      await sendQqbotText(runtime, target, reply);
+      await sendQqbotText(runtime, target, finalContent);
+      streamedContent = null; // 重置
     },
     setTyping: async () => {},
-    onStreamDelta: streamEnabled ? async (accumulated: string) => {
+    onStreamDelta: streamEnabled && !blockStreaming ? async (accumulated: string) => {
       if (streamingStopped || accumulated.length < streamStartChars) return;
       const now = Date.now();
       if (now - lastEditAt < editThrottleMs) return;
@@ -388,6 +500,16 @@ export async function handleQqbotEvent(runtime: QqbotPluginRuntime, eventType: s
         return;
       }
       placeholderId = resent.messageId;
+    } : blockStreaming ? async (accumulated: string) => {
+      // blockStreaming 模式：累积内容，不发任何中间消息
+      streamedContent = accumulated;
     } : undefined,
+    respondWith: async (response: { text?: string }) => {
+      if (!response?.text) return;
+      await sendQqbotText(runtime, target, response.text);
+    },
   });
+  } finally {
+    runtime.dispatchLock.delete(dispatchLockKey);
+  }
 }

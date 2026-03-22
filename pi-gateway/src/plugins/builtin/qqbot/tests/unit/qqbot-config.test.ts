@@ -7,7 +7,7 @@ describe("qqbot config", () => {
     expect(cfg.dmPolicy).toBe("pairing");
     expect(cfg.groupPolicy).toBe("disabled");
     expect(cfg.textChunkLimit).toBe(1500);
-    expect(cfg.streaming?.enabled).toBeTrue();
+    expect(cfg.streaming?.enabled).toBeFalse(); // 默认禁用流式，避免 delete+resend 问题
   });
 
   test("detects credentials", () => {

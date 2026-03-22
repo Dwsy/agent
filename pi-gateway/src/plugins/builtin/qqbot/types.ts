@@ -9,6 +9,8 @@ export interface QqbotStreamingConfig {
   enabled?: boolean;
   editThrottleMs?: number;
   streamStartChars?: number;
+  /** 不发中间占位消息，累积内容后由 respond 最终发送 */
+  blockStreaming?: boolean;
 }
 
 export interface QqbotChannelConfig {
@@ -16,6 +18,8 @@ export interface QqbotChannelConfig {
   appId?: string;
   clientSecret?: string;
   clientSecretFile?: string;
+  /** 图片服务器的公开地址（用于构造图片 URL），默认从请求推导 */
+  baseUrl?: string;
   dmPolicy?: "open" | "allowlist" | "pairing" | "disabled";
   allowFrom?: Array<string | number>;
   groupPolicy?: "disabled" | "open" | "allowlist";
@@ -80,6 +84,8 @@ export interface QqbotInboundEvent {
   timestamp?: string;
   attachments?: QqbotInboundAttachment[];
   mentions?: Array<{ id?: string; username?: string; bot?: boolean }>;
+  /** ext 数组：["", "ref_msg_idx=REFIDX_xxx", "msg_idx=REFIDX_yyy"] */
+  ext?: string[];
 }
 
 export interface QqbotMessageContext {
@@ -97,6 +103,10 @@ export interface QqbotMessageContext {
   mentionedBot: boolean;
   attachments?: QqbotInboundAttachment[];
   timestamp?: number;
+  /** 被引用消息的索引（用户引用了某条消息） */
+  refMsgIdx?: string;
+  /** 当前消息的索引（用于存储以便后续被引用） */
+  msgIdx?: string;
 }
 
 export interface QqbotInteractionContext {
@@ -176,4 +186,6 @@ export interface QqbotPluginRuntime {
   dedup: Map<string, number>;
   replyState: Map<string, QqbotSendMeta>;
   streamPlaceholders: Map<string, { target: string; messageId: string }>;
+  /** 按用户并发锁：防止同一用户快速发送多条消息导致响应乱序 */
+  dispatchLock: Map<string, number>;
 }

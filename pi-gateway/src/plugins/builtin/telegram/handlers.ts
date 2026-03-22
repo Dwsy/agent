@@ -27,11 +27,19 @@ import type {
 
 function buildSource(account: TelegramAccountRuntime, ctx: TelegramContext, message?: TelegramMessage): MessageSource {
   const msg = message ?? ctx.message ?? ctx.update?.edited_message;
-  const groupLike = ctx.chat?.type === "group" || ctx.chat?.type === "supergroup";
+  // Map Telegram chat types to gateway ChatType
+  // Telegram: private, group, supergroup, channel
+  // Gateway: dm, group, channel, thread
+  let chatType: "dm" | "group" | "channel" = "dm";
+  if (ctx.chat?.type === "group" || ctx.chat?.type === "supergroup") {
+    chatType = "group";
+  } else if (ctx.chat?.type === "channel") {
+    chatType = "channel";
+  }
   return {
     channel: "telegram",
     accountId: account.accountId,
-    chatType: groupLike ? "group" : "dm",
+    chatType,
     chatId: String(ctx.chat?.id ?? msg?.chat?.id ?? ""),
     topicId: msg?.message_thread_id ? String(msg.message_thread_id) : undefined,
     senderId: String(ctx.from?.id ?? msg?.from?.id ?? "unknown"),

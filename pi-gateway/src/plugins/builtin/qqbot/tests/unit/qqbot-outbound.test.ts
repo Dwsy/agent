@@ -33,6 +33,7 @@ function createRuntime(overrides?: Record<string, unknown>): any {
     dedup: new Map(),
     replyState: new Map(),
     streamPlaceholders: new Map(),
+    dispatchLock: new Map(),
     seq: null,
     ws: null,
     heartbeatTimer: null,

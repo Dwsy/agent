@@ -17,6 +17,11 @@ import { deleteQqbotOutbound, editQqbotOutbound, readQqbotHistory } from "./acti
 import { startQqbotGateway, stopQqbotGateway } from "./gateway.ts";
 import { handleQqbotEvent } from "./handlers.ts";
 import { routeInteractionAction } from "../../../gateway/interaction-router.ts";
+import { loadCredentialBackup } from "./credential-backup.ts";
+import { triggerUpdateCheck } from "./utils/update-checker.ts";
+import { flushRefIndex } from "./ref-index-store.ts";
+import { flushKnownUsers } from "./known-users.ts";
+import { registerImageServer } from "./image-server.ts";
 
 let runtime: QqbotPluginRuntime | null = null;
 
@@ -73,7 +78,7 @@ const qqbotPlugin: ChannelPlugin = {
         mentions: true,
         reactions: "none",
         dms: true,
-        typing: false,
+        typing: true,
         ephemeral: "none",
       },
       interaction: {
@@ -144,6 +149,7 @@ const qqbotPlugin: ChannelPlugin = {
       dedup: new Map(),
       replyState: new Map(),
       streamPlaceholders: new Map(),
+      dispatchLock: new Map(),
       seq: null,
       ws: null,
       heartbeatTimer: null,
@@ -158,6 +164,16 @@ const qqbotPlugin: ChannelPlugin = {
       accountId: "default",
     } satisfies ChannelSecurityAdapter;
 
+    // 凭证恢复：热更新打断可能导致配置丢失，尝试从备份文件恢复
+    if (!hasQqbotCredentials(channelCfg)) {
+      const restored = loadCredentialBackup();
+      if (restored) {
+        (channelCfg as any).appId = restored.appId;
+        (channelCfg as any).clientSecret = restored.clientSecret;
+        api.logger.info(`QQBot: credentials restored from backup (appId=${restored.appId})`);
+      }
+    }
+
     if (!hasQqbotCredentials(channelCfg)) {
       api.logger.warn("QQBot: enabled but appId/clientSecret missing");
       return;
@@ -165,10 +181,13 @@ const qqbotPlugin: ChannelPlugin = {
     (api as any).dispatchInteraction = async (event: any) => {
       return qqbotPlugin.interactions?.handle(event) ?? false;
     };
+    // 启动时预热版本检查（后台异步，不阻塞启动）
+    triggerUpdateCheck({ info: api.logger.info.bind(api.logger), error: api.logger.error.bind(api.logger) });
     api.logger.info("QQBot: initialized");
   },
   async start() {
     if (!runtime) return;
+    registerImageServer(runtime.api, runtime);
     await startQqbotGateway(runtime, async (eventType, data) => {
       await handleQqbotEvent(runtime!, eventType, data);
     });
@@ -179,6 +198,9 @@ const qqbotPlugin: ChannelPlugin = {
     await stopQqbotGateway(runtime);
     runtime.replyState.clear();
     runtime.streamPlaceholders.clear();
+    // 持久化缓存数据到磁盘
+    flushRefIndex();
+    flushKnownUsers();
     runtime = null;
   },
 };

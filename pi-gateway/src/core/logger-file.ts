@@ -76,17 +76,21 @@ export function createFileLogger(prefix: string): Logger {
   };
 }
 
+function formatLocalTime(date: Date): string {
+  const pad = (n: number) => n.toString().padStart(2, "0");
+  return `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+}
+
 function writeLog(level: LogLevel, prefix: string, msg: string, args: unknown[]): void {
-  
   if (LEVEL_ORDER[level] < LEVEL_ORDER[globalConfig.level]) return;
 
-  const ts = new Date().toISOString();
+  const now = new Date();
+  const ts = now.toISOString();
   const argsStr = args.length > 0 ? " " + args.map(formatArg).join(" ") : "";
   const line = `${ts} [${level.toUpperCase().padEnd(5)}] [${prefix}] ${msg}${argsStr}`;
 
-  
   if (globalConfig.consoleEnabled) {
-    const shortTs = ts.slice(11, 19);
+    const shortTs = formatLocalTime(now);
     const consoleLine = `${shortTs} [${prefix}] ${msg}${argsStr}`;
     switch (level) {
       case "debug": console.debug(consoleLine); break;
