@@ -7,6 +7,7 @@ import { encodeQqbotTarget, sendQqbotText } from "./outbound.ts";
 import { deleteQqbotOutbound } from "./actions.ts";
 import { ackQqbotInteraction } from "./api.ts";
 import { getPendingRequest, parseKeyboardCallback, resolveKeyboard } from "../../../api/keyboard-interact.ts";
+import { parseRefIndices, setRefIndex, getRefIndex, formatRefEntryForAgent } from "./ref-index-store.ts";
 
 const DEDUP_TTL_MS = 30 * 60 * 1000;
 const DEDUP_MAX_SIZE = 1000;
@@ -202,6 +203,7 @@ export function parseQqbotEvent(eventType: string, data: QqbotInboundEvent, botI
   if (!messageId) return null;
 
   if (eventType === "C2C_MESSAGE_CREATE") {
+    const { refMsgIdx, msgIdx } = parseRefIndices(data.ext);
     return {
       eventType,
       peerType: "c2c",
@@ -215,11 +217,14 @@ export function parseQqbotEvent(eventType: string, data: QqbotInboundEvent, botI
       mentionedBot: true,
       attachments: data.attachments,
       timestamp: data.timestamp ? Date.parse(data.timestamp) : undefined,
+      refMsgIdx,
+      msgIdx,
     };
   }
   if (eventType === "GROUP_AT_MESSAGE_CREATE") {
     const groupId = data.group_openid || data.group_id;
     if (!groupId) return null;
+    const { refMsgIdx, msgIdx } = parseRefIndices(data.ext);
     return {
       eventType,
       peerType: "group",
@@ -233,10 +238,13 @@ export function parseQqbotEvent(eventType: string, data: QqbotInboundEvent, botI
       mentionedBot,
       attachments: data.attachments,
       timestamp: data.timestamp ? Date.parse(data.timestamp) : undefined,
+      refMsgIdx,
+      msgIdx,
     };
   }
   if (eventType === "AT_MESSAGE_CREATE") {
     if (!data.channel_id) return null;
+    const { refMsgIdx, msgIdx } = parseRefIndices(data.ext);
     return {
       eventType,
       peerType: "guild",
@@ -252,10 +260,13 @@ export function parseQqbotEvent(eventType: string, data: QqbotInboundEvent, botI
       mentionedBot,
       attachments: data.attachments,
       timestamp: data.timestamp ? Date.parse(data.timestamp) : undefined,
+      refMsgIdx,
+      msgIdx,
     };
   }
   if (eventType === "DIRECT_MESSAGE_CREATE") {
     if (!data.guild_id) return null;
+    const { refMsgIdx, msgIdx } = parseRefIndices(data.ext);
     return {
       eventType,
       peerType: "dm",
@@ -271,6 +282,8 @@ export function parseQqbotEvent(eventType: string, data: QqbotInboundEvent, botI
       mentionedBot: true,
       attachments: data.attachments,
       timestamp: data.timestamp ? Date.parse(data.timestamp) : undefined,
+      refMsgIdx,
+      msgIdx,
     };
   }
   return null;
@@ -355,6 +368,29 @@ export async function handleQqbotEvent(runtime: QqbotPluginRuntime, eventType: s
     }
   }
 
+  // 引用消息上下文注入：用户引用了某条历史消息
+  let textWithRef = ctx.text;
+  if (ctx.refMsgIdx) {
+    const refEntry = getRefIndex(ctx.refMsgIdx);
+    if (refEntry) {
+      const quotedText = formatRefEntryForAgent(refEntry);
+      textWithRef = `${quotedText}\n\n${ctx.text}`;
+      runtime.api.logger.info(`QQBot quote injected: ref=${ctx.refMsgIdx} content="${quotedText.slice(0, 60)}..."`);
+    } else {
+      runtime.api.logger.info(`QQBot quote ref not found in cache: ${ctx.refMsgIdx}`);
+    }
+  }
+
+  // 存储当前消息索引，以便后续被引用时可查找
+  if (ctx.msgIdx) {
+    setRefIndex(ctx.msgIdx, {
+      content: ctx.text,
+      senderId: ctx.senderId,
+      senderName: ctx.senderName,
+      timestamp: ctx.timestamp ?? Date.now(),
+    });
+  }
+
   const source: MessageSource = {
     channel: "qqbot",
     chatType: ctx.chatType,
@@ -370,7 +406,7 @@ export async function handleQqbotEvent(runtime: QqbotPluginRuntime, eventType: s
     if (ctx.guildId) source.threadId = ctx.guildId;
   }
 
-  const route = resolveAgentRoute(source, ctx.text, runtime.api.config);
+  const route = resolveAgentRoute(source, textWithRef, runtime.api.config);
   runtime.api.logger.info(`QQBot route resolved: agent=${route.agentId} text=${JSON.stringify((route.text || "").slice(0, 120))}`);
   const routedSource: MessageSource = { ...source, agentId: route.agentId };
   const sessionKey = resolveSessionKey(routedSource, runtime.api.config, route.agentId);

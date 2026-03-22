@@ -80,6 +80,8 @@ export interface QqbotInboundEvent {
   timestamp?: string;
   attachments?: QqbotInboundAttachment[];
   mentions?: Array<{ id?: string; username?: string; bot?: boolean }>;
+  /** ext 数组：["", "ref_msg_idx=REFIDX_xxx", "msg_idx=REFIDX_yyy"] */
+  ext?: string[];
 }
 
 export interface QqbotMessageContext {
@@ -97,6 +99,10 @@ export interface QqbotMessageContext {
   mentionedBot: boolean;
   attachments?: QqbotInboundAttachment[];
   timestamp?: number;
+  /** 被引用消息的索引（用户引用了某条消息） */
+  refMsgIdx?: string;
+  /** 当前消息的索引（用于存储以便后续被引用） */
+  msgIdx?: string;
 }
 
 export interface QqbotInteractionContext {
