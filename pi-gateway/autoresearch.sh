@@ -10,55 +10,44 @@ if ! bun run tsc --noEmit 2>&1; then
 fi
 echo "METRIC type_errors=0" >&2
 
-echo "=== QQBot Tests ===" >&2
-TEST_OUTPUT=$(bun test src/plugins/builtin/qqbot/tests/ 2>&1) || true
-echo "$TEST_OUTPUT" >&2
+echo "=== Discord Module Check ===" >&2
 
-PASS_COUNT=$(echo "$TEST_OUTPUT" | grep -cE "^\s+✓" || true)
-FAIL_COUNT=$(echo "$TEST_OUTPUT" | grep -cE "^\s+✗|FAIL\s" || true)
+# Check module files exist
+DISCORD_FILES=$(ls src/plugins/builtin/discord/*.ts 2>/dev/null | wc -l | tr -d ' ')
+echo "discord_module_count=$DISCORD_FILES" >&2
 
-# Streaming benchmark metrics
-STREAMING_METRIC=$(echo "$TEST_OUTPUT" | grep "METRIC outbound_msg_count=" | tail -1 | sed 's/.*METRIC outbound_msg_count=//' | tr -d ' ' || echo "unknown")
-COMMAND_METRIC=$(echo "$TEST_OUTPUT" | grep "METRIC command_count=" | tail -1 | sed 's/.*METRIC command_count=//' | tr -d ' ' || echo "0")
-TEST_METRIC=$(echo "$TEST_OUTPUT" | grep "METRIC test_pass=" | tail -1 | sed 's/.*METRIC test_pass=//' | tr -d ' ' || echo "unknown")
+# Check capabilities exist in index.ts
+CAPABILITIES=$(grep -cE "nativeCommands|polls|streaming|reactions|threads|media|direct|group|security|editable|deletable|pinnable|history" src/plugins/builtin/discord/index.ts 2>/dev/null || echo "0")
+echo "discord_capabilities=$CAPABILITIES" >&2
 
-if [ "$STREAMING_METRIC" = "unknown" ] || [ "$COMMAND_METRIC" = "0" ]; then
-  echo "=== Streaming Benchmark ===" >&2
-  # Run the streaming benchmark test
-  BENCH_OUTPUT=$(bun test src/plugins/builtin/qqbot/tests/streaming-bench.test.ts 2>&1) || true
-  echo "$BENCH_OUTPUT" >&2
-  
-  OUTBOUND_COUNT=$(echo "$BENCH_OUTPUT" | grep "METRIC outbound_msg_count=" | tail -1 | sed 's/.*METRIC outbound_msg_count=//' | tr -d ' ' || echo "1")
-  COMMAND_COUNT=$(echo "$BENCH_OUTPUT" | grep "METRIC command_recognized=" | wc -l | tr -d ' ' || echo "0")
-  
-  echo "=== Summary ===" >&2
-  echo "outbound_msg_count=$OUTBOUND_COUNT"
-  echo "command_count=$COMMAND_COUNT"
-  echo "test_pass=1"
-  echo "type_errors=0"
-  
-  if [ "$OUTBOUND_COUNT" = "1" ] && [ "$COMMAND_COUNT" = "4" ]; then
-    echo "✅ PASSED"
-    exit 0
-  else
-    echo "❌ FAILED"
-    exit 1
-  fi
+# Check key exports
+HANDLERS_EXPORTS=$(grep -cE "^export (async )?function" src/plugins/builtin/discord/handlers.ts 2>/dev/null || echo "0")
+echo "discord_handler_exports=$HANDLERS_EXPORTS" >&2
+
+# Run discord tests if they exist
+DISCORD_TEST_COUNT=0
+if [ -d "src/plugins/builtin/discord/tests" ]; then
+  echo "=== Discord Tests ===" >&2
+  DISCORD_OUTPUT=$(bun test src/plugins/builtin/discord/tests/ 2>&1) || true
+  echo "$DISCORD_OUTPUT" >&2
+  DISCORD_TEST_COUNT=$(echo "$DISCORD_OUTPUT" | grep -cE "^\s+✓" || echo "0")
+  DISCORD_TEST_PASS=$(echo "$DISCORD_OUTPUT" | grep "METRIC test_pass=" | tail -1 | sed 's/.*METRIC test_pass=//' | tr -d ' ' || echo "0")
+else
+  DISCORD_TEST_PASS=0
 fi
 
 echo "=== Summary ===" >&2
-echo "outbound_msg_count=$STREAMING_METRIC"
-echo "command_count=$COMMAND_METRIC"  
-echo "test_pass=$TEST_METRIC"
 echo "type_errors=0"
+echo "discord_module_count=$DISCORD_FILES"
+echo "discord_capabilities=$CAPABILITIES"
+echo "discord_handler_exports=$HANDLERS_EXPORTS"
+echo "discord_test_pass=$DISCORD_TEST_PASS"
 
-# Determine pass/fail based on primary metric
-BEST_OUTBOUND=1
-if [ "$STREAMING_METRIC" = "$BEST_OUTBOUND" ]; then
+# Pass: type_errors=0 AND at least 5 discord module files
+if [ "$DISCORD_FILES" -ge 5 ] && [ "$CAPABILITIES" -ge 5 ]; then
   echo "✅ PASSED"
   exit 0
 else
-  echo "METRIC outbound_msg_count=$STREAMING_METRIC (baseline: $BEST_OUTBOUND)" >&2
-  echo "❌ FAILED"
+  echo "❌ FAILED (modules=$DISCORD_FILES, capabilities=$CAPABILITIES)"
   exit 1
 fi

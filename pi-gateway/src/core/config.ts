@@ -632,22 +632,22 @@ export const DEFAULT_CONFIG: Config = {
 
 /**
  * Resolve the config file path.
- * Search order: $PI_GATEWAY_CONFIG > ./pi-gateway.jsonc > ./pi-gateway.json > ~/.pi/gateway/pi-gateway.jsonc > ~/.pi/gateway/pi-gateway.json
+ * Search order: $PI_GATEWAY_CONFIG > ~/.pi/gateway/pi-gateway.jsonc > ~/.pi/gateway/pi-gateway.json > ./pi-gateway.jsonc > ./pi-gateway.json
  */
 export function resolveConfigPath(): string {
   if (process.env.PI_GATEWAY_CONFIG) {
     return process.env.PI_GATEWAY_CONFIG;
   }
 
-  // cwd 优先，.jsonc > .json
+  // ~/.pi/gateway/ 优先，.jsonc > .json
   for (const ext of [".jsonc", ".json"]) {
-    const p = join(process.cwd(), `pi-gateway${ext}`);
+    const p = join(DEFAULT_DATA_DIR, `pi-gateway${ext}`);
     if (existsSync(p)) return p;
   }
 
-  // fallback 到 ~/.pi/gateway/，.jsonc > .json
+  // cwd 回退，.jsonc > .json
   for (const ext of [".jsonc", ".json"]) {
-    const p = join(DEFAULT_DATA_DIR, `pi-gateway${ext}`);
+    const p = join(process.cwd(), `pi-gateway${ext}`);
     if (existsSync(p)) return p;
   }
 
