@@ -236,6 +236,62 @@ export interface MentionTarget {
 }
 
 // ============================================================================
+// API Result Types
+// ============================================================================
+
+export type ChannelInfoResult =
+  | {
+      ok: true;
+      channel: {
+        id: string;
+        name?: string;
+        type: "group" | "direct";
+        description?: string;
+        ownerId?: string;
+        memberCount?: number;
+        createTime?: number;
+      };
+    }
+  | { ok: false; error: string };
+
+export type MemberInfoResult =
+  | {
+      ok: true;
+      members: Array<{
+        id: string;
+        name?: string;
+        type?: string;
+      }>;
+      hasMore?: boolean;
+      pageToken?: string;
+    }
+  | { ok: false; error: string };
+
+export type ChannelListResult =
+  | {
+      ok: true;
+      channels: Array<{
+        id: string;
+        name?: string;
+        type: "group" | "direct";
+        memberCount?: number;
+      }>;
+    }
+  | { ok: false; error: string };
+
+export type PinListResult =
+  | {
+      ok: true;
+      pins: Array<{
+        pinId: string;
+        messageId: string;
+        creatorId?: string;
+        createTime?: number;
+      }>;
+    }
+  | { ok: false; error: string };
+
+// ============================================================================
 // Plugin Runtime
 // ============================================================================
 
