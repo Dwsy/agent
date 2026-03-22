@@ -23,6 +23,18 @@ export interface RefIndexEntry {
   senderName?: string;
   timestamp: number;
   isBot?: boolean;
+  attachments?: RefAttachmentSummary[];
+}
+
+/** 附件摘要（用于引用索引缓存） */
+export interface RefAttachmentSummary {
+  type: "image" | "voice" | "video" | "file" | "unknown";
+  filename?: string;
+  contentType?: string;
+  transcript?: string;
+  transcriptSource?: "stt" | "asr" | "tts" | "fallback";
+  localPath?: string;
+  url?: string;
 }
 
 interface JsonlRecord {

@@ -1,7 +1,7 @@
 import { splitMessage } from "../../../core/utils.ts";
 import type { InlineKeyboardMarkup, MediaSendOptions, SendOptions } from "../../types.ts";
 import type { QqbotKeyboardButton, QqbotKeyboardPayload, QqbotPluginRuntime, QqbotTarget, QqbotSendMeta } from "./types.ts";
-import { sendQqbotMessage } from "./api.ts";
+import { sendQqbotMessage, type OutboundMeta } from "./api.ts";
 
 export const QQBOT_PLATFORM_TEXT_LIMIT = 1500;
 export const QQBOT_NATIVE_STREAM_CHUNK_CHARS = 50;
@@ -204,7 +204,7 @@ export async function sendQqbotText(runtime: QqbotPluginRuntime, rawTarget: stri
       if (target.msgId) payload.msg_id = target.msgId;
       else if (target.eventId) payload.event_id = target.eventId;
 
-      const result = await sendQqbotMessage(runtime, target, payload as any);
+      const result = await sendQqbotMessage(runtime, target, payload as any, { text });
       const messageId = result?.id || result?.message?.id;
       rememberQqbotReplyState(runtime, baseTarget, target);
       return { ok: true, messageId };
@@ -221,7 +221,7 @@ export async function sendQqbotText(runtime: QqbotPluginRuntime, rawTarget: stri
       if (target.msgId) payload.msg_id = target.msgId;
       else if (target.eventId) payload.event_id = target.eventId;
       if (typeof target.msgSeq === "number") payload.msg_seq = target.msgSeq;
-      const result = await sendQqbotMessage(runtime, target, payload);
+      const result = await sendQqbotMessage(runtime, target, payload, { text });
       messageId = result?.id || result?.message?.id;
       rememberQqbotReplyState(runtime, baseTarget, target);
       const nextState = runtime.replyState.get(encodeBaseQqbotTarget(baseTarget));
@@ -328,7 +328,7 @@ export async function sendQqbotNativeStream(
       if (target.msgId) payload.msg_id = target.msgId;
       else if (target.eventId) payload.event_id = target.eventId;
 
-      const result = await sendQqbotMessage(runtime, target, payload as any);
+      const result = await sendQqbotMessage(runtime, target, payload as any, { text });
       messageId = result?.id || result?.message?.id || messageId;
       streamId = result?.id || result?.message?.id || streamId;
       msgSeq += 1;
@@ -348,7 +348,7 @@ export async function sendQqbotNativeStream(
     if (target.msgId) finalPayload.msg_id = target.msgId;
     else if (target.eventId) finalPayload.event_id = target.eventId;
 
-    const finalResult = await sendQqbotMessage(runtime, target, finalPayload as any);
+    const finalResult = await sendQqbotMessage(runtime, target, finalPayload as any, { text });
     messageId = finalResult?.id || finalResult?.message?.id || messageId;
     rememberQqbotReplyState(runtime, baseTarget, { ...target, msgSeq });
     return { ok: true, messageId };
@@ -385,7 +385,7 @@ export async function sendQqbotKeyboard(
     else if (target.eventId) payload.event_id = target.eventId;
     if (typeof target.msgSeq === "number") payload.msg_seq = target.msgSeq;
 
-    const result = await sendQqbotMessage(runtime, target, payload);
+    const result = await sendQqbotMessage(runtime, target, payload, { text: markdownText });
     rememberQqbotReplyState(runtime, baseTarget, target);
     return { ok: true, messageId: result?.id || result?.message?.id };
   } catch (err) {

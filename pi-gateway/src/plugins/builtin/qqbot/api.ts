@@ -3,6 +3,35 @@ import type { QqbotPluginRuntime, QqbotAuthToken, QqbotFileType, QqbotTarget } f
 const QQ_TOKEN_URL = "https://bots.qq.com/app/getAppAccessToken";
 const QQ_API_BASE = "https://api.sgroup.qq.com";
 
+// ============ 出站消息回调钩子 ============
+
+/** 出站消息元信息 */
+export interface OutboundMeta {
+  text?: string;
+  mediaType?: "image" | "voice" | "video" | "file";
+  mediaUrl?: string;
+  mediaLocalPath?: string;
+  ttsText?: string;
+}
+
+type OnMessageSentCallback = (refIdx: string, meta: OutboundMeta) => void;
+let _onMessageSentHook: OnMessageSentCallback | null = null;
+
+/**
+ * 注册出站消息回调
+ * 当消息发送成功且 QQ 返回 ref_idx 时，自动回调此函数。
+ * 用于在最底层统一缓存 bot 出站消息的 refIdx（用户可引用 bot 的消息）。
+ */
+export function onMessageSent(callback: OnMessageSentCallback): void {
+  _onMessageSentHook = callback;
+}
+
+function notifyMessageSent(refIdx: string, meta: OutboundMeta): void {
+  if (refIdx && _onMessageSentHook) {
+    _onMessageSentHook(refIdx, meta);
+  }
+}
+
 export interface QqbotRequestOptions {
   method?: string;
   body?: unknown;
@@ -114,17 +143,38 @@ export interface QqbotMessagePayload {
   file_image?: string;
 }
 
-export async function sendQqbotMessage(runtime: QqbotPluginRuntime, target: QqbotTarget, payload: QqbotMessagePayload): Promise<{ id?: string; message?: { id?: string } }> {
+export interface QqbotMessageResponse {
+  id?: string;
+  message?: { id?: string };
+  /** 消息索引，用户可引用此消息 */
+  ref_idx?: string;
+  ext_info?: { ref_idx?: string };
+}
+
+export async function sendQqbotMessage(
+  runtime: QqbotPluginRuntime,
+  target: QqbotTarget,
+  payload: QqbotMessagePayload,
+  meta: OutboundMeta = {},
+): Promise<{ id?: string; message?: { id?: string }; ref_idx?: string }> {
+  let result: QqbotMessageResponse;
   if (target.peerType === "c2c") {
-    return qqbotRequest(runtime, `/v2/users/${encodeURIComponent(target.id)}/messages`, { body: payload });
+    result = await qqbotRequest(runtime, `/v2/users/${encodeURIComponent(target.id)}/messages`, { body: payload });
+  } else if (target.peerType === "group") {
+    result = await qqbotRequest(runtime, `/v2/groups/${encodeURIComponent(target.id)}/messages`, { body: payload });
+  } else if (target.peerType === "guild") {
+    result = await qqbotRequest(runtime, `/channels/${encodeURIComponent(target.channelId || target.id)}/messages`, { body: payload });
+  } else {
+    result = await qqbotRequest(runtime, `/dms/${encodeURIComponent(target.guildId || target.id)}/messages`, { body: payload });
   }
-  if (target.peerType === "group") {
-    return qqbotRequest(runtime, `/v2/groups/${encodeURIComponent(target.id)}/messages`, { body: payload });
+
+  // 捕获 ref_idx 并触发钩子（用户可引用 bot 发出的消息）
+  const refIdx = result?.ref_idx || result?.ext_info?.ref_idx;
+  if (refIdx) {
+    notifyMessageSent(refIdx, meta);
   }
-  if (target.peerType === "guild") {
-    return qqbotRequest(runtime, `/channels/${encodeURIComponent(target.channelId || target.id)}/messages`, { body: payload });
-  }
-  return qqbotRequest(runtime, `/dms/${encodeURIComponent(target.guildId || target.id)}/messages`, { body: payload });
+
+  return { id: result?.id, message: result?.message, ref_idx: refIdx };
 }
 
 export async function deleteQqbotMessage(runtime: QqbotPluginRuntime, target: QqbotTarget, messageId: string): Promise<void> {
