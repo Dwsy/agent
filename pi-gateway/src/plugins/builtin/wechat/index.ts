@@ -11,7 +11,7 @@ import type {
 } from "../../types.ts";
 import type { WechatChannelConfig, WechatAccountRuntime } from "./types.ts";
 import { resolveWechatConfig, hasWechatCredentials } from "./config.ts";
-import { resolveWechatAccounts, resolveDefaultAccountId } from "./accounts.ts";
+import { resolveWechatAccounts, resolveDefaultAccountId, startWechatLoginWithQr, waitForWechatLogin, saveWechatAccount, type WechatQrStartResult, type WechatQrWaitResult } from "./accounts.ts";
 import { sendWechatText, sendWechatMedia, sendWechatKeyboard } from "./outbound.ts";
 import { startWechatGateway, stopWechatGateway } from "./gateway.ts";
 import { flushWechatKnownUsers } from "./known-users.ts";
