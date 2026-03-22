@@ -3,6 +3,7 @@ import type { ChannelPlugin, GatewayPluginApi, MediaSendResult, MediaSendOptions
 import type { DiscordChannelConfig, DiscordPluginRuntime } from "./types.ts";
 import { handleMessage, handleInteraction, sendOutbound, sendMediaOutbound, createDiscordStreamingAdapter, sendReactionOutbound, editMessageOutbound, deleteMessageOutbound, pinMessageOutbound, readHistoryOutbound, sendPollOutbound } from "./handlers.ts";
 import { registerGuildCommands } from "./commands.ts";
+import { registerDiscordSubagentHooks } from "./subagent-hooks.ts";
 import { splitDiscordText } from "./format.ts";
 
 let runtime: DiscordPluginRuntime | null = null;
@@ -121,6 +122,10 @@ const discordPlugin: ChannelPlugin = {
       api.logger.info(`Discord: logged in as ${client.user!.tag} (${clientId})`);
 
       runtime = { api, channelCfg: cfg, client, clientId };
+
+      // Wire subagent hooks
+      (api as any).__discordRuntime = runtime;
+      registerDiscordSubagentHooks(api);
 
       // Wire streaming adapter (needs runtime)
       discordPlugin.streaming = createDiscordStreamingAdapter(() => runtime);
