@@ -183,6 +183,7 @@ export async function handleWechatMessage(
   runtime: WechatAccountRuntime,
   msg: WechatInboundMessage
 ): Promise<void> {
+  const receivedAt = Date.now();
   const ctx = parseWechatMessage(msg, runtime.accountId);
   if (!ctx) {
     logger.warn("[wechat:handlers] message ignored: could not parse");
@@ -215,7 +216,7 @@ export async function handleWechatMessage(
   if (ctx.text.trim().startsWith("/")) {
     const slashCtx = buildSlashCommandContext(runtime, ctx.senderId, ctx.contextToken, async (text) => {
       await sendWechatText(runtime, `c2c|${ctx.senderId}`, text);
-    });
+    }, receivedAt);
     
     const { handled } = await handleSlashCommand(ctx.text, slashCtx);
     if (handled) {

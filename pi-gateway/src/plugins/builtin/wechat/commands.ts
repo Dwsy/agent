@@ -22,6 +22,8 @@ export interface SlashCommandContext {
   isDebug: () => boolean;
   toggleDebug: () => void;
   getStatus: () => SlashCommandStatus;
+  /** 消息接收时间戳（毫秒） */
+  receivedAt?: number;
 }
 
 /**
@@ -106,6 +108,23 @@ const COMMANDS: SlashCommand[] = [
         lines.push(`最后错误: ${status.lastError}`);
       }
 
+      await ctx.send(lines.join("\n"));
+    },
+  },
+  {
+    name: "/echo",
+    description: "Echo back arguments（显示调试计时）",
+    handler: async (args, ctx) => {
+      const message = args.join(" ").trim();
+      if (message) {
+        await ctx.send(message);
+      }
+      const receivedAt = ctx.receivedAt ?? 0;
+      const lines = [
+        "⏱ 通道耗时",
+        `├ 接收时间: ${receivedAt > 0 ? new Date(receivedAt).toISOString() : "N/A"}`,
+        `└ 处理耗时: ${receivedAt > 0 ? `${Date.now() - receivedAt}ms` : "N/A"}`,
+      ];
       await ctx.send(lines.join("\n"));
     },
   },
@@ -218,7 +237,8 @@ export function buildSlashCommandContext(
   runtime: WechatAccountRuntime,
   to: string,
   contextToken: string | undefined,
-  send: (text: string) => Promise<void>
+  send: (text: string) => Promise<void>,
+  receivedAt?: number
 ): SlashCommandContext {
   let debugMode = false;
 
@@ -247,5 +267,6 @@ export function buildSlashCommandContext(
       sessionPaused: false, // Would need to import isSessionPaused
       sessionPauseRemaining: undefined,
     }),
+    receivedAt,
   };
 }
