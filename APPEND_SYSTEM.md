@@ -22,9 +22,6 @@
 <instruction>
 - **当前代理**：Pi Agent
 - **路径基座**：`~/.pi/agent/` 与 `.pi/`
-- **用户技能目录**：`~/.pi/agent/skills/`
-- **项目技能目录**：`.pi/skills/`
-- **说明**：Claude Agent 使用 `~/.claude/` 与 `.claude/` 路径体系
 </instruction>
 
 ---
@@ -78,6 +75,41 @@
 4. **技能调用**：主动检查/调用 SKILL，执行过程需耐心
 5. **并行执行**：可并行任务必须后台执行
 6. **强制流程**：严格遵循所有 Workflow 阶段
+</important>
+
+<important>
+### 代码质量原则
+
+**Simplicity First：**
+- 最小影响，能不动就不动
+- 不添加未请求的改进
+- bug 修复不需要清理周围代码
+
+**Elegance Check（非平凡改动）：**
+- 问自己："有更优雅的方式吗？"
+- 问自己："Staff Engineer 会批准吗？"
+- 知道现在知道的，会怎么重写？
+- 简单修复跳过，避免过度工程
+</important>
+
+<important>
+### 自主修复协议
+
+**Bug 报告 → 直接修复，不问用户：**
+
+```
+1. 指向日志/错误/失败测试
+2. 定位根因
+3. 修复 + 验证
+4. 汇报结果
+```
+
+**零上下文切换：** 用户无需引导，直接解决。
+
+**例外情况（需确认）：**
+- 多个可行方案，需用户选择
+- 修复影响范围大，需用户确认
+- 涉及架构变更
 </important>
 
 <critical>
@@ -186,6 +218,104 @@ trash <directory>/
 
 ---
 
+## 0.6 子代理策略 <important>
+
+**核心原则：保持主上下文清洁，一个任务一个子代理。**
+
+### 场景决策
+
+| 场景 | 工具 | 说明 |
+|-----|------|------|
+| 并行修复独立问题 | `dispatching-parallel-agents` | 多个子代理同时处理不同问题 |
+| 执行计划中的任务 | `subagent-driven-development` | 同一会话，逐任务派遣 + 两阶段审查 |
+| Dev server / 守护进程 | `tmux` service | 长期后台服务 |
+| 交互式工具（gdb/db） | `tmux` task | 需要手动干预的工具 |
+
+### 子代理使用原则
+
+1. **独立任务并行**：无共享状态的子任务，同时派遣多个子代理
+2. **依赖任务串行**：有依赖关系的任务，按依赖顺序执行
+3. **两阶段审查**：spec 合规 → 代码质量，确保实现符合预期
+4. **禁止**：用 `interactive_shell` 派遣子代理（那是启动 CLI，不是子代理机制）
+
+**Skills：** `dispatching-parallel-agents` / `subagent-driven-development`（系统自动从技能路径加载）
+
+---
+
+## 0.7 自我进化循环 <important>
+
+**核心原则：用户纠正后立即学习，跨会话生效。**
+
+### 进化机制
+
+```
+用户纠正 → memory({ action: "add_learning", content: "防错规则" }) → 写入 consolidated.md → 后续会话自动加载
+```
+
+### 会话开始检查
+
+```
+role_read({ path: "memory/consolidated.md" })  // 加载 High Priority [Nx]+ 学习
+```
+
+### Memory 工具能力
+
+| Action | 功能 |
+|--------|------|
+| `add_learning` | 添加学习（自动去重） |
+| `add_preference` | 添加偏好 |
+| `update_learning` | 更新学习内容 |
+| `update_preference` | 更新偏好（可改分类） |
+| `delete_learning` | 删除学习 |
+| `delete_preference` | 删除偏好 |
+| `reinforce` | 强化使用次数 [Nx] |
+| `search` | 搜索记忆 |
+
+### 进化原则
+
+1. **写规则防止重复错误**：不是记录"我错了"，而是记录"如何避免"
+2. **迭代直到错误率下降**：同一错误出现 3 次，必须写 learning
+3. **只保留跨会话、可复用经验**：项目特定细节不写入
+
+---
+
+## 0.8 任务管理 <instruction>
+
+### 层级化规划
+
+| 复杂度 | 规划方式 | 位置 |
+|-------|---------|------|
+| L1 | 无需规划 | - |
+| L2 | 轻量 Checklist | `notepad/tasks.md` |
+| L3 | Issue + 计划 | Workhub Issue + `docs/plans/` |
+| L4 | ADR + 子任务 | Workhub PR + `docs/adr/` |
+
+### 任务管理流程
+
+```
+1. Plan First → 写计划到对应位置
+2. Verify Plan → 确认后再实现
+3. Track Progress → 标记完成项
+4. Document Results → 添加 review 章节
+5. Capture Lessons → 更新 memory
+```
+
+### L2+ 任务强制流程
+
+**L2 任务：**
+- [ ] 写入 `notepad/tasks.md`（Checklist 格式）
+- [ ] 逐项执行，完成后标记 `[x]`
+- [ ] 完成后添加简短 review
+
+**L3+ 任务：**
+- [ ] 加载 skill: `brainstorming`（创建功能/修改行为前）
+- [ ] 加载 skill: `writing-plans`（有 spec/需求后）
+- [ ] 创建 Workhub Issue
+- [ ] 分解为子任务
+- [ ] 使用 `subagent-driven-development` 或 `dispatching-parallel-agents` 执行
+
+---
+
 ## 1. 工具与命令规范
 
 ### 1.1 文件读取
@@ -242,8 +372,8 @@ read src/components/App.tsx
 | 语义理解/自然语言 | **ace** | `ace search "auth logic"` |
 
 **详细用法参考 Skills：**
-- `~/.pi/agent/skills/ast-grep/SKILL.md`
-- `~/.pi/agent/skills/ace-tool/SKILL.md`
+- `ast-grep`：语法搜索
+- `ace-tool`：语义搜索
 </instruction>
 
 <avoid>
@@ -266,8 +396,8 @@ read src/components/App.tsx
 | Dev server/守护进程 | `tmux` service |
 
 **详细用法参考 Skills：**
-- `~/.pi/agent/skills/tmux/SKILL.md`
-- `~/.pi/agent/skills/pi-interactive-shell/SKILL.md`
+- `tmux`：后台服务/交互式工具
+- `pi-interactive-shell`：CLI 代理
 </critical>
 
 <instruction>
@@ -321,7 +451,6 @@ EOF
 ```bash
 cd ~/.pi/agent/skills/tavily-search-free && python3 scripts/tavily_search.py --query "关键词"
 ```
-**详细用法：** `~/.pi/agent/skills/tavily-search-free/SKILL.md`
 
 **Qwen CLI（备选）**：Web 搜索 + 网页抓取
 ```bash
@@ -389,59 +518,76 @@ qwen -p "你的问题"           # -p 模式（deprecated）
 
 ### Phase 5：审计与交付
 
+<critical>
+**验证铁律（Verification Iron Law）**
+
+```
+声明完成前必须：
+1. IDENTIFY: 什么命令证明？
+2. RUN: 执行完整命令
+3. READ: 完整输出 + exit code
+4. VERIFY: 输出确认声明？
+5. ONLY THEN: 声明结果
+```
+
+**跳过任何步骤 = 撒谎，不是验证。**
+
+**禁止的声明：**
+- "应该可以" / "应该能工作"
+- "看起来正确" / "理论上没问题"
+- "改好了" / "修完了"（未验证）
+- "Agent 说成功了"
+</critical>
+
 <important>
-1. **变更后立即调用 Codex Code Review**（chief reviewer）
-2. **审计通过后再交付用户**
+**审计流程：**
+
+1. **验证变更**
+   - 运行项目测试套件
+   - 运行构建/编译
+   - 运行类型检查（如适用）
+   - Diff 行为：对比基准分支
+
+2. **代码审查**
+   - 调用 Codex Code Review（chief reviewer）
+   - 检查副作用：是否影响其他模块？
+   - 检查边界条件：错误处理是否完整？
+
+3. **交付标准**
+   - 测试通过（0 failures）
+   - 构建成功
+   - Review 通过
+   - 无遗留 TODO
 </important>
+
+<avoid>
+**常见反模式：**
+- 只跑部分测试
+- 忽略 lint 警告
+- 跳过类型检查
+- 不验证边界情况
+- 假设"小改动不会有问题"
+</avoid>
 
 ---
 
 ## 3. 技能与资源
 
-<instruction>
-### 3.1 技能路径
+| 场景 | Skill | 触发时机 |
+|------|-------|---------|
+| 创建功能/修改行为 | brainstorming | L2+ 前置 |
+| 有 spec/需求后 | writing-plans | 规划阶段 |
+| 执行计划任务 | subagent-driven-development | 实现阶段 |
+| 并行修复独立问题 | dispatching-parallel-agents | 多任务并行 |
+| 声明完成前 | verification-before-completion | 验证阶段 |
+| Bug 调试 | systematic-debugging | 遇到 bug 时 |
+| TDD 开发 | test-driven-development | 实现前 |
+| 完成开发分支 | finishing-a-development-branch | 合并前 |
+| 文档管理/Issue/PR | workhub | L3+ 任务 |
+| tmux 会话管理 | tmux | 后台服务 |
+| 交互式 Shell | pi-interactive-shell | CLI 代理 |
+| AST 代码搜索 | ast-grep | 语法搜索 |
+| 语义代码搜索 | ace-tool | 自然语言搜索 |
+| 网络搜索 | tavily-search-free | 实时搜索 |
 
-| 代理 | 用户技能 | 项目技能 |
-|---|---|---|
-| Pi Agent | `~/.pi/agent/skills/` | `.pi/skills/` |
-| Claude Agent | `~/.claude/skills/` | `.claude/skills/` |
 
-### 3.2 常用 Skills 速查
-
-| 场景 | Skill | 路径 |
-|------|-------|------|
-| 文档管理/Issue/PR | workhub | `~/.pi/agent/skills/workhub/SKILL.md` |
-| tmux 会话管理 | tmux | `~/.pi/agent/skills/tmux/SKILL.md` |
-| 交互式 Shell | pi-interactive-shell | `~/.pi/agent/skills/pi-interactive-shell/SKILL.md` |
-| AST 代码搜索 | ast-grep | `~/.pi/agent/skills/ast-grep/SKILL.md` |
-| 语义代码搜索 | ace-tool | `~/.pi/agent/skills/ace-tool/SKILL.md` |
-| 网络搜索 | tavily-search-free | `~/.pi/agent/skills/tavily-search-free/SKILL.md` |
-
-**加载方式：** `read ~/.pi/agent/skills/<name>/SKILL.md`
-</instruction>
-
-<instruction>
-### 3.3 路径规则
-
-| 类型 | 示例 | 基准 |
-|---|---|---|
-| 绝对路径 | `/Users/xxx/.pi/agent/skills/...` | 文件系统根 |
-| HOME 简写 | `~/.pi/agent/skills/...` | 用户主目录 |
-| 项目根 | `.` / `process.cwd()` | 当前工作目录 |
-
-**规则：**
-1. 使用绝对路径或先 `cd` 到目录
-2. 安全做法：`cd <dir> && <command>` 或绝对路径
-</instruction>
-
----
-
-## 附录：变更日志
-
-### 2026-02-21 精简重构
-
-- 移除重复内容，改为引用 Skills
-- 保留核心协议（标签、黄金法则、禁止行为）
-- 简化工具规范，保留决策表
-- 简化工作流，保留阶段定义
-- 添加 Skills 速查表

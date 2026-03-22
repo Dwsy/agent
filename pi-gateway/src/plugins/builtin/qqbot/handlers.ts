@@ -11,6 +11,53 @@ import { getPendingRequest, parseKeyboardCallback, resolveKeyboard } from "../..
 const DEDUP_TTL_MS = 30 * 60 * 1000;
 const DEDUP_MAX_SIZE = 1000;
 
+/** 斜杠命令定义 */
+interface SlashCommand {
+  name: string;
+  description: string;
+  descriptionZh: string;
+  handler: (runtime: QqbotPluginRuntime, target: string) => Promise<string>;
+}
+
+const QQBOT_SLASH_COMMANDS: SlashCommand[] = [
+  {
+    name: "bot-ping",
+    description: "Test bot latency",
+    descriptionZh: "测试机器人延迟",
+    handler: async (_runtime, _target) => {
+      return `🏓 Pong! Bot is running.`;
+    },
+  },
+  {
+    name: "bot-help",
+    description: "Show available commands",
+    descriptionZh: "显示可用命令",
+    handler: async (_runtime, _target) => {
+      const cmds = QQBOT_SLASH_COMMANDS.map((c) => `• \`/${c.name}\` — ${c.descriptionZh}`).join("\n");
+      return `**可用命令:**\n${cmds}\n\n直接发送消息与我对话~`;
+    },
+  },
+  {
+    name: "bot-version",
+    description: "Show bot version",
+    descriptionZh: "显示机器人版本",
+    handler: async (_runtime, _target) => {
+      return `📦 pi-gateway qqbot plugin\n版本信息请查看 pi-gateway 控制台`;
+    },
+  },
+];
+
+/** 匹配斜杠命令，返回命令名或 null */
+export function matchSlashCommand(text: string): { cmd: SlashCommand; args: string } | null {
+  const trimmed = text.trim();
+  if (!trimmed.startsWith("/")) return null;
+  const parts = trimmed.slice(1).split(/\s+/);
+  const name = parts[0].toLowerCase();
+  const cmd = QQBOT_SLASH_COMMANDS.find((c) => c.name === name);
+  if (!cmd) return null;
+  return { cmd, args: parts.slice(1).join(" ") };
+}
+
 export function resetQqbotDedup(runtime: QqbotPluginRuntime): void {
   runtime.dedup.clear();
 }
@@ -327,6 +374,21 @@ export async function handleQqbotEvent(runtime: QqbotPluginRuntime, eventType: s
   const routedSource: MessageSource = { ...source, agentId: route.agentId };
   const sessionKey = resolveSessionKey(routedSource, runtime.api.config, route.agentId);
   const target = encodeQqbotTarget(buildTarget(ctx));
+
+  // 斜杠命令拦截：在 dispatch 之前处理内置命令
+  const slashCmd = matchSlashCommand(ctx.text);
+  if (slashCmd) {
+    runtime.api.logger.info(`QQBot slash command intercepted: /${slashCmd.cmd.name}`);
+    try {
+      const reply = await slashCmd.cmd.handler(runtime, target);
+      await sendQqbotText(runtime, target, reply);
+    } catch (err) {
+      runtime.api.logger.warn(`QQBot slash command failed: ${err instanceof Error ? err.message : String(err)}`);
+      await sendQqbotText(runtime, target, "命令执行失败，请稍后重试。");
+    }
+    return;
+  }
+
   const streamCfg = runtime.channelCfg.streaming ?? {};
   const streamEnabled = streamCfg.enabled !== false;
   const editThrottleMs = streamCfg.editThrottleMs ?? 1200;
@@ -389,5 +451,9 @@ export async function handleQqbotEvent(runtime: QqbotPluginRuntime, eventType: s
       }
       placeholderId = resent.messageId;
     } : undefined,
+    respondWith: async (response: { text?: string }) => {
+      if (!response?.text) return;
+      await sendQqbotText(runtime, target, response.text);
+    },
   });
 }

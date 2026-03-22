@@ -32,7 +32,7 @@ export function resolveQqbotConfig(raw?: QqbotChannelConfig): QqbotChannelConfig
     textChunkLimit: raw?.textChunkLimit ?? 1500,
     passiveReplyOnly: raw?.passiveReplyOnly ?? false,
     streaming: {
-      enabled: raw?.streaming?.enabled ?? true,
+      enabled: raw?.streaming?.enabled ?? false, // 禁用：delete+resend 会导致用户收到多条重复消息
       editThrottleMs: raw?.streaming?.editThrottleMs ?? 1200,
       streamStartChars: raw?.streaming?.streamStartChars ?? 80,
     },

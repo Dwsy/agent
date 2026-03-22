@@ -1191,9 +1191,9 @@ Rules for memory extraction:
     name: "memory",
     label: "Role Memory",
     description:
-      "Manage role memory in memory/consolidated.md (markdown sections). Actions: add_learning, add_preference, reinforce, search, list, consolidate, repair, llm_tidy, vector_rebuild, vector_stats.",
+      "Manage role memory in memory/consolidated.md (markdown sections). Actions: add_learning, add_preference, update_learning, update_preference, delete_learning, delete_preference, reinforce, search, list, consolidate, repair, llm_tidy, vector_rebuild, vector_stats.",
     parameters: Type.Object({
-      action: StringEnum(["add_learning", "add_preference", "reinforce", "search", "list", "consolidate", "repair", "llm_tidy", "vector_rebuild", "vector_stats"] as const),
+      action: StringEnum(["add_learning", "add_preference", "update_learning", "update_preference", "delete_learning", "delete_preference", "reinforce", "search", "list", "consolidate", "repair", "llm_tidy", "vector_rebuild", "vector_stats"] as const),
       content: Type.Optional(Type.String({ description: "Memory text" })),
       category: Type.Optional(Type.String({ description: "Preference category" })),
       query: Type.Optional(Type.String({ description: "Search query" })),
@@ -1280,6 +1280,86 @@ Rules for memory extraction:
           }
           return {
             content: [{ type: "text", text: `Reinforced [${result.id}] -> ${result.used}x` }],
+            details: result,
+          };
+        }
+
+        case "update_learning": {
+          const needle = params.id || params.query;
+          const newText = params.content;
+          if (!needle) {
+            return { content: [{ type: "text", text: "Error: id/query required" }], details: { error: true } };
+          }
+          if (!newText) {
+            return { content: [{ type: "text", text: "Error: content (new text) required" }], details: { error: true } };
+          }
+          const { updateRoleLearning } = await import("./memory-md.ts");
+          const result = updateRoleLearning(currentRolePath, currentRole, needle, newText);
+          memLogPush({ source: "tool", op: "update_learning", content: newText, stored: result.updated, detail: result.reason });
+          log("memory-tool", `update_learning: ${result.updated ? `ok [${result.id}]` : result.reason}`, needle);
+          if (!result.updated) {
+            return { content: [{ type: "text", text: `Update failed: ${result.reason}` }], details: { error: true, reason: result.reason } };
+          }
+          return {
+            content: [{ type: "text", text: `Updated learning [${result.id}]: "${result.oldText}" -> "${result.newText}"` }],
+            details: result,
+          };
+        }
+
+        case "update_preference": {
+          const needle = params.id || params.query;
+          const newText = params.content;
+          if (!needle) {
+            return { content: [{ type: "text", text: "Error: id/query required" }], details: { error: true } };
+          }
+          if (!newText) {
+            return { content: [{ type: "text", text: "Error: content (new text) required" }], details: { error: true } };
+          }
+          const { updateRolePreference } = await import("./memory-md.ts");
+          const result = updateRolePreference(currentRolePath, currentRole, needle, newText, params.category);
+          memLogPush({ source: "tool", op: "update_preference", content: newText, stored: result.updated, detail: result.reason });
+          log("memory-tool", `update_preference: ${result.updated ? `ok [${result.id}]` : result.reason}`, needle);
+          if (!result.updated) {
+            return { content: [{ type: "text", text: `Update failed: ${result.reason}` }], details: { error: true, reason: result.reason } };
+          }
+          return {
+            content: [{ type: "text", text: `Updated preference [${result.id}] [${result.category}]: "${result.oldText}" -> "${result.newText}"` }],
+            details: result,
+          };
+        }
+
+        case "delete_learning": {
+          const needle = params.id || params.query || params.content;
+          if (!needle) {
+            return { content: [{ type: "text", text: "Error: id/query/content required" }], details: { error: true } };
+          }
+          const { deleteRoleLearning } = await import("./memory-md.ts");
+          const result = deleteRoleLearning(currentRolePath, currentRole, needle);
+          memLogPush({ source: "tool", op: "delete_learning", content: needle, stored: result.deleted, detail: result.reason });
+          log("memory-tool", `delete_learning: ${result.deleted ? `ok [${result.id}]` : result.reason}`, needle);
+          if (!result.deleted) {
+            return { content: [{ type: "text", text: `Delete failed: ${result.reason}` }], details: { error: true, reason: result.reason } };
+          }
+          return {
+            content: [{ type: "text", text: `Deleted learning [${result.id}]: "${result.text}"` }],
+            details: result,
+          };
+        }
+
+        case "delete_preference": {
+          const needle = params.id || params.query || params.content;
+          if (!needle) {
+            return { content: [{ type: "text", text: "Error: id/query/content required" }], details: { error: true } };
+          }
+          const { deleteRolePreference } = await import("./memory-md.ts");
+          const result = deleteRolePreference(currentRolePath, currentRole, needle);
+          memLogPush({ source: "tool", op: "delete_preference", content: needle, stored: result.deleted, detail: result.reason });
+          log("memory-tool", `delete_preference: ${result.deleted ? `ok [${result.id}]` : result.reason}`, needle);
+          if (!result.deleted) {
+            return { content: [{ type: "text", text: `Delete failed: ${result.reason}` }], details: { error: true, reason: result.reason } };
+          }
+          return {
+            content: [{ type: "text", text: `Deleted preference [${result.id}] [${result.category}]: "${result.text}"` }],
             details: result,
           };
         }
