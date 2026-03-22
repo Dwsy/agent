@@ -1,3 +1,4 @@
+import path from "node:path";
 import type {
   ChannelPlugin,
   GatewayPluginApi,
@@ -16,6 +17,7 @@ import { startWechatGateway, stopWechatGateway } from "./gateway.ts";
 import { flushWechatKnownUsers } from "./known-users.ts";
 import { handleWechatMessage } from "./handlers.ts";
 import { logger } from "./logger.ts";
+import { initWechatImageServer } from "./image-server.ts";
 
 /**
  * WeChat plugin runtime (multi-account).
@@ -201,6 +203,11 @@ const wechatPlugin: ChannelPlugin = {
     const resolved = resolveWechatAccounts(channelCfg);
     const defaultAccountId = resolveDefaultAccountId(channelCfg);
     runtime.defaultAccountId = defaultAccountId;
+
+    // Initialize image server HTTP routes
+    initWechatImageServer(api, {
+      storageDir: path.join(process.env.PI_STATE_DIR ?? path.join(process.env.HOME ?? "/tmp", ".pi", "state"), "wechat", "images"),
+    });
 
     if (resolved.length === 0) {
       api.logger.info("WeChat: no enabled account with token, skipping");
