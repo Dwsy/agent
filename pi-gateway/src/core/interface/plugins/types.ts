@@ -114,6 +114,11 @@ export interface ChannelCapabilities {
   history?: boolean;
   /** Fine-grained capability matrix for platform-agnostic feature negotiation */
   matrix?: ChannelCapabilityMatrix;
+
+  /** Mention stripping patterns (regex strings) */
+  mentions?: {
+    stripPatterns?: () => string[];
+  };
 }
 
 /** Channel plugin metadata */
