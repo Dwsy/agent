@@ -29,4 +29,8 @@ export interface DiscordPluginRuntime {
   channelCfg: DiscordChannelConfig;
   client: Client;
   clientId: string;
+  /** Whether the gateway is currently connected */
+  connected?: boolean;
+  /** Bot username for display */
+  botUsername?: string;
 }

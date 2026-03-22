@@ -29,6 +29,10 @@ export interface DiscordRuntime {
   connected: boolean;
   /** Number of reconnection attempts */
   reconnectAttempts: number;
+  /** Bot username for display */
+  botUsername?: string;
+  /** Application name */
+  applicationName?: string;
   /** Last error message */
   lastError?: string;
 }

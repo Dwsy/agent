@@ -124,15 +124,15 @@ const discordPlugin: ChannelPlugin = {
       const clientId = client.user!.id;
       api.logger.info(`Discord: logged in as ${client.user!.tag} (${clientId})`);
 
-      runtime = { api, channelCfg: cfg, client, clientId };
+      runtime = { api, channelCfg: cfg, client, clientId, connected: true };
 
       // Wire subagent hooks
       (api as any).__discordRuntime = runtime;
       registerDiscordSubagentHooks(api);
 
-      // Log Discord gateway status
+      // Log bot identity
       api.logger.info(
-        `[discord] gateway started: intents=Guilds,GuildMessages,MessageContent,DirectMessages | gateway=WS | api=REST`
+        `[discord] logged in as ${client.user?.tag} (${clientId})`
       );
 
       // Check Message Content Intent via REST API
@@ -163,7 +163,8 @@ const discordPlugin: ChannelPlugin = {
       };
 
       // Register slash commands to all guilds
-      await registerGuildCommands(runtime);
+      const rt = runtime!;
+      await registerGuildCommands(rt);
     });
 
     client.on("messageCreate", async (message) => {
