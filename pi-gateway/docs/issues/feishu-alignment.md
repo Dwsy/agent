@@ -20,8 +20,8 @@
 - Advanced features (monitoring, streaming cards, state management)
 
 ## Phase 1: Core Messaging (Current)
-- [ ] Multi-account config structure
-- [ ] Account resolution (resolveFeishuAccount, listEnabledFeishuAccounts)
+- [x] Multi-account config structure
+- [x] Account resolution (resolveFeishuAccount, listEnabledFeishuAccounts)
 - [ ] Complete actions implementation
 - [ ] Directory API
 - [ ] Setup Wizard
@@ -40,4 +40,10 @@
 - [ ] Streaming cards
 
 ## Progress
+- 2026-03-23: Phase 1 core completed (types.ts, accounts.ts, client.ts, index.ts)
+  - ✅ Multi-account config structure (accounts field + merge logic)
+  - ✅ Account resolution (resolveFeishuAccount, listEnabledFeishuAccounts)
+  - ✅ Client cache supports multi-account
+  - ✅ Plugin init/start/stop supports multi-account runtime
+  - ✅ Backward compatible with single-account config
 - 2026-03-23: Task started, downloading reference implementation

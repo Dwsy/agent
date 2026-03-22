@@ -1,4 +1,4 @@
-import { Client, GatewayIntentBits, Partials } from "discord.js";
+import { Client, GatewayIntentBits, Partials, REST } from "discord.js";
 import type { ChannelPlugin, GatewayPluginApi, MediaSendResult, MediaSendOptions, ChannelStreamingAdapter, ChannelSecurityAdapter, MessageSendResult, MessageActionResult, ReactionOptions, ReadHistoryResult } from "../../types.ts";
 import type { DiscordChannelConfig, DiscordPluginRuntime } from "./types.ts";
 import { handleMessage, handleInteraction, sendOutbound, sendMediaOutbound, createDiscordStreamingAdapter, sendReactionOutbound, editMessageOutbound, deleteMessageOutbound, pinMessageOutbound, readHistoryOutbound, sendPollOutbound } from "./handlers.ts";
@@ -129,6 +129,28 @@ const discordPlugin: ChannelPlugin = {
       // Wire subagent hooks
       (api as any).__discordRuntime = runtime;
       registerDiscordSubagentHooks(api);
+
+      // Log Discord gateway status
+      api.logger.info(
+        `[discord] gateway started: intents=Guilds,GuildMessages,MessageContent,DirectMessages | gateway=WS | api=REST`
+      );
+
+      // Check Message Content Intent via REST API
+      try {
+        const rest = new REST({ version: "10" }).setToken(cfg.token!);
+        const app = await rest.get("/applications/@me") as any;
+        if (app?.flags != null) {
+          // ApplicationFlags bit 15 = MessageContent
+          const hasContentIntent = (Number(app.flags) & (1 << 15)) !== 0;
+          if (!hasContentIntent) {
+            api.logger.warn(
+              `[discord] Message Content Intent is disabled. Bot may not respond to channel messages. Enable at: Discord Developer Portal → Bot → Privileged Gateway Intents`
+            );
+          }
+        }
+      } catch {
+        // ignore REST errors during startup
+      }
 
       // Wire streaming adapter (needs runtime)
       discordPlugin.streaming = createDiscordStreamingAdapter(() => runtime);

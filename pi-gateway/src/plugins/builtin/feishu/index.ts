@@ -1,18 +1,72 @@
 /**
- * Feishu channel plugin entry — register with pi-gateway.
+ * Feishu channel plugin entry — multi-account architecture.
+ *
+ * Supports both single-account (legacy) and multi-account modes.
+ * Aligned with openclaw architecture.
  */
-import type { ChannelPlugin, GatewayPluginApi, MessageSendResult, ChannelSecurityAdapter, MessageActionResult, ReactionOptions, ReadHistoryResult } from "../../types.ts";
+import type {
+  ChannelPlugin,
+  GatewayPluginApi,
+  MessageSendResult,
+  ChannelSecurityAdapter,
+  MessageActionResult,
+  ReactionOptions,
+  ReadHistoryResult,
+} from "../../types.ts";
 import type { DmPolicy } from "../../../security/allowlist.ts";
-import type { FeishuChannelConfig, FeishuPluginRuntime } from "./types.ts";
-import { createFeishuClient, createFeishuWSClient, createEventDispatcher, clearClientCache } from "./client.ts";
+import type { FeishuChannelConfig, FeishuPluginRuntime, ResolvedFeishuAccount } from "./types.ts";
+import {
+  resolveFeishuAccount,
+  listEnabledFeishuAccounts,
+  resolveDefaultFeishuAccountId,
+} from "./accounts.ts";
+import {
+  createFeishuClient,
+  createFeishuWSClient,
+  createEventDispatcher,
+  clearClientCache,
+} from "./client.ts";
 import { registerFeishuEvents } from "./bot.ts";
-import { sendFeishuText, sendFeishuCard, chunkText, resolveReceiveIdType, updateFeishuCard } from "./send.ts";
+import {
+  sendFeishuText,
+  sendFeishuCard,
+  chunkText,
+  resolveReceiveIdType,
+  updateFeishuCard,
+} from "./send.ts";
 import { sendFeishuMedia } from "./media.ts";
-import { sendFeishuReaction, editFeishuMessage, deleteFeishuMessage, pinFeishuMessage, readFeishuHistory } from "./actions.ts";
+import {
+  sendFeishuReaction,
+  editFeishuMessage,
+  deleteFeishuMessage,
+  pinFeishuMessage,
+  readFeishuHistory,
+} from "./actions.ts";
 import type * as Lark from "@larksuiteoapi/node-sdk";
 
-let runtime: FeishuPluginRuntime | null = null;
-let wsClient: Lark.WSClient | null = null;
+// ============================================================================
+// Multi-Account Runtime Management
+// ============================================================================
+
+const runtimes = new Map<string, FeishuPluginRuntime>();
+const wsClients = new Map<string, Lark.WSClient>();
+let defaultAccountId: string | null = null;
+
+function getRuntime(accountId?: string): FeishuPluginRuntime | null {
+  const id = accountId ?? defaultAccountId;
+  if (!id) return null;
+  return runtimes.get(id) ?? null;
+}
+
+function getDefaultRuntime(): FeishuPluginRuntime {
+  const rt = getRuntime();
+  if (!rt) throw new Error("Feishu not initialized");
+  return rt;
+}
+
+// ============================================================================
+// Plugin Definition
+// ============================================================================
 
 const feishuPlugin: ChannelPlugin = {
   id: "feishu",
@@ -66,12 +120,16 @@ const feishuPlugin: ChannelPlugin = {
   outbound: {
     maxLength: 4000,
     async sendText(target: string, text: string): Promise<MessageSendResult> {
-      if (!runtime) return { ok: false, error: "Feishu not initialized" };
+      const rt = getDefaultRuntime();
       try {
-        const chunks = chunkText(text, runtime.channelCfg.textChunkLimit ?? 4000);
+        const chunks = chunkText(text, rt.channelCfg.textChunkLimit ?? 4000);
         let lastMessageId: string | undefined;
         for (const chunk of chunks) {
-          const result = await sendFeishuCard({ client: runtime.client, to: target, text: chunk });
+          const result = await sendFeishuCard({
+            client: rt.client,
+            to: target,
+            text: chunk,
+          });
           lastMessageId = result.messageId;
         }
         return { ok: true, messageId: lastMessageId };
@@ -80,39 +138,56 @@ const feishuPlugin: ChannelPlugin = {
       }
     },
     async sendMedia(target: string, filePath: string, opts?) {
-      if (!runtime) return { ok: false, error: "Feishu not initialized" };
+      const rt = getDefaultRuntime();
       try {
         const result = await sendFeishuMedia({
-          client: runtime.client,
+          client: rt.client,
           to: target,
           filePath,
           caption: opts?.caption,
-          skipPathValidation: true,  // API layer already validated
+          skipPathValidation: true,
         });
         return { ok: true, messageId: result.messageId };
       } catch (err) {
         return { ok: false, error: String(err) };
       }
     },
-    async sendReaction(target: string, messageId: string, emoji: string | string[], opts?: ReactionOptions): Promise<MessageActionResult> {
-      if (!runtime) return { ok: false, error: "Feishu not initialized" };
-      return sendFeishuReaction(runtime.client, messageId, emoji, opts);
+    async sendReaction(
+      target: string,
+      messageId: string,
+      emoji: string | string[],
+      opts?: ReactionOptions,
+    ): Promise<MessageActionResult> {
+      const rt = getDefaultRuntime();
+      return sendFeishuReaction(rt.client, messageId, emoji, opts);
     },
-    async editMessage(target: string, messageId: string, text: string): Promise<MessageActionResult> {
-      if (!runtime) return { ok: false, error: "Feishu not initialized" };
-      return editFeishuMessage(runtime.client, messageId, text);
+    async editMessage(
+      target: string,
+      messageId: string,
+      text: string,
+    ): Promise<MessageActionResult> {
+      const rt = getDefaultRuntime();
+      return editFeishuMessage(rt.client, messageId, text);
     },
     async deleteMessage(target: string, messageId: string): Promise<MessageActionResult> {
-      if (!runtime) return { ok: false, error: "Feishu not initialized" };
-      return deleteFeishuMessage(runtime.client, messageId);
+      const rt = getDefaultRuntime();
+      return deleteFeishuMessage(rt.client, messageId);
     },
-    async pinMessage(target: string, messageId: string, unpin?: boolean): Promise<MessageActionResult> {
-      if (!runtime) return { ok: false, error: "Feishu not initialized" };
-      return pinFeishuMessage(runtime.client, messageId, unpin);
+    async pinMessage(
+      target: string,
+      messageId: string,
+      unpin?: boolean,
+    ): Promise<MessageActionResult> {
+      const rt = getDefaultRuntime();
+      return pinFeishuMessage(rt.client, messageId, unpin);
     },
-    async readHistory(target: string, limit?: number, before?: string): Promise<ReadHistoryResult> {
-      if (!runtime) return { ok: false, error: "Feishu not initialized" };
-      return readFeishuHistory(runtime.client, target, limit, before);
+    async readHistory(
+      target: string,
+      limit?: number,
+      before?: string,
+    ): Promise<ReadHistoryResult> {
+      const rt = getDefaultRuntime();
+      return readFeishuHistory(rt.client, target, limit, before);
     },
   },
 
@@ -120,70 +195,135 @@ const feishuPlugin: ChannelPlugin = {
     const cfg = api.config.channels.feishu as FeishuChannelConfig | undefined;
     if (!cfg?.enabled) {
       api.logger.info("Feishu: disabled or not configured, skipping");
-      runtime = null;
       return;
     }
 
-    // Validate required credentials
-    if (!cfg.appId || !cfg.appSecret) {
-      api.logger.error("Feishu: enabled but missing required config — channels.feishu.appId and channels.feishu.appSecret must be set");
-      runtime = null;
-      return;
-    }
+    // Resolve all enabled accounts
+    const accounts = listEnabledFeishuAccounts(api.config);
 
-    const client = createFeishuClient(cfg);
-    runtime = { api, channelCfg: cfg, client };
-
-    // Wire security adapter from config
-    feishuPlugin.security = {
-      dmPolicy: (cfg.dmPolicy ?? "open") as DmPolicy,
-      dmAllowFrom: cfg.allowFrom,
-      supportsPairing: cfg.dmPolicy === "pairing",
-    };
-
-    // Probe bot identity
-    try {
-      const res = await (client as any).request({
-        method: "GET",
-        url: "/open-apis/bot/v3/info",
-        data: {},
-      });
-      const bot = res?.bot || res?.data?.bot;
-      if (bot?.open_id) {
-        runtime.botOpenId = bot.open_id;
-        api.logger.info(`Feishu: bot identity resolved: ${bot.bot_name ?? "unknown"} (${runtime.botOpenId})`);
+    if (accounts.length === 0) {
+      // Backward compatibility: single-account mode
+      const account = resolveFeishuAccount({ cfg: api.config });
+      if (!account.configured) {
+        api.logger.error(
+          "Feishu: enabled but missing required config — channels.feishu.appId and channels.feishu.appSecret must be set",
+        );
+        return;
       }
-    } catch (err) {
-      api.logger.info(`Feishu: could not probe bot identity: ${err}`);
+
+      if (!account.enabled) {
+        api.logger.info("Feishu: account disabled, skipping");
+        return;
+      }
+
+      accounts.push(account);
     }
 
-    api.logger.info(`Feishu: initialized (domain=${cfg.domain ?? "feishu"}, mode=${cfg.connectionMode ?? "websocket"})`);
+    // Initialize each account
+    for (const account of accounts) {
+      try {
+        const client = createFeishuClient(account);
+        const runtime: FeishuPluginRuntime = {
+          api,
+          channelCfg: account.config,
+          client,
+          botOpenId: undefined,
+          accountId: account.accountId,
+        };
+
+        // Probe bot identity
+        try {
+          const res = await (client as any).request({
+            method: "GET",
+            url: "/open-apis/bot/v3/info",
+            data: {},
+          });
+          const bot = res?.bot || res?.data?.bot;
+          if (bot?.open_id) {
+            runtime.botOpenId = bot.open_id;
+            api.logger.info(
+              `Feishu[${account.accountId}]: bot identity resolved: ${bot.bot_name ?? "unknown"} (${runtime.botOpenId})`,
+            );
+          }
+        } catch (err) {
+          api.logger.warn(
+            `Feishu[${account.accountId}]: could not probe bot identity: ${err}`,
+          );
+        }
+
+        runtimes.set(account.accountId, runtime);
+
+        // Set default account
+        if (!defaultAccountId) {
+          defaultAccountId = account.accountId;
+        }
+
+        api.logger.info(
+          `Feishu[${account.accountId}]: initialized (domain=${account.domain}, mode=${account.config.connectionMode ?? "websocket"})`,
+        );
+      } catch (err) {
+        api.logger.error(
+          `Feishu[${account.accountId}]: failed to initialize: ${err}`,
+        );
+      }
+    }
+
+    // Wire security adapter from default account config
+    const defaultAccount = getRuntime();
+    if (defaultAccount) {
+      const securityConfig = defaultAccount.channelCfg;
+      feishuPlugin.security = {
+        dmPolicy: (securityConfig.dmPolicy ?? "open") as DmPolicy,
+        dmAllowFrom: securityConfig.allowFrom,
+        supportsPairing: securityConfig.dmPolicy === "pairing",
+      };
+    }
+
+    api.logger.info(
+      `Feishu: initialized ${runtimes.size} account(s), default=${defaultAccountId}`,
+    );
   },
 
   async start() {
-    if (!runtime) return;
-    const { api, channelCfg } = runtime;
+    if (runtimes.size === 0) return;
 
-    const mode = channelCfg.connectionMode ?? "websocket";
-    if (mode !== "websocket") {
-      api.logger.info("Feishu: webhook mode not implemented in v1, skipping start");
-      return;
+    for (const [accountId, runtime] of runtimes) {
+      const { api, channelCfg } = runtime;
+      const mode = channelCfg.connectionMode ?? "websocket";
+
+      if (mode !== "websocket") {
+        api.logger.info(`Feishu[${accountId}]: webhook mode not implemented, skipping`);
+        continue;
+      }
+
+      try {
+        const dispatcher = createEventDispatcher(channelCfg);
+        registerFeishuEvents(dispatcher, runtime);
+
+        const wsClient = createFeishuWSClient({
+          appId: runtime.botOpenId ? channelCfg.appId! : "",
+          appSecret: channelCfg.appSecret!,
+          domain: channelCfg.domain,
+        });
+        wsClient.start({ eventDispatcher: dispatcher });
+        wsClients.set(accountId, wsClient);
+
+        api.logger.info(`Feishu[${accountId}]: WebSocket client started`);
+      } catch (err) {
+        api.logger.error(`Feishu[${accountId}]: failed to start: ${err}`);
+      }
     }
-
-    const dispatcher = createEventDispatcher(channelCfg);
-    registerFeishuEvents(dispatcher, runtime);
-
-    wsClient = createFeishuWSClient(channelCfg);
-    wsClient.start({ eventDispatcher: dispatcher });
-    api.logger.info("Feishu: WebSocket client started");
   },
 
   async stop() {
-    if (wsClient) {
-      try { (wsClient as any).close?.(); } catch {}
-      wsClient = null;
+    for (const [accountId, wsClient] of wsClients) {
+      try {
+        (wsClient as any).close?.();
+      } catch {}
     }
-    runtime = null;
+    wsClients.clear();
+    runtimes.clear();
+    defaultAccountId = null;
     clearClientCache();
   },
 };
@@ -191,3 +331,15 @@ const feishuPlugin: ChannelPlugin = {
 export default function register(api: GatewayPluginApi) {
   api.registerChannel(feishuPlugin);
 }
+
+// ============================================================================
+// Exports for Testing / Advanced Use
+// ============================================================================
+
+export {
+  getRuntime,
+  listEnabledFeishuAccounts,
+  resolveFeishuAccount,
+  resolveDefaultFeishuAccountId,
+};
+export type { FeishuPluginRuntime, ResolvedFeishuAccount };
