@@ -24,7 +24,7 @@ interface UsersStore {
   version: number;
 }
 
-const STORE_FILE = join(homedir(), ".pi", "agent", "qqbot-credentials", "known-users.json");
+const STORE_FILE = join(homedir(), ".pi", "gateway", "qqbot-credentials", "known-users.json");
 const STORE_VERSION = 1;
 const MAX_USERS = 5000;
 
@@ -39,7 +39,7 @@ function makeKey(user: KnownUser): string {
 }
 
 function ensureDir(): void {
-  const dir = join(homedir(), ".pi", "agent", "qqbot-credentials");
+  const dir = join(homedir(), ".pi", "gateway", "qqbot-credentials");
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
 }
 

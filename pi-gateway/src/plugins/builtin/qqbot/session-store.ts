@@ -17,7 +17,7 @@ export interface SessionState {
   savedAt: number;
 }
 
-const SESSION_DIR = join(homedir(), ".pi", "agent", "qqbot-credentials", "sessions");
+const SESSION_DIR = join(homedir(), ".pi", "gateway", "qqbot-credentials", "sessions");
 const SESSION_EXPIRE_MS = 5 * 60 * 1000; // Resume 要求断开后 5 分钟内恢复
 
 function ensureDir(): void {

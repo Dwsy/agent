@@ -21,7 +21,7 @@ export function getHomeDir(): string {
 }
 
 export function getPiDataDir(...subPaths: string[]): string {
-  const dir = path.join(getHomeDir(), ".pi", "agent", ...subPaths);
+  const dir = path.join(getHomeDir(), ".pi", "gateway", ...subPaths);
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }

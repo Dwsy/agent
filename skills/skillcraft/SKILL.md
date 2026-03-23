@@ -1,3 +1,8 @@
+---
+name: skillcraft
+description: Evaluate and analyze LLM agents' ability to form, abstract, and reuse higher-level tool compositions. Use when researching agent skill discovery, tool composition patterns, or evaluating skill caching efficiency.
+---
+
 # SkillCraft - LLM Agent Tool Composition Benchmark
 
 ## Description

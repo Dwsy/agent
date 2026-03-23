@@ -23,7 +23,7 @@ export function checkStartupGreeting(runtime: QqbotPluginRuntime): void {
     const { existsSync, readFileSync, writeFileSync, mkdirSync } = require("node:fs");
     const { join } = require("node:path");
     const { homedir } = require("node:os");
-    const dir = join(homedir(), ".pi", "agent", "qqbot-credentials");
+    const dir = join(homedir(), ".pi", "gateway", "qqbot-credentials");
     const file = join(dir, "greeting-state.json");
 
     let record: GreetingRecord = {};

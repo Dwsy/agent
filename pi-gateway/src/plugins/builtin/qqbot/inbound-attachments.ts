@@ -35,7 +35,7 @@ const EMPTY_RESULT: ProcessedAttachments = {
 };
 
 function getMediaDownloadDir(): string {
-  const dir = join(homedir(), ".pi", "agent", "qqbot-credentials", "media", "downloads");
+  const dir = join(homedir(), ".pi", "gateway", "qqbot-credentials", "media", "downloads");
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
   return dir;
 }

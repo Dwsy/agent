@@ -8,12 +8,12 @@
  *   - ref_msg_idx = 被引用消息索引 → 查找历史消息内容，注入上下文
  *
  * 存储：内存 Map + JSONL 追加写持久化
- * 位置：~/.pi/agent/qqbot-credentials/ref-index.jsonl
+ * 位置：~/.pi/gateway/qqbot-credentials/ref-index.jsonl
  */
 import { existsSync, appendFileSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 
-const STORAGE_DIR = `${homedir()}/.pi/agent/qqbot-credentials`;
+const STORAGE_DIR = `${homedir()}/.pi/gateway/qqbot-credentials`;
 const REF_INDEX_FILE = `${STORAGE_DIR}/ref-index.jsonl`;
 const MAX_ENTRIES = 10000;
 

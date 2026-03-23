@@ -18,11 +18,11 @@ interface CredentialBackup {
 }
 
 function getBackupPath(): string {
-  return `${homedir()}/.pi/agent/${BACKUP_DIR}/${BACKUP_FILE}`;
+  return `${homedir()}/.pi/gateway/${BACKUP_DIR}/${BACKUP_FILE}`;
 }
 
 function getBackupDir(): string {
-  return `${homedir()}/.pi/agent/${BACKUP_DIR}`;
+  return `${homedir()}/.pi/gateway/${BACKUP_DIR}`;
 }
 
 /**

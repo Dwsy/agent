@@ -3,7 +3,7 @@ import { saveCredentialBackup, loadCredentialBackup, clearCredentialBackup } fro
 import { existsSync, readFileSync, unlinkSync } from "node:fs";
 import { homedir } from "node:os";
 
-const backupPath = `${homedir()}/.pi/agent/qqbot-credentials/credentials.json`;
+const backupPath = `${homedir()}/.pi/gateway/qqbot-credentials/credentials.json`;
 
 describe("credential backup", () => {
   beforeEach(() => {
