@@ -1215,7 +1215,7 @@ export function searchRoleMemory(
   rolePath: string,
   roleName: string,
   query: string,
-  options?: { maxResults?: number; minScore?: number; includeDailyMemory?: boolean; autoPromotePending?: boolean },
+  options?: { maxResults?: number; minScore?: number; includeDailyMemory?: boolean; autoPromotePending?: boolean; autoReinforce?: boolean },
 ): ScoredMemoryMatch[] {
   const q = normalizeText(query).toLowerCase();
   if (!q) return [];
@@ -1249,6 +1249,17 @@ export function searchRoleMemory(
     const s = scoreMatch(q, queryTokens, event.toLowerCase());
     if (s >= minScore) {
       scored.push({ kind: "event", text: event, score: s });
+    }
+  }
+
+  // Auto-reinforce: increment used count for highly relevant memories
+  if (options?.autoReinforce !== false && roleName) {
+    for (const match of scored) {
+      if (match.kind === "learning" && match.id && match.score >= 0.7) {
+        // High relevance - reinforce this memory
+        reinforceRoleLearning(rolePath, roleName, match.id);
+        log("search-reinforce", `auto-reinforced: ${match.text.slice(0, 50)} (score=${match.score.toFixed(2)})`);
+      }
     }
   }
 
