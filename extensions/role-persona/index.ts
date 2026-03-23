@@ -41,12 +41,14 @@ import { config, reloadConfig } from "./config.ts";
 import {
   addRoleLearning,
   addRolePreference,
+  addPendingLearning,
   appendDailyRoleMemory,
   buildMemoryEditInstruction,
   consolidateRoleMemory,
   ensureRoleMemoryFiles,
   expirePendingMemories,
   getPendingMemories,
+  getPendingStats,
   listRoleMemory,
   loadHighPriorityMemories,
   loadMemoryOnDemand,
@@ -970,7 +972,9 @@ Rules for memory extraction:
             if (!item.content?.trim()) continue;
 
             if (item.type === "learning") {
-              const r = addRoleLearning(rolePath, roleName, item.content, {
+              // Import and use async version for tag extraction
+              const { addRoleLearningWithTags } = await import("./memory-md.ts");
+              const r = await addRoleLearningWithTags(ctx, rolePath, roleName, item.content, {
                 source: "compaction",
                 appendDaily: true,
               });

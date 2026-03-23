@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { dirname, join } from "node:path";
 import { log } from "./logger.ts";
 import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
-import { extractTagsWithLLM, updateTagWeights, type TagRegistry } from "./memory-tags.ts";
+import { extractTagsWithLLM, getRelatedTags, searchTags, updateTagWeights, type TagRegistry } from "./memory-tags.ts";
 import { config } from "./config.ts";
 
 export const DEFAULT_MEMORY_CATEGORIES = config.memory.defaultCategories as unknown as readonly string[];
@@ -1282,11 +1282,83 @@ export function searchRoleMemory(
     }
   }
 
+  // ============================================================
+  // TAG-BASED RECALL (P0: Issue #49)
+  // ============================================================
+  // Search tags index for query-relevant tags
+  const matchingTags = searchTags(rolePath, q);
+  
+  // Get related tags (association expansion)
+  const relatedTagsSet = new Set<string>();
+  for (const mt of matchingTags.slice(0, 5)) {
+    relatedTagsSet.add(mt.tag);
+    const related = getRelatedTags(rolePath, mt.tag, 3);
+    for (const r of related) {
+      relatedTagsSet.add(r.tag);
+    }
+  }
+
+  // Boost memories that have matching tags
+  for (const learning of data.learnings) {
+    const learningTags = learning.tags || [];
+    const hasMatchingTag = learningTags.some(t => 
+      matchingTags.some(mt => mt.tag.toLowerCase() === t.toLowerCase())
+    );
+    const hasRelatedTag = learningTags.some(t => 
+      relatedTagsSet.has(t.toLowerCase())
+    );
+    
+    if (hasMatchingTag) {
+      // Strong boost for exact tag match
+      const tagBoost = 0.3;
+      // Find the matching tag score
+      const matchScore = matchingTags.find(mt => 
+        learningTags.some(t => t.toLowerCase() === mt.tag.toLowerCase())
+      )?.strength ?? 0;
+      const boost = tagBoost + (matchScore / 100) * 0.1;
+      
+      // Check if already in results
+      const existing = scored.find(s => s.id === learning.id);
+      if (existing) {
+        existing.score += boost;
+      } else {
+        scored.push({ kind: "learning", id: learning.id, text: learning.text, used: learning.used, score: boost });
+      }
+    } else if (hasRelatedTag) {
+      // Smaller boost for related tag match
+      const relatedBoost = 0.15;
+      const existing = scored.find(s => s.id === learning.id);
+      if (existing) {
+        existing.score += relatedBoost;
+      } else {
+        scored.push({ kind: "learning", id: learning.id, text: learning.text, used: learning.used, score: relatedBoost });
+      }
+    }
+  }
+
+  // Boost preferences with matching tags
+  for (const pref of data.preferences) {
+    const prefTags = pref.tags || [];
+    const hasMatchingTag = prefTags.some(t => 
+      matchingTags.some(mt => mt.tag.toLowerCase() === t.toLowerCase())
+    );
+    
+    if (hasMatchingTag) {
+      const tagBoost = 0.25;
+      const existing = scored.find(s => s.id === pref.id);
+      if (existing) {
+        existing.score += tagBoost;
+      } else {
+        scored.push({ kind: "preference", id: pref.id, text: pref.text, category: pref.category, score: tagBoost });
+      }
+    }
+  }
+
   // Auto-reinforce: increment used count for highly relevant memories
   if (options?.autoReinforce !== false && roleName) {
     for (const match of scored) {
-      if (match.kind === "learning" && match.id && match.score >= 0.7) {
-        // High relevance - reinforce this memory
+      if (match.kind === "learning" && match.id && match.score >= 0.5) {
+        // Reinforce memories found via text or tag search
         reinforceRoleLearning(rolePath, roleName, match.id);
         log("search-reinforce", `auto-reinforced: ${match.text.slice(0, 50)} (score=${match.score.toFixed(2)})`);
       }

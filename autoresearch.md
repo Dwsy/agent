@@ -108,7 +108,14 @@ pending_count: 0    (pending 层未实现)
   - expirePendingMemories 函数自动淘汰 7 天未提升的 pending 记忆
   - session_start 时调用
 
-### 去重增强 (Round 5+)
+### Compaction Pending 层集成 (Round 5)
+- **Goal**: 确保 compaction 提取的记忆也走 pending 验证
+- **Result**: ✅ 完成
+- **Approach**: 
+  - 修改 addRoleLearning 的 usePendingLayer 逻辑
+  - source=compaction 也进入 pending 层
+
+### 去重增强 (Round 6+)
 - **Goal**: 改进 Jaccard 相似度阈值或引入其他去重算法
 - **Status**: 待探索
 - **Approach**: 
