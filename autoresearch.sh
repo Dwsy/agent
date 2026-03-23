@@ -98,7 +98,9 @@ count_consolidated_memories() {
 count_pending_memories() {
   local count=0
   if [[ -f "$PENDING" ]] && [[ -s "$PENDING" ]]; then
-    count=$(grep -c "^\- \[" "$PENDING" 2>/dev/null || echo 0)
+    local raw=$(grep -c "^\- \[" "$PENDING" 2>/dev/null || echo 0)
+    count=${raw//[^0-9]/}
+    [[ -z "$count" ]] && count=0
   fi
   echo $count
 }
@@ -106,8 +108,12 @@ count_pending_memories() {
 calculate_promotion_rate() {
   local rate=0.0
   if [[ -f "$PENDING" ]] && [[ -s "$PENDING" ]]; then
-    local total=$(grep -c "^\- \[" "$PENDING" 2>/dev/null || echo 0)
-    local promoted=$(grep -c "^\- \[✓\]" "$PENDING" 2>/dev/null || echo 0)
+    local raw_total=$(grep -c "^\- \[" "$PENDING" 2>/dev/null || echo 0)
+    local raw_promoted=$(grep -c "^\- \[✓\]" "$PENDING" 2>/dev/null || echo 0)
+    local total=${raw_total//[^0-9]/}
+    local promoted=${raw_promoted//[^0-9]/}
+    [[ -z "$total" ]] && total=0
+    [[ -z "$promoted" ]] && promoted=0
     
     if [[ $total -gt 0 ]]; then
       rate=$(echo "scale=2; $promoted / $total" | bc)
