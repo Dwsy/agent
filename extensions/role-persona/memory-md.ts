@@ -1958,8 +1958,7 @@ export function getConflictReport(rolePath: string): string {
 // HTML EXPORT
 // ============================================================================
 
-import { readdirSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+// Uses imports from top of file: readdirSync, readFileSync, dirname, join
 import type { RoleMemoryData } from "./memory-md.ts";
 
 export interface MemoryExportData {
