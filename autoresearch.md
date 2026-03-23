@@ -115,12 +115,31 @@ pending_count: 0    (pending 层未实现)
   - 修改 addRoleLearning 的 usePendingLayer 逻辑
   - source=compaction 也进入 pending 层
 
-### 去重增强 (Round 6+)
-- **Goal**: 改进 Jaccard 相似度阈值或引入其他去重算法
-- **Status**: 待探索
+### 冲突检测 (Round 7)
+- **Goal**: 检测矛盾、过时、重复的记忆
+- **Result**: ✅ 完成
 - **Approach**: 
-  - 调整 dedupeThreshold 配置
-  - 引入 n-gram 或 minhash 去重
+  - 规则-based 冲突检测（技术栈、工作方式、工具偏好）
+  - 支持检测同一类别的重复记忆
+  - 新增 /memory-conflicts 命令
+
+---
+
+## 总结
+
+**Score**: 71 → 90 (+26.8%)
+
+**已实现机制**:
+1. Pending 层 - 记忆提升需验证
+2. 使用驱动提升 - 搜索相关自动提升
+3. 自动强化 - 高相关记忆自动 reinforce
+4. 过期淘汰 - 7天未提升自动丢弃
+5. 标签召回 - 标签索引参与搜索权重
+6. 冲突检测 - 矛盾/过时/重复检测
+
+**剩余分数** (~10分):
+- 使用驱动提升率需要实际使用积累
+- 非 benchmark 问题，是系统成熟度问题
 
 ---
 
