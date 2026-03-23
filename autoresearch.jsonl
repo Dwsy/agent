@@ -1,0 +1,2 @@
+{"type":"config","name":"记忆系统分层与质量优化","metricName":"memory_score","metricUnit":"","bestDirection":"higher"}
+{"run":1,"commit":"f769097","metric":71,"metrics":{"daily_count":2542,"consolidated_count":42,"dedup_ratio":1,"pending_count":0},"status":"discard","description":"Baseline: 记忆系统质量评分 71/100，pending 层未实现","timestamp":1774303399142,"segment":0,"confidence":null,"asi":{"baseline":true,"observation":"记忆系统 baseline 质量评分 71，pending 层未实现","issues":["pending_count=0 表明无 pending 层","auto-extract 直接写入 consolidated 无验证"]}}

@@ -45,9 +45,11 @@ import {
   buildMemoryEditInstruction,
   consolidateRoleMemory,
   ensureRoleMemoryFiles,
+  getPendingMemories,
   listRoleMemory,
   loadHighPriorityMemories,
   loadMemoryOnDemand,
+  promotePendingLearning,
   readMemoryPromptBlocks,
   readRoleMemory,
   reinforceRoleLearning,
@@ -614,6 +616,25 @@ export default function rolePersonaExtension(pi: ExtensionAPI) {
 
     ensureRoleMemoryFiles(rolePath, roleName);
     const repair = repairRoleMemory(rolePath, roleName);
+
+    // Pending layer: randomly promote 1-2 pending memories per session
+    // This simulates "usage-driven" promotion - memories promoted when relevant
+    const pending = getPendingMemories(rolePath);
+    if (pending.length > 0) {
+      const promoteCount = Math.min(pending.length, Math.ceil(Math.random() * 2));
+      let promoted = 0;
+      for (let i = 0; i < promoteCount && i < pending.length; i++) {
+        const item = pending[i];
+        const result = promotePendingLearning(rolePath, roleName, item.id);
+        if (result.promoted) {
+          log("pending-promote", `promoted: ${item.text.slice(0, 50)}`);
+          promoted++;
+        }
+      }
+      if (promoted > 0 && isTuiAvailable(ctx)) {
+        log("pending", `session start: promoted ${promoted}/${pending.length} pending memories`);
+      }
+    }
 
     // Initialize vector memory (async, non-blocking)
     initVectorMemory(rolePath, ctx).then((ok) => {

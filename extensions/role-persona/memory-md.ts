@@ -55,6 +55,22 @@ export interface MemorySearchMatch {
   used?: number;
 }
 
+export interface PendingMemoryRecord {
+  id: string;
+  text: string;
+  source: string;  // "auto" | "compaction" | etc.
+  category?: string;  // for preferences
+  createdAt: string;
+  promoted: boolean;
+  discarded: boolean;
+}
+
+export interface PendingMemoryData {
+  roleName: string;
+  updated: string;
+  items: PendingMemoryRecord[];
+}
+
 function today(): string {
   return new Date().toISOString().split("T")[0];
 }
@@ -89,6 +105,10 @@ function dailyMemoryDir(rolePath: string): string {
 
 function dailyMemoryPath(rolePath: string, date = today()): string {
   return join(dailyMemoryDir(rolePath), `${date}.md`);
+}
+
+function pendingMemoryPath(rolePath: string): string {
+  return join(memoryRootDir(rolePath), "pending.md");
 }
 
 function listDailyMemoryFilesByDate(rolePath: string): Array<{ date: string; path: string }> {
@@ -290,6 +310,17 @@ export function ensureRoleMemoryFiles(rolePath: string, roleName: string): void 
       issues: [],
     });
     writeFileSync(file, initial, "utf-8");
+  }
+
+  // Ensure pending layer exists
+  const pendingFile = pendingMemoryPath(rolePath);
+  if (!existsSync(pendingFile)) {
+    const pendingInitial = renderPendingMemory({
+      roleName,
+      updated: today(),
+      items: [],
+    });
+    writeFileSync(pendingFile, pendingInitial, "utf-8");
   }
 }
 
@@ -660,6 +691,228 @@ function saveRoleMemory(rolePath: string, data: RoleMemoryData): void {
   writeMemory(rolePath, renderRoleMemory(data));
 }
 
+// ============================================================================
+// PENDING MEMORY LAYER
+// ============================================================================
+
+function renderPendingMemory(data: PendingMemoryData): string {
+  const lines: string[] = [
+    "---",
+    `role: "${data.roleName}"`,
+    `updated: "${data.updated}"`,
+    "---",
+    "",
+    "# Pending Memories",
+    "",
+    "Auto-extracted memories waiting for usage verification.",
+    "Promote to consolidated when used in relevant context.",
+    "",
+  ];
+
+  if (data.items.length === 0) {
+    lines.push("- (none)");
+  } else {
+    for (const item of data.items) {
+      const status = item.promoted ? "✓" : item.discarded ? "✗" : "○";
+      lines.push(`- [${status}] [${item.source}] ${item.text}`);
+      if (item.category) {
+        lines.push(`  category: ${item.category}`);
+      }
+      lines.push(`  id: ${item.id}`);
+      lines.push(`  created: ${item.createdAt}`);
+      lines.push("");
+    }
+  }
+
+  return lines.join("\n").replace(/\n+$/, "") + "\n";
+}
+
+function parsePendingMemory(content: string, roleName: string): PendingMemoryData {
+  const lines = content.split(/\r?\n/);
+  const items: PendingMemoryRecord[] = [];
+  
+  let currentItem: Partial<PendingMemoryRecord> | null = null;
+  
+  for (const rawLine of lines) {
+    const line = rawLine.replace(/\s+$/, "");
+    
+    // Skip frontmatter and headers
+    if (line.startsWith("---") || line.startsWith("#") || !line.trim()) {
+      if (currentItem && currentItem.text) {
+        items.push(currentItem as PendingMemoryRecord);
+        currentItem = null;
+      }
+      continue;
+    }
+    
+    // Parse item line
+    const itemMatch = line.match(/^\- \[([✓✗○])\] \[([^\]]+)\] (.+)$/);
+    if (itemMatch) {
+      if (currentItem && currentItem.text) {
+        items.push(currentItem as PendingMemoryRecord);
+      }
+      currentItem = {
+        promoted: itemMatch[1] === "✓",
+        discarded: itemMatch[1] === "✗",
+        source: itemMatch[2],
+        text: itemMatch[3],
+      };
+      continue;
+    }
+    
+    // Parse metadata lines
+    const metaMatch = line.match(/^\s+(category|id|created): (.+)$/);
+    if (metaMatch && currentItem) {
+      if (metaMatch[1] === "category") currentItem.category = metaMatch[2];
+      if (metaMatch[1] === "id") currentItem.id = metaMatch[2];
+      if (metaMatch[1] === "created") currentItem.createdAt = metaMatch[2];
+    }
+  }
+  
+  // Don't forget the last item
+  if (currentItem && currentItem.text) {
+    items.push(currentItem as PendingMemoryRecord);
+  }
+  
+  return {
+    roleName,
+    updated: today(),
+    items,
+  };
+}
+
+function readPendingMemory(rolePath: string): PendingMemoryData {
+  const file = pendingMemoryPath(rolePath);
+  if (!existsSync(file)) {
+    return { roleName: "", updated: today(), items: [] };
+  }
+  const content = readFileSync(file, "utf-8");
+  return parsePendingMemory(content, "");
+}
+
+function writePendingMemory(rolePath: string, data: PendingMemoryData): void {
+  const file = pendingMemoryPath(rolePath);
+  const dir = memoryRootDir(rolePath);
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+  writeFileSync(file, renderPendingMemory(data), "utf-8");
+}
+
+export function addPendingLearning(
+  rolePath: string,
+  text: string,
+  source: string = "auto",
+  category?: string
+): { stored: boolean; duplicate?: boolean; id?: string } {
+  const normalized = normalizeText(text);
+  if (!normalized) return { stored: false };
+
+  const data = readPendingMemory(rolePath);
+  
+  // Check for duplicate in pending
+  const duplicate = data.items.find(
+    (item) => normalizeText(item.text).toLowerCase() === normalized.toLowerCase()
+  );
+  if (duplicate) return { stored: false, duplicate: true, id: duplicate.id };
+
+  // Also check consolidated to avoid adding if already promoted
+  const consolidated = readRoleMemory(rolePath, "");
+  const alreadyConsolidated = consolidated.learnings.find(
+    (l) => normalizeText(l.text).toLowerCase() === normalized.toLowerCase()
+  );
+  if (alreadyConsolidated) return { stored: false, duplicate: true, id: alreadyConsolidated.id };
+
+  const id = hashId("pending", normalized);
+  data.items.push({
+    id,
+    text: normalized,
+    source,
+    category,
+    createdAt: today(),
+    promoted: false,
+    discarded: false,
+  });
+
+  writePendingMemory(rolePath, data);
+  return { stored: true, id };
+}
+
+export function promotePendingLearning(
+  rolePath: string,
+  roleName: string,
+  idOrQuery: string
+): { promoted: boolean; id?: string; text?: string } {
+  const query = normalizeText(idOrQuery).toLowerCase();
+  const pendingData = readPendingMemory(rolePath);
+  
+  const index = pendingData.items.findIndex(
+    (item) => item.id === idOrQuery || item.text.toLowerCase().includes(query)
+  );
+  
+  if (index < 0) return { promoted: false };
+  
+  const item = pendingData.items[index];
+  if (item.promoted || item.discarded) return { promoted: false };
+  
+  // Add to consolidated
+  const consolidatedData = readRoleMemory(rolePath, roleName);
+  
+  // Check for duplicate in consolidated
+  const duplicate = consolidatedData.learnings.find(
+    (l) => normalizeText(l.text).toLowerCase() === item.text.toLowerCase()
+  );
+  
+  if (!duplicate) {
+    consolidatedData.learnings.push({
+      id: hashId("learning", item.text),
+      text: item.text,
+      used: 0,
+      source: `promoted:${item.source}`,
+      lastAccessed: today(),
+    });
+    saveRoleMemory(rolePath, consolidatedData);
+  }
+  
+  // Mark as promoted in pending
+  pendingData.items[index].promoted = true;
+  writePendingMemory(rolePath, pendingData);
+  
+  return { promoted: true, id: item.id, text: item.text };
+}
+
+export function discardPendingLearning(
+  rolePath: string,
+  idOrQuery: string
+): { discarded: boolean; id?: string } {
+  const query = normalizeText(idOrQuery).toLowerCase();
+  const data = readPendingMemory(rolePath);
+  
+  const index = data.items.findIndex(
+    (item) => item.id === idOrQuery || item.text.toLowerCase().includes(query)
+  );
+  
+  if (index < 0) return { discarded: false };
+  
+  data.items[index].discarded = true;
+  writePendingMemory(rolePath, data);
+  
+  return { discarded: true, id: data.items[index].id };
+}
+
+export function getPendingMemories(rolePath: string): PendingMemoryRecord[] {
+  const data = readPendingMemory(rolePath);
+  return data.items.filter((item) => !item.promoted && !item.discarded);
+}
+
+export function getPendingStats(rolePath: string): { total: number; pending: number; promoted: number; discarded: number } {
+  const data = readPendingMemory(rolePath);
+  return {
+    total: data.items.length,
+    pending: data.items.filter((item) => !item.promoted && !item.discarded).length,
+    promoted: data.items.filter((item) => item.promoted).length,
+    discarded: data.items.filter((item) => item.discarded).length,
+  };
+}
+
 export function appendDailyRoleMemory(
   rolePath: string,
   category: "event" | "lesson" | "preference" | "context" | "decision",
@@ -685,14 +938,28 @@ export function addRoleLearning(
   rolePath: string,
   roleName: string,
   text: string,
-  options?: { source?: string; appendDaily?: boolean; tags?: string[]; weight?: number }
-): { stored: boolean; duplicate?: boolean; id?: string; reason?: string } {
+  options?: { source?: string; appendDaily?: boolean; tags?: string[]; weight?: number; usePending?: boolean }
+): { stored: boolean; duplicate?: boolean; id?: string; reason?: string; layer?: string } {
   const normalized = normalizeText(text);
   if (!normalized || normalized === "(none)") return { stored: false, reason: "empty" };
 
+  // Check if this should go to pending layer (for auto-extracted content)
+  const usePendingLayer = options?.usePending ?? (options?.source === "auto");
+  
+  if (usePendingLayer) {
+    const result = addPendingLearning(rolePath, normalized, options?.source || "auto");
+    if (!result.stored) {
+      return { stored: false, duplicate: result.duplicate, id: result.id, reason: "duplicate", layer: "pending" };
+    }
+    if (options?.appendDaily !== false) {
+      appendDailyRoleMemory(rolePath, "lesson", normalized);
+    }
+    return { stored: true, id: result.id, reason: "pending", layer: "pending" };
+  }
+
   const data = readRoleMemory(rolePath, roleName);
   const duplicate = data.learnings.find((l) => normalizeText(l.text).toLowerCase() === normalized.toLowerCase());
-  if (duplicate) return { stored: false, duplicate: true, id: duplicate.id, reason: "duplicate" };
+  if (duplicate) return { stored: false, duplicate: true, id: duplicate.id, reason: "duplicate", layer: "consolidated" };
 
   data.learnings.push({
     id: hashId("learning", normalized),
@@ -710,7 +977,7 @@ export function addRoleLearning(
     appendDailyRoleMemory(rolePath, "lesson", normalized);
   }
 
-  return { stored: true, id: hashId("learning", normalized) };
+  return { stored: true, id: hashId("learning", normalized), layer: "consolidated" };
 }
 
 export async function addRoleLearningWithTags(
