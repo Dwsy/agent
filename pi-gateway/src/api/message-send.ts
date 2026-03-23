@@ -14,7 +14,7 @@ import type { PluginRegistryState } from "../plugins/loader.ts";
 import type { SessionStore } from "../core/session-store.ts";
 import { getGatewayInternalToken } from "./media-send.ts";
 import { resolveChannelTarget } from "./channel-target.ts";
-import { canPostMessage } from "./channel-capabilities.ts";
+import { canPostMessage, supportsMessageEdit } from "./channel-capabilities.ts";
 import { splitMessage, shouldBypassSplitForChannel } from "../core/utils.ts";
 import { normalizeStreamHints } from "./message-send-normalizer.ts";
 
@@ -134,6 +134,13 @@ export async function handleMessageSendRequest(
   if (streamMode === "draft" && chatId.startsWith("-")) {
     ctx.log.info(`[message-send] draft mode not available for group chat=${chatId}, falling back to partial`);
     streamMode = "partial";
+  }
+
+  // If channel doesn't support message editing, downgrade partial/draft to off.
+  // This prevents send-message extension from attempting edit operations that will fail.
+  if ((streamMode === "partial" || streamMode === "draft") && !supportsMessageEdit(channelPlugin)) {
+    ctx.log.info(`[message-send] channel ${channel} does not support message editing, downgrade streamMode=${streamMode} to off`);
+    streamMode = "off";
   }
 
   if (streamMode) {

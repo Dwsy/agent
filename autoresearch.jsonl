@@ -1,1 +1,2 @@
 {"type":"config","name":"Fix qqbot streaming message editing failure","metricName":"streaming_success_rate","metricUnit":"%","bestDirection":"higher"}
+{"run":1,"commit":"2bf33d2","metric":0,"metrics":{"outbound_msg_count":1,"command_recognized":1,"streaming_tests":7},"status":"keep","description":"Baseline: qqbot streaming-bench tests pass (7/7)","timestamp":1774243914552,"segment":0,"confidence":null}

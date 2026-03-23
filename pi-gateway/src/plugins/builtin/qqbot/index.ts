@@ -54,7 +54,7 @@ const qqbotPlugin: ChannelPlugin = {
     group: true,
     thread: false,
     media: true,
-    streaming: true,
+    streaming: false, // QQBot 不支持 edit-based streaming，使用 blockStreaming 配置
     security: true,
     reactions: false,
     editable: false,
@@ -67,7 +67,7 @@ const qqbotPlugin: ChannelPlugin = {
         edit: false,
         delete: true,
         fileUpload: "partial",
-        streaming: "post-edit",
+        streaming: "none", // QQBot 不支持 streaming，依赖 blockStreaming 配置
       },
       richContent: {
         cards: "partial",
