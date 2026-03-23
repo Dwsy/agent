@@ -74,21 +74,32 @@ pending_count: 0    (pending 层未实现)
 - **Status**: 已建立
 - **Result**: memory_score=55, pending_count=0
 
-### Pending Layer Implementation (Round 1+)
+### Pending Layer Implementation (Round 1)
 - **Goal**: 新增 pending 层，auto-extract 结果先进 pending
+- **Result**: ✅ 完成，+20 分
 - **Approach**: 
   - 新增 `pending.md` 文件存储待验证记忆
   - 修改 `addRoleLearning` 逻辑，source=auto 时写入 pending
-  - session_start 时随机 promote pending 记忆到 consolidated（模拟使用驱动）
+  - session_start 时随机 promote pending 记忆到 consolidated
 
-### 二次验证机制 (Round 2+)
-- **Goal**: 用 LLM 判断 pending 记忆是否值得提升
+### 使用驱动提升机制 (Round 2)
+- **Goal**: 搜索时自动提升高相关性 pending 记忆
+- **Result**: ✅ 完成
 - **Approach**: 
-  - compaction 时 review pending 项
-  - 匹配当前 context 的 pending 项优先 promote
+  - 修改 `searchRoleMemory` 函数
+  - 当 pending 记忆相关性 >= 0.5 时自动提升
+  - 提升后标记为 ✓
 
-### 去重增强 (Round 3+)
+### 自动强化机制 (Round 3)
+- **Goal**: 搜索命中时自动增加 used 计数
+- **Result**: ✅ 完成
+- **Approach**: 
+  - 搜索相关性 >= 0.7 时自动调用 `reinforceRoleLearning`
+  - 创建正反馈循环：频繁访问的记忆更强化
+
+### 去重增强 (Round 4+)
 - **Goal**: 改进 Jaccard 相似度阈值或引入其他去重算法
+- **Status**: 待探索
 - **Approach**: 
   - 调整 dedupeThreshold 配置
   - 引入 n-gram 或 minhash 去重
