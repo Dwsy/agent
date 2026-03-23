@@ -1792,7 +1792,7 @@ export function getMemoryStats(rolePath: string, roleName: string): MemoryStats 
 }
 
 // ============================================================================
-// CONFLICT DETECTION
+// CONFLICT DETECTION (Data-Driven)
 // ============================================================================
 
 export interface MemoryConflict {
@@ -1803,127 +1803,128 @@ export interface MemoryConflict {
 }
 
 /**
- * Known contradictory patterns (simple rule-based detection)
- * Format: [keyword1, keyword2, suggestion]
- */
-const CONTRADICTION_PATTERNS: Array<[string[], string]> = [
-  // Tech stack contradictions
-  [["vue", "react"], "检测到技术栈偏好冲突：Vue vs React"],
-  [["react", "vue"], "检测到技术栈偏好冲突：Vue vs React"],
-  [["typescript", "javascript"], "检测到类型系统偏好变化"],
-  [["mysql", "postgres"], "检测到数据库偏好冲突：MySQL vs PostgreSQL"],
-  [["postgres", "mysql"], "检测到数据库偏好冲突：PostgreSQL vs MySQL"],
-  // Workflow contradictions
-  [["加班", "不加班"], "检测到工作态度矛盾"],
-  [["远程", " onsite"], "检测到工作方式偏好冲突"],
-  // Tool preferences
-  [["vim", "emacs"], "检测到编辑器偏好冲突：Vim vs Emacs"],
-  [["emacs", "vim"], "检测到编辑器偏好冲突：Emacs vs Vim"],
-];
-
-function normalizeForConflict(text: string): string {
-  return text.toLowerCase().replace(/[^\w\u4e00-\u9fa5]/g, "");
-}
-
-/**
- * Detect conflicts/contradictions in memory preferences
+ * Detect conflicts dynamically based on actual memory content.
+ * No hardcoded patterns - uses statistical analysis and similarity.
  */
 export function detectMemoryConflicts(rolePath: string): MemoryConflict[] {
   const data = readRoleMemory(rolePath, "");
   const conflicts: MemoryConflict[] = [];
 
-  // Group preferences by category
-  const byCategory = new Map<string, MemoryPreferenceRecord[]>();
-  for (const pref of data.preferences) {
-    const list = byCategory.get(pref.category) || [];
-    list.push(pref);
-    byCategory.set(pref.category, list);
+  // 1. Duplicate Detection (by normalized text)
+  const allItems = [
+    ...data.learnings.map(l => ({ id: l.id, text: l.text, kind: 'learning' as const, tags: l.tags })),
+    ...data.preferences.map(p => ({ id: p.id, text: p.text, kind: 'preference' as const, category: p.category, tags: p.tags }))
+  ];
+
+  const textGroups = new Map<string, typeof allItems>();
+  for (const item of allItems) {
+    const key = normalizeText(item.text).toLowerCase();
+    if (!textGroups.has(key)) textGroups.set(key, []);
+    textGroups.get(key)!.push(item);
   }
 
-  // Check each category for contradictions
-  for (const [category, prefs] of byCategory) {
-    if (prefs.length < 2) continue;
-
-    // Normalize texts for comparison
-    const normalized = prefs.map(p => ({
-      id: p.id,
-      text: p.text,
-      normalized: normalizeForConflict(p.text)
-    }));
-
-    // Check against contradiction patterns
-    for (const [keywords, suggestion] of CONTRADICTION_PATTERNS) {
-      const matching = normalized.filter(p => 
-        keywords.some(k => p.normalized.includes(k))
-      );
-
-      if (matching.length >= 2) {
-        // Check if they contradict (different keywords)
-        const foundKeywords = keywords.filter(k => 
-          matching.some(m => m.normalized.includes(k))
-        );
-        
-        if (foundKeywords.length >= 2) {
-          conflicts.push({
-            type: "contradiction",
-            category,
-            items: matching.map(m => ({
-              id: m.id,
-              text: m.text,
-              reason: `包含冲突关键词: ${foundKeywords.join(", ")}`
-            })),
-            suggestion
-          });
-        }
-      }
+  for (const [text, items] of textGroups) {
+    if (items.length > 1) {
+      conflicts.push({
+        type: "duplication",
+        items: items.map(i => ({
+          id: i.id,
+          text: i.text,
+          reason: "存在完全相同的记忆条目"
+        })),
+        suggestion: `建议合并 ${items.length} 条重复记忆为一条`
+      });
     }
+  }
 
-    // Check for exact duplicates in same category
-    const texts = new Map<string, typeof prefs>();
-    for (const pref of prefs) {
-      const key = normalizeText(pref.text).toLowerCase();
-      if (!texts.has(key)) {
-        texts.set(key, []);
-      }
-      texts.get(key)!.push(pref);
-    }
+  // 2. Near-Duplicate Detection (high similarity)
+  const threshold = 0.85;
+  const processed = new Set<string>();
+  for (let i = 0; i < allItems.length; i++) {
+    for (let j = i + 1; j < allItems.length; j++) {
+      const a = allItems[i], b = allItems[j];
+      if (processed.has(a.id) || processed.has(b.id)) continue;
 
-    for (const [text, items] of texts) {
-      if (items.length > 1) {
+      const sim = jaccardSimilarity(normalizeText(a.text), normalizeText(b.text));
+      if (sim >= threshold) {
+        processed.add(a.id);
+        processed.add(b.id);
         conflicts.push({
           type: "duplication",
-          category,
-          items: items.map(i => ({
-            id: i.id,
-            text: i.text,
-            reason: "相同类别中存在重复"
-          })),
-          suggestion: `建议合并 ${items.length} 条重复偏好为一条`
+          category: 'preference' in a ? a.category : undefined,
+          items: [
+            { id: a.id, text: a.text, reason: `与另一条相似度 ${(sim * 100).toFixed(0)}%` },
+            { id: b.id, text: b.text, reason: `与另一条相似度 ${(sim * 100).toFixed(0)}%` }
+          ],
+          suggestion: "这两条记忆高度相似，建议合并或删除其中一条"
         });
       }
     }
   }
 
-  // Check learnings for outdated patterns (based on source/used count)
-  // Low used count + old creation might indicate outdated info
-  const outdatedLearnings = data.learnings.filter(l => {
-    // If used === 0 and exists for a while, might be stale
-    return l.used === 0 && l.source === "auto";
-  });
+  // 3. Category-level duplicate preferences
+  const byCategory = new Map<string, typeof allItems>();
+  for (const item of allItems) {
+    if ('category' in item) {
+      const list = byCategory.get(item.category) || [];
+      list.push(item);
+      byCategory.set(item.category, list);
+    }
+  }
 
-  if (outdatedLearnings.length > 5) {
+  for (const [category, items] of byCategory) {
+    if (items.length < 2) continue;
+    // Check for same-meaning preferences in same category
+    const semGroups = new Map<string, typeof items>();
+    for (const item of items) {
+      // Group by first 50 chars (rough semantic grouping)
+      const key = normalizeText(item.text).slice(0, 50).toLowerCase();
+      if (!semGroups.has(key)) semGroups.set(key, []);
+      semGroups.get(key)!.push(item);
+    }
+
+    for (const [key, group] of semGroups) {
+      if (group.length > 1) {
+        conflicts.push({
+          type: "duplication",
+          category,
+          items: group.map(i => ({
+            id: i.id,
+            text: i.text,
+            reason: `在同一类别中表达相似含义`
+          })),
+          suggestion: `建议合并 ${category} 类别中 ${group.length} 条相似偏好`
+        });
+      }
+    }
+  }
+
+  // 4. Outdated Detection (never used + old)
+  const outdatedLearnings = data.learnings.filter(l =>
+    l.used === 0 && l.source === "auto"
+  );
+
+  if (outdatedLearnings.length > 3) {
     conflicts.push({
       type: "outdated",
       items: outdatedLearnings.slice(0, 3).map(l => ({
         id: l.id,
         text: l.text,
-        reason: "自动提取但从未被使用，可能已过时"
+        reason: "自动提取但从未被使用"
       })),
       suggestion: "建议运行 /memory-tidy 清理未使用的自动提取记忆"
     });
   }
 
   return conflicts;
+}
+
+function jaccardSimilarity(a: string, b: string): number {
+  const setA = new Set(a.split(/\s+/));
+  const setB = new Set(b.split(/\s+/));
+  const intersection = new Set([...setA].filter(x => setB.has(x)));
+  const union = new Set([...setA, ...setB]);
+  return union.size > 0 ? intersection.size / union.size : 0;
 }
 
 /**
@@ -1957,52 +1958,94 @@ export function getConflictReport(rolePath: string): string {
 // HTML EXPORT
 // ============================================================================
 
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { RoleMemoryData } from "./memory-md.ts";
 
 export interface MemoryExportData {
+  title: string;
   roleName: string;
   updatedAt: string;
+  generatedAt: string;
   learnings: Array<{
     id: string;
     text: string;
     used: number;
     source?: string;
     tags?: string[];
-    priority: "high" | "normal" | "new";
+    date?: string;
   }>;
   preferences: Array<{
     id: string;
     text: string;
     category: string;
     tags?: string[];
+    date?: string;
   }>;
   events: Array<{
     text: string;
+    date?: string;
   }>;
-  highPriorityCount: number;
+  daily: Array<{
+    text: string;
+    date: string;
+    time?: string;
+  }>;
+  tags: Array<{
+    name: string;
+    count: number;
+  }>;
+  stats: {
+    total: number;
+    highPriority: number;
+    byCategory: Record<string, number>;
+  };
 }
 
 /**
- * Export memory to HTML visualization
+ * Export all memory to HTML visualization
  */
 export function exportMemoryToHtml(rolePath: string, roleName: string): string {
   const data = readRoleMemory(rolePath, roleName);
   const templatePath = join(dirname(__filename), "templates", "memory-export.html");
 
-  // Prepare export data
-  const highPriority = data.learnings.filter(l => l.used >= 3).length;
+  // Read daily memory files
+  const dailyMemories = readDailyMemories(rolePath);
+
+  // Collect all tags
+  const tagCounts = new Map<string, number>();
+  for (const l of data.learnings) {
+    for (const t of l.tags || []) {
+      tagCounts.set(t, (tagCounts.get(t) || 0) + 1);
+    }
+  }
+  for (const p of data.preferences) {
+    for (const t of p.tags || []) {
+      tagCounts.set(t, (tagCounts.get(t) || 0) + 1);
+    }
+  }
+  const tags = Array.from(tagCounts.entries())
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count);
+
+  // Count by category
+  const byCategory: Record<string, number> = {};
+  for (const p of data.preferences) {
+    byCategory[p.category] = (byCategory[p.category] || 0) + 1;
+  }
+
   const exportData: MemoryExportData = {
+    title: `Memory - ${roleName}`,
     roleName,
-    updatedAt: new Date().toLocaleString("zh-CN"),
+    updatedAt: data.metadata?.updated || new Date().toISOString().split('T')[0],
+    generatedAt: new Date().toLocaleString("zh-CN"),
     learnings: data.learnings.map(l => ({
       id: l.id,
       text: l.text,
       used: l.used,
       source: l.source,
       tags: l.tags,
-      priority: l.used >= 3 ? "high" : l.used === 0 ? "new" : "normal"
+      date: l.lastAccessed
     })),
     preferences: data.preferences.map(p => ({
       id: p.id,
@@ -2010,9 +2053,97 @@ export function exportMemoryToHtml(rolePath: string, roleName: string): string {
       category: p.category,
       tags: p.tags
     })),
-    events: data.events.map(e => ({ text: e })),
-    highPriorityCount: highPriority
+    events: data.events.map(e => ({
+      text: e
+    })),
+    daily: dailyMemories,
+    tags,
+    stats: {
+      total: data.learnings.length + data.preferences.length + data.events.length + dailyMemories.length,
+      highPriority: data.learnings.filter(l => l.used >= 3).length,
+      byCategory
+    }
   };
+
+  // Read template
+  let template: string;
+  try {
+    template = readFileSync(templatePath, "utf-8");
+  } catch {
+    return generateFallbackHtml(exportData);
+  }
+
+  // Replace placeholders
+  return template
+    .replace(/\{\{title\}\}/g, exportData.title)
+    .replace(/\{\{roleName\}\}/g, roleName)
+    .replace(/\{\{updatedAt\}\}/g, exportData.updatedAt)
+    .replace(/\{\{generatedAt\}\}/g, exportData.generatedAt)
+    .replace("{{data}}", JSON.stringify(exportData));
+}
+
+/**
+ * Read all daily memory files
+ */
+function readDailyMemories(rolePath: string): Array<{ text: string; date: string; time?: string }> {
+  const dailyDir = join(rolePath, "memory", "daily");
+  const memories: Array<{ text: string; date: string; time?: string }> = [];
+
+  try {
+    const files = readdirSync(dailyDir).filter(f => f.endsWith('.md')).sort().reverse();
+    for (const file of files.slice(0, 30)) { // Latest 30 days
+      const date = file.replace('.md', '');
+      const content = readFileSync(join(dailyDir, file), 'utf-8');
+      // Parse entries (## [HH:MM] text format)
+      const entries = content.split(/^## /m).filter(Boolean);
+      for (const entry of entries) {
+        const lines = entry.trim().split('\n');
+        const firstLine = lines[0] || '';
+        const text = lines.slice(1).join(' ').trim();
+        if (text) {
+          // Extract time from first line if present
+          const timeMatch = firstLine.match(/^\[(\d{2}:\d{2})\]/);
+          memories.push({
+            text,
+            date,
+            time: timeMatch ? timeMatch[1] : undefined
+          });
+        }
+      }
+    }
+  } catch {
+    // Daily dir may not exist
+  }
+
+  return memories;
+}
+
+function generateFallbackHtml(data: MemoryExportData): string {
+  return `<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><title>${data.title}</title>
+<style>body{font-family:system-ui;max-width:900px;margin:2rem auto;padding:1rem;background:#fff;color:#1e293b}
+h1{color:#6366f1}h2{margin-top:2rem;border-bottom:1px solid #e2e8f0;padding-bottom:0.5rem}
+.card{border:1px solid #e2e8f0;border-radius:8px;padding:1rem;margin:1rem 0}
+.tag{background:#f1f5f9;padding:0.2rem 0.5rem;border-radius:4px;font-size:0.8rem;margin-right:0.3rem}
+.stats{display:flex;gap:2rem;margin:1rem 0}.stat{text-align:center}.stat-value{font-size:2rem;font-weight:bold;color:#6366f1}
+</style></head>
+<body>
+<h1>🧠 ${data.title}</h1>
+<p>${data.generatedAt}</p>
+<div class="stats">
+  <div class="stat"><div class="stat-value">${data.learnings.length}</div><div>Learnings</div></div>
+  <div class="stat"><div class="stat-value">${data.preferences.length}</div><div>Preferences</div></div>
+  <div class="stat"><div class="stat-value">${data.daily.length}</div><div>Daily</div></div>
+</div>
+<h2>💡 Learnings</h2>
+${data.learnings.map(l=>`<div class="card"><p>${l.text}</p>${l.tags?.map(t=>`<span class="tag">#${t}</span>`).join('')||''}<small> Used: ${l.used}</small></div>`).join('')}
+<h2>⚙️ Preferences</h2>
+${data.preferences.map(p=>`<div class="card"><strong>[${p.category}]</strong><p>${p.text}</p></div>`).join('')}
+<h2>📝 Daily</h2>
+${data.daily.slice(0,20).map(d=>`<div class="card"><small>${d.date} ${d.time||''}</small><p>${d.text}</p></div>`).join('')}
+</body></html>`;
+}
 
   // Encode as base64
   const jsonStr = JSON.stringify(exportData);

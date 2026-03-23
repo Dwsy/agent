@@ -3,14 +3,14 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>记忆可视化 - {{roleName}}</title>
+  <title>{{title}}</title>
   <style>
     :root {
-      --bg-primary: #ffffff;
+      --bg: #fff;
       --bg-secondary: #f8fafc;
-      --bg-card: #ffffff;
+      --bg-card: #fff;
       --border: #e2e8f0;
-      --text-primary: #1e293b;
+      --text: #1e293b;
       --text-secondary: #64748b;
       --text-muted: #94a3b8;
       --accent: #6366f1;
@@ -21,18 +21,16 @@
       --tag-bg: #f1f5f9;
       --tag-text: #475569;
       --radius: 12px;
-      --shadow: 0 1px 3px rgba(0,0,0,0.1);
-      --shadow-lg: 0 4px 12px rgba(0,0,0,0.1);
-      --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      --shadow: 0 1px 3px rgba(0,0,0,0.08);
+      --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     }
-
     @media (prefers-color-scheme: dark) {
       :root {
-        --bg-primary: #0f172a;
+        --bg: #0f172a;
         --bg-secondary: #1e293b;
         --bg-card: #1e293b;
         --border: #334155;
-        --text-primary: #f1f5f9;
+        --text: #f1f5f9;
         --text-secondary: #94a3b8;
         --text-muted: #64748b;
         --accent: #818cf8;
@@ -41,582 +39,337 @@
         --tag-text: #cbd5e1;
       }
     }
-
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
-
-    body {
-      font-family: var(--font-sans);
-      background: var(--bg-primary);
-      color: var(--text-primary);
-      line-height: 1.6;
-      min-height: 100vh;
-    }
-
-    .container {
-      max-width: 1200px;
-      margin: 0 auto;
-      padding: 2rem;
-    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: var(--font); background: var(--bg); color: var(--text); line-height: 1.6; min-height: 100vh; }
+    .container { max-width: 1400px; margin: 0 auto; padding: 2rem; }
 
     /* Header */
-    .header {
-      text-align: center;
-      margin-bottom: 3rem;
-      padding-bottom: 2rem;
-      border-bottom: 1px solid var(--border);
-    }
+    .header { text-align: center; margin-bottom: 2rem; padding-bottom: 1.5rem; border-bottom: 1px solid var(--border); }
+    .header h1 { font-size: 1.75rem; font-weight: 700; margin-bottom: 0.5rem; }
+    .header .meta { color: var(--text-secondary); font-size: 0.9rem; }
+    .stats { display: flex; justify-content: center; gap: 2rem; margin-top: 1.5rem; flex-wrap: wrap; }
+    .stat { text-align: center; }
+    .stat-value { font-size: 1.5rem; font-weight: 700; color: var(--accent); }
+    .stat-label { font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; }
 
-    .header h1 {
-      font-size: 2rem;
-      font-weight: 700;
-      margin-bottom: 0.5rem;
-      background: linear-gradient(135deg, var(--accent), #a855f7);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
+    /* Controls */
+    .controls { display: flex; gap: 1rem; margin-bottom: 1.5rem; flex-wrap: wrap; align-items: center; }
+    .search-box { flex: 1; min-width: 250px; }
+    .search-input {
+      width: 100%; padding: 0.75rem 1rem; border: 1px solid var(--border);
+      border-radius: var(--radius); font-size: 1rem; background: var(--bg-card);
+      color: var(--text); outline: none; transition: border-color 0.2s;
     }
+    .search-input:focus { border-color: var(--accent); }
 
-    .header .meta {
-      color: var(--text-secondary);
-      font-size: 0.9rem;
+    /* Filter Pills */
+    .filter-group { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+    .filter-pill {
+      padding: 0.5rem 1rem; border: 1px solid var(--border); border-radius: 9999px;
+      background: var(--bg-card); color: var(--text-secondary); font-size: 0.85rem;
+      cursor: pointer; transition: all 0.2s;
     }
-
-    .header .stats {
-      display: flex;
-      justify-content: center;
-      gap: 2rem;
-      margin-top: 1.5rem;
-      flex-wrap: wrap;
-    }
-
-    .stat-item {
-      text-align: center;
-    }
-
-    .stat-value {
-      font-size: 1.75rem;
-      font-weight: 700;
-      color: var(--accent);
-    }
-
-    .stat-label {
-      font-size: 0.8rem;
-      color: var(--text-muted);
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-    }
-
-    /* Section */
-    .section {
-      margin-bottom: 3rem;
-    }
-
-    .section-title {
-      font-size: 1.25rem;
-      font-weight: 600;
-      margin-bottom: 1.5rem;
-      display: flex;
-      align-items: center;
-      gap: 0.75rem;
-    }
-
-    .section-title .icon {
-      width: 32px;
-      height: 32px;
-      border-radius: 8px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 1rem;
-    }
-
-    .section-title.learnings .icon { background: var(--accent-light); color: var(--accent); }
-    .section-title.preferences .icon { background: #ecfdf5; color: var(--success); }
-    .section-title.events .icon { background: #fffbeb; color: var(--warning); }
-    .section-title.pending .icon { background: #fef2f2; color: var(--danger); }
-
-    /* Cards */
-    .card {
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 1.5rem;
-      margin-bottom: 1rem;
-      box-shadow: var(--shadow);
-      transition: box-shadow 0.2s, transform 0.2s;
-    }
-
-    .card:hover {
-      box-shadow: var(--shadow-lg);
-      transform: translateY(-2px);
-    }
-
-    .card-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      margin-bottom: 0.75rem;
-      gap: 1rem;
-    }
-
-    .card-id {
-      font-size: 0.75rem;
-      color: var(--text-muted);
-      font-family: monospace;
-      background: var(--bg-secondary);
-      padding: 0.2rem 0.5rem;
-      border-radius: 4px;
-    }
-
-    .card-source {
-      font-size: 0.75rem;
-      color: var(--text-muted);
-    }
-
-    .card-text {
-      color: var(--text-primary);
-      line-height: 1.7;
-    }
-
-    .card-footer {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-top: 1rem;
-      padding-top: 0.75rem;
-      border-top: 1px solid var(--border);
-    }
-
-    .card-meta {
-      display: flex;
-      gap: 1rem;
-      font-size: 0.8rem;
-      color: var(--text-muted);
-    }
-
-    .card-meta span {
-      display: flex;
-      align-items: center;
-      gap: 0.25rem;
-    }
+    .filter-pill:hover { border-color: var(--accent); color: var(--accent); }
+    .filter-pill.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .filter-pill .count { background: rgba(255,255,255,0.2); padding: 0.1rem 0.4rem; border-radius: 4px; font-size: 0.75rem; margin-left: 0.5rem; }
 
     /* Tags */
-    .tags {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 0.5rem;
+    .tags-section { margin-bottom: 1.5rem; }
+    .tags-label { font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.75rem; }
+    .tags-cloud { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+    .tag-chip {
+      padding: 0.3rem 0.75rem; border-radius: 9999px; font-size: 0.8rem;
+      background: var(--tag-bg); color: var(--tag-text); cursor: pointer;
+      transition: all 0.2s; border: 1px solid transparent;
     }
+    .tag-chip:hover { border-color: var(--accent); }
+    .tag-chip.active { background: var(--accent-light); color: var(--accent); border-color: var(--accent); }
 
-    .tag {
-      background: var(--tag-bg);
-      color: var(--tag-text);
-      padding: 0.25rem 0.75rem;
-      border-radius: 9999px;
-      font-size: 0.8rem;
-      font-weight: 500;
-    }
+    /* Date Filter */
+    .date-filter { display: flex; gap: 0.5rem; align-items: center; }
+    .date-input { padding: 0.5rem; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); color: var(--text); }
+    .date-sep { color: var(--text-muted); }
+
+    /* Sections */
+    .section { margin-bottom: 2.5rem; }
+    .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
+    .section-title { font-size: 1.1rem; font-weight: 600; display: flex; align-items: center; gap: 0.5rem; }
+    .section-count { color: var(--text-muted); font-weight: 400; font-size: 0.9rem; }
+
+    /* Timeline */
+    .timeline { position: relative; padding-left: 2rem; }
+    .timeline::before { content: ''; position: absolute; left: 0.5rem; top: 0; bottom: 0; width: 2px; background: var(--border); }
+    .timeline-item { position: relative; margin-bottom: 1.5rem; }
+    .timeline-item::before { content: ''; position: absolute; left: -1.75rem; top: 0.5rem; width: 10px; height: 10px; border-radius: 50%; background: var(--accent); border: 2px solid var(--bg); }
+    .timeline-date { font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.25rem; }
+
+    /* Cards */
+    .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 1rem; }
+    .card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.25rem; box-shadow: var(--shadow); transition: all 0.2s; }
+    .card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.1); transform: translateY(-2px); }
+    .card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.75rem; gap: 0.5rem; }
+    .card-id { font-size: 0.7rem; color: var(--text-muted); font-family: monospace; background: var(--bg-secondary); padding: 0.15rem 0.4rem; border-radius: 4px; }
+    .card-text { color: var(--text); line-height: 1.7; font-size: 0.95rem; }
+    .card-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 1rem; padding-top: 0.75rem; border-top: 1px solid var(--border); }
+    .card-meta { display: flex; gap: 0.75rem; font-size: 0.75rem; color: var(--text-muted); }
+    .card-tags { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.5rem; }
+    .card-tag { background: var(--tag-bg); color: var(--tag-text); padding: 0.15rem 0.5rem; border-radius: 4px; font-size: 0.75rem; }
+
+    /* Priority */
+    .priority { display: inline-flex; align-items: center; gap: 0.25rem; font-size: 0.75rem; padding: 0.2rem 0.5rem; border-radius: 4px; }
+    .priority.high { background: #fef2f2; color: var(--danger); }
+    .priority.normal { background: var(--tag-bg); color: var(--text-muted); }
+    .priority.new { background: #eff6ff; color: #2563eb; }
 
     /* Category Badge */
-    .category-badge {
-      display: inline-block;
-      padding: 0.25rem 0.75rem;
-      border-radius: 6px;
-      font-size: 0.75rem;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-    }
-
+    .category { display: inline-block; padding: 0.2rem 0.6rem; border-radius: 6px; font-size: 0.7rem; font-weight: 600; text-transform: uppercase; }
     .category-Communication { background: #fce7f3; color: #be185d; }
     .category-Code { background: #dbeafe; color: #1d4ed8; }
     .category-Tools { background: #d1fae5; color: #047857; }
     .category-Workflow { background: #fef3c7; color: #b45309; }
     .category-General { background: var(--tag-bg); color: var(--tag-text); }
 
-    /* Priority Indicator */
-    .priority {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.25rem;
-      font-size: 0.75rem;
-      padding: 0.25rem 0.5rem;
-      border-radius: 4px;
-    }
+    /* Daily Memory */
+    .daily-group { margin-bottom: 2rem; }
+    .daily-header { font-size: 1rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 1rem; padding-bottom: 0.5rem; border-bottom: 1px solid var(--border); }
+    .daily-entries { padding-left: 1rem; border-left: 3px solid var(--accent); }
+    .daily-entry { background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; margin-bottom: 0.75rem; }
+    .daily-entry-header { font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.5rem; }
 
-    .priority.high { background: #fef2f2; color: var(--danger); }
-    .priority.normal { background: var(--tag-bg); color: var(--tag-text); }
-    .priority.new { background: #eff6ff; color: #2563eb; }
-
-    /* Grid */
-    .grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
-      gap: 1rem;
-    }
-
-    /* Empty State */
-    .empty {
-      text-align: center;
-      padding: 3rem;
-      color: var(--text-muted);
-    }
-
-    .empty-icon {
-      font-size: 3rem;
-      margin-bottom: 1rem;
-      opacity: 0.5;
-    }
+    /* Empty */
+    .empty { text-align: center; padding: 3rem; color: var(--text-muted); }
 
     /* Footer */
-    .footer {
-      text-align: center;
-      padding: 2rem;
-      color: var(--text-muted);
-      font-size: 0.85rem;
-      border-top: 1px solid var(--border);
-      margin-top: 3rem;
-    }
-
-    /* Search */
-    .search-box {
-      margin-bottom: 2rem;
-    }
-
-    .search-input {
-      width: 100%;
-      max-width: 400px;
-      padding: 0.75rem 1rem;
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      font-size: 1rem;
-      background: var(--bg-card);
-      color: var(--text-primary);
-      outline: none;
-      transition: border-color 0.2s, box-shadow 0.2s;
-    }
-
-    .search-input:focus {
-      border-color: var(--accent);
-      box-shadow: 0 0 0 3px var(--accent-light);
-    }
-
-    /* Tabs */
-    .tabs {
-      display: flex;
-      gap: 0.5rem;
-      margin-bottom: 2rem;
-      border-bottom: 1px solid var(--border);
-      padding-bottom: 1rem;
-      flex-wrap: wrap;
-    }
-
-    .tab {
-      padding: 0.5rem 1rem;
-      border: none;
-      background: transparent;
-      color: var(--text-secondary);
-      font-size: 0.9rem;
-      cursor: pointer;
-      border-radius: 6px;
-      transition: all 0.2s;
-    }
-
-    .tab:hover {
-      background: var(--bg-secondary);
-      color: var(--text-primary);
-    }
-
-    .tab.active {
-      background: var(--accent);
-      color: white;
-    }
-
-    .tab-count {
-      background: var(--bg-secondary);
-      padding: 0.1rem 0.4rem;
-      border-radius: 4px;
-      font-size: 0.75rem;
-      margin-left: 0.5rem;
-    }
-
-    .tab.active .tab-count {
-      background: rgba(255,255,255,0.2);
-    }
+    .footer { text-align: center; padding: 2rem; color: var(--text-muted); font-size: 0.85rem; border-top: 1px solid var(--border); margin-top: 3rem; }
 
     /* Hidden */
-    .hidden { display: none; }
-
-    /* Toast */
-    .toast {
-      position: fixed;
-      bottom: 2rem;
-      right: 2rem;
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 1rem 1.5rem;
-      box-shadow: var(--shadow-lg);
-      display: flex;
-      align-items: center;
-      gap: 0.75rem;
-      animation: slideIn 0.3s ease;
-      z-index: 1000;
-    }
-
-    @keyframes slideIn {
-      from { transform: translateX(100%); opacity: 0; }
-      to { transform: translateX(0); opacity: 1; }
-    }
-
-    .toast-icon { font-size: 1.25rem; }
-    .toast-message { font-size: 0.9rem; }
+    .hidden { display: none !important; }
   </style>
 </head>
 <body>
   <div class="container">
-    <!-- Header -->
     <header class="header">
-      <h1>🧠 记忆可视化</h1>
-      <p class="meta">{{roleName}} · 最后更新: {{updatedAt}}</p>
+      <h1>🧠 {{title}}</h1>
+      <p class="meta">{{roleName}} · {{updatedAt}}</p>
       <div class="stats">
-        <div class="stat-item">
-          <div class="stat-value" id="stat-learnings">0</div>
-          <div class="stat-label">Learnings</div>
-        </div>
-        <div class="stat-item">
-          <div class="stat-value" id="stat-preferences">0</div>
-          <div class="stat-label">Preferences</div>
-        </div>
-        <div class="stat-item">
-          <div class="stat-value" id="stat-events">0</div>
-          <div class="stat-label">Events</div>
-        </div>
-        <div class="stat-item">
-          <div class="stat-value" id="stat-high-priority">0</div>
-          <div class="stat-label">High Priority</div>
-        </div>
+        <div class="stat"><div class="stat-value" id="s-learnings">0</div><div class="stat-label">Learnings</div></div>
+        <div class="stat"><div class="stat-value" id="s-preferences">0</div><div class="stat-label">Preferences</div></div>
+        <div class="stat"><div class="stat-value" id="s-events">0</div><div class="stat-label">Events</div></div>
+        <div class="stat"><div class="stat-value" id="s-daily">0</div><div class="stat-label">Daily</div></div>
+        <div class="stat"><div class="stat-value" id="s-tags">0</div><div class="stat-label">Tags</div></div>
       </div>
     </header>
 
-    <!-- Search -->
-    <div class="search-box">
-      <input type="text" class="search-input" id="searchInput" placeholder="🔍 搜索记忆..." oninput="filterCards()">
-    </div>
-
-    <!-- Tabs -->
-    <div class="tabs">
-      <button class="tab active" data-filter="all" onclick="setFilter('all')">
-        全部<span class="tab-count" id="count-all">0</span>
-      </button>
-      <button class="tab" data-filter="learnings" onclick="setFilter('learnings')">
-        Learnings<span class="tab-count" id="count-learnings">0</span>
-      </button>
-      <button class="tab" data-filter="preferences" onclick="setFilter('preferences')">
-        Preferences<span class="tab-count" id="count-preferences">0</span>
-      </button>
-      <button class="tab" data-filter="events" onclick="setFilter('events')">
-        Events<span class="tab-count" id="count-events">0</span>
-      </button>
-    </div>
-
-    <!-- Content -->
-    <main id="content">
-      <div class="empty">
-        <div class="empty-icon">📭</div>
-        <p>正在加载记忆数据...</p>
+    <div class="controls">
+      <div class="search-box">
+        <input type="text" class="search-input" id="search" placeholder="🔍 搜索记忆..." oninput="filter()">
       </div>
-    </main>
+      <div class="filter-group" id="typeFilters">
+        <button class="filter-pill active" data-type="all" onclick="setType('all')">全部 <span class="count" id="c-all">0</span></button>
+        <button class="filter-pill" data-type="learning" onclick="setType('learning')">Learnings <span class="count" id="c-learning">0</span></button>
+        <button class="filter-pill" data-type="preference" onclick="setType('preference')">Preferences <span class="count" id="c-preference">0</span></button>
+        <button class="filter-pill" data-type="event" onclick="setType('event')">Events <span class="count" id="c-event">0</span></button>
+        <button class="filter-pill" data-type="daily" onclick="setType('daily')">Daily <span class="count" id="c-daily">0</span></button>
+      </div>
+    </div>
 
-    <!-- Footer -->
-    <footer class="footer">
-      <p>Generated by π-zero Memory System</p>
-    </footer>
+    <div class="tags-section" id="tagsSection">
+      <div class="tags-label">按标签筛选</div>
+      <div class="tags-cloud" id="tagsCloud"></div>
+    </div>
+
+    <div class="date-filter" id="dateFilter">
+      <span style="font-size: 0.85rem; color: var(--text-muted);">日期:</span>
+      <input type="date" class="date-input" id="dateFrom" onchange="filter()">
+      <span class="date-sep">至</span>
+      <input type="date" class="date-input" id="dateTo" onchange="filter()">
+      <button onclick="clearDate()" style="padding: 0.5rem; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); color: var(--text); cursor: pointer;">清除</button>
+    </div>
+
+    <main id="content"></main>
+    <footer class="footer">Generated by π-zero Memory System · {{generatedAt}}</footer>
   </div>
 
   <script>
-    // Memory Data (injected as base64)
-    const MEMORY_DATA = {{memoryData}};
+    const DATA = {{data}};
 
-    // State
-    let currentFilter = 'all';
-    let searchQuery = '';
+    let state = { type: 'all', tag: null, search: '', dateFrom: '', dateTo: '' };
 
-    // Initialize
-    document.addEventListener('DOMContentLoaded', () => {
-      renderMemory();
+    document.addEventListener('DOMContentLoaded', init);
+
+    function init() {
       updateStats();
-    });
-
-    // Render Memory Cards
-    function renderMemory() {
-      const content = document.getElementById('content');
-      const { learnings, preferences, events, highPriorityCount } = MEMORY_DATA;
-
-      let html = '';
-      let totalCount = 0;
-
-      // Learnings
-      const filteredLearnings = learnings.filter(item => matchesFilter(item, 'learning'));
-      if (currentFilter === 'all' || currentFilter === 'learnings') {
-        html += renderSection('learnings', '📚 Learnings', filteredLearnings, 'learning');
-        totalCount += filteredLearnings.length;
-      }
-
-      // Preferences
-      const filteredPrefs = preferences.filter(item => matchesFilter(item, 'preference'));
-      if (currentFilter === 'all' || currentFilter === 'preferences') {
-        html += renderSection('preferences', '⚙️ Preferences', filteredPrefs, 'preference');
-        totalCount += filteredPrefs.length;
-      }
-
-      // Events
-      const filteredEvents = events.filter(item => matchesFilter(item, 'event'));
-      if (currentFilter === 'all' || currentFilter === 'events') {
-        html += renderSection('events', '📅 Events', filteredEvents, 'event');
-        totalCount += filteredEvents.length;
-      }
-
-      if (totalCount === 0) {
-        html = '<div class="empty"><div class="empty-icon">🔍</div><p>没有找到匹配的记忆</p></div>';
-      }
-
-      content.innerHTML = html;
+      renderTags();
+      filter();
     }
 
-    function matchesFilter(item, type) {
-      // Type filter
-      if (currentFilter !== 'all' && item.kind !== currentFilter.slice(0, -1)) return false;
-      
-      // Search filter
-      if (searchQuery) {
-        const query = searchQuery.toLowerCase();
-        const text = (item.text || '').toLowerCase();
-        const tags = (item.tags || []).join(' ').toLowerCase();
-        const category = (item.category || '').toLowerCase();
-        if (!text.includes(query) && !tags.includes(query) && !category.includes(query)) {
-          return false;
-        }
+    function updateStats() {
+      const { learnings, preferences, events, daily, tags } = DATA;
+      document.getElementById('s-learnings').textContent = learnings.length;
+      document.getElementById('s-preferences').textContent = preferences.length;
+      document.getElementById('s-events').textContent = events.length;
+      document.getElementById('s-daily').textContent = daily.length;
+      document.getElementById('s-tags').textContent = tags.length;
+
+      const total = learnings.length + preferences.length + events.length + daily.length;
+      document.getElementById('c-all').textContent = total;
+      document.getElementById('c-learning').textContent = learnings.length;
+      document.getElementById('c-preference').textContent = preferences.length;
+      document.getElementById('c-event').textContent = events.length;
+      document.getElementById('c-daily').textContent = daily.length;
+    }
+
+    function renderTags() {
+      const { tags } = DATA;
+      const cloud = document.getElementById('tagsCloud');
+      if (tags.length === 0) {
+        cloud.innerHTML = '<span style="color: var(--text-muted)">暂无标签</span>';
+        return;
       }
+      cloud.innerHTML = tags.map(t => 
+        `<span class="tag-chip${state.tag === t.name ? ' active' : ''}" onclick="setTag('${t.name}')" data-count="${t.count}">#${t.name} (${t.count})</span>`
+      ).join('');
+    }
+
+    function setType(type) {
+      state.type = type;
+      document.querySelectorAll('.filter-pill').forEach(p => {
+        p.classList.toggle('active', p.dataset.type === type);
+      });
+      filter();
+    }
+
+    function setTag(tag) {
+      state.tag = state.tag === tag ? null : tag;
+      document.querySelectorAll('.tag-chip').forEach(t => {
+        t.classList.toggle('active', t.textContent.includes(state.tag || ''));
+      });
+      filter();
+    }
+
+    function clearDate() {
+      state.dateFrom = '';
+      state.dateTo = '';
+      document.getElementById('dateFrom').value = '';
+      document.getElementById('dateTo').value = '';
+      filter();
+    }
+
+    function filter() {
+      state.search = document.getElementById('search').value.toLowerCase();
+      state.dateFrom = document.getElementById('dateFrom').value;
+      state.dateTo = document.getElementById('dateTo').value;
+
+      const { learnings, preferences, events, daily } = DATA;
+      let html = '';
+
+      if (state.type === 'all' || state.type === 'learning') {
+        const items = learnings.filter(item => matches(item, 'learning'));
+        if (items.length) html += renderSection('💡 Learnings', items, 'learning');
+      }
+      if (state.type === 'all' || state.type === 'preference') {
+        const items = preferences.filter(item => matches(item, 'preference'));
+        if (items.length) html += renderSection('⚙️ Preferences', items, 'preference');
+      }
+      if (state.type === 'all' || state.type === 'event') {
+        const items = events.filter(item => matches(item, 'event'));
+        if (items.length) html += renderSection('📅 Events', items, 'event');
+      }
+      if (state.type === 'all' || state.type === 'daily') {
+        const items = daily.filter(item => matchesDaily(item));
+        if (items.length) html += renderDaily(items);
+      }
+
+      document.getElementById('content').innerHTML = html || '<div class="empty"><p>没有找到匹配的记忆</p></div>';
+    }
+
+    function matches(item, kind) {
+      if (state.type !== 'all' && item.kind !== kind) return false;
+      if (state.search && !item.text.toLowerCase().includes(state.search) && 
+          !(item.tags || []).some(t => t.toLowerCase().includes(state.search)) &&
+          !(item.category || '').toLowerCase().includes(state.search)) return false;
+      if (state.tag && !(item.tags || []).some(t => t.toLowerCase() === state.tag.toLowerCase())) return false;
+      if (state.dateFrom && item.date && item.date < state.dateFrom) return false;
+      if (state.dateTo && item.date && item.date > state.dateTo) return false;
       return true;
     }
 
-    function renderSection(id, title, items, kind) {
-      if (items.length === 0) return '';
+    function matchesDaily(item) {
+      if (state.type !== 'all' && state.type !== 'daily') return false;
+      if (state.search && !item.text.toLowerCase().includes(state.search) &&
+          !item.date.includes(state.search)) return false;
+      if (state.dateFrom && item.date < state.dateFrom) return false;
+      if (state.dateTo && item.date > state.dateTo) return false;
+      return true;
+    }
 
-      const icon = id === 'learnings' ? '💡' : id === 'preferences' ? '⚙️' : '📅';
-      let html = `<section class="section">
-        <h2 class="section-title ${id}">
-          <span class="icon">${icon}</span>
-          ${title}
-          <span style="color: var(--text-muted); font-weight: 400; font-size: 0.9rem;">(${items.length})</span>
-        </h2>
-        <div class="grid">`;
-
-      for (const item of items) {
-        html += renderCard(item, kind);
-      }
-
-      html += '</div></section>';
-      return html;
+    function renderSection(title, items, kind) {
+      return `<section class="section">
+        <div class="section-header">
+          <h2 class="section-title">${title} <span class="section-count">(${items.length})</span></h2>
+        </div>
+        <div class="cards">${items.map(item => renderCard(item, kind)).join('')}</div>
+      </section>`;
     }
 
     function renderCard(item, kind) {
-      const id = item.id || '';
-      const text = item.text || '';
-      const source = item.source || '';
-      const used = item.used || 0;
-      const tags = item.tags || [];
-      const category = item.category || '';
-      const priority = item.priority || 'normal';
+      const priority = kind === 'learning' ? (item.used >= 3 ? 'high' : item.used === 0 ? 'new' : 'normal') : null;
+      const priorityText = priority === 'high' ? '⭐ High' : priority === 'new' ? '✨ New' : 'Normal';
+      const tags = (item.tags || []).map(t => `<span class="card-tag">#${t}</span>`).join('');
+      const category = item.category ? `<span class="category category-${item.category}">${item.category}</span>` : '';
 
-      let badge = '';
-      if (category) {
-        badge = `<span class="category-badge category-${category}">${category}</span>`;
-      }
-
-      let priorityBadge = '';
-      if (kind === 'learning') {
-        const pClass = priority === 'high' ? 'high' : priority === 'new' ? 'new' : 'normal';
-        const pText = priority === 'high' ? '⭐ High' : priority === 'new' ? '✨ New' : 'Normal';
-        priorityBadge = `<span class="priority ${pClass}">${pText}</span>`;
-      }
-
-      const tagsHtml = tags.length > 0
-        ? `<div class="tags">${tags.map(t => `<span class="tag">#${t}</span>`).join('')}</div>`
-        : '';
-
-      return `<article class="card" data-kind="${kind}" data-text="${text.toLowerCase()}" data-tags="${tags.join(' ')}">
+      return `<article class="card" data-kind="${kind}">
         <div class="card-header">
-          ${badge}
-          <span class="card-id">${id.slice(0, 12)}</span>
+          ${category}
+          <span class="card-id">${(item.id || '').slice(0, 10)}</span>
         </div>
-        <p class="card-text">${escapeHtml(text)}</p>
-        ${tagsHtml}
+        <p class="card-text">${escape(item.text)}</p>
+        ${tags ? `<div class="card-tags">${tags}</div>` : ''}
         <div class="card-footer">
           <div class="card-meta">
-            <span>📊 ${used}次使用</span>
-            ${source ? `<span>📝 ${source}</span>` : ''}
+            ${item.used !== undefined ? `<span>📊 ${item.used}次</span>` : ''}
+            ${item.source ? `<span>📝 ${item.source}</span>` : ''}
+            ${item.date ? `<span>📅 ${item.date}</span>` : ''}
           </div>
-          ${priorityBadge}
+          ${priority ? `<span class="priority ${priority}">${priorityText}</span>` : ''}
         </div>
       </article>`;
     }
 
-    function escapeHtml(text) {
-      const div = document.createElement('div');
-      div.textContent = text;
-      return div.innerHTML;
-    }
-
-    // Filter & Search
-    function setFilter(filter) {
-      currentFilter = filter;
-      document.querySelectorAll('.tab').forEach(tab => {
-        tab.classList.toggle('active', tab.dataset.filter === filter);
-      });
-      renderMemory();
-    }
-
-    function filterCards() {
-      searchQuery = document.getElementById('searchInput').value;
-      renderMemory();
-    }
-
-    // Stats
-    function updateStats() {
-      const { learnings, preferences, events } = MEMORY_DATA;
-      const highPriority = learnings.filter(l => l.used >= 3).length;
-
-      document.getElementById('stat-learnings').textContent = learnings.length;
-      document.getElementById('stat-preferences').textContent = preferences.length;
-      document.getElementById('stat-events').textContent = events.length;
-      document.getElementById('stat-high-priority').textContent = highPriority;
-
-      document.getElementById('count-all').textContent = learnings.length + preferences.length + events.length;
-      document.getElementById('count-learnings').textContent = learnings.length;
-      document.getElementById('count-preferences').textContent = preferences.length;
-      document.getElementById('count-events').textContent = events.length;
-    }
-
-    // Copy to clipboard
-    function copyCard(id) {
-      const text = document.querySelector(`[data-id="${id}"]`)?.textContent;
-      if (text) {
-        navigator.clipboard.writeText(text);
-        showToast('📋 已复制到剪贴板');
+    function renderDaily(items) {
+      // Group by date
+      const byDate = {};
+      for (const item of items) {
+        const d = item.date || 'unknown';
+        if (!byDate[d]) byDate[d] = [];
+        byDate[d].push(item);
       }
+
+      let html = `<section class="section">
+        <div class="section-header">
+          <h2 class="section-title">📝 Daily Memory <span class="section-count">(${items.length})</span></h2>
+        </div>`;
+
+      const dates = Object.keys(byDate).sort().reverse();
+      for (const date of dates) {
+        html += `<div class="daily-group">
+          <div class="daily-header">${date}</div>
+          <div class="daily-entries">
+            ${byDate[date].map(item => `<div class="daily-entry">
+              <div class="daily-entry-header">${item.time || ''}</div>
+              <p class="card-text">${escape(item.text)}</p>
+            </div>`).join('')}
+          </div>
+        </div>`;
+      }
+
+      return html + '</section>';
     }
 
-    function showToast(message) {
-      const toast = document.createElement('div');
-      toast.className = 'toast';
-      toast.innerHTML = `<span class="toast-icon">✅</span><span class="toast-message">${message}</span>`;
-      document.body.appendChild(toast);
-      setTimeout(() => toast.remove(), 3000);
+    function escape(str) {
+      const d = document.createElement('div');
+      d.textContent = str;
+      return d.innerHTML;
     }
   </script>
 </body>
