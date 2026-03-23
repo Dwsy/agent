@@ -103,6 +103,19 @@ count_pending_memories() {
   echo $count
 }
 
+calculate_promotion_rate() {
+  local rate=0.0
+  if [[ -f "$PENDING" ]] && [[ -s "$PENDING" ]]; then
+    local total=$(grep -c "^\- \[" "$PENDING" 2>/dev/null || echo 0)
+    local promoted=$(grep -c "^\- \[✓\]" "$PENDING" 2>/dev/null || echo 0)
+    
+    if [[ $total -gt 0 ]]; then
+      rate=$(echo "scale=2; $promoted / $total" | bc)
+    fi
+  fi
+  echo $rate
+}
+
 calculate_dedup_ratio() {
   local ratio=0.0
   if [[ -f "$CONSOLIDATED" ]]; then
@@ -132,6 +145,7 @@ daily_count=$(count_daily_memories)
 consolidated_count=$(count_consolidated_memories)
 pending_count=$(count_pending_memories)
 dedup_ratio=$(calculate_dedup_ratio)
+promotion_rate=$(calculate_promotion_rate)
 
 # 输出结构化指标
 echo "METRIC memory_score=${memory_score}"
@@ -139,3 +153,4 @@ echo "METRIC daily_count=${daily_count}"
 echo "METRIC consolidated_count=${consolidated_count}"
 echo "METRIC pending_count=${pending_count}"
 echo "METRIC dedup_ratio=${dedup_ratio}"
+echo "METRIC promotion_rate=${promotion_rate}"

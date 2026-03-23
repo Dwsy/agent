@@ -1215,7 +1215,7 @@ export function searchRoleMemory(
   rolePath: string,
   roleName: string,
   query: string,
-  options?: { maxResults?: number; minScore?: number; includeDailyMemory?: boolean },
+  options?: { maxResults?: number; minScore?: number; includeDailyMemory?: boolean; autoPromotePending?: boolean },
 ): ScoredMemoryMatch[] {
   const q = normalizeText(query).toLowerCase();
   if (!q) return [];
@@ -1249,6 +1249,24 @@ export function searchRoleMemory(
     const s = scoreMatch(q, queryTokens, event.toLowerCase());
     if (s >= minScore) {
       scored.push({ kind: "event", text: event, score: s });
+    }
+  }
+
+  // Search pending memories and auto-promote relevant ones (usage-driven promotion)
+  if (options?.autoPromotePending !== false && roleName) {
+    const pendingData = readPendingMemory(rolePath);
+    for (const item of pendingData.items) {
+      if (item.promoted || item.discarded) continue;
+      const s = scoreMatch(q, queryTokens, item.text.toLowerCase());
+      // Higher threshold for auto-promote (must be very relevant)
+      if (s >= 0.5) {
+        const result = promotePendingLearning(rolePath, roleName, item.id);
+        if (result.promoted) {
+          log("search-promote", `auto-promoted from search: ${item.text.slice(0, 50)}`);
+          // Add to results with bonus
+          scored.push({ kind: "learning", id: item.id, text: item.text, used: 0, score: s * 1.1 });
+        }
+      }
     }
   }
 
