@@ -2155,59 +2155,18 @@ ${data.daily.slice(0,20).map(d=>`<div class="card"><small>${d.date} ${d.time||''
     template = readFileSync(templatePath, "utf-8");
   } catch {
     // Fallback inline template
-    return generateInlineHtml(exportData);
+    return generateFallbackHtml(exportData);
   }
 
   // Replace placeholders
   return template
+    .replace(/\{\{title\}\}/g, exportData.title)
     .replace(/\{\{roleName\}\}/g, roleName)
     .replace(/\{\{updatedAt\}\}/g, exportData.updatedAt)
-    .replace("{{memoryData}}", JSON.stringify(exportData));
+    .replace(/\{\{generatedAt\}\}/g, exportData.generatedAt)
+    .replace("{{data}}", JSON.stringify(exportData));
 }
 
 /**
- * Generate inline HTML when template file not found
+ * Fallback HTML generator when template file not found
  */
-function generateInlineHtml(data: MemoryExportData): string {
-  return `<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Memory Export - ${data.roleName}</title>
-  <style>
-    body { font-family: system-ui; max-width: 800px; margin: 2rem auto; padding: 1rem; }
-    .card { border: 1px solid #ddd; border-radius: 8px; padding: 1rem; margin: 1rem 0; }
-    .tag { background: #e5e7eb; padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.8rem; margin-right: 0.5rem; }
-    .stats { display: flex; gap: 2rem; margin: 2rem 0; }
-    .stat { text-align: center; }
-    .stat-value { font-size: 2rem; font-weight: bold; color: #6366f1; }
-  </style>
-</head>
-<body>
-  <h1>🧠 Memory: ${data.roleName}</h1>
-  <p>Updated: ${data.updatedAt}</p>
-  <div class="stats">
-    <div class="stat"><div class="stat-value">${data.learnings.length}</div><div>Learnings</div></div>
-    <div class="stat"><div class="stat-value">${data.preferences.length}</div><div>Preferences</div></div>
-    <div class="stat"><div class="stat-value">${data.events.length}</div><div>Events</div></div>
-  </div>
-  <h2>💡 Learnings</h2>
-  ${data.learnings.map(l => `
-    <div class="card">
-      <p>${l.text}</p>
-      ${l.tags?.length ? l.tags.map(t => `<span class="tag">#${t}</span>`).join('') : ''}
-      <small>Used: ${l.used} | ${l.source || 'unknown'}</small>
-    </div>
-  `).join('')}
-  <h2>⚙️ Preferences</h2>
-  ${data.preferences.map(p => `
-    <div class="card">
-      <strong>[${p.category}]</strong>
-      <p>${p.text}</p>
-      ${p.tags?.length ? p.tags.map(t => `<span class="tag">#${t}</span>`).join('') : ''}
-    </div>
-  `).join('')}
-</body>
-</html>`;
-}
