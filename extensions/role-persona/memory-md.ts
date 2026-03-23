@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { dirname, join } from "node:path";
 import { log } from "./logger.ts";
 import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
-import { extractTagsWithLLM, getRelatedTags, searchTags, updateTagWeights, type TagRegistry } from "./memory-tags.ts";
+import { extractTagsWithLLM, getRelatedTags, searchTags, updateMemoryTagsAsync, type TagRegistry } from "./memory-tags.ts";
 import { config } from "./config.ts";
 
 export const DEFAULT_MEMORY_CATEGORIES = config.memory.defaultCategories as unknown as readonly string[];
