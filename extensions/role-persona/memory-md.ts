@@ -972,8 +972,9 @@ export function addRoleLearning(
   const normalized = normalizeText(text);
   if (!normalized || normalized === "(none)") return { stored: false, reason: "empty" };
 
-  // Check if this should go to pending layer (for auto-extracted content)
-  const usePendingLayer = options?.usePending ?? (options?.source === "auto");
+  // Check if this should go to pending layer
+  // auto-extract and compaction both go to pending for verification
+  const usePendingLayer = options?.usePending ?? (options?.source === "auto" || options?.source === "compaction");
   
   if (usePendingLayer) {
     const result = addPendingLearning(rolePath, normalized, options?.source || "auto");
