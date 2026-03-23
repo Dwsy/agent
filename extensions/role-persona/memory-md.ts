@@ -1952,3 +1952,131 @@ export function getConflictReport(rolePath: string): string {
 
   return lines.join("\n");
 }
+
+// ============================================================================
+// HTML EXPORT
+// ============================================================================
+
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import type { RoleMemoryData } from "./memory-md.ts";
+
+export interface MemoryExportData {
+  roleName: string;
+  updatedAt: string;
+  learnings: Array<{
+    id: string;
+    text: string;
+    used: number;
+    source?: string;
+    tags?: string[];
+    priority: "high" | "normal" | "new";
+  }>;
+  preferences: Array<{
+    id: string;
+    text: string;
+    category: string;
+    tags?: string[];
+  }>;
+  events: Array<{
+    text: string;
+  }>;
+  highPriorityCount: number;
+}
+
+/**
+ * Export memory to HTML visualization
+ */
+export function exportMemoryToHtml(rolePath: string, roleName: string): string {
+  const data = readRoleMemory(rolePath, roleName);
+  const templatePath = join(dirname(__filename), "templates", "memory-export.html");
+
+  // Prepare export data
+  const highPriority = data.learnings.filter(l => l.used >= 3).length;
+  const exportData: MemoryExportData = {
+    roleName,
+    updatedAt: new Date().toLocaleString("zh-CN"),
+    learnings: data.learnings.map(l => ({
+      id: l.id,
+      text: l.text,
+      used: l.used,
+      source: l.source,
+      tags: l.tags,
+      priority: l.used >= 3 ? "high" : l.used === 0 ? "new" : "normal"
+    })),
+    preferences: data.preferences.map(p => ({
+      id: p.id,
+      text: p.text,
+      category: p.category,
+      tags: p.tags
+    })),
+    events: data.events.map(e => ({ text: e })),
+    highPriorityCount: highPriority
+  };
+
+  // Encode as base64
+  const jsonStr = JSON.stringify(exportData);
+  const base64 = Buffer.from(jsonStr).toString("base64");
+
+  // Read template
+  let template: string;
+  try {
+    template = readFileSync(templatePath, "utf-8");
+  } catch {
+    // Fallback inline template
+    return generateInlineHtml(exportData);
+  }
+
+  // Replace placeholders
+  return template
+    .replace(/\{\{roleName\}\}/g, roleName)
+    .replace(/\{\{updatedAt\}\}/g, exportData.updatedAt)
+    .replace("{{memoryData}}", JSON.stringify(exportData));
+}
+
+/**
+ * Generate inline HTML when template file not found
+ */
+function generateInlineHtml(data: MemoryExportData): string {
+  return `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Memory Export - ${data.roleName}</title>
+  <style>
+    body { font-family: system-ui; max-width: 800px; margin: 2rem auto; padding: 1rem; }
+    .card { border: 1px solid #ddd; border-radius: 8px; padding: 1rem; margin: 1rem 0; }
+    .tag { background: #e5e7eb; padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.8rem; margin-right: 0.5rem; }
+    .stats { display: flex; gap: 2rem; margin: 2rem 0; }
+    .stat { text-align: center; }
+    .stat-value { font-size: 2rem; font-weight: bold; color: #6366f1; }
+  </style>
+</head>
+<body>
+  <h1>🧠 Memory: ${data.roleName}</h1>
+  <p>Updated: ${data.updatedAt}</p>
+  <div class="stats">
+    <div class="stat"><div class="stat-value">${data.learnings.length}</div><div>Learnings</div></div>
+    <div class="stat"><div class="stat-value">${data.preferences.length}</div><div>Preferences</div></div>
+    <div class="stat"><div class="stat-value">${data.events.length}</div><div>Events</div></div>
+  </div>
+  <h2>💡 Learnings</h2>
+  ${data.learnings.map(l => `
+    <div class="card">
+      <p>${l.text}</p>
+      ${l.tags?.length ? l.tags.map(t => `<span class="tag">#${t}</span>`).join('') : ''}
+      <small>Used: ${l.used} | ${l.source || 'unknown'}</small>
+    </div>
+  `).join('')}
+  <h2>⚙️ Preferences</h2>
+  ${data.preferences.map(p => `
+    <div class="card">
+      <strong>[${p.category}]</strong>
+      <p>${p.text}</p>
+      ${p.tags?.length ? p.tags.map(t => `<span class="tag">#${t}</span>`).join('') : ''}
+    </div>
+  `).join('')}
+</body>
+</html>`;
+}

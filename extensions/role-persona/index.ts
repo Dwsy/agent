@@ -2096,6 +2096,29 @@ Rules for memory extraction:
     },
   });
 
+  pi.registerCommand("memory-export", {
+    description: "导出记忆为 HTML 可视化: /memory-export [path]",
+    handler: async (args, ctx) => {
+      if (!currentRole || !currentRolePath) {
+        notify(ctx, "当前目录未映射角色", "warning");
+        return;
+      }
+
+      const exportPath = (args || "").trim() || join(currentRolePath, "memory-export.html");
+      const { exportMemoryToHtml } = await import("./memory-md.ts");
+
+      notify(ctx, "正在生成 HTML 导出...", "info");
+
+      try {
+        const html = exportMemoryToHtml(currentRolePath, currentRole);
+        writeFileSync(exportPath, html, "utf-8");
+        notify(ctx, `✅ 记忆已导出到: ${exportPath}`, "success");
+      } catch (err) {
+        notify(ctx, `❌ 导出失败: ${err}`, "error");
+      }
+    },
+  });
+
   // ============ COMMANDS ============
 
   pi.registerCommand("kb", {

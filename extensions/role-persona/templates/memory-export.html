@@ -1,0 +1,623 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>记忆可视化 - {{roleName}}</title>
+  <style>
+    :root {
+      --bg-primary: #ffffff;
+      --bg-secondary: #f8fafc;
+      --bg-card: #ffffff;
+      --border: #e2e8f0;
+      --text-primary: #1e293b;
+      --text-secondary: #64748b;
+      --text-muted: #94a3b8;
+      --accent: #6366f1;
+      --accent-light: #eef2ff;
+      --success: #10b981;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --tag-bg: #f1f5f9;
+      --tag-text: #475569;
+      --radius: 12px;
+      --shadow: 0 1px 3px rgba(0,0,0,0.1);
+      --shadow-lg: 0 4px 12px rgba(0,0,0,0.1);
+      --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg-primary: #0f172a;
+        --bg-secondary: #1e293b;
+        --bg-card: #1e293b;
+        --border: #334155;
+        --text-primary: #f1f5f9;
+        --text-secondary: #94a3b8;
+        --text-muted: #64748b;
+        --accent: #818cf8;
+        --accent-light: #1e1b4b;
+        --tag-bg: #334155;
+        --tag-text: #cbd5e1;
+      }
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      line-height: 1.6;
+      min-height: 100vh;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 2rem;
+    }
+
+    /* Header */
+    .header {
+      text-align: center;
+      margin-bottom: 3rem;
+      padding-bottom: 2rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .header h1 {
+      font-size: 2rem;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+      background: linear-gradient(135deg, var(--accent), #a855f7);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .header .meta {
+      color: var(--text-secondary);
+      font-size: 0.9rem;
+    }
+
+    .header .stats {
+      display: flex;
+      justify-content: center;
+      gap: 2rem;
+      margin-top: 1.5rem;
+      flex-wrap: wrap;
+    }
+
+    .stat-item {
+      text-align: center;
+    }
+
+    .stat-value {
+      font-size: 1.75rem;
+      font-weight: 700;
+      color: var(--accent);
+    }
+
+    .stat-label {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    /* Section */
+    .section {
+      margin-bottom: 3rem;
+    }
+
+    .section-title {
+      font-size: 1.25rem;
+      font-weight: 600;
+      margin-bottom: 1.5rem;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .section-title .icon {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1rem;
+    }
+
+    .section-title.learnings .icon { background: var(--accent-light); color: var(--accent); }
+    .section-title.preferences .icon { background: #ecfdf5; color: var(--success); }
+    .section-title.events .icon { background: #fffbeb; color: var(--warning); }
+    .section-title.pending .icon { background: #fef2f2; color: var(--danger); }
+
+    /* Cards */
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.5rem;
+      margin-bottom: 1rem;
+      box-shadow: var(--shadow);
+      transition: box-shadow 0.2s, transform 0.2s;
+    }
+
+    .card:hover {
+      box-shadow: var(--shadow-lg);
+      transform: translateY(-2px);
+    }
+
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 0.75rem;
+      gap: 1rem;
+    }
+
+    .card-id {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      font-family: monospace;
+      background: var(--bg-secondary);
+      padding: 0.2rem 0.5rem;
+      border-radius: 4px;
+    }
+
+    .card-source {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+
+    .card-text {
+      color: var(--text-primary);
+      line-height: 1.7;
+    }
+
+    .card-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 1rem;
+      padding-top: 0.75rem;
+      border-top: 1px solid var(--border);
+    }
+
+    .card-meta {
+      display: flex;
+      gap: 1rem;
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
+
+    .card-meta span {
+      display: flex;
+      align-items: center;
+      gap: 0.25rem;
+    }
+
+    /* Tags */
+    .tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+
+    .tag {
+      background: var(--tag-bg);
+      color: var(--tag-text);
+      padding: 0.25rem 0.75rem;
+      border-radius: 9999px;
+      font-size: 0.8rem;
+      font-weight: 500;
+    }
+
+    /* Category Badge */
+    .category-badge {
+      display: inline-block;
+      padding: 0.25rem 0.75rem;
+      border-radius: 6px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .category-Communication { background: #fce7f3; color: #be185d; }
+    .category-Code { background: #dbeafe; color: #1d4ed8; }
+    .category-Tools { background: #d1fae5; color: #047857; }
+    .category-Workflow { background: #fef3c7; color: #b45309; }
+    .category-General { background: var(--tag-bg); color: var(--tag-text); }
+
+    /* Priority Indicator */
+    .priority {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      font-size: 0.75rem;
+      padding: 0.25rem 0.5rem;
+      border-radius: 4px;
+    }
+
+    .priority.high { background: #fef2f2; color: var(--danger); }
+    .priority.normal { background: var(--tag-bg); color: var(--tag-text); }
+    .priority.new { background: #eff6ff; color: #2563eb; }
+
+    /* Grid */
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+      gap: 1rem;
+    }
+
+    /* Empty State */
+    .empty {
+      text-align: center;
+      padding: 3rem;
+      color: var(--text-muted);
+    }
+
+    .empty-icon {
+      font-size: 3rem;
+      margin-bottom: 1rem;
+      opacity: 0.5;
+    }
+
+    /* Footer */
+    .footer {
+      text-align: center;
+      padding: 2rem;
+      color: var(--text-muted);
+      font-size: 0.85rem;
+      border-top: 1px solid var(--border);
+      margin-top: 3rem;
+    }
+
+    /* Search */
+    .search-box {
+      margin-bottom: 2rem;
+    }
+
+    .search-input {
+      width: 100%;
+      max-width: 400px;
+      padding: 0.75rem 1rem;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      font-size: 1rem;
+      background: var(--bg-card);
+      color: var(--text-primary);
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    .search-input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-light);
+    }
+
+    /* Tabs */
+    .tabs {
+      display: flex;
+      gap: 0.5rem;
+      margin-bottom: 2rem;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 1rem;
+      flex-wrap: wrap;
+    }
+
+    .tab {
+      padding: 0.5rem 1rem;
+      border: none;
+      background: transparent;
+      color: var(--text-secondary);
+      font-size: 0.9rem;
+      cursor: pointer;
+      border-radius: 6px;
+      transition: all 0.2s;
+    }
+
+    .tab:hover {
+      background: var(--bg-secondary);
+      color: var(--text-primary);
+    }
+
+    .tab.active {
+      background: var(--accent);
+      color: white;
+    }
+
+    .tab-count {
+      background: var(--bg-secondary);
+      padding: 0.1rem 0.4rem;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      margin-left: 0.5rem;
+    }
+
+    .tab.active .tab-count {
+      background: rgba(255,255,255,0.2);
+    }
+
+    /* Hidden */
+    .hidden { display: none; }
+
+    /* Toast */
+    .toast {
+      position: fixed;
+      bottom: 2rem;
+      right: 2rem;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1rem 1.5rem;
+      box-shadow: var(--shadow-lg);
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      animation: slideIn 0.3s ease;
+      z-index: 1000;
+    }
+
+    @keyframes slideIn {
+      from { transform: translateX(100%); opacity: 0; }
+      to { transform: translateX(0); opacity: 1; }
+    }
+
+    .toast-icon { font-size: 1.25rem; }
+    .toast-message { font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <header class="header">
+      <h1>🧠 记忆可视化</h1>
+      <p class="meta">{{roleName}} · 最后更新: {{updatedAt}}</p>
+      <div class="stats">
+        <div class="stat-item">
+          <div class="stat-value" id="stat-learnings">0</div>
+          <div class="stat-label">Learnings</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-value" id="stat-preferences">0</div>
+          <div class="stat-label">Preferences</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-value" id="stat-events">0</div>
+          <div class="stat-label">Events</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-value" id="stat-high-priority">0</div>
+          <div class="stat-label">High Priority</div>
+        </div>
+      </div>
+    </header>
+
+    <!-- Search -->
+    <div class="search-box">
+      <input type="text" class="search-input" id="searchInput" placeholder="🔍 搜索记忆..." oninput="filterCards()">
+    </div>
+
+    <!-- Tabs -->
+    <div class="tabs">
+      <button class="tab active" data-filter="all" onclick="setFilter('all')">
+        全部<span class="tab-count" id="count-all">0</span>
+      </button>
+      <button class="tab" data-filter="learnings" onclick="setFilter('learnings')">
+        Learnings<span class="tab-count" id="count-learnings">0</span>
+      </button>
+      <button class="tab" data-filter="preferences" onclick="setFilter('preferences')">
+        Preferences<span class="tab-count" id="count-preferences">0</span>
+      </button>
+      <button class="tab" data-filter="events" onclick="setFilter('events')">
+        Events<span class="tab-count" id="count-events">0</span>
+      </button>
+    </div>
+
+    <!-- Content -->
+    <main id="content">
+      <div class="empty">
+        <div class="empty-icon">📭</div>
+        <p>正在加载记忆数据...</p>
+      </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+      <p>Generated by π-zero Memory System</p>
+    </footer>
+  </div>
+
+  <script>
+    // Memory Data (injected as base64)
+    const MEMORY_DATA = {{memoryData}};
+
+    // State
+    let currentFilter = 'all';
+    let searchQuery = '';
+
+    // Initialize
+    document.addEventListener('DOMContentLoaded', () => {
+      renderMemory();
+      updateStats();
+    });
+
+    // Render Memory Cards
+    function renderMemory() {
+      const content = document.getElementById('content');
+      const { learnings, preferences, events, highPriorityCount } = MEMORY_DATA;
+
+      let html = '';
+      let totalCount = 0;
+
+      // Learnings
+      const filteredLearnings = learnings.filter(item => matchesFilter(item, 'learning'));
+      if (currentFilter === 'all' || currentFilter === 'learnings') {
+        html += renderSection('learnings', '📚 Learnings', filteredLearnings, 'learning');
+        totalCount += filteredLearnings.length;
+      }
+
+      // Preferences
+      const filteredPrefs = preferences.filter(item => matchesFilter(item, 'preference'));
+      if (currentFilter === 'all' || currentFilter === 'preferences') {
+        html += renderSection('preferences', '⚙️ Preferences', filteredPrefs, 'preference');
+        totalCount += filteredPrefs.length;
+      }
+
+      // Events
+      const filteredEvents = events.filter(item => matchesFilter(item, 'event'));
+      if (currentFilter === 'all' || currentFilter === 'events') {
+        html += renderSection('events', '📅 Events', filteredEvents, 'event');
+        totalCount += filteredEvents.length;
+      }
+
+      if (totalCount === 0) {
+        html = '<div class="empty"><div class="empty-icon">🔍</div><p>没有找到匹配的记忆</p></div>';
+      }
+
+      content.innerHTML = html;
+    }
+
+    function matchesFilter(item, type) {
+      // Type filter
+      if (currentFilter !== 'all' && item.kind !== currentFilter.slice(0, -1)) return false;
+      
+      // Search filter
+      if (searchQuery) {
+        const query = searchQuery.toLowerCase();
+        const text = (item.text || '').toLowerCase();
+        const tags = (item.tags || []).join(' ').toLowerCase();
+        const category = (item.category || '').toLowerCase();
+        if (!text.includes(query) && !tags.includes(query) && !category.includes(query)) {
+          return false;
+        }
+      }
+      return true;
+    }
+
+    function renderSection(id, title, items, kind) {
+      if (items.length === 0) return '';
+
+      const icon = id === 'learnings' ? '💡' : id === 'preferences' ? '⚙️' : '📅';
+      let html = `<section class="section">
+        <h2 class="section-title ${id}">
+          <span class="icon">${icon}</span>
+          ${title}
+          <span style="color: var(--text-muted); font-weight: 400; font-size: 0.9rem;">(${items.length})</span>
+        </h2>
+        <div class="grid">`;
+
+      for (const item of items) {
+        html += renderCard(item, kind);
+      }
+
+      html += '</div></section>';
+      return html;
+    }
+
+    function renderCard(item, kind) {
+      const id = item.id || '';
+      const text = item.text || '';
+      const source = item.source || '';
+      const used = item.used || 0;
+      const tags = item.tags || [];
+      const category = item.category || '';
+      const priority = item.priority || 'normal';
+
+      let badge = '';
+      if (category) {
+        badge = `<span class="category-badge category-${category}">${category}</span>`;
+      }
+
+      let priorityBadge = '';
+      if (kind === 'learning') {
+        const pClass = priority === 'high' ? 'high' : priority === 'new' ? 'new' : 'normal';
+        const pText = priority === 'high' ? '⭐ High' : priority === 'new' ? '✨ New' : 'Normal';
+        priorityBadge = `<span class="priority ${pClass}">${pText}</span>`;
+      }
+
+      const tagsHtml = tags.length > 0
+        ? `<div class="tags">${tags.map(t => `<span class="tag">#${t}</span>`).join('')}</div>`
+        : '';
+
+      return `<article class="card" data-kind="${kind}" data-text="${text.toLowerCase()}" data-tags="${tags.join(' ')}">
+        <div class="card-header">
+          ${badge}
+          <span class="card-id">${id.slice(0, 12)}</span>
+        </div>
+        <p class="card-text">${escapeHtml(text)}</p>
+        ${tagsHtml}
+        <div class="card-footer">
+          <div class="card-meta">
+            <span>📊 ${used}次使用</span>
+            ${source ? `<span>📝 ${source}</span>` : ''}
+          </div>
+          ${priorityBadge}
+        </div>
+      </article>`;
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    // Filter & Search
+    function setFilter(filter) {
+      currentFilter = filter;
+      document.querySelectorAll('.tab').forEach(tab => {
+        tab.classList.toggle('active', tab.dataset.filter === filter);
+      });
+      renderMemory();
+    }
+
+    function filterCards() {
+      searchQuery = document.getElementById('searchInput').value;
+      renderMemory();
+    }
+
+    // Stats
+    function updateStats() {
+      const { learnings, preferences, events } = MEMORY_DATA;
+      const highPriority = learnings.filter(l => l.used >= 3).length;
+
+      document.getElementById('stat-learnings').textContent = learnings.length;
+      document.getElementById('stat-preferences').textContent = preferences.length;
+      document.getElementById('stat-events').textContent = events.length;
+      document.getElementById('stat-high-priority').textContent = highPriority;
+
+      document.getElementById('count-all').textContent = learnings.length + preferences.length + events.length;
+      document.getElementById('count-learnings').textContent = learnings.length;
+      document.getElementById('count-preferences').textContent = preferences.length;
+      document.getElementById('count-events').textContent = events.length;
+    }
+
+    // Copy to clipboard
+    function copyCard(id) {
+      const text = document.querySelector(`[data-id="${id}"]`)?.textContent;
+      if (text) {
+        navigator.clipboard.writeText(text);
+        showToast('📋 已复制到剪贴板');
+      }
+    }
+
+    function showToast(message) {
+      const toast = document.createElement('div');
+      toast.className = 'toast';
+      toast.innerHTML = `<span class="toast-icon">✅</span><span class="toast-message">${message}</span>`;
+      document.body.appendChild(toast);
+      setTimeout(() => toast.remove(), 3000);
+    }
+  </script>
+</body>
+</html>
