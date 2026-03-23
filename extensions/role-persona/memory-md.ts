@@ -1790,3 +1790,165 @@ export function getMemoryStats(rolePath: string, roleName: string): MemoryStats 
     lastConsolidated: data.lastConsolidated ?? null,
   };
 }
+
+// ============================================================================
+// CONFLICT DETECTION
+// ============================================================================
+
+export interface MemoryConflict {
+  type: "contradiction" | "outdated" | "duplication";
+  category?: string;
+  items: Array<{ id: string; text: string; reason: string }>;
+  suggestion: string;
+}
+
+/**
+ * Known contradictory patterns (simple rule-based detection)
+ * Format: [keyword1, keyword2, suggestion]
+ */
+const CONTRADICTION_PATTERNS: Array<[string[], string]> = [
+  // Tech stack contradictions
+  [["vue", "react"], "检测到技术栈偏好冲突：Vue vs React"],
+  [["react", "vue"], "检测到技术栈偏好冲突：Vue vs React"],
+  [["typescript", "javascript"], "检测到类型系统偏好变化"],
+  [["mysql", "postgres"], "检测到数据库偏好冲突：MySQL vs PostgreSQL"],
+  [["postgres", "mysql"], "检测到数据库偏好冲突：PostgreSQL vs MySQL"],
+  // Workflow contradictions
+  [["加班", "不加班"], "检测到工作态度矛盾"],
+  [["远程", " onsite"], "检测到工作方式偏好冲突"],
+  // Tool preferences
+  [["vim", "emacs"], "检测到编辑器偏好冲突：Vim vs Emacs"],
+  [["emacs", "vim"], "检测到编辑器偏好冲突：Emacs vs Vim"],
+];
+
+function normalizeForConflict(text: string): string {
+  return text.toLowerCase().replace(/[^\w\u4e00-\u9fa5]/g, "");
+}
+
+/**
+ * Detect conflicts/contradictions in memory preferences
+ */
+export function detectMemoryConflicts(rolePath: string): MemoryConflict[] {
+  const data = readRoleMemory(rolePath, "");
+  const conflicts: MemoryConflict[] = [];
+
+  // Group preferences by category
+  const byCategory = new Map<string, MemoryPreferenceRecord[]>();
+  for (const pref of data.preferences) {
+    const list = byCategory.get(pref.category) || [];
+    list.push(pref);
+    byCategory.set(pref.category, list);
+  }
+
+  // Check each category for contradictions
+  for (const [category, prefs] of byCategory) {
+    if (prefs.length < 2) continue;
+
+    // Normalize texts for comparison
+    const normalized = prefs.map(p => ({
+      id: p.id,
+      text: p.text,
+      normalized: normalizeForConflict(p.text)
+    }));
+
+    // Check against contradiction patterns
+    for (const [keywords, suggestion] of CONTRADICTION_PATTERNS) {
+      const matching = normalized.filter(p => 
+        keywords.some(k => p.normalized.includes(k))
+      );
+
+      if (matching.length >= 2) {
+        // Check if they contradict (different keywords)
+        const foundKeywords = keywords.filter(k => 
+          matching.some(m => m.normalized.includes(k))
+        );
+        
+        if (foundKeywords.length >= 2) {
+          conflicts.push({
+            type: "contradiction",
+            category,
+            items: matching.map(m => ({
+              id: m.id,
+              text: m.text,
+              reason: `包含冲突关键词: ${foundKeywords.join(", ")}`
+            })),
+            suggestion
+          });
+        }
+      }
+    }
+
+    // Check for exact duplicates in same category
+    const texts = new Map<string, typeof prefs>();
+    for (const pref of prefs) {
+      const key = normalizeText(pref.text).toLowerCase();
+      if (!texts.has(key)) {
+        texts.set(key, []);
+      }
+      texts.get(key)!.push(pref);
+    }
+
+    for (const [text, items] of texts) {
+      if (items.length > 1) {
+        conflicts.push({
+          type: "duplication",
+          category,
+          items: items.map(i => ({
+            id: i.id,
+            text: i.text,
+            reason: "相同类别中存在重复"
+          })),
+          suggestion: `建议合并 ${items.length} 条重复偏好为一条`
+        });
+      }
+    }
+  }
+
+  // Check learnings for outdated patterns (based on source/used count)
+  // Low used count + old creation might indicate outdated info
+  const outdatedLearnings = data.learnings.filter(l => {
+    // If used === 0 and exists for a while, might be stale
+    return l.used === 0 && l.source === "auto";
+  });
+
+  if (outdatedLearnings.length > 5) {
+    conflicts.push({
+      type: "outdated",
+      items: outdatedLearnings.slice(0, 3).map(l => ({
+        id: l.id,
+        text: l.text,
+        reason: "自动提取但从未被使用，可能已过时"
+      })),
+      suggestion: "建议运行 /memory-tidy 清理未使用的自动提取记忆"
+    });
+  }
+
+  return conflicts;
+}
+
+/**
+ * Get a human-readable conflict report
+ */
+export function getConflictReport(rolePath: string): string {
+  const conflicts = detectMemoryConflicts(rolePath);
+  
+  if (conflicts.length === 0) {
+    return "✅ 未检测到记忆冲突";
+  }
+
+  const lines = [`⚠️ 检测到 ${conflicts.length} 个潜在冲突:\n`];
+  
+  for (let i = 0; i < conflicts.length; i++) {
+    const c = conflicts[i];
+    lines.push(`\n## ${i + 1}. ${c.type === "contradiction" ? "🔴 矛盾" : c.type === "outdated" ? "🟡 过时" : "🟠 重复"}${c.category ? ` [${c.category}]` : ""}`);
+    
+    for (const item of c.items) {
+      lines.push(`   - ${item.text}`);
+      lines.push(`     └─ ${item.reason}`);
+    }
+    
+    lines.push(`   💡 建议: ${c.suggestion}`);
+  }
+
+  return lines.join("\n");
+}

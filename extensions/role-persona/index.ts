@@ -45,8 +45,10 @@ import {
   appendDailyRoleMemory,
   buildMemoryEditInstruction,
   consolidateRoleMemory,
+  detectMemoryConflicts,
   ensureRoleMemoryFiles,
   expirePendingMemories,
+  getConflictReport,
   getPendingMemories,
   getPendingStats,
   listRoleMemory,
@@ -2068,6 +2070,29 @@ Rules for memory extraction:
       }
 
       notify(ctx, "用法: /memory-vector rebuild | /memory-vector stats", "info");
+    },
+  });
+
+  pi.registerCommand("memory-conflicts", {
+    description: "检测记忆冲突：/memory-conflicts",
+    handler: async (_args, ctx) => {
+      if (!currentRole || !currentRolePath) {
+        notify(ctx, "当前目录未映射角色", "warning");
+        return;
+      }
+
+      const conflicts = detectMemoryConflicts(currentRolePath);
+      const report = getConflictReport(currentRolePath);
+
+      if (conflicts.length === 0) {
+        notify(ctx, "✅ 未检测到记忆冲突", "success");
+      } else {
+        pi.sendMessage({
+          customType: "memory-conflicts",
+          content: report,
+          display: true
+        }, { triggerTurn: false });
+      }
     },
   });
 
