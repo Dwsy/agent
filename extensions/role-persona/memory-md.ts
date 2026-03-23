@@ -2144,29 +2144,3 @@ ${data.preferences.map(p=>`<div class="card"><strong>[${p.category}]</strong><p>
 ${data.daily.slice(0,20).map(d=>`<div class="card"><small>${d.date} ${d.time||''}</small><p>${d.text}</p></div>`).join('')}
 </body></html>`;
 }
-
-  // Encode as base64
-  const jsonStr = JSON.stringify(exportData);
-  const base64 = Buffer.from(jsonStr).toString("base64");
-
-  // Read template
-  let template: string;
-  try {
-    template = readFileSync(templatePath, "utf-8");
-  } catch {
-    // Fallback inline template
-    return generateFallbackHtml(exportData);
-  }
-
-  // Replace placeholders
-  return template
-    .replace(/\{\{title\}\}/g, exportData.title)
-    .replace(/\{\{roleName\}\}/g, roleName)
-    .replace(/\{\{updatedAt\}\}/g, exportData.updatedAt)
-    .replace(/\{\{generatedAt\}\}/g, exportData.generatedAt)
-    .replace("{{data}}", JSON.stringify(exportData));
-}
-
-/**
- * Fallback HTML generator when template file not found
- */
