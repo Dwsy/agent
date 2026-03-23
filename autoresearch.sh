@@ -98,8 +98,9 @@ count_consolidated_memories() {
 count_pending_memories() {
   local count=0
   if [[ -f "$PENDING" ]] && [[ -s "$PENDING" ]]; then
-    local raw=$(grep -c "^\- \[" "$PENDING" 2>/dev/null || echo 0)
-    count=${raw//[^0-9]/}
+    local raw
+    raw=$(grep -c "^\- \[" "$PENDING" 2>/dev/null) || raw=0
+    count=$(echo "$raw" | tr -dc '0-9')
     [[ -z "$count" ]] && count=0
   fi
   echo $count
@@ -108,10 +109,11 @@ count_pending_memories() {
 calculate_promotion_rate() {
   local rate=0.0
   if [[ -f "$PENDING" ]] && [[ -s "$PENDING" ]]; then
-    local raw_total=$(grep -c "^\- \[" "$PENDING" 2>/dev/null || echo 0)
-    local raw_promoted=$(grep -c "^\- \[✓\]" "$PENDING" 2>/dev/null || echo 0)
-    local total=${raw_total//[^0-9]/}
-    local promoted=${raw_promoted//[^0-9]/}
+    local total promoted
+    total=$(grep -c "^\- \[" "$PENDING" 2>/dev/null) || total=0
+    promoted=$(grep -c "^\- \[✓\]" "$PENDING" 2>/dev/null) || promoted=0
+    total=$(echo "$total" | tr -dc '0-9')
+    promoted=$(echo "$promoted" | tr -dc '0-9')
     [[ -z "$total" ]] && total=0
     [[ -z "$promoted" ]] && promoted=0
     
