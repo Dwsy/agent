@@ -45,6 +45,7 @@ import {
   buildMemoryEditInstruction,
   consolidateRoleMemory,
   ensureRoleMemoryFiles,
+  expirePendingMemories,
   getPendingMemories,
   listRoleMemory,
   loadHighPriorityMemories,
@@ -634,6 +635,12 @@ export default function rolePersonaExtension(pi: ExtensionAPI) {
       if (promoted > 0 && isTuiAvailable(ctx)) {
         log("pending", `session start: promoted ${promoted}/${pending.length} pending memories`);
       }
+    }
+
+    // Expire old pending memories (> 7 days without promotion)
+    const expireResult = expirePendingMemories(rolePath, 7);
+    if (expireResult.expired > 0) {
+      log("pending", `session start: expired ${expireResult.expired} old pending memories`);
     }
 
     // Initialize vector memory (async, non-blocking)

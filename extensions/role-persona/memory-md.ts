@@ -913,6 +913,35 @@ export function getPendingStats(rolePath: string): { total: number; pending: num
   };
 }
 
+export function expirePendingMemories(
+  rolePath: string,
+  maxAgeDays: number = 7
+): { expired: number; total: number } {
+  const data = readPendingMemory(rolePath);
+  const now = new Date();
+  let expired = 0;
+
+  for (let i = data.items.length - 1; i >= 0; i--) {
+    const item = data.items[i];
+    if (item.promoted || item.discarded) continue;
+
+    const created = new Date(item.createdAt);
+    const daysOld = Math.floor((now.getTime() - created.getTime()) / (1000 * 60 * 60 * 24));
+
+    if (daysOld > maxAgeDays) {
+      data.items[i].discarded = true;
+      expired++;
+      log("pending-expire", `expired old pending memory: ${item.text.slice(0, 50)} (${daysOld} days old)`);
+    }
+  }
+
+  if (expired > 0) {
+    writePendingMemory(rolePath, data);
+  }
+
+  return { expired, total: data.items.length };
+}
+
 export function appendDailyRoleMemory(
   rolePath: string,
   category: "event" | "lesson" | "preference" | "context" | "decision",
