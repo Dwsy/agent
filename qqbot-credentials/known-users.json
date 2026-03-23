@@ -1,0 +1,13 @@
+{
+  "users": [
+    {
+      "openid": "65B215247E8CAC1AE31FA138E56226CE",
+      "type": "c2c",
+      "accountId": "default",
+      "firstSeenAt": 1774243471792,
+      "lastSeenAt": 1774243508007,
+      "interactionCount": 2
+    }
+  ],
+  "version": 1
+}

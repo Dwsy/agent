@@ -670,7 +670,7 @@ export function loadConfig(configPath?: string): Config;
  */
 /**
  * Strip JSON5 comments while preserving strings.
- * Properly handles // and /* */ comments outside of string literals.
+ * Handles single-line and multi-line comments outside string literals.
  */
 function stripJsonComments(raw: string): string {
   const result: string[] = [];

@@ -1,4 +1,5 @@
 import path from "node:path";
+import qrcode from "qrcode-terminal";
 import type {
   ChannelPlugin,
   GatewayPluginApi,
@@ -30,6 +31,100 @@ interface WechatPluginRuntimeMulti {
 }
 
 let runtime: WechatPluginRuntimeMulti | null = null;
+
+/**
+ * Auto-start QR login flow when no token is configured.
+ * Displays QR code in terminal and polls for scan result.
+ */
+async function startAutoLogin(rt: WechatPluginRuntimeMulti): Promise<void> {
+  const baseUrl = rt.channelCfg.baseUrl || "https://ilinkai.weixin.qq.com";
+  const accountId = rt.defaultAccountId || "default";
+
+  logger.info(`[wechat:auto-login] starting QR login for accountId=${accountId}`);
+
+  try {
+    // Step 1: Get QR code
+    const result = await startWechatLoginWithQr({
+      accountId,
+      apiBaseUrl: baseUrl,
+      botType: "3",
+    });
+
+    if (!result.qrcodeUrl) {
+      logger.error(`[wechat:auto-login] failed to get QR code: ${result.message}`);
+      return;
+    }
+
+    // Step 2: Display QR code in terminal
+    console.log("\n");
+    console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    console.log("📱 微信扫码登录 (ilink Bot)");
+    console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    console.log("");
+    console.log("请用微信扫描下方二维码:");
+    console.log("");
+
+    // Generate terminal QR code from URL
+    qrcode.generate(result.qrcodeUrl, { small: true });
+
+    console.log("");
+    console.log(`🔗 或在微信中打开链接:`);
+    console.log(`   ${result.qrcodeUrl}`);
+    console.log("");
+    console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    console.log("⏳ 等待扫码 (5 分钟超时)...");
+    console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    console.log("");
+
+    // Step 3: Poll for scan result
+    const loginResult = await waitForWechatLogin({
+      sessionKey: result.sessionKey,
+      apiBaseUrl: baseUrl,
+      timeoutMs: 300000, // 5 minutes
+      verbose: true,
+    });
+
+    if (loginResult.connected && loginResult.botToken) {
+      // Step 4: Save account
+      const normalizedId = loginResult.accountId 
+        ? loginResult.accountId.replace(/[@.]/g, "-") 
+        : accountId;
+      
+      saveWechatAccount(normalizedId, {
+        token: loginResult.botToken,
+        baseUrl: loginResult.baseUrl || baseUrl,
+        userId: loginResult.userId,
+      });
+
+      console.log("");
+      console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+      console.log("✅ 登录成功！");
+      console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+      console.log(`📋 账号ID: ${normalizedId}`);
+      console.log("💾 凭证已保存");
+      console.log("");
+      console.log("🔄 正在重新加载 gateway...");
+      console.log("");
+
+      // Step 5: Notify user to restart
+      // Note: We can't auto-reload from plugin, user needs to restart gateway
+      logger.info("[wechat:auto-login] login successful, please restart gateway");
+      console.log("🔄 请重启 gateway 以加载新账号:");
+      console.log("   tmux send-keys -t gateway C-c Enter");
+      console.log("   tmux send-keys -t gateway 'cd ~/.pi/agent/pi-gateway && bun run dev' Enter");
+      console.log("");
+    } else {
+      logger.error(`[wechat:auto-login] login failed: ${loginResult.message}`);
+      console.log("");
+      console.log("❌ 登录失败:", loginResult.message);
+      console.log("   请重新启动 gateway 重试");
+    }
+  } catch (err) {
+    logger.error(`[wechat:auto-login] error: ${String(err)}`);
+    console.log("");
+    console.log("❌ 登录出错:", String(err));
+  }
+}
 
 /**
  * Get account runtime by target string.
@@ -209,8 +304,83 @@ const wechatPlugin: ChannelPlugin = {
       storageDir: path.join(process.env.PI_STATE_DIR ?? path.join(process.env.HOME ?? "/tmp", ".pi", "state"), "wechat", "images"),
     });
 
+    // Register login HTTP routes (always available for QR login)
+    api.registerHttpRoute("GET", "/api/wechat/login", async (req) => {
+      try {
+        const baseUrl = channelCfg.baseUrl || "https://ilinkai.weixin.qq.com";
+        const result = await startWechatLoginWithQr({
+          accountId: defaultAccountId || "default",
+          apiBaseUrl: baseUrl,
+          botType: "3",
+        });
+        
+        if (result.qrcodeUrl) {
+          return Response.json({ 
+            ok: true, 
+            qrcodeUrl: result.qrcodeUrl,
+            sessionKey: result.sessionKey,
+            message: result.message 
+          });
+        }
+        return Response.json({ ok: false, error: result.message }, { status: 400 });
+      } catch (err) {
+        logger.error(`[wechat:login] ${String(err)}`);
+        return Response.json({ ok: false, error: String(err) }, { status: 500 });
+      }
+    });
+
+    api.registerHttpRoute("GET", "/api/wechat/login/status", async (req) => {
+      try {
+        const url = new URL(req.url);
+        const sessionKey = url.searchParams.get("sessionKey");
+        
+        if (!sessionKey) {
+          return Response.json({ ok: false, error: "sessionKey required" }, { status: 400 });
+        }
+
+        const baseUrl = channelCfg.baseUrl || "https://ilinkai.weixin.qq.com";
+        const result = await waitForWechatLogin({
+          sessionKey,
+          apiBaseUrl: baseUrl,
+          timeoutMs: 5000,
+          verbose: false,
+        });
+
+        if (result.connected && result.botToken) {
+          // Save the account
+          saveWechatAccount(result.accountId || "default", {
+            token: result.botToken,
+            baseUrl: result.baseUrl || baseUrl,
+            userId: result.userId,
+          });
+          
+          return Response.json({ 
+            ok: true, 
+            connected: true, 
+            accountId: result.accountId,
+            message: "Login successful! Restart gateway to use the account."
+          });
+        }
+
+        return Response.json({ 
+          ok: true, 
+          connected: false, 
+          status: result.message 
+        });
+      } catch (err) {
+        logger.error(`[wechat:login:status] ${String(err)}`);
+        return Response.json({ ok: false, error: String(err) }, { status: 500 });
+      }
+    });
+
+    api.logger.info("WeChat: registered login routes at /api/wechat/login");
+
     if (resolved.length === 0) {
-      api.logger.info("WeChat: no enabled account with token, skipping");
+      api.logger.info("WeChat: no enabled account with token, starting auto-login flow...");
+      // Auto-start QR login when no token configured
+      startAutoLogin(runtime).catch((err) => {
+        logger.error(`[wechat] auto-login failed: ${String(err)}`);
+      });
       return;
     }
 

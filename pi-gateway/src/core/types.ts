@@ -359,12 +359,76 @@ export function setLogLevel(level: string) {
   globalLogLevel = LOG_LEVELS[level] ?? 1;
 }
 
+// Colorful logging support (imported dynamically to avoid build issues)
+let pc: {
+  gray: (s: string) => string;
+  cyan: (s: string) => string;
+  yellow: (s: string) => string;
+  red: (s: string) => string;
+  dim: (s: string) => string;
+  bold: (s: string) => string;
+} | null = null;
+
+try {
+  pc = require("picocolors");
+} catch {
+  // picocolors not available, use plain output
+}
+
+/** Soft ANSI colors for prefix (bright variants, easier on eyes) */
+const PREFIX_COLORS: Array<(s: string) => string> = pc ? [
+  pc.cyan,      // 青色
+  pc.green,     // 绿色
+  pc.magenta,   // 紫色
+  pc.blue,      // 蓝色
+  pc.yellow,    // 黄色
+  pc.red,       // 红色
+  pc.dim,       // 暗灰色
+  (s: string) => s,  // 默认色（不染色）
+] : [];
+
+/** Hash a string to a consistent number for color selection */
+function hashString(str: string): number {
+  let hash = 5381;
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) + hash) + str.charCodeAt(i);
+  }
+  return Math.abs(hash);
+}
+
+/** Get a consistent color function for a prefix */
+function getPrefixColor(prefix: string): (str: string) => string {
+  if (!pc || PREFIX_COLORS.length === 0) return (s: string) => s;
+  const index = hashString(prefix) % PREFIX_COLORS.length;
+  return PREFIX_COLORS[index];
+}
+
+/** Check if colors should be enabled (TTY detection) */
+function shouldUseColors(): boolean {
+  return process.stdout.isTTY ?? false;
+}
+
 export function createLogger(prefix: string): Logger {
-  const ts = () => new Date().toISOString().slice(11, 19);
+  const ts = () => {
+    const d = new Date();
+    const pad = (n: number) => n.toString().padStart(2, "0");
+    return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  };
+  const useColors = shouldUseColors();
+  const prefixColor = getPrefixColor(prefix);
+  
+  const formatOutput = (level: "debug" | "info" | "warn" | "error", msg: string): string => {
+    if (useColors && pc) {
+      const coloredPrefix = prefixColor(prefix);
+      return `${pc.dim(ts())} ${coloredPrefix} ${msg}`;
+    }
+    return `${ts()} [${prefix}] ${msg}`;
+  };
+  
   return {
-    debug: (msg, ...args) => { if (globalLogLevel <= 0) console.debug(`${ts()} [${prefix}] ${msg}`, ...args); },
-    info: (msg, ...args) => { if (globalLogLevel <= 1) console.info(`${ts()} [${prefix}] ${msg}`, ...args); },
-    warn: (msg, ...args) => { if (globalLogLevel <= 2) console.warn(`${ts()} [${prefix}] ${msg}`, ...args); },
-    error: (msg, ...args) => console.error(`${ts()} [${prefix}] ${msg}`, ...args),
+    debug: (msg, ...args) => { if (globalLogLevel <= 0) console.debug(formatOutput("debug", msg), ...args); },
+    info: (msg, ...args) => { if (globalLogLevel <= 1) console.info(formatOutput("info", msg), ...args); },
+    warn: (msg, ...args) => { if (globalLogLevel <= 2) console.warn(formatOutput("warn", msg), ...args); },
+    error: (msg, ...args) => console.error(formatOutput("error", msg), ...args),
   };
 }

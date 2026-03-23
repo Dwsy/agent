@@ -119,7 +119,12 @@ export class RpcClient {
     const args = ["--mode", "rpc"];
     if (this.options.args) args.push(...this.options.args);
 
-    this.log.info(`Starting: ${piPath} ${args.join(" ")} (cwd: ${this.options.cwd ?? process.cwd()})`);
+    // Truncate long --append-system-prompt in log output
+    const argsStr = args.join(" ");
+    const displayArgs = argsStr.includes("--append-system-prompt")
+      ? argsStr.slice(0, argsStr.indexOf("--append-system-prompt") + "--append-system-prompt".length + 3) + "..."
+      : argsStr;
+    this.log.info(`Starting: ${piPath} ${displayArgs} (cwd: ${this.options.cwd ?? process.cwd()})`);
 
     this.proc = Bun.spawn([piPath, ...args], {
       cwd: this.options.cwd,

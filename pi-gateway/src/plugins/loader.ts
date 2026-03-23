@@ -231,7 +231,7 @@ export class PluginLoader {
     const builtinDir = join(import.meta.dir, "builtin");
     if (!existsSync(builtinDir)) return;
 
-    const builtins = ["telegram", "discord", "webchat", "feishu", "qqbot", "cron", "heartbeat", "concise-mode", "reload", "hot-reload"];
+    const builtins = ["telegram", "discord", "webchat", "feishu", "qqbot", "wechat", "cron", "heartbeat", "concise-mode", "reload", "hot-reload"];
     for (const name of builtins) {
       // Support both single-file (name.ts) and modular (name/index.ts) layouts
       let path = join(builtinDir, `${name}.ts`);

@@ -8,6 +8,8 @@ export interface DiscordChannelConfig {
   dm?: {
     allowFrom?: string[];
   };
+  /** Reply mode for thread replies: off | thread | parent */
+  replyToMode?: "off" | "thread" | "parent";
   guilds?: Record<string, DiscordGuildConfig>;
   streaming?: {
     enabled?: boolean;

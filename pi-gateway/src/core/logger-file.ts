@@ -7,10 +7,12 @@
  * - Retention: auto-delete files older than N days
  * - Level filtering: debug/info/warn/error
  * - Dual output: console + file (configurable)
+ * - Colorful console output with TTY detection
  */
 
 import { existsSync, mkdirSync, appendFileSync, readdirSync, unlinkSync, renameSync, statSync } from "node:fs";
 import { join } from "node:path";
+import pc from "picocolors";
 import type { Logger } from "./types.ts";
 
 export type LogLevel = "debug" | "info" | "warn" | "error";
@@ -28,6 +30,8 @@ export interface FileLoggerConfig {
   retentionDays: number;
   /** Max file size in MB before rotation. Default: 5 */
   maxFileSize: number;
+  /** Enable colorful console output. Default: auto-detect TTY */
+  colorful?: boolean;
 }
 
 const LEVEL_ORDER: Record<LogLevel, number> = {
@@ -36,6 +40,44 @@ const LEVEL_ORDER: Record<LogLevel, number> = {
   warn: 2,
   error: 3,
 };
+
+// ============================================================================
+// Colorful Logging
+// ============================================================================
+
+/** Soft ANSI colors for prefix (bright variants, easier on eyes) */
+const PREFIX_COLORS = [
+  pc.cyan,      // 青色
+  pc.green,     // 绿色
+  pc.magenta,   // 紫色
+  pc.blue,      // 蓝色
+  pc.yellow,    // 黄色
+  pc.red,       // 红色
+  pc.dim,       // 暗灰色
+  (s: string) => s,  // 默认色（不染色）
+];
+
+/** Hash a string to a consistent number for color selection */
+function hashString(str: string): number {
+  let hash = 5381;
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) + hash) + str.charCodeAt(i);
+  }
+  return Math.abs(hash);
+}
+
+/** Get a consistent color function for a prefix */
+function getPrefixColor(prefix: string): (str: string) => string {
+  const index = hashString(prefix) % PREFIX_COLORS.length;
+  return PREFIX_COLORS[index];
+}
+
+/** Check if colors should be enabled */
+function shouldUseColors(config: FileLoggerConfig): boolean {
+  if (config.colorful !== undefined) return config.colorful;
+  // Auto-detect TTY
+  return process.stdout.isTTY ?? false;
+}
 
 let globalConfig: FileLoggerConfig = {
   dir: "",
@@ -87,16 +129,36 @@ function writeLog(level: LogLevel, prefix: string, msg: string, args: unknown[])
   const now = new Date();
   const ts = now.toISOString();
   const argsStr = args.length > 0 ? " " + args.map(formatArg).join(" ") : "";
+  
+  // Plain line for file logging
   const line = `${ts} [${level.toUpperCase().padEnd(5)}] [${prefix}] ${msg}${argsStr}`;
 
   if (globalConfig.consoleEnabled) {
+    const useColors = shouldUseColors(globalConfig);
     const shortTs = formatLocalTime(now);
-    const consoleLine = `${shortTs} [${prefix}] ${msg}${argsStr}`;
-    switch (level) {
-      case "debug": console.debug(consoleLine); break;
-      case "info": console.info(consoleLine); break;
-      case "warn": console.warn(consoleLine); break;
-      case "error": console.error(consoleLine); break;
+    
+    if (useColors) {
+      // Colorful output for TTY
+      const prefixColor = getPrefixColor(prefix);
+      const coloredPrefix = prefixColor(prefix);
+      const coloredMsg = msg;
+      const consoleLine = `${pc.dim(shortTs)} ${coloredPrefix} ${coloredMsg}${argsStr}`;
+      
+      switch (level) {
+        case "debug": console.debug(consoleLine); break;
+        case "info": console.info(consoleLine); break;
+        case "warn": console.warn(consoleLine); break;
+        case "error": console.error(consoleLine); break;
+      }
+    } else {
+      // Plain output for non-TTY
+      const consoleLine = `${shortTs} [${prefix}] ${msg}${argsStr}`;
+      switch (level) {
+        case "debug": console.debug(consoleLine); break;
+        case "info": console.info(consoleLine); break;
+        case "warn": console.warn(consoleLine); break;
+        case "error": console.error(consoleLine); break;
+      }
     }
   }
 
