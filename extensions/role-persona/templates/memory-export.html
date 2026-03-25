@@ -5,372 +5,617 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{{title}}</title>
   <style>
-    :root {
-      --bg: #fff;
-      --bg-secondary: #f8fafc;
-      --bg-card: #fff;
-      --border: #e2e8f0;
-      --text: #1e293b;
-      --text-secondary: #64748b;
-      --text-muted: #94a3b8;
-      --accent: #6366f1;
-      --accent-light: #eef2ff;
-      --success: #10b981;
-      --warning: #f59e0b;
-      --danger: #ef4444;
-      --tag-bg: #f1f5f9;
-      --tag-text: #475569;
-      --radius: 12px;
-      --shadow: 0 1px 3px rgba(0,0,0,0.08);
-      --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    }
-    @media (prefers-color-scheme: dark) {
-      :root {
-        --bg: #0f172a;
-        --bg-secondary: #1e293b;
-        --bg-card: #1e293b;
-        --border: #334155;
-        --text: #f1f5f9;
-        --text-secondary: #94a3b8;
-        --text-muted: #64748b;
-        --accent: #818cf8;
-        --accent-light: #1e1b4b;
-        --tag-bg: #334155;
-        --tag-text: #cbd5e1;
-      }
-    }
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: var(--font); background: var(--bg); color: var(--text); line-height: 1.6; min-height: 100vh; }
-    .container { max-width: 1400px; margin: 0 auto; padding: 2rem; }
-
-    /* Header */
-    .header { text-align: center; margin-bottom: 2rem; padding-bottom: 1.5rem; border-bottom: 1px solid var(--border); }
-    .header h1 { font-size: 1.75rem; font-weight: 700; margin-bottom: 0.5rem; }
-    .header .meta { color: var(--text-secondary); font-size: 0.9rem; }
-    .stats { display: flex; justify-content: center; gap: 2rem; margin-top: 1.5rem; flex-wrap: wrap; }
-    .stat { text-align: center; }
-    .stat-value { font-size: 1.5rem; font-weight: 700; color: var(--accent); }
-    .stat-label { font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; }
-
-    /* Controls */
-    .controls { display: flex; gap: 1rem; margin-bottom: 1.5rem; flex-wrap: wrap; align-items: center; }
-    .search-box { flex: 1; min-width: 250px; }
-    .search-input {
-      width: 100%; padding: 0.75rem 1rem; border: 1px solid var(--border);
-      border-radius: var(--radius); font-size: 1rem; background: var(--bg-card);
-      color: var(--text); outline: none; transition: border-color 0.2s;
+    
+    :root {
+      --bg: #0d0d0d;
+      --bg-panel: #141414;
+      --bg-hover: #1a1a1a;
+      --bg-active: #242424;
+      --border: #2a2a2a;
+      --text: #e5e5e5;
+      --text-dim: #666;
+      --text-muted: #444;
+      --accent: #d97706;
+      --high: #dc2626;
+      --normal: #d97706;
+      --new: #059669;
+      --pending: #6366f1;
+      --folder: #e5a000;
     }
-    .search-input:focus { border-color: var(--accent); }
-
-    /* Filter Pills */
-    .filter-group { display: flex; gap: 0.5rem; flex-wrap: wrap; }
-    .filter-pill {
-      padding: 0.5rem 1rem; border: 1px solid var(--border); border-radius: 9999px;
-      background: var(--bg-card); color: var(--text-secondary); font-size: 0.85rem;
-      cursor: pointer; transition: all 0.2s;
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      height: 100vh;
+      overflow: hidden;
+      font-size: 13px;
     }
-    .filter-pill:hover { border-color: var(--accent); color: var(--accent); }
-    .filter-pill.active { background: var(--accent); color: #fff; border-color: var(--accent); }
-    .filter-pill .count { background: rgba(255,255,255,0.2); padding: 0.1rem 0.4rem; border-radius: 4px; font-size: 0.75rem; margin-left: 0.5rem; }
-
-    /* Tags */
-    .tags-section { margin-bottom: 1.5rem; }
-    .tags-label { font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.75rem; }
-    .tags-cloud { display: flex; flex-wrap: wrap; gap: 0.5rem; }
-    .tag-chip {
-      padding: 0.3rem 0.75rem; border-radius: 9999px; font-size: 0.8rem;
-      background: var(--tag-bg); color: var(--tag-text); cursor: pointer;
-      transition: all 0.2s; border: 1px solid transparent;
+    
+    .layout {
+      display: flex;
+      height: 100vh;
     }
-    .tag-chip:hover { border-color: var(--accent); }
-    .tag-chip.active { background: var(--accent-light); color: var(--accent); border-color: var(--accent); }
-
-    /* Date Filter */
-    .date-filter { display: flex; gap: 0.5rem; align-items: center; }
-    .date-input { padding: 0.5rem; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); color: var(--text); }
-    .date-sep { color: var(--text-muted); }
-
-    /* Sections */
-    .section { margin-bottom: 2.5rem; }
-    .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
-    .section-title { font-size: 1.1rem; font-weight: 600; display: flex; align-items: center; gap: 0.5rem; }
-    .section-count { color: var(--text-muted); font-weight: 400; font-size: 0.9rem; }
-
-    /* Timeline */
-    .timeline { position: relative; padding-left: 2rem; }
-    .timeline::before { content: ''; position: absolute; left: 0.5rem; top: 0; bottom: 0; width: 2px; background: var(--border); }
-    .timeline-item { position: relative; margin-bottom: 1.5rem; }
-    .timeline-item::before { content: ''; position: absolute; left: -1.75rem; top: 0.5rem; width: 10px; height: 10px; border-radius: 50%; background: var(--accent); border: 2px solid var(--bg); }
-    .timeline-date { font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.25rem; }
-
-    /* Cards */
-    .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 1rem; }
-    .card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.25rem; box-shadow: var(--shadow); transition: all 0.2s; }
-    .card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.1); transform: translateY(-2px); }
-    .card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.75rem; gap: 0.5rem; }
-    .card-id { font-size: 0.7rem; color: var(--text-muted); font-family: monospace; background: var(--bg-secondary); padding: 0.15rem 0.4rem; border-radius: 4px; }
-    .card-text { color: var(--text); line-height: 1.7; font-size: 0.95rem; }
-    .card-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 1rem; padding-top: 0.75rem; border-top: 1px solid var(--border); }
-    .card-meta { display: flex; gap: 0.75rem; font-size: 0.75rem; color: var(--text-muted); }
-    .card-tags { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.5rem; }
-    .card-tag { background: var(--tag-bg); color: var(--tag-text); padding: 0.15rem 0.5rem; border-radius: 4px; font-size: 0.75rem; }
-
-    /* Priority */
-    .priority { display: inline-flex; align-items: center; gap: 0.25rem; font-size: 0.75rem; padding: 0.2rem 0.5rem; border-radius: 4px; }
-    .priority.high { background: #fef2f2; color: var(--danger); }
-    .priority.normal { background: var(--tag-bg); color: var(--text-muted); }
-    .priority.new { background: #eff6ff; color: #2563eb; }
-
-    /* Category Badge */
-    .category { display: inline-block; padding: 0.2rem 0.6rem; border-radius: 6px; font-size: 0.7rem; font-weight: 600; text-transform: uppercase; }
-    .category-Communication { background: #fce7f3; color: #be185d; }
-    .category-Code { background: #dbeafe; color: #1d4ed8; }
-    .category-Tools { background: #d1fae5; color: #047857; }
-    .category-Workflow { background: #fef3c7; color: #b45309; }
-    .category-General { background: var(--tag-bg); color: var(--tag-text); }
-
-    /* Daily Memory */
-    .daily-group { margin-bottom: 2rem; }
-    .daily-header { font-size: 1rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 1rem; padding-bottom: 0.5rem; border-bottom: 1px solid var(--border); }
-    .daily-entries { padding-left: 1rem; border-left: 3px solid var(--accent); }
-    .daily-entry { background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; margin-bottom: 0.75rem; }
-    .daily-entry-header { font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.5rem; }
-
-    /* Empty */
-    .empty { text-align: center; padding: 3rem; color: var(--text-muted); }
-
-    /* Footer */
-    .footer { text-align: center; padding: 2rem; color: var(--text-muted); font-size: 0.85rem; border-top: 1px solid var(--border); margin-top: 3rem; }
-
-    /* Hidden */
-    .hidden { display: none !important; }
+    
+    /* Sidebar */
+    .sidebar {
+      width: 240px;
+      background: var(--bg-panel);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+    }
+    
+    .sidebar-header {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      font-weight: 600;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-dim);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    
+    .sidebar-header .role {
+      font-weight: 400;
+      color: var(--accent);
+      text-transform: none;
+    }
+    
+    .tree {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px;
+    }
+    
+    .tree-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 8px;
+      border-radius: 4px;
+      cursor: pointer;
+      user-select: none;
+      white-space: nowrap;
+      transition: background 0.15s;
+    }
+    
+    .tree-item:hover {
+      background: var(--bg-hover);
+    }
+    
+    .tree-item.active {
+      background: var(--bg-active);
+    }
+    
+    .tree-item .icon {
+      width: 16px;
+      text-align: center;
+      font-size: 12px;
+    }
+    
+    .tree-item .name {
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    
+    .tree-item .count {
+      color: var(--text-muted);
+      font-size: 11px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+    
+    .tree-children {
+      margin-left: 16px;
+      border-left: 1px solid var(--border);
+      padding-left: 4px;
+    }
+    
+    /* Main */
+    .main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    
+    .toolbar {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 8px 16px;
+      background: var(--bg-panel);
+      border-bottom: 1px solid var(--border);
+    }
+    
+    .search-box {
+      flex: 1;
+      max-width: 400px;
+      position: relative;
+    }
+    
+    .search-box input {
+      width: 100%;
+      padding: 6px 10px 6px 28px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--text);
+      font-size: 12px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    
+    .search-box input:focus {
+      border-color: var(--accent);
+    }
+    
+    .search-box::before {
+      content: "🔍";
+      position: absolute;
+      left: 8px;
+      top: 50%;
+      transform: translateY(-50%);
+      font-size: 10px;
+      opacity: 0.5;
+    }
+    
+    .search-hint {
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+    
+    .search-hint kbd {
+      background: var(--bg-active);
+      padding: 1px 4px;
+      border-radius: 3px;
+      font-size: 10px;
+    }
+    
+    .breadcrumb {
+      color: var(--text-dim);
+      font-size: 12px;
+    }
+    
+    .breadcrumb span {
+      color: var(--text);
+    }
+    
+    /* Table */
+    .table-container {
+      flex: 1;
+      overflow: auto;
+    }
+    
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+    
+    thead {
+      position: sticky;
+      top: 0;
+      background: var(--bg-panel);
+      z-index: 10;
+    }
+    
+    th {
+      text-align: left;
+      padding: 8px 12px;
+      font-weight: 500;
+      color: var(--text-dim);
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+    }
+    
+    td {
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+    }
+    
+    tr:hover td {
+      background: var(--bg-hover);
+    }
+    
+    tr.selected td {
+      background: var(--bg-active);
+    }
+    
+    .col-badge { width: 50px; text-align: center; }
+    .col-content { min-width: 300px; }
+    .col-category { width: 100px; }
+    .col-tags { width: 150px; }
+    .col-date { width: 100px; }
+    .col-meta { width: 80px; }
+    
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 24px;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 10px;
+      font-weight: 600;
+    }
+    
+    .badge.high { background: var(--high); color: white; }
+    .badge.normal { background: var(--normal); color: white; }
+    .badge.new { background: var(--new); color: white; }
+    .badge.pending { background: var(--pending); color: white; }
+    .badge.other { background: #4b5563; color: white; }
+    
+    .content-cell {
+      line-height: 1.6;
+      max-width: 600px;
+    }
+    
+    .content-cell .match {
+      background: rgba(217, 119, 6, 0.3);
+      padding: 0 2px;
+      border-radius: 2px;
+    }
+    
+    .tag {
+      display: inline-block;
+      padding: 2px 6px;
+      background: var(--bg-active);
+      border-radius: 3px;
+      font-size: 10px;
+      color: var(--text-dim);
+      margin-right: 4px;
+      margin-bottom: 2px;
+    }
+    
+    .category {
+      font-size: 11px;
+      color: var(--text-dim);
+    }
+    
+    .date, .meta {
+      font-size: 11px;
+      color: var(--text-muted);
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+    
+    .dim { color: var(--text-dim); }
+    .muted { color: var(--text-muted); }
+    
+    .empty {
+      text-align: center;
+      padding: 60px;
+      color: var(--text-dim);
+    }
+    
+    .empty-icon {
+      font-size: 48px;
+      margin-bottom: 16px;
+      opacity: 0.3;
+    }
+    
+    /* Toast */
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: var(--bg-panel);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 12px 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      animation: slideUp 0.3s ease;
+      z-index: 1000;
+    }
+    
+    @keyframes slideUp {
+      from { transform: translateY(20px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+    
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
   </style>
 </head>
 <body>
-  <div class="container">
-    <header class="header">
-      <h1>🧠 {{title}}</h1>
-      <p class="meta">{{roleName}} · {{updatedAt}}</p>
-      <div class="stats">
-        <div class="stat"><div class="stat-value" id="s-learnings">0</div><div class="stat-label">Learnings</div></div>
-        <div class="stat"><div class="stat-value" id="s-preferences">0</div><div class="stat-label">Preferences</div></div>
-        <div class="stat"><div class="stat-value" id="s-events">0</div><div class="stat-label">Events</div></div>
-        <div class="stat"><div class="stat-value" id="s-daily">0</div><div class="stat-label">Daily</div></div>
-        <div class="stat"><div class="stat-value" id="s-tags">0</div><div class="stat-label">Tags</div></div>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <span>Explorer</span>
+        <span class="role">{{roleName}}</span>
       </div>
-    </header>
-
-    <div class="controls">
-      <div class="search-box">
-        <input type="text" class="search-input" id="search" placeholder="🔍 搜索记忆..." oninput="filter()">
+      <div class="tree" id="tree"></div>
+    </aside>
+    
+    <main class="main">
+      <div class="toolbar">
+        <div class="breadcrumb" id="breadcrumb">Memories / <span>All</span></div>
+        <div class="search-box">
+          <input type="text" id="searchInput" placeholder="Filter... (regex: /pattern/)" autocomplete="off">
+        </div>
+        <div class="search-hint">
+          <kbd>/</kbd> search <kbd>j/k</kbd> nav <kbd>c</kbd> copy <kbd>esc</kbd> clear
+        </div>
       </div>
-      <div class="filter-group" id="typeFilters">
-        <button class="filter-pill active" data-type="all" onclick="setType('all')">全部 <span class="count" id="c-all">0</span></button>
-        <button class="filter-pill" data-type="learning" onclick="setType('learning')">Learnings <span class="count" id="c-learning">0</span></button>
-        <button class="filter-pill" data-type="preference" onclick="setType('preference')">Preferences <span class="count" id="c-preference">0</span></button>
-        <button class="filter-pill" data-type="event" onclick="setType('event')">Events <span class="count" id="c-event">0</span></button>
-        <button class="filter-pill" data-type="daily" onclick="setType('daily')">Daily <span class="count" id="c-daily">0</span></button>
+      
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th class="col-badge"></th>
+              <th class="col-content">Content</th>
+              <th class="col-category">Category</th>
+              <th class="col-tags">Tags</th>
+              <th class="col-date">Date</th>
+              <th class="col-meta">Meta</th>
+            </tr>
+          </thead>
+          <tbody id="tableBody"></tbody>
+        </table>
       </div>
-    </div>
-
-    <div class="tags-section" id="tagsSection">
-      <div class="tags-label">按标签筛选</div>
-      <div class="tags-cloud" id="tagsCloud"></div>
-    </div>
-
-    <div class="date-filter" id="dateFilter">
-      <span style="font-size: 0.85rem; color: var(--text-muted);">日期:</span>
-      <input type="date" class="date-input" id="dateFrom" onchange="filter()">
-      <span class="date-sep">至</span>
-      <input type="date" class="date-input" id="dateTo" onchange="filter()">
-      <button onclick="clearDate()" style="padding: 0.5rem; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); color: var(--text); cursor: pointer;">清除</button>
-    </div>
-
-    <main id="content"></main>
-    <footer class="footer">Generated by π-zero Memory System · {{generatedAt}}</footer>
+    </main>
   </div>
 
   <script>
     const DATA = {{data}};
-
-    let state = { type: 'all', tag: null, search: '', dateFrom: '', dateTo: '' };
-
-    document.addEventListener('DOMContentLoaded', init);
-
-    function init() {
-      updateStats();
-      renderTags();
-      filter();
+    DATA.pending = DATA.pending || [];
+    
+    // Flatten items
+    const ITEMS = [];
+    DATA.learnings.forEach(i => ITEMS.push({ ...i, type: 'learning', priority: i.used >= 3 ? 'high' : i.used === 0 ? 'new' : 'normal' }));
+    DATA.preferences.forEach(i => ITEMS.push({ ...i, type: 'preference', priority: 'other' }));
+    DATA.events.forEach(i => ITEMS.push({ ...i, type: 'event', priority: 'other' }));
+    DATA.daily.forEach(i => ITEMS.push({ ...i, type: 'daily', priority: 'other' }));
+    DATA.pending.forEach(i => ITEMS.push({ ...i, type: 'pending', priority: 'pending' }));
+    
+    // Build tree
+    const TREE = { name: 'Memories', path: '/', count: ITEMS.length, children: [], type: 'folder' };
+    
+    const learnings = ITEMS.filter(i => i.type === 'learning');
+    if (learnings.length) {
+      const node = { name: '📚 Learnings', path: '/learnings', count: learnings.length, children: [], type: 'folder' };
+      const high = learnings.filter(i => i.priority === 'high');
+      const normal = learnings.filter(i => i.priority === 'normal');
+      const newItems = learnings.filter(i => i.priority === 'new');
+      if (high.length) node.children.push({ name: '🔴 High', path: '/learnings/high', count: high.length, items: high, type: 'folder' });
+      if (normal.length) node.children.push({ name: '🟡 Normal', path: '/learnings/normal', count: normal.length, items: normal, type: 'folder' });
+      if (newItems.length) node.children.push({ name: '🟢 New', path: '/learnings/new', count: newItems.length, items: newItems, type: 'folder' });
+      TREE.children.push(node);
     }
-
-    function updateStats() {
-      const { learnings, preferences, events, daily, tags } = DATA;
-      document.getElementById('s-learnings').textContent = learnings.length;
-      document.getElementById('s-preferences').textContent = preferences.length;
-      document.getElementById('s-events').textContent = events.length;
-      document.getElementById('s-daily').textContent = daily.length;
-      document.getElementById('s-tags').textContent = tags.length;
-
-      const total = learnings.length + preferences.length + events.length + daily.length;
-      document.getElementById('c-all').textContent = total;
-      document.getElementById('c-learning').textContent = learnings.length;
-      document.getElementById('c-preference').textContent = preferences.length;
-      document.getElementById('c-event').textContent = events.length;
-      document.getElementById('c-daily').textContent = daily.length;
+    
+    const prefs = ITEMS.filter(i => i.type === 'preference');
+    if (prefs.length) {
+      const node = { name: '⚙️ Preferences', path: '/preferences', count: prefs.length, children: [], type: 'folder' };
+      const byCat = {};
+      prefs.forEach(p => { const c = p.category || 'General'; byCat[c] = byCat[c] || []; byCat[c].push(p); });
+      Object.entries(byCat).forEach(([cat, items]) => {
+        node.children.push({ name: cat, path: `/preferences/${cat.toLowerCase()}`, count: items.length, items, type: 'folder' });
+      });
+      TREE.children.push(node);
     }
-
-    function renderTags() {
-      const { tags } = DATA;
-      const cloud = document.getElementById('tagsCloud');
-      if (tags.length === 0) {
-        cloud.innerHTML = '<span style="color: var(--text-muted)">暂无标签</span>';
+    
+    const events = ITEMS.filter(i => i.type === 'event');
+    if (events.length) {
+      TREE.children.push({ name: '📅 Events', path: '/events', count: events.length, items: events, type: 'folder' });
+    }
+    
+    const daily = ITEMS.filter(i => i.type === 'daily');
+    if (daily.length) {
+      const node = { name: '📝 Daily', path: '/daily', count: daily.length, children: [], type: 'folder' };
+      const byDate = {};
+      daily.forEach(d => { byDate[d.date] = byDate[d.date] || []; byDate[d.date].push(d); });
+      Object.entries(byDate).sort((a, b) => b[0].localeCompare(a[0])).forEach(([date, items]) => {
+        node.children.push({ name: date, path: `/daily/${date}`, count: items.length, items, type: 'folder' });
+      });
+      TREE.children.push(node);
+    }
+    
+    const pending = ITEMS.filter(i => i.type === 'pending');
+    if (pending.length) {
+      const node = { name: '⏳ Pending', path: '/pending', count: pending.length, children: [], type: 'folder' };
+      const promoted = pending.filter(i => i.promoted);
+      const waiting = pending.filter(i => !i.promoted);
+      if (promoted.length) node.children.push({ name: '✓ Promoted', path: '/pending/promoted', count: promoted.length, items: promoted, type: 'folder' });
+      if (waiting.length) node.children.push({ name: '○ Waiting', path: '/pending/waiting', count: waiting.length, items: waiting, type: 'folder' });
+      TREE.children.push(node);
+    }
+    
+    let currentPath = '/';
+    let searchQuery = '';
+    let selectedIndex = 0;
+    let filteredItems = [];
+    
+    function renderTree(node, container, level = 0) {
+      const div = document.createElement('div');
+      
+      const item = document.createElement('div');
+      item.className = 'tree-item';
+      item.style.paddingLeft = (8 + level * 12) + 'px';
+      item.dataset.path = node.path;
+      
+      const icon = node.type === 'folder' ? '📁' : '📄';
+      
+      item.innerHTML = `
+        <span class="icon">${icon}</span>
+        <span class="name">${node.name}</span>
+        <span class="count">${node.count}</span>
+      `;
+      
+      item.onclick = () => {
+        currentPath = node.path;
+        document.querySelectorAll('.tree-item').forEach(el => el.classList.remove('active'));
+        item.classList.add('active');
+        updateBreadcrumb(node.path);
+        renderTable();
+      };
+      
+      div.appendChild(item);
+      
+      if (node.children && node.children.length) {
+        const children = document.createElement('div');
+        children.className = 'tree-children';
+        node.children.forEach(child => renderTree(child, children, level + 1));
+        div.appendChild(children);
+      }
+      
+      container.appendChild(div);
+    }
+    
+    function updateBreadcrumb(path) {
+      const parts = path.split('/').filter(p => p);
+      let html = '<span>Memories</span>';
+      parts.forEach((p, i) => html += ' / ' + (i === parts.length - 1 ? `<span>${p}</span>` : p));
+      document.getElementById('breadcrumb').innerHTML = html;
+    }
+    
+    function renderTable() {
+      const tbody = document.getElementById('tableBody');
+      tbody.innerHTML = '';
+      
+      filteredItems = ITEMS.filter(i => {
+        if (currentPath !== '/') {
+          const itemPath = i.type === 'learning' ? `/learnings/${i.priority}`
+                        : i.type === 'preference' ? `/preferences/${(i.category || 'general').toLowerCase()}`
+                        : i.type === 'event' ? '/events'
+                        : i.type === 'daily' ? `/daily/${i.date}`
+                        : `/pending/${i.promoted ? 'promoted' : 'waiting'}`;
+          if (itemPath !== currentPath && !itemPath.startsWith(currentPath + '/')) return false;
+        }
+        if (searchQuery) {
+          const text = i.text.toLowerCase();
+          const tags = (i.tags || []).join(' ').toLowerCase();
+          try {
+            if (searchQuery.startsWith('/') && searchQuery.endsWith('/')) {
+              const re = new RegExp(searchQuery.slice(1, -1), 'i');
+              if (!re.test(text) && !re.test(tags)) return false;
+            } else if (!text.includes(searchQuery) && !tags.includes(searchQuery)) {
+              return false;
+            }
+          } catch(e) {
+            if (!text.includes(searchQuery)) return false;
+          }
+        }
+        return true;
+      });
+      
+      if (!filteredItems.length) {
+        tbody.innerHTML = '<tr><td colspan="6" class="empty"><div class="empty-icon">📭</div>No items found</td></tr>';
         return;
       }
-      cloud.innerHTML = tags.map(t => 
-        `<span class="tag-chip${state.tag === t.name ? ' active' : ''}" onclick="setTag('${t.name}')" data-count="${t.count}">#${t.name} (${t.count})</span>`
-      ).join('');
-    }
-
-    function setType(type) {
-      state.type = type;
-      document.querySelectorAll('.filter-pill').forEach(p => {
-        p.classList.toggle('active', p.dataset.type === type);
+      
+      selectedIndex = 0;
+      filteredItems.forEach((item, idx) => {
+        const tr = document.createElement('tr');
+        tr.dataset.index = idx;
+        
+        let content = escapeHtml(item.text);
+        if (searchQuery) {
+          try {
+            if (searchQuery.startsWith('/') && searchQuery.endsWith('/')) {
+              content = content.replace(new RegExp('(' + searchQuery.slice(1, -1) + ')', 'gi'), '<span class="match">$1</span>');
+            } else {
+              content = content.replace(new RegExp('(' + escapeRegExp(searchQuery) + ')', 'gi'), '<span class="match">$1</span>');
+            }
+          } catch(e) {}
+        }
+        
+        const badgeClass = item.priority || 'other';
+        const badgeText = item.type === 'learning' ? `${item.used || 0}x` : item.type === 'pending' ? (item.promoted ? '✓' : '○') : item.type.slice(0, 3);
+        
+        tr.innerHTML = `
+          <td class="col-badge"><span class="badge ${badgeClass}">${badgeText}</span></td>
+          <td class="col-content"><div class="content-cell">${content}</div></td>
+          <td class="col-category"><span class="category">${item.category || ''}</span></td>
+          <td class="col-tags">${(item.tags || []).map(t => `<span class="tag">#${t}</span>`).join('')}</td>
+          <td class="col-date"><span class="date">${item.date || item.createdAt || ''}</span></td>
+          <td class="col-meta"><span class="meta">${item.source || ''}</span></td>
+        `;
+        
+        tr.onclick = () => {
+          document.querySelectorAll('tr.selected').forEach(r => r.classList.remove('selected'));
+          tr.classList.add('selected');
+          selectedIndex = idx;
+        };
+        
+        tbody.appendChild(tr);
       });
-      filter();
-    }
-
-    function setTag(tag) {
-      state.tag = state.tag === tag ? null : tag;
-      document.querySelectorAll('.tag-chip').forEach(t => {
-        t.classList.toggle('active', t.textContent.includes(state.tag || ''));
-      });
-      filter();
-    }
-
-    function clearDate() {
-      state.dateFrom = '';
-      state.dateTo = '';
-      document.getElementById('dateFrom').value = '';
-      document.getElementById('dateTo').value = '';
-      filter();
-    }
-
-    function filter() {
-      state.search = document.getElementById('search').value.toLowerCase();
-      state.dateFrom = document.getElementById('dateFrom').value;
-      state.dateTo = document.getElementById('dateTo').value;
-
-      const { learnings, preferences, events, daily } = DATA;
-      let html = '';
-
-      if (state.type === 'all' || state.type === 'learning') {
-        const items = learnings.filter(item => matches(item, 'learning'));
-        if (items.length) html += renderSection('💡 Learnings', items, 'learning');
+      
+      if (filteredItems.length) {
+        tbody.querySelector('tr').classList.add('selected');
       }
-      if (state.type === 'all' || state.type === 'preference') {
-        const items = preferences.filter(item => matches(item, 'preference'));
-        if (items.length) html += renderSection('⚙️ Preferences', items, 'preference');
+    }
+    
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+    
+    function escapeRegExp(string) {
+      return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+    
+    function navigate(dir) {
+      if (!filteredItems.length) return;
+      selectedIndex = Math.max(0, Math.min(filteredItems.length - 1, selectedIndex + dir));
+      const row = document.querySelector(`tr[data-index="${selectedIndex}"]`);
+      if (row) {
+        document.querySelectorAll('tr.selected').forEach(r => r.classList.remove('selected'));
+        row.classList.add('selected');
+        row.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       }
-      if (state.type === 'all' || state.type === 'event') {
-        const items = events.filter(item => matches(item, 'event'));
-        if (items.length) html += renderSection('📅 Events', items, 'event');
+    }
+    
+    function copySelected() {
+      const item = filteredItems[selectedIndex];
+      if (!item) return;
+      navigator.clipboard.writeText(item.text);
+      showToast('📋 Copied to clipboard');
+    }
+    
+    function showToast(msg) {
+      const toast = document.createElement('div');
+      toast.className = 'toast';
+      toast.innerHTML = `<span>${msg}</span>`;
+      document.body.appendChild(toast);
+      setTimeout(() => toast.remove(), 2000);
+    }
+    
+    // Init
+    renderTree(TREE, document.getElementById('tree'));
+    renderTable();
+    
+    // Events
+    document.getElementById('searchInput').addEventListener('input', e => {
+      searchQuery = e.target.value.toLowerCase();
+      renderTable();
+    });
+    
+    document.addEventListener('keydown', e => {
+      if (e.target.tagName === 'INPUT') {
+        if (e.key === 'Escape') { e.target.value = ''; e.target.blur(); searchQuery = ''; renderTable(); }
+        return;
       }
-      if (state.type === 'all' || state.type === 'daily') {
-        const items = daily.filter(item => matchesDaily(item));
-        if (items.length) html += renderDaily(items);
+      switch(e.key) {
+        case '/': e.preventDefault(); document.getElementById('searchInput').focus(); break;
+        case 'j': navigate(1); break;
+        case 'k': navigate(-1); break;
+        case 'c': copySelected(); break;
+        case 'Escape': currentPath = '/'; document.querySelectorAll('.tree-item').forEach(el => el.classList.remove('active')); renderTable(); break;
       }
-
-      document.getElementById('content').innerHTML = html || '<div class="empty"><p>没有找到匹配的记忆</p></div>';
-    }
-
-    function matches(item, kind) {
-      if (state.type !== 'all' && item.kind !== kind) return false;
-      if (state.search && !item.text.toLowerCase().includes(state.search) && 
-          !(item.tags || []).some(t => t.toLowerCase().includes(state.search)) &&
-          !(item.category || '').toLowerCase().includes(state.search)) return false;
-      if (state.tag && !(item.tags || []).some(t => t.toLowerCase() === state.tag.toLowerCase())) return false;
-      if (state.dateFrom && item.date && item.date < state.dateFrom) return false;
-      if (state.dateTo && item.date && item.date > state.dateTo) return false;
-      return true;
-    }
-
-    function matchesDaily(item) {
-      if (state.type !== 'all' && state.type !== 'daily') return false;
-      if (state.search && !item.text.toLowerCase().includes(state.search) &&
-          !item.date.includes(state.search)) return false;
-      if (state.dateFrom && item.date < state.dateFrom) return false;
-      if (state.dateTo && item.date > state.dateTo) return false;
-      return true;
-    }
-
-    function renderSection(title, items, kind) {
-      return `<section class="section">
-        <div class="section-header">
-          <h2 class="section-title">${title} <span class="section-count">(${items.length})</span></h2>
-        </div>
-        <div class="cards">${items.map(item => renderCard(item, kind)).join('')}</div>
-      </section>`;
-    }
-
-    function renderCard(item, kind) {
-      const priority = kind === 'learning' ? (item.used >= 3 ? 'high' : item.used === 0 ? 'new' : 'normal') : null;
-      const priorityText = priority === 'high' ? '⭐ High' : priority === 'new' ? '✨ New' : 'Normal';
-      const tags = (item.tags || []).map(t => `<span class="card-tag">#${t}</span>`).join('');
-      const category = item.category ? `<span class="category category-${item.category}">${item.category}</span>` : '';
-
-      return `<article class="card" data-kind="${kind}">
-        <div class="card-header">
-          ${category}
-          <span class="card-id">${(item.id || '').slice(0, 10)}</span>
-        </div>
-        <p class="card-text">${escape(item.text)}</p>
-        ${tags ? `<div class="card-tags">${tags}</div>` : ''}
-        <div class="card-footer">
-          <div class="card-meta">
-            ${item.used !== undefined ? `<span>📊 ${item.used}次</span>` : ''}
-            ${item.source ? `<span>📝 ${item.source}</span>` : ''}
-            ${item.date ? `<span>📅 ${item.date}</span>` : ''}
-          </div>
-          ${priority ? `<span class="priority ${priority}">${priorityText}</span>` : ''}
-        </div>
-      </article>`;
-    }
-
-    function renderDaily(items) {
-      // Group by date
-      const byDate = {};
-      for (const item of items) {
-        const d = item.date || 'unknown';
-        if (!byDate[d]) byDate[d] = [];
-        byDate[d].push(item);
-      }
-
-      let html = `<section class="section">
-        <div class="section-header">
-          <h2 class="section-title">📝 Daily Memory <span class="section-count">(${items.length})</span></h2>
-        </div>`;
-
-      const dates = Object.keys(byDate).sort().reverse();
-      for (const date of dates) {
-        html += `<div class="daily-group">
-          <div class="daily-header">${date}</div>
-          <div class="daily-entries">
-            ${byDate[date].map(item => `<div class="daily-entry">
-              <div class="daily-entry-header">${item.time || ''}</div>
-              <p class="card-text">${escape(item.text)}</p>
-            </div>`).join('')}
-          </div>
-        </div>`;
-      }
-
-      return html + '</section>';
-    }
-
-    function escape(str) {
-      const d = document.createElement('div');
-      d.textContent = str;
-      return d.innerHTML;
-    }
+    });
   </script>
 </body>
 </html>

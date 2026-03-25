@@ -1990,6 +1990,14 @@ export interface MemoryExportData {
     date: string;
     time?: string;
   }>;
+  pending: Array<{
+    id: string;
+    text: string;
+    source: string;
+    category?: string;
+    createdAt: string;
+    promoted: boolean;
+  }>;
   tags: Array<{
     name: string;
     count: number;
@@ -1997,6 +2005,7 @@ export interface MemoryExportData {
   stats: {
     total: number;
     highPriority: number;
+    pending: number;
     byCategory: Record<string, number>;
   };
 }
@@ -2010,6 +2019,19 @@ export function exportMemoryToHtml(rolePath: string, roleName: string): string {
 
   // Read daily memory files
   const dailyMemories = readDailyMemories(rolePath);
+
+  // Read pending memories
+  const pendingData = getPendingMemories(rolePath);
+  const pendingMemories = pendingData
+    .filter(p => !p.discarded)
+    .map(p => ({
+      id: p.id,
+      text: p.text,
+      source: p.source,
+      category: p.category,
+      createdAt: p.createdAt,
+      promoted: p.promoted
+    }));
 
   // Collect all tags
   const tagCounts = new Map<string, number>();
@@ -2056,10 +2078,12 @@ export function exportMemoryToHtml(rolePath: string, roleName: string): string {
       text: e
     })),
     daily: dailyMemories,
+    pending: pendingMemories,
     tags,
     stats: {
       total: data.learnings.length + data.preferences.length + data.events.length + dailyMemories.length,
       highPriority: data.learnings.filter(l => l.used >= 3).length,
+      pending: pendingMemories.filter(p => !p.promoted).length,
       byCategory
     }
   };
