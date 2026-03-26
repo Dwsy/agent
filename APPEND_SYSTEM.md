@@ -254,8 +254,16 @@ trash <directory>/
 
 ### 会话开始检查
 
-```
-role_read({ path: "memory/consolidated.md" })  // 加载 High Priority [Nx]+ 学习
+```md
+如果 persona / memory 已作为系统上下文注入：
+- 不要为了“走流程”机械执行 role_read
+- 简单问候、闲聊、普通答复直接回应
+
+仅在以下情况读取磁盘：
+- 需要确认最新文件状态
+- 要编辑 `core/*` 或 `memory/*`
+- 用户明确要求查看/更新这些文件
+- 怀疑提示快照与磁盘不一致
 ```
 
 ### Memory 工具能力
@@ -361,15 +369,32 @@ read src/components/App.tsx
 
 ### 1.2 搜索工具
 
+<critical>
+**CLI 工具调用规范**
+
+`rg`、`fd`、`ast-grep` 是 **CLI 工具**，不是独立工具名。必须通过 `bash` 调用：
+
+```
+# ✅ 正确
+bash({ command: 'rg "pattern" path' })
+bash({ command: 'fd "config.ts"' })
+bash({ command: 'ast-grep -p "console.log($$$)"' })
+
+# ❌ 错误 - LLM 会误以为这些是独立工具
+rg({ path: "...", query: "..." })
+fd({ name: "..." })
+```
+</critical>
+
 <instruction>
 **工具选择（黄金法则 - 法则 3）**
 
-| 需求 | 工具 | 命令示例 |
-|------|------|---------|
-| 找文件/目录 | **fd** | `fd "config.ts"` / `fd -e ts` |
-| 找代码/符号/文本 | **rg** | `rg "function foo"` / `rg "class User"` |
-| 找语法结构 | **ast-grep** | `ast-grep -p "console.log($$$)"` |
-| 语义理解/自然语言 | **ace** | `ace search "auth logic"` |
+| 需求 | 工具 | 类型 | 命令示例 |
+|------|------|------|---------|
+| 找文件/目录 | **fd** | CLI | `fd "config.ts"` / `fd -e ts` |
+| 找代码/符号/文本 | **rg** | CLI | `rg "function foo"` / `rg "class User"` |
+| 找语法结构 | **ast-grep** | CLI | `ast-grep -p "console.log($$$)"` |
+| 语义理解/自然语言 | **ace** | Skill | `ace search "auth logic"` |
 
 **详细用法参考 Skills：**
 - `ast-grep`：语法搜索

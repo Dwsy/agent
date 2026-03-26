@@ -29,14 +29,17 @@ function zhPrompts(): Record<string, string> {
 
 这个目录就是家。把它当作长期工作环境来维护。
 
-## 每次会话开始前
+## 每次会话
 
-1. 先读 core/soul.md（你是谁）
-2. 再读 core/user.md（你在帮助谁）
-3. 读 memory/daily/YYYY-MM-DD.md（今天和昨天）
-4. 在主会话中额外读 memory/consolidated.md
+这些文件路径用于在需要时核对或编辑磁盘状态：
+- \`core/soul.md\`
+- \`core/user.md\`
+- \`memory/daily/YYYY-MM-DD.md\`
+- \`memory/consolidated.md\`
 
-不要形式化寒暄，直接做事。
+它们不是开场必须读取的 checklist。只有在需要确认最新文件状态、编辑这些文件，或用户明确要求查看时再读取。
+
+不要形式化寒暄，直接做事，但别把流程当仪式。
 
 ## 记忆原则
 
@@ -201,14 +204,17 @@ function enPrompts(): Record<string, string> {
 
 This directory is home. Maintain it as long-term operating context.
 
-## At session start
+## Each session
 
-1. Read core/soul.md
-2. Read core/user.md
-3. Read memory/daily/YYYY-MM-DD.md (today + yesterday)
-4. In main session, also read memory/consolidated.md
+These file paths are for checking or editing on-disk state when needed:
+- \`core/soul.md\`
+- \`core/user.md\`
+- \`memory/daily/YYYY-MM-DD.md\` (today + yesterday)
+- \`memory/consolidated.md\`
 
-Skip filler. Do useful work.
+They are not a mandatory startup checklist. Only read them when you need current file state, will edit them, or the user explicitly asks to inspect them.
+
+Skip filler. Do useful work, but do not turn process into ritual.
 
 ## Memory policy
 
