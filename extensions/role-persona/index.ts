@@ -97,6 +97,15 @@ import {
   writeKnowledge,
   setProjectCwd,
 } from "./knowledge.ts";
+import {
+  knowledgeToolRenderers,
+  memoryToolRenderers,
+  registerRoleMessageRenderers,
+  roleListToolRenderers,
+  roleReadToolRenderers,
+  roleSearchToolRenderers,
+  roleWriteToolRenderers,
+} from "./tui-renderers.ts";
 
 // 配置从 config.ts 加载，环境变量可覆盖
 const AUTO_MEMORY_ENABLED = config.autoMemory.enabled;
@@ -132,6 +141,8 @@ const EXTERNAL_READONLY_MIN_CONFIDENCE = config.externalReadonly.minConfidence;
 // ============================================================================
 
 export default function rolePersonaExtension(pi: ExtensionAPI) {
+  registerRoleMessageRenderers(pi);
+
   let currentRole: string | null = null;
   let currentRolePath: string | null = null;
   let autoMemoryInFlight = false;
@@ -143,6 +154,7 @@ export default function rolePersonaExtension(pi: ExtensionAPI) {
   let memoryCheckpointSpinner: ReturnType<typeof setInterval> | null = null;
   let memoryCheckpointFrame = 0;
   let isFirstUserMessage = true;  // 标记是否是第一条用户消息
+  let memoryDistillMode: { active: boolean; requestedModel?: string } | null = null;
 
   // ── Memory operation log (in-session only, not persisted) ──
   interface MemoryLogEntry {
@@ -246,6 +258,21 @@ export default function rolePersonaExtension(pi: ExtensionAPI) {
       ctx.ui.notify(message, (level as any) ?? "info");
     } else {
       pi.sendMessage({ customType: "role-notify", content: message, display: true }, { triggerTurn: false });
+    }
+  }
+
+  function autoRepairRoleMemory(rolePath: string, roleName: string, ctx: ExtensionContext, source: string) {
+    try {
+      const result = repairRoleMemory(rolePath, roleName);
+      if (result.repaired) {
+        log("repair", `auto-repair ${source}: applied (${result.issues} issues)`);
+      }
+      return result;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      log("repair", `auto-repair ${source} failed: ${message}`);
+      notify(ctx, `memory/consolidated.md 自动修复失败: ${message}`, "error");
+      return { repaired: false, issues: 0 };
     }
   }
 
@@ -620,7 +647,7 @@ export default function rolePersonaExtension(pi: ExtensionAPI) {
     stopMemoryCheckpointSpinner();
 
     ensureRoleMemoryFiles(rolePath, roleName);
-    const repair = repairRoleMemory(rolePath, roleName);
+    autoRepairRoleMemory(rolePath, roleName, ctx, "activateRole");
 
     // Pending layer: randomly promote 1-2 pending memories per session
     // This simulates "usage-driven" promotion - memories promoted when relevant
@@ -662,10 +689,6 @@ export default function rolePersonaExtension(pi: ExtensionAPI) {
 
       ctx.ui.setStatus("role", displayName);
       ctx.ui.setStatus("memory-checkpoint", undefined);
-
-      if (repair.repaired) {
-        notify(ctx, `memory/consolidated.md 已规范化修复 (${repair.issues} issues)`, "info");
-      }
 
       if (isFirstRun(rolePath)) {
         notify(ctx, `${displayName} - [FIRST RUN]`, "info");
@@ -731,10 +754,7 @@ export default function rolePersonaExtension(pi: ExtensionAPI) {
   pi.on("before_agent_start", async (event, ctx) => {
     if (!currentRolePath || !currentRole) return;
 
-    const repair = repairRoleMemory(currentRolePath, currentRole);
-    if (repair.repaired && isTuiAvailable(ctx)) {
-      notify(ctx, `Memory auto-repair applied (${repair.issues} issues)`, "info");
-    }
+    autoRepairRoleMemory(currentRolePath, currentRole, ctx, "before_agent_start");
 
     // Build file location instruction
     const today = new Date().toISOString().split("T")[0];
@@ -750,6 +770,9 @@ Structured paths (v2):
 - constraints → ${currentRolePath}/core/constraints.md
 - memory consolidated → ${currentRolePath}/memory/consolidated.md
 - daily memories → ${currentRolePath}/memory/daily/${today}.md
+
+Use these paths only when you need to inspect or edit on-disk state.
+They are not a mandatory startup checklist, and you should not mechanically call \`role_read\` for greetings or normal replies.
 
 ## 📝 MEMORY
 
@@ -873,8 +896,12 @@ ${buildMemoryEditInstruction(currentRolePath)}`;
       }
     }
 
+    const memoryDistillPrompt = memoryDistillMode?.active
+      ? `\n\n## Memory Distill Mode\nYou are currently in an interactive memory→knowledge distillation workflow for role \`${currentRole}\`.\n\nGoals:\n1. Read the role's memory and knowledge state using the available tools.\n2. Ask concise clarification questions when needed instead of assuming promotion decisions.\n3. Produce a promotion proposal, not a vague reflection.\n4. Distinguish between memory, role knowledge, project knowledge, and global knowledge.\n5. Be conservative: bad knowledge is more expensive than extra memory.\n\nBehavior:\n- First, inspect relevant memory files and existing knowledge entries.\n- If key ambiguity remains, ask a small number of high-value questions to the user.\n- If enough evidence already exists, skip the questions and directly produce a distillation proposal.\n- Prefer operational rules, reusable heuristics, and architectural conventions over emotional reflection.\n- Do not write knowledge automatically unless the user explicitly asks you to execute the promotion.\n\nSuggested output sections:\n- Summary\n- Candidate Decisions\n- Open Questions\n- Promotion Plan\n\nRequested model hint: ${memoryDistillMode.requestedModel || "(use current session model)"}`
+      : "";
+
     return {
-      systemPrompt: `${event.systemPrompt}\n\n${fileLocationInstruction}\n\n${rolePrompt}${memoryPrompt}${vectorRecallPrompt}${externalReadonlyPrompt}`
+      systemPrompt: `${event.systemPrompt}\n\n${fileLocationInstruction}\n\n${rolePrompt}${memoryPrompt}${vectorRecallPrompt}${externalReadonlyPrompt}${memoryDistillPrompt}`
     };
   });
 
@@ -1217,6 +1244,7 @@ Rules for memory extraction:
           return { content: [{ type: "text", text: "Unknown action" }], details: { error: true } };
       }
     },
+    ...knowledgeToolRenderers,
   });
 
   // ============ MEMORY TOOLING ============
@@ -1418,7 +1446,10 @@ Rules for memory extraction:
                 })
                 .join("\n")
             : "No matches";
-          return { content: [{ type: "text", text }], details: { count: matches.length, mode: searchMode } };
+          return {
+            content: [{ type: "text", text }],
+            details: { count: matches.length, mode: searchMode, query, matches },
+          };
         }
 
         case "list": {
@@ -1522,6 +1553,7 @@ Rules for memory extraction:
           return { content: [{ type: "text", text: "Unknown action" }], details: { error: true } };
       }
     },
+    ...memoryToolRenderers,
   });
 
   // Structured role file CRUD tools (pi-memory-md style)
@@ -1568,6 +1600,7 @@ Rules for memory extraction:
         },
       };
     },
+    ...roleReadToolRenderers,
   });
 
   pi.registerTool({
@@ -1611,6 +1644,7 @@ Rules for memory extraction:
         details: { path: target.normalizedRelative, mode },
       };
     },
+    ...roleWriteToolRenderers,
   });
 
   pi.registerTool({
@@ -1659,6 +1693,7 @@ Rules for memory extraction:
         details: { count: relFiles.length, recursive, base: target.normalizedRelative },
       };
     },
+    ...roleListToolRenderers,
   });
 
   pi.registerTool({
@@ -1729,6 +1764,50 @@ Rules for memory extraction:
         content: [{ type: "text", text: hits.length > 0 ? hits.join("\n") : "No matches" }],
         details: { query, count: hits.length, scope: target.normalizedRelative },
       };
+    },
+    ...roleSearchToolRenderers,
+  });
+
+  pi.registerCommand("memory-distill", {
+    description: "Enable interactive LLM-guided memory→knowledge distillation for the current role",
+    handler: async (args, ctx) => {
+      if (!currentRole || !currentRolePath) {
+        notify(ctx, "当前目录未映射角色", "warning");
+        return;
+      }
+
+      const requestedModel = (args || "").trim() || undefined;
+      memoryDistillMode = { active: true, requestedModel };
+
+      const intro = [
+        `# Memory Distill Mode — ${currentRole}`,
+        "",
+        "已进入基于 LLM 的交互式蒸馏模式。",
+        "",
+        "下一轮开始，模型会：",
+        "- 读取当前角色的 memory / knowledge 状态",
+        "- 必要时先向你提几个高价值问题",
+        "- 再给出 memory→knowledge 晋升提案",
+        "",
+        "建议你下一条直接说：",
+        "- ‘开始蒸馏’",
+        "- 或补充你关心的范围，例如‘只看 zero 的 memory→knowledge 边界’",
+        "",
+        `模型提示偏好: ${requestedModel || "(当前会话模型)"}`,
+        "",
+        "退出方式：/memory-distill-stop",
+      ].join("\n");
+
+      pi.sendMessage({ customType: "memory-distill", content: intro, display: true }, { triggerTurn: false });
+      notify(ctx, `已启用 ${currentRole} 的交互式 memory-distill 模式`, "success");
+    },
+  });
+
+  pi.registerCommand("memory-distill-stop", {
+    description: "Disable interactive memory→knowledge distillation mode",
+    handler: async (_args, ctx) => {
+      memoryDistillMode = null;
+      notify(ctx, "已关闭 memory-distill 模式", "success");
     },
   });
 
@@ -2229,6 +2308,8 @@ Rules for memory extraction:
           info += `- \`/memory-fix\` - 强制修复 memory/consolidated.md 结构\n`;
           info += `- \`/memory-tidy\` - 手动整理记忆（修复+去重+汇总）\n`;
           info += `- \`/memory-tidy-llm [provider/model]\` - LLM整理记忆（可指定模型）\n`;
+          info += `- \`/memory-distill [provider/model]\` - 启用基于 LLM 的交互式蒸馏模式\n`;
+          info += `- \`/memory-distill-stop\` - 关闭交互式蒸馏模式\n`;
 
           pi.sendMessage({
             customType: "role-info",
