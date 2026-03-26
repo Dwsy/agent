@@ -31,6 +31,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import { homedir, platform } from "node:os";
 import { join } from "node:path";
 import {
+	DynamicBorder,
 	ExtensionAPI,
 	ExtensionCommandContext,
 	ExtensionContext,
@@ -169,32 +170,19 @@ function loadActiveStyleFromPath(activePath: string): string | undefined {
 	}
 }
 
-function loadActiveStyle(cwd: string): string | undefined {
-	const projectStyle = loadActiveStyleFromPath(getActiveStylePath(cwd));
-	if (projectStyle) {
-		return projectStyle;
-	}
-	return loadActiveStyleFromPath(getGlobalActiveStylePath());
-}
-
-function getStyleScope(cwd: string, styleName: string): "built-in" | "global" | "project" {
-	// Check if it's set as project style
-	const projectStyle = loadActiveStyleFromPath(getActiveStylePath(cwd));
-	if (projectStyle === styleName) {
-		return "project";
-	}
-	// Check if it's set as global style
-	const globalStyle = loadActiveStyleFromPath(getGlobalActiveStylePath());
-	if (globalStyle === styleName) {
-		return "global";
-	}
-	// Otherwise, it's the original source
-	const style = findOutputStyle(cwd, styleName);
-	return style?.source ?? "built-in";
+function getActiveStyleSelections(cwd: string): {
+	project: string | undefined;
+	global: string | undefined;
+	effective: string;
+} {
+	const project = loadActiveStyleFromPath(getActiveStylePath(cwd));
+	const global = loadActiveStyleFromPath(getGlobalActiveStylePath());
+	const effective = project || global || "default";
+	return { project, global, effective };
 }
 
 function resolveActiveStyleName(cwd: string): string {
-	const candidate = loadActiveStyle(cwd);
+	const candidate = getActiveStyleSelections(cwd).effective;
 	if (candidate && findOutputStyle(cwd, candidate)) {
 		return candidate;
 	}
@@ -348,53 +336,84 @@ function findOutputStyle(cwd: string, name: string): OutputStyleDefinition | und
 	return styles.find((style) => style.frontmatter.name === name);
 }
 
+function getStyleSourceBadge(style: OutputStyleDefinition, theme: any): string {
+	switch (style.source) {
+		case "global":
+			return theme.fg("accent", "[user]");
+		case "project":
+			return theme.fg("success", "[local]");
+		default:
+			return theme.fg("dim", "[builtin]");
+	}
+}
+
+function getStyleStatusBadge(
+	styleName: string,
+	selections: ReturnType<typeof getActiveStyleSelections>,
+	theme: any,
+): string | undefined {
+	if (selections.project === styleName) {
+		return theme.fg("success", "[active local]");
+	}
+	if (selections.global === styleName) {
+		return selections.project
+			? theme.fg("accent", "[saved global]")
+			: theme.fg("success", "[active global]");
+	}
+	return undefined;
+}
+
+function getStyleDescription(
+	style: OutputStyleDefinition,
+	selections: ReturnType<typeof getActiveStyleSelections>,
+): string | undefined {
+	const details: string[] = [];
+	if (style.frontmatter.description) {
+		details.push(style.frontmatter.description);
+	}
+	if (selections.project === style.frontmatter.name) {
+		details.push("Overrides the global default for this project.");
+	} else if (selections.global === style.frontmatter.name && selections.project) {
+		details.push("Saved as the global default, but currently overridden by the local project style.");
+	} else if (selections.global === style.frontmatter.name) {
+		details.push("Current default across projects.");
+	}
+	return details.join(" · ") || undefined;
+}
+
 function formatStyleLabel(
 	style: OutputStyleDefinition,
 	index: number,
-	activeName: string | undefined,
+	selections: ReturnType<typeof getActiveStyleSelections>,
 	theme: any,
-	cwd: string,
 ): string {
-	const num = index + 1;
-	const name = style.frontmatter.name;
-	
-	// Get actual scope (where it's configured, not where it's defined)
-	const actualScope = getStyleScope(cwd, name);
-	
-	// Source badge based on actual scope
-	const sourceBadge = actualScope === "built-in" 
-		? theme.fg("dim", "[built-in]")
-		: actualScope === "global"
-		? theme.fg("accent", "[global]")
-		: theme.fg("success", "[project]");
-	
-	// Active indicator
-	const activeIndicator = style.frontmatter.name === activeName 
-		? theme.fg("success", " ✔")
-		: "";
-	
-	// Description
-	const description = style.frontmatter.description || "";
-	
-	return `${num}. ${name} ${sourceBadge}${activeIndicator}            ${description}`;
+	const badges = [
+		getStyleSourceBadge(style, theme),
+		getStyleStatusBadge(style.frontmatter.name, selections, theme),
+	].filter(Boolean).join(" ");
+	return `${index + 1}. ${style.frontmatter.name}${badges ? ` ${badges}` : ""}`;
 }
 
-function getStyleTags(style: OutputStyleDefinition, activeName: string | undefined): string {
-	const tags: string[] = [];
-	if (style.frontmatter.name === activeName) {
-		tags.push("✔");
+function getSelectorSubtitle(scope?: "global" | "project"): string {
+	switch (scope) {
+		case "global":
+			return "Set the default style across projects. Local styles are hidden here.";
+		case "project":
+			return "Set a local project override. This wins over the global default.";
+		default:
+			return "Badges: builtin/user/local = source. active/saved = current scope state.";
 	}
-	if (style.frontmatter.description) {
-		tags.push(style.frontmatter.description);
-	}
-	return tags.join("            ");
+}
+
+function quoteYamlString(value: string): string {
+	return JSON.stringify(value);
 }
 
 function generateStyleFileContent(name: string, content: string, description?: string, keepCodingInstructions = false): string {
 	const frontmatter = [
 		"---",
-		`name: ${name}`,
-		description?.trim() ? `description: ${description.trim()}` : undefined,
+		`name: ${quoteYamlString(name)}`,
+		description?.trim() ? `description: ${quoteYamlString(description.trim())}` : undefined,
 		`keepCodingInstructions: ${keepCodingInstructions}`,
 		"---",
 	].filter(Boolean);
@@ -403,10 +422,11 @@ function generateStyleFileContent(name: string, content: string, description?: s
 }
 
 function formatStylePrompt(style: OutputStyleDefinition): string {
-	const header = "## Output Style";
 	if (!style.content) {
-		return header;
+		return "";
 	}
+
+	const header = "## Output Style";
 	if (!style.frontmatter.keepCodingInstructions) {
 		return `${header}\n\nIgnore prior coding-style instructions. Focus on the output style below.\n\n${style.content}`;
 	}
@@ -417,11 +437,11 @@ const SHORTCUT_HINT = (() => {
 	const os = platform();
 	switch (os) {
 		case "darwin":
-			return "Enter select · ^G set global · ^P set project · Esc cancel";
+			return "Enter apply default · ^G save global default · ^P save local override · Esc cancel";
 		case "win32":
-			return "Enter select · Ctrl+G set global · Ctrl+P set project · Esc cancel";
+			return "Enter apply default · Ctrl+G save global default · Ctrl+P save local override · Esc cancel";
 		default:
-			return "Enter select · Ctrl+G set global · Ctrl+P set project · Esc cancel";
+			return "Enter apply default · Ctrl+G save global default · Ctrl+P save local override · Esc cancel";
 	}
 })();
 
@@ -449,7 +469,8 @@ export default function outputStylesExtension(pi: ExtensionAPI): void {
 		const scope = scopeOverride ?? (style.source === "project" ? "project" : "global");
 		saveActiveStyle(ctx.cwd, style.frontmatter.name, scope);
 		pi.appendEntry(OUTPUT_STYLE_ENTRY_TYPE, { name: style.frontmatter.name });
-		ctx.ui.notify(`Output style set to ${style.frontmatter.name}`, "info");
+		const scopeLabel = scope === "global" ? "saved as the global default" : "saved as the local project override";
+		ctx.ui.notify(`Output style ${style.frontmatter.name} ${scopeLabel}`, "info");
 		return true;
 	}
 
@@ -469,16 +490,26 @@ export default function outputStylesExtension(pi: ExtensionAPI): void {
 
 		const selected = await ctx.ui.custom<string | undefined>((tui, theme, _kb, done) => {
 			const container = new Container();
-			const titleSuffix = scope === "global" ? " (global)" : scope === "project" ? " (project)" : "";
-			container.addChild(new Text(theme.fg("accent", `Output Style${titleSuffix}`), 1, 0));
+			const titleSuffix = scope === "global" ? " · global default" : scope === "project" ? " · local override" : "";
+			const selections = getActiveStyleSelections(ctx.cwd);
+			const resolvedActiveName = activeStyleName ?? selections.effective;
+			container.addChild(new DynamicBorder((str) => theme.fg("accent", str)));
+			container.addChild(new Text(theme.fg("accent", theme.bold(` Output Styles${titleSuffix}`)), 1, 0));
+			container.addChild(new Text(theme.fg("muted", getSelectorSubtitle(scope)), 1, 0));
 			container.addChild(new Spacer(1));
 
 			const items = visibleStyles.map((style, index) => ({
 				value: style.frontmatter.name,
-				label: formatStyleLabel(style, index, activeStyleName, theme, ctx.cwd),
+				label: formatStyleLabel(style, index, selections, theme),
+				description: getStyleDescription(style, selections),
 			}));
-			const selectList = new SelectList(items, Math.min(items.length, MAX_SELECT_LIST_ITEMS), getSelectListTheme());
-			const currentIndex = items.findIndex((item) => item.value === activeStyleName);
+			const selectList = new SelectList(
+				items,
+				Math.min(items.length, MAX_SELECT_LIST_ITEMS),
+				getSelectListTheme(),
+				{ minPrimaryColumnWidth: 28, maxPrimaryColumnWidth: 64 },
+			);
+			const currentIndex = items.findIndex((item) => item.value === resolvedActiveName);
 			if (currentIndex !== -1) {
 				selectList.setSelectedIndex(currentIndex);
 			}
@@ -487,51 +518,22 @@ export default function outputStylesExtension(pi: ExtensionAPI): void {
 
 			container.addChild(selectList);
 			container.addChild(new Spacer(1));
-			container.addChild(
-				new Text(
-					theme.fg(
-						"dim",
-						SHORTCUT_HINT,
-					),
-					1,
-					0,
-				),
-			);
+			container.addChild(new Text(theme.fg("dim", SHORTCUT_HINT), 1, 0));
+			container.addChild(new DynamicBorder((str) => theme.fg("accent", str)));
 
 			return {
 				render: (width: number) => container.render(width),
 				invalidate: () => container.invalidate(),
 				handleInput: (data: string) => {
-					// Handle Ctrl+G (set as global) and Ctrl+P (set as project)
-					if (matchesKey(data, Key.ctrl("g"))) {
+					if (matchesKey(data, Key.ctrl("g")) || matchesKey(data, Key.ctrl("p"))) {
 						const selectedItem = selectList.getSelectedItem();
-						if (selectedItem) {
-							applyStyle(selectedItem.value, ctx, "global");
-							// Refresh list items to show updated scope badges
-							const refreshedItems = visibleStyles.map((style, index) => ({
-								value: style.frontmatter.name,
-								label: formatStyleLabel(style, index, activeStyleName, theme, ctx.cwd),
-							}));
-							// Directly update items
-							selectList.items = refreshedItems;
-							selectList.filteredItems = refreshedItems;
-							tui.requestRender();
+						if (!selectedItem) {
+							return;
 						}
-						return;
-					}
-					if (matchesKey(data, Key.ctrl("p"))) {
-						const selectedItem = selectList.getSelectedItem();
-						if (selectedItem) {
-							applyStyle(selectedItem.value, ctx, "project");
-							// Refresh list items to show updated scope badges
-							const refreshedItems = visibleStyles.map((style, index) => ({
-								value: style.frontmatter.name,
-								label: formatStyleLabel(style, index, activeStyleName, theme, ctx.cwd),
-							}));
-							// Directly update items
-							selectList.items = refreshedItems;
-							selectList.filteredItems = refreshedItems;
-							tui.requestRender();
+
+						const shortcutScope = matchesKey(data, Key.ctrl("g")) ? "global" : "project";
+						if (applyStyle(selectedItem.value, ctx, shortcutScope)) {
+							done(undefined);
 						}
 						return;
 					}
@@ -631,6 +633,9 @@ export default function outputStylesExtension(pi: ExtensionAPI): void {
 		}
 		activeStyleName = style.frontmatter.name;
 		const appended = formatStylePrompt(style);
+		if (!appended) {
+			return;
+		}
 		return { systemPrompt: `${event.systemPrompt}\n\n${appended}` };
 	});
 
