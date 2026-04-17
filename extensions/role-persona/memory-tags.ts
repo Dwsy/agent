@@ -124,32 +124,38 @@ async function resolveTagModel(
   ctx: ExtensionContext,
   requested?: string | string[] | ModelSpec[]
 ): Promise<{ provider: string; modelId: string; apiKey: string; label: string } | null> {
+  const registry = ctx.modelRegistry as any;
+  if (!registry || typeof registry.getApiKeyAndHeaders !== "function") {
+    log("memory-tags", "modelRegistry.getApiKeyAndHeaders not available");
+    return null;
+  }
+
   const specs = normalizeModelSpecs(requested || TAG_MODEL);
   
   // 如果未指定模型，使用当前会话模型
   if (specs.length === 0) {
     if (!ctx.model) return null;
-    const apiKey = await ctx.modelRegistry.getApiKey(ctx.model);
-    if (!apiKey) return null;
+    const auth = await registry.getApiKeyAndHeaders(ctx.model);
+    if (!auth.ok || !auth.apiKey) return null;
     return {
       provider: ctx.model.provider,
       modelId: ctx.model.id,
-      apiKey,
+      apiKey: auth.apiKey,
       label: `${ctx.model.provider}/${ctx.model.id}`,
     };
   }
   
   // 按顺序尝试每个模型
-  const all = ctx.modelRegistry.getAll();
+  const all = registry?.getAll ? registry.getAll() : [];
   for (const spec of specs) {
     const { provider, model } = spec;
-    const picked = all.find((m) => {
+    const picked = all.find((m: any) => {
       if (provider) {
-        return m.provider.toLowerCase() === provider.toLowerCase() &&
-               m.id.toLowerCase() === model.toLowerCase();
+        return m.provider?.toLowerCase() === provider.toLowerCase() &&
+               m.id?.toLowerCase() === model.toLowerCase();
       }
-      return m.id.toLowerCase() === model.toLowerCase() ||
-             m.name.toLowerCase() === model.toLowerCase();
+      return m.id?.toLowerCase() === model.toLowerCase() ||
+             m.name?.toLowerCase() === model.toLowerCase();
     });
     
     if (!picked) {
@@ -157,8 +163,8 @@ async function resolveTagModel(
       continue;
     }
     
-    const apiKey = await ctx.modelRegistry.getApiKey(picked);
-    if (!apiKey) {
+    const auth = await registry.getApiKeyAndHeaders(picked);
+    if (!auth.ok || !auth.apiKey) {
       log("memory-tags", `no API key for model, skipping: ${provider}/${model}`);
       continue;
     }
@@ -166,19 +172,19 @@ async function resolveTagModel(
     return {
       provider: picked.provider,
       modelId: picked.id,
-      apiKey,
+      apiKey: auth.apiKey,
       label: `${picked.provider}/${picked.id}`,
     };
   }
   
   // 所有模型都不可用，尝试当前会话模型
   if (ctx.model) {
-    const apiKey = await ctx.modelRegistry.getApiKey(ctx.model);
-    if (apiKey) {
+    const auth = await registry.getApiKeyAndHeaders(ctx.model);
+    if (auth.ok && auth.apiKey) {
       return {
         provider: ctx.model.provider,
         modelId: ctx.model.id,
-        apiKey,
+        apiKey: auth.apiKey,
         label: `${ctx.model.provider}/${ctx.model.id}`,
       };
     }

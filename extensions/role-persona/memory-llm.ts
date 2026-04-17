@@ -11,7 +11,13 @@ import {
   readRoleMemory,
   type LlmTidyPlan,
 } from "./memory-md.ts";
-import { log } from "./logger.ts";
+import {
+  filterAutoExtractedLearnings,
+  filterAutoExtractedPreferences,
+  getDerivableMemoryReason,
+  isEphemeralTaskObservation,
+} from "./memory-extraction-rules.ts";
+import { log, logStart, logEnd, logWarn, logError, setCurrentRole } from "./logger.ts";
 
 type AutoMemoryResponse = {
   learnings?: Array<{ text?: string }>;
@@ -22,8 +28,55 @@ function normalizeMemoryText(text: string): string {
   return text.trim().replace(/\s+/g, " ");
 }
 
+/**
+ * Extract full text from model response, combining both text and thinking blocks.
+ * Thinking models (Qwen thinking, stepfun, etc.) put reasoning in thinking blocks;
+ * some also emit it as text. We merge them to ensure we don't miss content.
+ * Also strips `` tag pairs that some thinking models emit inline.
+ */
+function extractResponseText(result: { content: Array<{ type: string; text?: string; thinking?: string }> }): string {
+  const parts: string[] = [];
+
+  // First: thinking blocks (reasoning process)
+  for (const block of result.content) {
+    if (block.type === "thinking" && block.thinking) {
+      parts.push(block.thinking);
+    }
+  }
+
+  // Then: text blocks (actual answer)
+  for (const block of result.content) {
+    if (block.type === "text" && block.text) {
+      parts.push(block.text);
+    }
+  }
+
+  let text = parts.join("\n").trim();
+
+  // Strip `` tag pairs that some thinking models emit as inline text
+  // Common variants: <think>...</think>, <think>...</think>, <think>...</think>
+  text = text
+    .replace(/<think>[\s\S]*?<\/think>/gi, "")
+    .replace(/<think>[\s\S]*?<\/think>/gi, "")
+    .replace(/<think>[\s\S]*?<\/think>/gi, "")
+    .trim();
+
+  return text;
+}
+
 function extractJsonObject(text: string): string | null {
-  const trimmed = text.trim();
+  let trimmed = text.trim();
+
+  // 剥离 <think>...</think> 标签（thinking models 的思考过程）
+  trimmed = trimmed.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+
+  // 剥离 markdown 代码块（```json ... ``` 或 ``` ... ```）
+  const codeBlockMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (codeBlockMatch) {
+    trimmed = codeBlockMatch[1].trim();
+  }
+
+  // 尝试提取 JSON 对象
   if (trimmed.startsWith("{") && trimmed.endsWith("}")) return trimmed;
   const match = trimmed.match(/\{[\s\S]*\}/);
   return match ? match[0] : null;
@@ -60,32 +113,39 @@ async function resolveRequestedModel(
   ctx: ExtensionContext,
   requested?: string | ModelSpec
 ): Promise<{ model: any; apiKey: string; label: string } | null> {
+  // Defensive: check modelRegistry API
+  const registry = ctx.modelRegistry as any;
+  if (!registry || typeof registry.getApiKeyAndHeaders !== "function") {
+    logWarn("model-resolve", "modelRegistry.getApiKeyAndHeaders not available");
+    return null;
+  }
+
   // 未指定时使用当前会话模型
   if (!requested) {
     if (!ctx.model) return null;
-    const apiKey = await ctx.modelRegistry.getApiKey(ctx.model);
-    if (!apiKey) return null;
-    return { model: ctx.model, apiKey, label: `${ctx.model.provider}/${ctx.model.id}` };
+    const auth = await registry.getApiKeyAndHeaders(ctx.model);
+    if (!auth.ok || !auth.apiKey) return null;
+    return { model: ctx.model, apiKey: auth.apiKey, label: `${ctx.model.provider}/${ctx.model.id}` };
   }
 
   // 对象格式 { provider, model }
   if (typeof requested === "object") {
     const { provider, model: modelId } = requested;
-    const all = ctx.modelRegistry.getAll();
-    const picked = all.find((m) => 
-      m.provider.toLowerCase() === provider.toLowerCase() &&
-      m.id.toLowerCase() === modelId.toLowerCase()
+    const all = (ctx.modelRegistry as any)?.getAll ? (ctx.modelRegistry as any).getAll() : [];
+    const picked = all.find((m: any) => 
+      m.provider?.toLowerCase() === provider.toLowerCase() &&
+      m.id?.toLowerCase() === modelId.toLowerCase()
     );
     if (!picked) {
       log("model-resolve", `model not found: provider=${provider}, model=${modelId}`);
       return null;
     }
-    const apiKey = await ctx.modelRegistry.getApiKey(picked);
-    if (!apiKey) {
+    const auth = await (ctx.modelRegistry as any).getApiKeyAndHeaders(picked);
+    if (!auth.ok || !auth.apiKey) {
       log("model-resolve", `no API key for: ${provider}/${modelId}`);
       return null;
     }
-    return { model: picked, apiKey, label: `${picked.provider}/${picked.id}` };
+    return { model: picked, apiKey: auth.apiKey, label: `${picked.provider}/${picked.id}` };
   }
 
   // 字符串格式 "provider/model-id"
@@ -93,25 +153,25 @@ async function resolveRequestedModel(
   if (!parsed) return null;
 
   const { provider, modelId } = parsed;
-  const all = ctx.modelRegistry.getAll();
+  const all = (ctx.modelRegistry as any)?.getAll ? (ctx.modelRegistry as any).getAll() : [];
   
   // 匹配逻辑：provider/modelId 或纯 modelId
-  const picked = all.find((m) => {
+  const picked = all.find((m: any) => {
     if (provider) {
       // 有 provider，精确匹配 provider + modelId
-      return m.provider.toLowerCase() === provider.toLowerCase() &&
-             m.id.toLowerCase() === modelId.toLowerCase();
+      return m.provider?.toLowerCase() === provider.toLowerCase() &&
+             m.id?.toLowerCase() === modelId.toLowerCase();
     } else {
       // 没有 provider，只匹配 modelId（支持 name 匹配）
-      return m.id.toLowerCase() === modelId.toLowerCase() ||
-             m.name.toLowerCase() === modelId.toLowerCase();
+      return m.id?.toLowerCase() === modelId.toLowerCase() ||
+             m.name?.toLowerCase() === modelId.toLowerCase();
     }
   });
 
   if (!picked) return null;
-  const apiKey = await ctx.modelRegistry.getApiKey(picked);
-  if (!apiKey) return null;
-  return { model: picked, apiKey, label: `${picked.provider}/${picked.id}` };
+  const auth = await (ctx.modelRegistry as any).getApiKeyAndHeaders(picked);
+  if (!auth.ok || !auth.apiKey) return null;
+  return { model: picked, apiKey: auth.apiKey, label: `${picked.provider}/${picked.id}` };
 }
 
 /** 将各种格式的模型配置标准化为 ModelSpec 数组 */
@@ -146,12 +206,18 @@ async function resolveModelsWithFallback(
   ctx: ExtensionContext,
   modelSpec?: string | string[] | ModelSpec[]
 ): Promise<Array<{ model: any; apiKey: string; label: string }>> {
+  const registry = ctx.modelRegistry as any;
+  if (!registry || typeof registry.getApiKeyAndHeaders !== "function") {
+    logWarn("model-resolve", "modelRegistry.getApiKeyAndHeaders not available in resolveModelsWithFallback");
+    return [];
+  }
+
   // 如果未指定，使用当前会话模型
   if (!modelSpec) {
     if (!ctx.model) return [];
-    const apiKey = await ctx.modelRegistry.getApiKey(ctx.model);
-    if (!apiKey) return [];
-    return [{ model: ctx.model, apiKey, label: `${ctx.model.provider}/${ctx.model.id}` }];
+    const auth = await registry.getApiKeyAndHeaders(ctx.model);
+    if (!auth.ok || !auth.apiKey) return [];
+    return [{ model: ctx.model, apiKey: auth.apiKey, label: `${ctx.model.provider}/${ctx.model.id}` }];
   }
 
   const specs = normalizeModelSpecs(modelSpec);
@@ -242,10 +308,16 @@ export async function runLlmMemoryTidy(
     }
   | { error: string }
 > {
-  log("llm-tidy", `start role=${roleName} requestedModel=${Array.isArray(requestedModel) ? requestedModel.join(",") : requestedModel || "(session)"}`);
+  setCurrentRole(roleName);
+  const totalScope = logStart("llm-tidy", `start`, {
+    role: roleName,
+    models: Array.isArray(requestedModel) ? requestedModel.join("|") : requestedModel || "(session)",
+  });
 
   // 获取可用模型列表（支持 fallback）
+  const resolveStart = Date.now();
   const resolvedModels = await resolveModelsWithFallback(ctx, requestedModel);
+  log("llm-tidy", `resolve models took ${Date.now() - resolveStart}ms`, { resolved: resolvedModels.length });
   if (resolvedModels.length === 0) {
     const err = requestedModel
       ? `No models available from: ${Array.isArray(requestedModel) ? requestedModel.join(", ") : requestedModel}`
@@ -301,11 +373,7 @@ export async function runLlmMemoryTidy(
       return { error: lastError };
     }
 
-    const text = result.content
-      .filter((c): c is { type: "text"; text: string } => c.type === "text")
-      .map((c) => c.text)
-      .join("\n")
-      .trim();
+    const text = extractResponseText(result);
 
     log("llm-tidy", `model ${resolved.label} response length: ${text.length} chars`);
 
@@ -360,7 +428,9 @@ export async function runLlmMemoryTidy(
 
 const MEMORY_EXTRACTION_SYSTEM_PROMPT = `You are a memory extraction system for a role-based coding assistant. Your task is to read a conversation and extract durable cross-session learnings and stable user preferences.
 
-Do NOT continue the conversation. Do NOT respond to any questions in the conversation. ONLY output the structured JSON extraction.`;
+Do NOT continue the conversation. Do NOT respond to any questions in the conversation. ONLY output the structured JSON extraction.
+
+Hard exclusion rule: if an item can be derived from the current repository state, do not store it as memory. That includes code structure, file paths, filenames, config keys, environment variables, logs, error messages, test failures, commit/PR/Issue facts, and anything that can be rediscovered from code, files, config, or git history.`;
 
 /**
  * Estimate token count from text (rough heuristic: ~4 chars per token for mixed CJK/English).
@@ -423,6 +493,8 @@ ${existingBlock}
 
 Extract durable learnings and stable user preferences that remain useful across sessions.
 Skip transient tasks, one-off requests, and generic facts.
+Hard exclusion: do not extract anything that is directly derivable from the repo state, including file paths, filenames, config/env keys, log snippets, error codes, test failures, code structure facts, or git/PR/Issue history.
+Only keep information that is cross-session, non-derivable, and still useful in future conversations.
 Keep each item concise (under 120 chars).
 Do not duplicate or restate items from <already-stored>.
 
@@ -440,17 +512,27 @@ export async function runAutoMemoryExtraction(
 ): Promise<{ storedLearnings: number; storedPrefs: number } | null> {
   if (options?.enabled === false) return null;
 
+  setCurrentRole(roleName);
+  const totalScope = logStart("auto-extract", `start`, {
+    role: roleName,
+    msgCount: messages.length,
+    models: Array.isArray(options?.model) ? options.model.join("|") : options?.model || config.autoMemory.model,
+  });
+
   const modelSpec = options?.model ?? config.autoMemory.model;
-  log("auto-extract", `start role=${roleName} messages=${messages.length} models=${Array.isArray(modelSpec) ? modelSpec.join(",") : modelSpec || "(session)"}`);
 
   // 获取可用模型列表（支持 fallback）
+  const resolveStart = Date.now();
   const resolvedModels = await resolveModelsWithFallback(ctx, modelSpec);
+  log("auto-extract", `resolve models took ${Date.now() - resolveStart}ms`, {
+    resolved: resolvedModels.length,
+    labels: resolvedModels.map(m => m.label).join("|"),
+  });
   if (resolvedModels.length === 0) {
     log("auto-extract", "abort: no models resolved");
+    logEnd(totalScope, "abort: no models");
     return null;
   }
-
-  log("auto-extract", `resolved ${resolvedModels.length} model(s): ${resolvedModels.map(m => m.label).join(", ")}`);
 
   // 使用第一个可用模型准备 prompt（contextWindow 可能不同，取最大）
   const maxContextWindow = Math.max(...resolvedModels.map(m => m.model.contextWindow || 128000));
@@ -459,16 +541,23 @@ export async function runAutoMemoryExtraction(
 
   if (!conversationText.trim()) {
     log("auto-extract", "abort: empty conversation after budget preparation");
+    logEnd(totalScope, "abort: empty conversation");
     return null;
   }
 
-  log("auto-extract", `conversation: ${conversationText.length} chars (~${estimateTokensRough(conversationText)} tokens)`);
-
+  const convTokens = estimateTokensRough(conversationText);
   const existing = extractMemoryFacts(rolePath, roleName);
-  log("auto-extract", `existing memory: ${existing.learnings.length}L ${existing.preferences.length}P`);
-
   const prompt = buildAutoMemoryPrompt(conversationText, existing);
-  log("auto-extract", `prompt total: ${prompt.length} chars (~${estimateTokensRough(prompt)} tokens)`);
+  const promptTokens = estimateTokensRough(prompt);
+
+  log("auto-extract", `prepared`, {
+    convChars: conversationText.length,
+    convTokens,
+    promptChars: prompt.length,
+    promptTokens,
+    existingL: existing.learnings.length,
+    existingP: existing.preferences.length,
+  });
 
   // 按顺序尝试模型，直到成功
   let lastError: string | null = null;
@@ -476,7 +565,7 @@ export async function runAutoMemoryExtraction(
     const resolved = resolvedModels[i];
     const isLastModel = i === resolvedModels.length - 1;
 
-    log("auto-extract", `trying model ${i + 1}/${resolvedModels.length}: ${resolved.label}`);
+    const modelScope = logStart("auto-extract", `model ${i + 1}/${resolvedModels.length}: ${resolved.label}`);
 
     let result;
     try {
@@ -496,7 +585,7 @@ export async function runAutoMemoryExtraction(
       );
     } catch (error) {
       lastError = error instanceof Error ? error.message : String(error);
-      log("auto-extract", `model ${resolved.label} call error: ${lastError}`);
+      logEnd(modelScope, `call error`, { model: resolved.label, error: lastError?.slice(0, 200) });
       if (!isLastModel) {
         log("auto-extract", `falling back to next model...`);
         continue;
@@ -506,7 +595,7 @@ export async function runAutoMemoryExtraction(
 
     if (!result || result.stopReason === "error") {
       lastError = (result as any)?.errorMessage || "unknown error";
-      log("auto-extract", `model ${resolved.label} returned error: ${lastError}`);
+      logEnd(modelScope, `returned error`, { model: resolved.label, error: lastError?.slice(0, 200) });
       if (!isLastModel) {
         log("auto-extract", `falling back to next model...`);
         continue;
@@ -514,17 +603,22 @@ export async function runAutoMemoryExtraction(
       return null;
     }
 
-    const responseText = result.content
-      .filter((c): c is { type: "text"; text: string } => c.type === "text")
-      .map((c) => c.text)
-      .join("\n")
-      .trim();
+    const responseText = extractResponseText(result);
 
-    log("auto-extract", `model ${resolved.label} response: ${responseText.length} chars`);
+    const responseTokens = estimateTokensRough(responseText);
+    logEnd(modelScope, `response ok`, {
+      model: resolved.label,
+      respChars: responseText.length,
+      respTokens: responseTokens,
+    });
 
     const parsed = parseAutoMemoryResponse(responseText);
     if (!parsed) {
-      log("auto-extract", `model ${resolved.label} parse failed, raw: ${responseText.slice(0, 300)}`);
+      logWarn("auto-extract", `parse failed`, {
+        model: resolved.label,
+        rawLen: responseText.length,
+        raw: responseText.slice(0, 400),
+      });
       if (!isLastModel) {
         log("auto-extract", `falling back to next model...`);
         continue;
@@ -534,6 +628,52 @@ export async function runAutoMemoryExtraction(
 
     log("auto-extract", `parsed from ${resolved.label}: ${parsed.learnings?.length || 0} learnings, ${parsed.preferences?.length || 0} preferences`);
 
+    const rawLearnings = (parsed.learnings || []).map((item) => normalizeMemoryText(item.text || "")).filter(Boolean);
+    const rawPreferences = (parsed.preferences || [])
+      .map((item) => ({
+        category: item.category || "General",
+        text: normalizeMemoryText(item.text || ""),
+      }))
+      .filter((item) => item.text);
+
+    // Phase 1: Filter derivable (file paths, git artifacts, env vars)
+    const derivFilteredLearnings = filterAutoExtractedLearnings(rawLearnings);
+    const derivFilteredPreferences = filterAutoExtractedPreferences(rawPreferences);
+
+    // Phase 2: Filter ephemeral task observations (should go to daily, not consolidated)
+    const filteredLearnings = derivFilteredLearnings.filter((text) => {
+      if (isEphemeralTaskObservation(text)) {
+        log("auto-extract", `drop ephemeral (task observation): ${text}`);
+        return false;
+      }
+      return true;
+    });
+    const filteredPreferences = derivFilteredPreferences.filter((item) => {
+      if (isEphemeralTaskObservation(item.text)) {
+        log("auto-extract", `drop ephemeral preference (task observation): ${item.text}`);
+        return false;
+      }
+      return true;
+    });
+
+    // Log drops for observability
+    for (const item of parsed.learnings || []) {
+      const text = normalizeMemoryText(item.text || "");
+      const reason = getDerivableMemoryReason(text);
+      if (text && reason) {
+        log("auto-extract", `drop learning (${reason}): ${text}`);
+      }
+    }
+    for (const item of parsed.preferences || []) {
+      const text = normalizeMemoryText(item.text || "");
+      const reason = getDerivableMemoryReason(text);
+      if (text && reason) {
+        log("auto-extract", `drop preference (${reason}): ${text}`);
+      }
+    }
+
+    log("auto-extract", `filtered from ${resolved.label}: ${filteredLearnings.length} learnings, ${filteredPreferences.length} preferences`);
+
     const maxItems = options?.maxItems ?? config.autoMemory.maxItems;
     const maxText = options?.maxText ?? config.autoMemory.maxText;
 
@@ -541,9 +681,8 @@ export async function runAutoMemoryExtraction(
     let storedLearnings = 0;
     let storedPrefs = 0;
 
-    for (const item of parsed.learnings || []) {
+    for (const text of filteredLearnings) {
       if (remaining <= 0) break;
-      const text = normalizeMemoryText(item.text || "");
       if (!text || text.length > maxText) continue;
       const stored = addRoleLearning(rolePath, roleName, text, { source: "auto", appendDaily: true });
       if (stored.stored) {
@@ -555,9 +694,9 @@ export async function runAutoMemoryExtraction(
       }
     }
 
-    for (const item of parsed.preferences || []) {
+    for (const item of filteredPreferences) {
       if (remaining <= 0) break;
-      const text = normalizeMemoryText(item.text || "");
+      const text = item.text;
       if (!text || text.length > maxText) continue;
       const stored = addRolePreference(rolePath, roleName, item.category || "General", text, { appendDaily: true });
       if (stored.stored) {
@@ -569,10 +708,19 @@ export async function runAutoMemoryExtraction(
       }
     }
 
-    log("auto-extract", `done with ${resolved.label}: stored ${storedLearnings}L ${storedPrefs}P`);
+    logEnd(totalScope, `done`, {
+      model: resolved.label,
+      storedL: storedLearnings,
+      storedP: storedPrefs,
+      parsedL: parsed.learnings?.length || 0,
+      parsedP: parsed.preferences?.length || 0,
+      filteredL: filteredLearnings.length,
+      filteredP: filteredPreferences.length,
+    });
     return { storedLearnings, storedPrefs };
   }
 
-  log("auto-extract", `all models failed, last error: ${lastError}`);
+  logError("auto-extract", `all models failed`, { lastError: lastError?.slice(0, 300) });
+  logEnd(totalScope, "failed: all models exhausted");
   return null;
 }

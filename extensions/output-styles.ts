@@ -1,140 +1,237 @@
 /**
- * Output Styles Extension
+ * Output Styles Extension (Single File Mode)
  *
  * @auth dwsy
  *
- * Provides a flexible system for managing and applying different output style templates
- * to AI coding assistant responses. Styles can be:
+ * Markdown-based output style system with YAML frontmatter config.
  *
- * - Built-in: Predefined styles (default, explanatory, learning)
- * - Global: User-defined styles available across all projects
- * - Project: Project-specific styles stored in .pi/output-styles/
+ * Structure:
+ * - Global: ~/.pi/agent/output-styles/<style-name>.md
+ * - Project: .pi/output-styles/<style-name>.md
  *
- * Features:
- * - Style selection via command or keyboard shortcuts
- * - Custom style creation with frontmatter configuration
- * - Automatic style activation on session start
- * - Cross-platform keyboard shortcut hints (⌥ for macOS, Alt for Windows/Linux)
+ * File format:
+ * ---
+ * name: style-name
+ * description: Style description
+ * icon: "🌸"
+ * features:
+ *   emoji: true
+ *   mermaid: false
+ * personality:
+ *   tone: friendly
+ * behavior:
+ *   stepByStep: true
+ * ---
+ * Custom prompt content with template syntax...
+ *
+ * Template syntax:
+ * - {{#if features.emoji}}...{{/if}}
+ * - {{#unless features.mermaid}}...{{/unless}}
+ * - {{personality.tone}}
  *
  * Commands:
- * - /output-style [name] - Switch output style by name or show selector
- * - /output-style:new - Create a new custom output style
+ * - /output-style [name]     - Switch style
+ * - /output-style:new        - Create new style
+ * - /output-style:toggle     - Feature toggle panel
  *
  * Shortcuts:
- * - Alt+G / ⌥+G - Select global output style
- * - Alt+P / ⌥+P - Select project output style
+ * - Alt+G / ⌥+G - Select global style
+ * - Alt+P / ⌥+P - Select project style
+ * - Alt+T / ⌥+T - Feature toggle panel
  *
  * @module output-styles
  */
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir, platform } from "node:os";
-import { join } from "node:path";
+import { join, basename } from "node:path";
+import * as YAML from "yaml";
 import {
 	DynamicBorder,
 	ExtensionAPI,
 	ExtensionCommandContext,
 	ExtensionContext,
 	getSelectListTheme,
-	parseFrontmatter,
 } from "@mariozechner/pi-coding-agent";
 import { Container, SelectList, Spacer, Text, Key, matchesKey } from "@mariozechner/pi-tui";
 
+// ============================================================================
+// Types
+// ============================================================================
+
 type OutputStyleSource = "built-in" | "global" | "project";
 
-interface OutputStyleFrontmatter {
+interface StyleFeatures {
+	sendImage?: boolean;
+	emoji?: boolean;
+	mermaid?: boolean;
+	asciiArt?: boolean;
+	tableFormat?: boolean;
+	codeHighlight?: boolean;
+	markdownStrict?: boolean;
+	stepByStep?: boolean;
+}
+
+interface StylePersonality {
+	tone?: "formal" | "casual" | "friendly" | "technical" | "playful";
+	energy?: "low" | "medium" | "high";
+	humorLevel?: "none" | "subtle" | "moderate" | "high";
+	directness?: number;
+	creativity?: number;
+}
+
+interface StyleBehavior {
+	pauseBeforeCode?: boolean;
+	askClarify?: boolean;
+	explainReasoning?: boolean;
+	summarizeKeyPoints?: boolean;
+	selfCorrect?: boolean;
+	showConfidence?: boolean;
+}
+
+interface StyleConfig {
 	name: string;
 	description?: string;
-	keepCodingInstructions: boolean;
+	icon?: string;
+	tags?: string[];
+	language?: string;
+	features?: StyleFeatures;
+	personality?: StylePersonality;
+	behavior?: StyleBehavior;
+	greeting?: string;
+	farewell?: string;
+	keepCodingInstructions?: boolean;
 }
 
 interface OutputStyleDefinition {
-	frontmatter: OutputStyleFrontmatter;
-	content: string;
+	name: string;
 	source: OutputStyleSource;
-	path?: string;
+	config: StyleConfig;
+	prompt: string;
+	path: string;
 }
+
+// ============================================================================
+// Constants
+// ============================================================================
 
 const OUTPUT_STYLE_ENTRY_TYPE = "output-style";
 const OUTPUT_STYLES_DIR_NAME = "output-styles";
 const ACTIVE_STYLE_FILE = "active.json";
-const MAX_STYLE_NAME_LENGTH = 64;
 const MAX_SELECT_LIST_ITEMS = 10;
 
-const BUILTIN_OUTPUT_STYLES: OutputStyleDefinition[] = [
+// Toggle definitions
+const FEATURE_TOGGLES: Array<{ key: keyof StyleFeatures; label: string; icon: string }> = [
+	{ key: "sendImage", label: "Image Sending", icon: "🖼️" },
+	{ key: "emoji", label: "Emojis", icon: "😀" },
+	{ key: "mermaid", label: "Mermaid Diagrams", icon: "📊" },
+	{ key: "asciiArt", label: "ASCII Art", icon: "🎨" },
+	{ key: "tableFormat", label: "Table Formatting", icon: "📋" },
+	{ key: "codeHighlight", label: "Code Highlight", icon: "🎯" },
+	{ key: "markdownStrict", label: "Strict Markdown", icon: "📝" },
+	{ key: "stepByStep", label: "Step by Step", icon: "🔢" },
+];
+
+const BEHAVIOR_TOGGLES: Array<{ key: keyof StyleBehavior; label: string; icon: string }> = [
+	{ key: "pauseBeforeCode", label: "Pause Before Code", icon: "⏸️" },
+	{ key: "askClarify", label: "Ask Clarify", icon: "❓" },
+	{ key: "explainReasoning", label: "Explain Reasoning", icon: "💭" },
+	{ key: "summarizeKeyPoints", label: "Summarize Points", icon: "📌" },
+	{ key: "selfCorrect", label: "Self Correct", icon: "🔄" },
+	{ key: "showConfidence", label: "Show Confidence", icon: "🎯" },
+];
+
+const PERSONALITY_TOGGLES: Array<{ key: keyof StylePersonality; label: string; type: "select" | "slider"; options?: string[] }> = [
+	{ key: "tone", label: "Tone", type: "select", options: ["formal", "casual", "friendly", "technical", "playful"] },
+	{ key: "energy", label: "Energy", type: "select", options: ["low", "medium", "high"] },
+	{ key: "humorLevel", label: "Humor", type: "select", options: ["none", "subtle", "moderate", "high"] },
+	{ key: "directness", label: "Directness", type: "slider" },
+	{ key: "creativity", label: "Creativity", type: "slider" },
+];
+
+// ============================================================================
+// Built-in Styles
+// ============================================================================
+
+const BUILTIN_STYLES: OutputStyleDefinition[] = [
 	{
-		frontmatter: {
+		name: "default",
+		source: "built-in",
+		config: {
 			name: "default",
-			description: "Completes coding tasks efficiently and provides concise responses",
+			description: "Efficient coding assistant with concise responses",
 			keepCodingInstructions: true,
+			features: { emoji: true, codeHighlight: true },
+			personality: { tone: "technical", energy: "medium", directness: 8 },
+			behavior: { explainReasoning: true },
 		},
-		content: "",
-		source: "built-in",
+		prompt: "",
+		path: "",
 	},
 	{
-		frontmatter: {
+		name: "explanatory",
+		source: "built-in",
+		config: {
 			name: "explanatory",
-			description: "Explains implementation choices and codebase patterns",
+			description: "Explains implementation choices clearly",
 			keepCodingInstructions: true,
+			features: { codeHighlight: true },
+			personality: { tone: "friendly", energy: "medium", directness: 6 },
+			behavior: { explainReasoning: true, summarizeKeyPoints: true },
 		},
-		content: [
-			"You are an expert coding assistant.",
-			"Explain your reasoning and decisions clearly.",
-			"Provide short, well-structured explanations with headers and bullet points.",
-			"When presenting code changes, summarize the intent first.",
-			"Be concise but do not skip important context.",
-		].join("\n"),
-		source: "built-in",
+		prompt: "Explain your reasoning and decisions clearly.\nProvide structured explanations with headers and bullet points.",
+		path: "",
 	},
 	{
-		frontmatter: {
+		name: "learning",
+		source: "built-in",
+		config: {
 			name: "learning",
-			description: "Pauses and asks you to write small pieces of code for hands-on practice",
+			description: "Tutor style - pauses for hands-on practice",
+			icon: "📚",
 			keepCodingInstructions: true,
+			features: { emoji: true, codeHighlight: true },
+			personality: { tone: "friendly", humorLevel: "subtle" },
+			behavior: { pauseBeforeCode: true, askClarify: true, summarizeKeyPoints: true },
 		},
-		content: [
-			"Act as a helpful tutor.",
-			"Explain the key concepts before diving into code.",
-			"Use examples and short snippets to illustrate ideas.",
-			"Pause and ask the user to write small pieces of code for hands-on practice.",
-			"Provide guidance and feedback on their attempts.",
-			"Summarize the main takeaways at the end.",
-		].join("\n"),
-		source: "built-in",
+		prompt: "Act as a helpful tutor.\nExplain key concepts before diving into code.\nPause and ask user to write small pieces for practice.",
+		path: "",
 	},
 	{
-		frontmatter: {
+		name: "coding-vibes",
+		source: "built-in",
+		config: {
 			name: "coding-vibes",
-			description: "Energetic, casual coding buddy with modern dev vibes - adapts to user's language while keeping the energy",
+			description: "Energetic, casual coding buddy",
+			icon: "⚡",
 			keepCodingInstructions: true,
+			features: { emoji: true, codeHighlight: true, asciiArt: true },
+			personality: { tone: "playful", energy: "high", humorLevel: "moderate", creativity: 7 },
+			behavior: { explainReasoning: true },
 		},
-		content: [
-			"You're an energetic, casual coding buddy with modern dev vibes.",
-			"Use contemporary developer language and expressions.",
-			"Keep responses upbeat and encouraging.",
-			"Adapt to the user's language and communication style while maintaining energy.",
-			"Use emojis sparingly but effectively to convey enthusiasm.",
-			"Make coding feel fun and approachable.",
-		].join("\n"),
-		source: "built-in",
+		prompt: "You're an energetic coding buddy.\nKeep responses upbeat and encouraging.\nUse emojis sparingly but effectively.",
+		path: "",
 	},
 	{
-		frontmatter: {
-			name: "structural-thinking",
-			description: "Structural thinking with architectural clarity - naturally considers foundations, layers, and clean interfaces",
-			keepCodingInstructions: true,
-		},
-		content: [
-			"Approach problems with structural thinking and architectural clarity.",
-			"Always consider the foundations, layers, and clean interfaces.",
-			"Think about separation of concerns and modularity.",
-			"Explain the architectural reasoning behind design decisions.",
-			"Consider scalability, maintainability, and extensibility.",
-			"Use diagrams or structured descriptions to illustrate architecture when helpful.",
-		].join("\n"),
+		name: "architect",
 		source: "built-in",
+		config: {
+			name: "architect",
+			description: "Structural thinking with architectural clarity",
+			icon: "🏗️",
+			keepCodingInstructions: true,
+			features: { codeHighlight: true, mermaid: true, tableFormat: true },
+			personality: { tone: "technical", energy: "medium", directness: 9 },
+			behavior: { explainReasoning: true, showConfidence: true },
+		},
+		prompt: "Approach problems with structural thinking.\nAlways consider foundations, layers, and clean interfaces.\nUse diagrams to illustrate architecture.",
+		path: "",
 	},
 ];
+
+// ============================================================================
+// Helper Functions
+// ============================================================================
 
 function getOutputStylesDir(cwd: string): string {
 	return join(cwd, ".pi", OUTPUT_STYLES_DIR_NAME);
@@ -153,28 +250,17 @@ function getGlobalActiveStylePath(): string {
 }
 
 function loadActiveStyleFromPath(activePath: string): string | undefined {
-	if (!existsSync(activePath)) {
-		return undefined;
-	}
+	if (!existsSync(activePath)) return undefined;
 	try {
 		const content = readFileSync(activePath, "utf-8");
 		const parsed = JSON.parse(content) as { name?: string };
-		if (!parsed || typeof parsed.name !== "string" || !parsed.name.trim()) {
-			console.error(`Invalid active style file ${activePath}: missing or invalid name`);
-			return undefined;
-		}
-		return parsed.name.trim();
-	} catch (error) {
-		console.error(`Failed to read ${activePath}: ${error}`);
+		return parsed?.name?.trim() || undefined;
+	} catch {
 		return undefined;
 	}
 }
 
-function getActiveStyleSelections(cwd: string): {
-	project: string | undefined;
-	global: string | undefined;
-	effective: string;
-} {
+function getActiveStyleSelections(cwd: string) {
 	const project = loadActiveStyleFromPath(getActiveStylePath(cwd));
 	const global = loadActiveStyleFromPath(getGlobalActiveStylePath());
 	const effective = project || global || "default";
@@ -183,336 +269,486 @@ function getActiveStyleSelections(cwd: string): {
 
 function resolveActiveStyleName(cwd: string): string {
 	const candidate = getActiveStyleSelections(cwd).effective;
-	if (candidate && findOutputStyle(cwd, candidate)) {
-		return candidate;
-	}
-	return "default";
-}
-
-function getStylePaths(cwd: string, scope: "global" | "project"): { stylesDir: string; activePath: string } {
-	const stylesDir = scope === "project" ? getOutputStylesDir(cwd) : getGlobalOutputStylesDir();
-	const activePath = scope === "project" ? getActiveStylePath(cwd) : getGlobalActiveStylePath();
-	return { stylesDir, activePath };
+	return candidate && findOutputStyle(cwd, candidate) ? candidate : "default";
 }
 
 function saveActiveStyle(cwd: string, name: string, scope: "global" | "project"): void {
-	const { stylesDir, activePath } = getStylePaths(cwd, scope);
-	if (!existsSync(stylesDir)) {
-		mkdirSync(stylesDir, { recursive: true });
-	}
+	const stylesDir = scope === "project" ? getOutputStylesDir(cwd) : getGlobalOutputStylesDir();
+	const activePath = scope === "project" ? getActiveStylePath(cwd) : getGlobalActiveStylePath();
+	if (!existsSync(stylesDir)) mkdirSync(stylesDir, { recursive: true });
 	writeFileSync(activePath, JSON.stringify({ name }, null, 2), "utf-8");
 }
 
-function normalizeStyleName(
-	rawName: string,
-): { name: string; normalized: boolean } | { error: string } {
-	if (!rawName || typeof rawName !== "string") {
-		return { error: "Invalid input: name must be a non-empty string." };
-	}
-
-	const trimmed = rawName.trim();
-	if (!trimmed) {
-		return { error: "Invalid name: name cannot be empty or whitespace only." };
-	}
-
-	const stripped = trimmed.replace(/^\/?output-style(?::new)?\s*/i, "").trim();
-	if (trimmed !== stripped && !stripped) {
-		return { error: "Enter a style name like \"my-style\" (do not include /output-style:new)." };
-	}
-
-	const baseName = stripped || trimmed;
-	const normalized = baseName
-		.toLowerCase()
-		.replace(/[\s_]+/g, "-")
-		.replace(/[^a-z0-9-]/g, "")
-		.replace(/-+/g, "-")
-		.replace(/^-+|-+$/g, "");
-
-	if (!normalized) {
-		return { error: "Invalid name. Use letters, numbers, and hyphens (e.g. \"my-style\")." };
-	}
-
-	if (normalized.length > MAX_STYLE_NAME_LENGTH) {
-		return { error: `Name is too long. Maximum ${MAX_STYLE_NAME_LENGTH} characters allowed.` };
-	}
-
-	return { name: normalized, normalized: normalized !== baseName };
-}
-
-function parseOutputStyleFile(content: string, filePath: string): OutputStyleDefinition | undefined {
-	const { frontmatter, body } = parseFrontmatter<Record<string, unknown>>(content);
-	const nameValue = frontmatter.name;
-	if (typeof nameValue !== "string" || !nameValue.trim()) {
-		console.error(`Output style in ${filePath} missing name frontmatter`);
-		return undefined;
-	}
-
-	const descriptionValue = frontmatter.description;
-	if (descriptionValue !== undefined && typeof descriptionValue !== "string") {
-		console.error(`Output style in ${filePath} has invalid description frontmatter`);
-		return undefined;
-	}
-
-	const keepCodingValue = frontmatter.keepCodingInstructions;
-	if (keepCodingValue !== undefined && typeof keepCodingValue !== "boolean") {
-		console.error(`Output style in ${filePath} has invalid keepCodingInstructions frontmatter`);
-		return undefined;
-	}
-
-	const frontmatterResult: OutputStyleFrontmatter = {
-		name: nameValue.trim(),
-		description: descriptionValue?.trim() || undefined,
-		keepCodingInstructions: keepCodingValue ?? false,
-	};
-
-	return {
-		frontmatter: frontmatterResult,
-		content: body.trim(),
-		source: "project",
-		path: filePath,
-	};
-}
-
-function loadProjectOutputStyles(cwd: string): OutputStyleDefinition[] {
-	const stylesDir = getOutputStylesDir(cwd);
-	return loadOutputStylesFromDir(stylesDir, "project");
-}
-
-function loadGlobalOutputStyles(): OutputStyleDefinition[] {
-	const stylesDir = getGlobalOutputStylesDir();
-	return loadOutputStylesFromDir(stylesDir, "global");
-}
-
-function loadOutputStylesFromDir(dir: string, source: OutputStyleSource): OutputStyleDefinition[] {
-	if (!existsSync(dir)) {
-		return [];
-	}
-
-	let files: string[];
+function parseFrontmatter(content: string): { frontmatter: Record<string, unknown>; body: string } {
+	const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/);
+	if (!match) return { frontmatter: {}, body: content };
 	try {
-		files = readdirSync(dir).filter((file) => file.endsWith(".md"));
-	} catch (error) {
-		console.error(`Failed to read directory ${dir}: ${error}`);
-		return [];
+		const frontmatter = YAML.parse(match[1]);
+		return { frontmatter: frontmatter || {}, body: match[2] || "" };
+	} catch {
+		return { frontmatter: {}, body: content };
 	}
-
-	const styles: OutputStyleDefinition[] = [];
-
-	for (const file of files) {
-		const filePath = join(dir, file);
-		try {
-			const content = readFileSync(filePath, "utf-8");
-			const parsed = parseOutputStyleFile(content, filePath);
-			if (parsed) {
-				styles.push({ ...parsed, source });
-			}
-		} catch (error) {
-			console.error(`Failed to read output style ${filePath}: ${error}`);
-		}
-	}
-
-	return styles;
 }
 
-function loadOutputStyles(cwd: string): OutputStyleDefinition[] {
+function parseStyleFile(filePath: string, source: OutputStyleSource): OutputStyleDefinition | undefined {
+	try {
+		const content = readFileSync(filePath, "utf-8");
+		const { frontmatter, body } = parseFrontmatter(content);
+
+		const name = (frontmatter.name as string) || basename(filePath, ".md");
+		if (!name) return undefined;
+
+		const config: StyleConfig = {
+			name,
+			description: frontmatter.description as string | undefined,
+			icon: frontmatter.icon as string | undefined,
+			tags: frontmatter.tags as string[] | undefined,
+			language: frontmatter.language as string | undefined,
+			keepCodingInstructions: frontmatter.keepCodingInstructions as boolean | undefined,
+			features: frontmatter.features as StyleFeatures | undefined,
+			personality: frontmatter.personality as StylePersonality | undefined,
+			behavior: frontmatter.behavior as StyleBehavior | undefined,
+			greeting: frontmatter.greeting as string | undefined,
+			farewell: frontmatter.farewell as string | undefined,
+		};
+
+		return {
+			name: config.name,
+			source,
+			config,
+			prompt: body.trim(),
+			path: filePath,
+		};
+	} catch (error) {
+		console.error(`Failed to parse style file ${filePath}: ${error}`);
+		return undefined;
+	}
+}
+
+function loadStylesFromDir(dir: string, source: OutputStyleSource): OutputStyleDefinition[] {
+	if (!existsSync(dir)) return [];
+	try {
+		const entries = readdirSync(dir);
+		return entries
+			.filter((entry) => entry.endsWith(".md"))
+			.map((entry) => parseStyleFile(join(dir, entry), source))
+			.filter((s): s is OutputStyleDefinition => s !== undefined);
+	} catch (error) {
+		console.error(`Failed to read styles directory ${dir}: ${error}`);
+		return [];
+	}
+}
+
+function loadAllStyles(cwd: string): OutputStyleDefinition[] {
 	const styles = new Map<string, OutputStyleDefinition>();
-	for (const style of BUILTIN_OUTPUT_STYLES) {
-		styles.set(style.frontmatter.name, style);
-	}
-
-	for (const style of loadGlobalOutputStyles()) {
-		styles.set(style.frontmatter.name, style);
-	}
-
-	for (const style of loadProjectOutputStyles(cwd)) {
-		styles.set(style.frontmatter.name, style);
-	}
-
+	for (const style of BUILTIN_STYLES) styles.set(style.name, style);
+	for (const style of loadStylesFromDir(getGlobalOutputStylesDir(), "global")) styles.set(style.name, style);
+	for (const style of loadStylesFromDir(getOutputStylesDir(cwd), "project")) styles.set(style.name, style);
 	return Array.from(styles.values());
 }
 
 function findOutputStyle(cwd: string, name: string): OutputStyleDefinition | undefined {
-	const styles = loadOutputStyles(cwd);
-	return styles.find((style) => style.frontmatter.name === name);
+	return loadAllStyles(cwd).find((s) => s.name === name);
 }
 
-function getStyleSourceBadge(style: OutputStyleDefinition, theme: any): string {
-	switch (style.source) {
-		case "global":
-			return theme.fg("accent", "[user]");
-		case "project":
-			return theme.fg("success", "[local]");
-		default:
-			return theme.fg("dim", "[builtin]");
-	}
+function normalizeStyleName(rawName: string): { name: string; normalized: boolean } | { error: string } {
+	if (!rawName?.trim()) return { error: "Invalid input: name must be a non-empty string." };
+	const trimmed = rawName.trim().toLowerCase().replace(/[\s_]+/g, "-").replace(/[^a-z0-9-]/g, "").replace(/-+/g, "-").replace(/^-+|-+$/g, "");
+	if (!trimmed) return { error: "Invalid name. Use letters, numbers, and hyphens." };
+	if (trimmed.length > 64) return { error: "Name is too long. Maximum 64 characters allowed." };
+	return { name: trimmed, normalized: trimmed !== rawName.trim().toLowerCase() };
 }
 
-function getStyleStatusBadge(
-	styleName: string,
-	selections: ReturnType<typeof getActiveStyleSelections>,
-	theme: any,
-): string | undefined {
-	if (selections.project === styleName) {
-		return theme.fg("success", "[active local]");
+// ============================================================================
+// Template Engine
+// ============================================================================
+
+interface TemplateContext {
+	features: Record<string, boolean | number | string | undefined>;
+	personality: Record<string, unknown>;
+	behavior: Record<string, unknown>;
+}
+
+function buildTemplateContext(style: OutputStyleDefinition): TemplateContext {
+	return {
+		features: (style.config.features || {}) as Record<string, boolean | number | string | undefined>,
+		personality: (style.config.personality || {}) as Record<string, unknown>,
+		behavior: (style.config.behavior || {}) as Record<string, unknown>,
+	};
+}
+
+function renderTemplate(template: string, context: TemplateContext): string {
+	let result = template;
+	// {{#if path}}...{{/if}}
+	result = result.replace(/{{#if\s+(\w+(?:\.\w+)*)\s*}}([\s\S]*?){{\/if\s*}}/g, (_, path, content) => {
+		const value = getNestedValue(context, path);
+		return value ? content : "";
+	});
+	// {{#unless path}}...{{/unless}}
+	result = result.replace(/{{#unless\s+(\w+(?:\.\w+)*)\s*}}([\s\S]*?){{\/unless\s*}}/g, (_, path, content) => {
+		const value = getNestedValue(context, path);
+		return !value ? content : "";
+	});
+	// {{path}} - inline value
+	result = result.replace(/{{(\w+(?:\.\w+)*)}}/g, (_, path) => {
+		const value = getNestedValue(context, path);
+		return value !== undefined ? String(value) : "";
+	});
+	return result.trim();
+}
+
+function getNestedValue(obj: any, path: string): any {
+	return path.split(".").reduce((curr, key) => curr?.[key], obj);
+}
+
+// ============================================================================
+// Style Prompt Generation
+// ============================================================================
+
+function generateStyleSystemPrompt(style: OutputStyleDefinition): string {
+	const parts: string[] = [];
+	const { config, prompt } = style;
+	const ctx = buildTemplateContext(style);
+
+	if (config.icon) {
+		parts.push(`${config.icon} ${config.name.toUpperCase()} MODE`);
+	} else {
+		parts.push(`## Output Style: ${config.name}`);
 	}
-	if (selections.global === styleName) {
-		return selections.project
-			? theme.fg("accent", "[saved global]")
-			: theme.fg("success", "[active global]");
+
+	if (config.description) parts.push(config.description);
+
+	if (config.personality) {
+		const p = config.personality;
+		const traits: string[] = [];
+		if (p.tone) traits.push(`Tone: ${p.tone}`);
+		if (p.energy) traits.push(`Energy: ${p.energy}`);
+		if (p.humorLevel && p.humorLevel !== "none") traits.push(`Humor: ${p.humorLevel}`);
+		if (p.directness) traits.push(`Directness: ${p.directness}/10`);
+		if (p.creativity) traits.push(`Creativity: ${p.creativity}/10`);
+		if (traits.length) parts.push("\n**Personality:** " + traits.join(" · "));
+	}
+
+	if (config.features) {
+		const f = config.features;
+		const enabled: string[] = [];
+		if (f.sendImage) enabled.push("🖼️ image sending");
+		if (f.emoji) enabled.push("😀 emojis");
+		if (f.mermaid) enabled.push("📊 Mermaid diagrams");
+		if (f.asciiArt) enabled.push("🎨 ASCII art");
+		if (f.tableFormat) enabled.push("📋 tables");
+		if (enabled.length) parts.push("\n**Enabled:** " + enabled.join(", "));
+	}
+
+	if (config.behavior) {
+		const b = config.behavior;
+		const behaviors: string[] = [];
+		if (config.features?.stepByStep) behaviors.push("step-by-step");
+		if (b.askClarify) behaviors.push("ask clarifying questions");
+		if (b.explainReasoning) behaviors.push("explain reasoning");
+		if (b.summarizeKeyPoints) behaviors.push("summarize key points");
+		if (b.pauseBeforeCode) behaviors.push("pause before code");
+		if (b.selfCorrect) behaviors.push("self-correct");
+		if (behaviors.length) parts.push("\n**Behavior:** " + behaviors.join(" · "));
+	}
+
+	// Render template in prompt
+	if (prompt) {
+		const rendered = renderTemplate(prompt, ctx);
+		if (rendered) parts.push("\n" + rendered);
+	}
+
+	if (config.greeting) parts.push(`\n**Greeting:** ${config.greeting}`);
+	if (config.farewell) parts.push(`\n**Farewell:** ${config.farewell}`);
+	if (!config.keepCodingInstructions) parts.push("\n*Note: Ignore prior coding-style instructions.*");
+
+	return parts.join("\n\n");
+}
+
+// ============================================================================
+// UI Helpers
+// ============================================================================
+
+function getStyleBadge(style: OutputStyleDefinition, theme: any): string {
+	const badge = { builtin: theme.fg("dim", "[builtin]"), global: theme.fg("accent", "[user]"), project: theme.fg("success", "[local]") }[style.source];
+	return style.config.icon ? `${style.config.icon} ${badge}` : badge;
+}
+
+function getStyleStatusBadge(name: string, selections: ReturnType<typeof getActiveStyleSelections>, theme: any): string | undefined {
+	if (selections.project === name) return theme.fg("success", "[active local]");
+	if (selections.global === name) {
+		return selections.project ? theme.fg("accent", "[saved global]") : theme.fg("success", "[active global]");
 	}
 	return undefined;
 }
 
-function getStyleDescription(
-	style: OutputStyleDefinition,
-	selections: ReturnType<typeof getActiveStyleSelections>,
-): string | undefined {
-	const details: string[] = [];
-	if (style.frontmatter.description) {
-		details.push(style.frontmatter.description);
-	}
-	if (selections.project === style.frontmatter.name) {
-		details.push("Overrides the global default for this project.");
-	} else if (selections.global === style.frontmatter.name && selections.project) {
-		details.push("Saved as the global default, but currently overridden by the local project style.");
-	} else if (selections.global === style.frontmatter.name) {
-		details.push("Current default across projects.");
-	}
-	return details.join(" · ") || undefined;
+function formatStyleLabel(style: OutputStyleDefinition, index: number, selections: ReturnType<typeof getActiveStyleSelections>, theme: any): string {
+	const badges = [getStyleBadge(style, theme), getStyleStatusBadge(style.name, selections, theme)].filter(Boolean).join(" ");
+	const desc = style.config.description ? ` — ${style.config.description.slice(0, 35)}${style.config.description.length > 35 ? "..." : ""}` : "";
+	return `${index + 1}. ${style.name}${badges ? ` ${badges}` : ""}${desc}`;
 }
 
-function formatStyleLabel(
-	style: OutputStyleDefinition,
-	index: number,
-	selections: ReturnType<typeof getActiveStyleSelections>,
-	theme: any,
-): string {
-	const badges = [
-		getStyleSourceBadge(style, theme),
-		getStyleStatusBadge(style.frontmatter.name, selections, theme),
-	].filter(Boolean).join(" ");
-	return `${index + 1}. ${style.frontmatter.name}${badges ? ` ${badges}` : ""}`;
+const SHORTCUT_HINT = platform() === "darwin"
+	? "Enter apply · ⌃G global · ⌃P local · Esc cancel"
+	: "Enter apply · Ctrl+G global · Ctrl+P local · Esc cancel";
+
+// ============================================================================
+// Feature Toggle Panel
+// ============================================================================
+
+type ToggleSection = "features" | "behavior" | "personality" | "done";
+
+interface ToggleState {
+	section: ToggleSection;
+	cursor: number;
+	features: StyleFeatures;
+	behavior: StyleBehavior;
+	personality: StylePersonality;
+	modified: boolean;
 }
 
-function getSelectorSubtitle(scope?: "global" | "project"): string {
-	switch (scope) {
-		case "global":
-			return "Set the default style across projects. Local styles are hidden here.";
-		case "project":
-			return "Set a local project override. This wins over the global default.";
-		default:
-			return "Badges: builtin/user/local = source. active/saved = current scope state.";
+function createTogglePanel(ctx: ExtensionContext, style: OutputStyleDefinition, theme: any) {
+	const selections = getActiveStyleSelections(ctx.cwd);
+
+	const state: ToggleState = {
+		section: "features",
+		cursor: 0,
+		features: style.config.features ? { ...style.config.features } : {},
+		behavior: style.config.behavior ? { ...style.config.behavior } : {},
+		personality: style.config.personality ? { ...style.config.personality } : {},
+		modified: false,
+	};
+
+	const sections: ToggleSection[] = ["features", "behavior", "personality", "done"];
+	const sectionTitles: Record<ToggleSection, string> = {
+		features: "🖼️ Features",
+		behavior: "⚙️ Behavior",
+		personality: "🎭 Personality",
+		done: "✓ Done",
+	};
+
+	function renderPanel(width: number): string {
+		const lines: string[] = [];
+		const innerWidth = width - 4;
+
+		lines.push(theme.fg("accent", "╭" + "─".repeat(width - 2) + "╮"));
+		lines.push(theme.fg("accent", "│") + theme.fg("accent", theme.bold(` Feature Toggles: ${style.name}`)).padEnd(width - 2) + theme.fg("accent", "│"));
+		const statusBadge = getStyleStatusBadge(style.name, selections, theme);
+		if (statusBadge) {
+			lines.push(theme.fg("accent", "│") + `  ${statusBadge}`.padEnd(width - 2) + theme.fg("accent", "│"));
+		}
+		lines.push(theme.fg("accent", "│") + "─".repeat(width - 2) + theme.fg("accent", "│"));
+
+		// Section tabs
+		const tabLine = sections.map((s) => {
+			const title = sectionTitles[s];
+			const isActive = s === state.section;
+			const prefix = isActive ? "▶ " : "  ";
+			return prefix + (isActive ? theme.fg("accent", theme.bold(title)) : theme.fg("dim", title));
+		}).join("  ");
+		lines.push(theme.fg("accent", "│") + tabLine.padEnd(width - 2) + theme.fg("accent", "│"));
+		lines.push(theme.fg("accent", "│") + "─".repeat(width - 2) + theme.fg("accent", "│"));
+
+		// Content
+		if (state.section === "features") {
+			for (let i = 0; i < FEATURE_TOGGLES.length; i++) {
+				const t = FEATURE_TOGGLES[i];
+				const isOn = state.features[t.key] === true;
+				const isCursor = i === state.cursor;
+				const marker = isCursor ? "❯ " : "  ";
+				const status = isOn ? theme.fg("success", "ON ") : theme.fg("dim", "OFF");
+				const prefix = isCursor ? theme.fg("accent", marker) : marker;
+				const line = `${prefix}${t.icon} ${t.label.padEnd(18)} [${status}]`;
+				lines.push(theme.fg("accent", "│") + " " + line.padEnd(innerWidth) + theme.fg("accent", "│"));
+			}
+		} else if (state.section === "behavior") {
+			for (let i = 0; i < BEHAVIOR_TOGGLES.length; i++) {
+				const t = BEHAVIOR_TOGGLES[i];
+				const isOn = state.behavior[t.key] === true;
+				const isCursor = i === state.cursor;
+				const marker = isCursor ? "❯ " : "  ";
+				const status = isOn ? theme.fg("success", "ON ") : theme.fg("dim", "OFF");
+				const prefix = isCursor ? theme.fg("accent", marker) : marker;
+				const line = `${prefix}${t.icon} ${t.label.padEnd(18)} [${status}]`;
+				lines.push(theme.fg("accent", "│") + " " + line.padEnd(innerWidth) + theme.fg("accent", "│"));
+			}
+		} else if (state.section === "personality") {
+			for (let i = 0; i < PERSONALITY_TOGGLES.length; i++) {
+				const t = PERSONALITY_TOGGLES[i];
+				const isCursor = i === state.cursor;
+				const marker = isCursor ? "❯ " : "  ";
+				const prefix = isCursor ? theme.fg("accent", marker) : marker;
+
+				let value: string;
+				const currentValue = state.personality[t.key];
+
+				if (t.type === "select" && t.options) {
+					value = String(currentValue || t.options[0]);
+					const line = `${prefix}${t.label}: ${theme.fg("accent", value)}`;
+					lines.push(theme.fg("accent", "│") + " " + line.padEnd(innerWidth) + theme.fg("accent", "│"));
+					if (isCursor) {
+						const opts = t.options.join(" | ");
+						lines.push(theme.fg("accent", "│") + "   " + theme.fg("dim", opts).padEnd(innerWidth) + theme.fg("accent", "│"));
+					}
+				} else {
+					value = String(currentValue || 5);
+					const bar = "█".repeat(Number(value)) + "░".repeat(10 - Number(value));
+					const line = `${prefix}${t.label}: [${theme.fg("accent", bar)}] ${value}`;
+					lines.push(theme.fg("accent", "│") + " " + line.padEnd(innerWidth) + theme.fg("accent", "│"));
+				}
+			}
+		} else if (state.section === "done") {
+			lines.push(theme.fg("accent", "│") + " ".repeat(innerWidth) + theme.fg("accent", "│"));
+			const msg = state.modified ? theme.fg("accent", "Changes will be saved on Done") : theme.fg("dim", "No changes");
+			lines.push(theme.fg("accent", "│") + "  ✓ Save & Apply".padEnd(innerWidth) + theme.fg("accent", "│"));
+			lines.push(theme.fg("accent", "│") + " ".repeat(innerWidth) + theme.fg("accent", "│"));
+			lines.push(theme.fg("accent", "│") + `  ${msg}`.padEnd(innerWidth) + theme.fg("accent", "│"));
+		}
+
+		// Footer
+		lines.push(theme.fg("accent", "│") + "─".repeat(width - 2) + theme.fg("accent", "│"));
+		const footer = "←→ section · ↑↓ nav · Space toggle/cycle · Esc cancel";
+		lines.push(theme.fg("accent", "│") + theme.fg("dim", footer).padEnd(width - 2) + theme.fg("accent", "│"));
+		lines.push(theme.fg("accent", "╰" + "─".repeat(width - 2) + "╯"));
+
+		return lines.join("\n");
 	}
-}
 
-function quoteYamlString(value: string): string {
-	return JSON.stringify(value);
-}
-
-function generateStyleFileContent(name: string, content: string, description?: string, keepCodingInstructions = false): string {
-	const frontmatter = [
-		"---",
-		`name: ${quoteYamlString(name)}`,
-		description?.trim() ? `description: ${quoteYamlString(description.trim())}` : undefined,
-		`keepCodingInstructions: ${keepCodingInstructions}`,
-		"---",
-	].filter(Boolean);
-
-	return `${frontmatter.join("\n")}\n\n${content.trim()}\n`;
-}
-
-function formatStylePrompt(style: OutputStyleDefinition): string {
-	if (!style.content) {
-		return "";
+	function getSectionItemCount(section: ToggleSection): number {
+		return section === "features" ? FEATURE_TOGGLES.length :
+			section === "behavior" ? BEHAVIOR_TOGGLES.length :
+				section === "personality" ? PERSONALITY_TOGGLES.length : 1;
 	}
 
-	const header = "## Output Style";
-	if (!style.frontmatter.keepCodingInstructions) {
-		return `${header}\n\nIgnore prior coding-style instructions. Focus on the output style below.\n\n${style.content}`;
+	function toggleCurrent(): void {
+		if (state.section === "features") {
+			const t = FEATURE_TOGGLES[state.cursor];
+			state.features[t.key] = !state.features[t.key];
+			state.modified = true;
+		} else if (state.section === "behavior") {
+			const t = BEHAVIOR_TOGGLES[state.cursor];
+			state.behavior[t.key] = !state.behavior[t.key];
+			state.modified = true;
+		}
 	}
-	return `${header}\n\n${style.content}`;
+
+	function cycleValue(): void {
+		if (state.section !== "personality") return;
+		const t = PERSONALITY_TOGGLES[state.cursor];
+		if (t.type === "select" && t.options) {
+			const current = String(state.personality[t.key as keyof StylePersonality] || t.options[0]);
+			const idx = t.options.indexOf(current);
+			const next = t.options[(idx + 1) % t.options.length];
+			(state.personality as any)[t.key] = next;
+			state.modified = true;
+		} else {
+			const current = Number(state.personality[t.key as keyof StylePersonality] || 5);
+			const next = current >= 10 ? 1 : current + 1;
+			(state.personality as any)[t.key] = next;
+			state.modified = true;
+		}
+	}
+
+	function saveChanges(): void {
+		if (!state.modified || style.source === "built-in" || !style.path) return;
+
+		try {
+			const content = readFileSync(style.path, "utf-8");
+			const { frontmatter, body } = parseFrontmatter(content);
+
+			const newConfig: StyleConfig = {
+				name: style.config.name,
+				description: frontmatter.description as string | undefined,
+				icon: frontmatter.icon as string | undefined,
+				tags: frontmatter.tags as string[] | undefined,
+				language: frontmatter.language as string | undefined,
+				keepCodingInstructions: frontmatter.keepCodingInstructions as boolean | undefined,
+				greeting: frontmatter.greeting as string | undefined,
+				farewell: frontmatter.farewell as string | undefined,
+				features: state.features,
+				behavior: state.behavior,
+				personality: state.personality,
+			};
+
+			const yamlStr = YAML.stringify(newConfig, { indent: 2 });
+			const newContent = `---\n${yamlStr}---\n\n${body}`;
+			writeFileSync(style.path, newContent, "utf-8");
+		} catch (error) {
+			console.error("Failed to save toggle changes:", error);
+		}
+	}
+
+	return {
+		render: (width: number) => renderPanel(width),
+		getState: () => state,
+		toggleCurrent,
+		cycleValue,
+		isDone: () => state.section === "done",
+		saveChanges,
+		getSectionItemCount,
+	};
 }
 
-const SHORTCUT_HINT = (() => {
-	const os = platform();
-	switch (os) {
-		case "darwin":
-			return "Enter apply default · ^G save global default · ^P save local override · Esc cancel";
-		case "win32":
-			return "Enter apply default · Ctrl+G save global default · Ctrl+P save local override · Esc cancel";
-		default:
-			return "Enter apply default · Ctrl+G save global default · Ctrl+P save local override · Esc cancel";
-	}
-})();
+// ============================================================================
+// Main Extension
+// ============================================================================
 
 export default function outputStylesExtension(pi: ExtensionAPI): void {
 	if (process.argv.includes("--mode") && process.argv.includes("rpc")) return;
+
 	let activeStyleName: string | undefined;
 
-	function applyStyle(
-		name: string,
-		ctx: ExtensionContext,
-		scopeOverride?: "global" | "project",
-	): boolean {
+	function applyStyle(name: string, ctx: ExtensionContext, scopeOverride?: "global" | "project"): boolean {
 		const style = findOutputStyle(ctx.cwd, name);
 		if (!style) {
-			ctx.ui.notify(`Output style \"${name}\" not found`, "error");
+			ctx.ui.notify(`Output style "${name}" not found`, "error");
 			return false;
 		}
-
 		if (scopeOverride === "global" && style.source === "project") {
-			ctx.ui.notify("Project output styles cannot be activated globally", "error");
+			ctx.ui.notify("Project styles cannot be activated globally", "error");
 			return false;
 		}
-
-		activeStyleName = style.frontmatter.name;
+		activeStyleName = style.name;
 		const scope = scopeOverride ?? (style.source === "project" ? "project" : "global");
-		saveActiveStyle(ctx.cwd, style.frontmatter.name, scope);
-		pi.appendEntry(OUTPUT_STYLE_ENTRY_TYPE, { name: style.frontmatter.name });
-		const scopeLabel = scope === "global" ? "saved as the global default" : "saved as the local project override";
-		ctx.ui.notify(`Output style ${style.frontmatter.name} ${scopeLabel}`, "info");
+		saveActiveStyle(ctx.cwd, style.name, scope);
+		pi.appendEntry(OUTPUT_STYLE_ENTRY_TYPE, { name: style.name });
+		ctx.ui.notify(`Output style "${style.name}" ${scope === "global" ? "saved as global default" : "saved as local override"}`, "info");
 		return true;
 	}
 
 	async function showSelector(ctx: ExtensionContext, scope?: "global" | "project"): Promise<void> {
 		if (!ctx.hasUI) {
-			ctx.ui.notify("Output style selector requires interactive mode", "error");
+			ctx.ui.notify("Interactive mode required", "error");
 			return;
 		}
 
-		const styles = loadOutputStyles(ctx.cwd);
-		const visibleStyles =
-			scope === "global" ? styles.filter((style) => style.source !== "project") : styles;
-		if (visibleStyles.length === 0) {
+		const styles = loadAllStyles(ctx.cwd);
+		const visibleStyles = scope === "global" ? styles.filter((s) => s.source !== "project") : styles;
+		if (!visibleStyles.length) {
 			ctx.ui.notify("No output styles found", "warning");
 			return;
 		}
 
-		const selected = await ctx.ui.custom<string | undefined>((tui, theme, _kb, done) => {
-			const container = new Container();
-			const titleSuffix = scope === "global" ? " · global default" : scope === "project" ? " · local override" : "";
+		// @ts-ignore
+		await ctx.ui.custom((tui, theme, _kb, done) => {
 			const selections = getActiveStyleSelections(ctx.cwd);
 			const resolvedActiveName = activeStyleName ?? selections.effective;
+
+			const container = new Container();
 			container.addChild(new DynamicBorder((str) => theme.fg("accent", str)));
-			container.addChild(new Text(theme.fg("accent", theme.bold(` Output Styles${titleSuffix}`)), 1, 0));
-			container.addChild(new Text(theme.fg("muted", getSelectorSubtitle(scope)), 1, 0));
+			container.addChild(new Text(theme.fg("accent", theme.bold(" Output Styles")), 1, 0));
+			container.addChild(new Text(theme.fg("muted", "↑↓ navigate · Enter apply · ⌃G global · ⌃P local"), 1, 0));
 			container.addChild(new Spacer(1));
 
 			const items = visibleStyles.map((style, index) => ({
-				value: style.frontmatter.name,
+				value: style.name,
 				label: formatStyleLabel(style, index, selections, theme),
-				description: getStyleDescription(style, selections),
+				description: style.config.description,
 			}));
-			const selectList = new SelectList(
-				items,
-				Math.min(items.length, MAX_SELECT_LIST_ITEMS),
-				getSelectListTheme(),
-				{ minPrimaryColumnWidth: 28, maxPrimaryColumnWidth: 64 },
-			);
+
+			const selectList = new SelectList(items, Math.min(items.length, MAX_SELECT_LIST_ITEMS), getSelectListTheme(), { minPrimaryColumnWidth: 32, maxPrimaryColumnWidth: 72 });
 			const currentIndex = items.findIndex((item) => item.value === resolvedActiveName);
-			if (currentIndex !== -1) {
-				selectList.setSelectedIndex(currentIndex);
-			}
+			if (currentIndex !== -1) selectList.setSelectedIndex(currentIndex);
 			selectList.onSelect = (item) => done(item.value);
 			selectList.onCancel = () => done(undefined);
 
@@ -526,13 +762,8 @@ export default function outputStylesExtension(pi: ExtensionAPI): void {
 				invalidate: () => container.invalidate(),
 				handleInput: (data: string) => {
 					if (matchesKey(data, Key.ctrl("g")) || matchesKey(data, Key.ctrl("p"))) {
-						const selectedItem = selectList.getSelectedItem();
-						if (!selectedItem) {
-							return;
-						}
-
-						const shortcutScope = matchesKey(data, Key.ctrl("g")) ? "global" : "project";
-						if (applyStyle(selectedItem.value, ctx, shortcutScope)) {
+						const item = selectList.getSelectedItem();
+						if (item && applyStyle(item.value, ctx, matchesKey(data, Key.ctrl("g")) ? "global" : "project")) {
 							done(undefined);
 						}
 						return;
@@ -543,22 +774,88 @@ export default function outputStylesExtension(pi: ExtensionAPI): void {
 			};
 		});
 
-		if (!selected) {
+		const selected = undefined; // Will be handled by callback
+		if (selected) applyStyle(selected, ctx, scope);
+	}
+
+	async function showTogglePanel(ctx: ExtensionContext): Promise<void> {
+		if (!ctx.hasUI) {
+			ctx.ui.notify("Interactive mode required", "error");
 			return;
 		}
 
-		applyStyle(selected, ctx, scope);
+		const styleName = activeStyleName ?? resolveActiveStyleName(ctx.cwd);
+		const style = findOutputStyle(ctx.cwd, styleName);
+		if (!style) {
+			ctx.ui.notify("No active style found", "error");
+			return;
+		}
+
+		// @ts-ignore
+		await ctx.ui.custom((tui, theme, _kb, done) => {
+			const panel = createTogglePanel(ctx, style, theme);
+
+			return {
+				render: (width: number) => panel.render(width),
+				invalidate: () => {},
+				handleInput: (data: string) => {
+					const state = panel.getState();
+
+					if (matchesKey(data, Key.escape)) {
+						done(undefined);
+						return;
+					}
+
+					if (matchesKey(data, Key.left) || matchesKey(data, Key.right)) {
+						const sections: ToggleSection[] = ["features", "behavior", "personality", "done"];
+						const idx = sections.indexOf(state.section);
+						const delta = matchesKey(data, Key.left) ? -1 : 1;
+						state.section = sections[(idx + delta + sections.length) % sections.length];
+						state.cursor = 0;
+						tui.requestRender();
+						return;
+					}
+
+					if (matchesKey(data, Key.up)) {
+						const max = panel.getSectionItemCount(state.section) - 1;
+						state.cursor = state.cursor <= 0 ? max : state.cursor - 1;
+						tui.requestRender();
+						return;
+					}
+
+					if (matchesKey(data, Key.down)) {
+						const max = panel.getSectionItemCount(state.section) - 1;
+						state.cursor = state.cursor >= max ? 0 : state.cursor + 1;
+						tui.requestRender();
+						return;
+					}
+
+					if (matchesKey(data, Key.space) || matchesKey(data, Key.enter)) {
+						if (panel.isDone()) {
+							panel.saveChanges();
+							ctx.ui.notify("Feature toggles saved", "info");
+							done(undefined);
+							return;
+						}
+						panel.toggleCurrent();
+						panel.cycleValue();
+						tui.requestRender();
+						return;
+					}
+				},
+			};
+		});
 	}
 
 	async function createStyle(ctx: ExtensionCommandContext): Promise<void> {
 		if (!ctx.hasUI) {
-			ctx.ui.notify("Output style creation requires interactive mode", "error");
+			ctx.ui.notify("Interactive mode required", "error");
 			return;
 		}
 
-		const nameInput = await ctx.ui.input("Output style name", "my-style");
+		const nameInput = await ctx.ui.input("Style name", "my-style");
 		if (!nameInput?.trim()) {
-			ctx.ui.notify("Output style creation cancelled", "warning");
+			ctx.ui.notify("Creation cancelled", "warning");
 			return;
 		}
 
@@ -568,57 +865,50 @@ export default function outputStylesExtension(pi: ExtensionAPI): void {
 			return;
 		}
 
-		if (nameResult.normalized) {
-			ctx.ui.notify(`Normalized output style name to \"${nameResult.name}\"`, "info");
-		}
-
-		const existing = findOutputStyle(ctx.cwd, nameResult.name);
-		if (existing) {
-			if (existing.source === "built-in") {
-				ctx.ui.notify(`Cannot override built-in output style \"${nameResult.name}\"`, "error");
-				return;
-			}
-			ctx.ui.notify(`Output style \"${nameResult.name}\" already exists`, "error");
+		if (findOutputStyle(ctx.cwd, nameResult.name)) {
+			ctx.ui.notify(`Style "${nameResult.name}" already exists`, "error");
 			return;
 		}
 
 		const description = await ctx.ui.input("Description (optional)");
-		const keepCoding = await ctx.ui.confirm(
-			"Keep coding instructions?",
-			"Select yes to keep the default coding rules in the system prompt.",
-		);
-		const content = await ctx.ui.editor("Output style instructions", "Describe the desired output style...");
-		if (content === undefined) {
-			ctx.ui.notify("Output style creation cancelled", "warning");
+		const icon = await ctx.ui.input("Icon emoji (optional)", "💡");
+
+		const config: StyleConfig = {
+			name: nameResult.name,
+			description: description?.trim() || undefined,
+			icon: icon?.trim() || undefined,
+			keepCodingInstructions: true,
+			features: {},
+			personality: {},
+			behavior: {},
+		};
+
+		const prompt = await ctx.ui.editor("Style prompt", "Describe the desired output style...");
+		if (prompt === undefined) {
+			ctx.ui.notify("Creation cancelled", "warning");
 			return;
 		}
 
+		// Write single md file with frontmatter
 		const stylesDir = getOutputStylesDir(ctx.cwd);
-		if (!existsSync(stylesDir)) {
-			mkdirSync(stylesDir, { recursive: true });
-		}
+		if (!existsSync(stylesDir)) mkdirSync(stylesDir, { recursive: true });
 
-		const fileContent = generateStyleFileContent(nameResult.name, content, description, keepCoding);
 		const filePath = join(stylesDir, `${nameResult.name}.md`);
+		const yamlStr = YAML.stringify(config, { indent: 2 });
+		const content = `---\n${yamlStr}---\n\n${prompt.trim()}`;
+		writeFileSync(filePath, content, "utf-8");
 
-		try {
-			writeFileSync(filePath, fileContent, "utf-8");
-		} catch (error) {
-			ctx.ui.notify(`Failed to create output style file: ${error}`, "error");
-			return;
-		}
-
-		ctx.ui.notify(`Created output style ${nameResult.name}`, "info");
+		ctx.ui.notify(`Created style "${nameResult.name}"`, "info");
 		applyStyle(nameResult.name, ctx);
 	}
 
+	// Session events
 	pi.on("session_start", async (_event, ctx) => {
 		const entries = ctx.sessionManager.getEntries();
-		for (let i = entries.length - 1; i >= 0; i -= 1) {
+		for (let i = entries.length - 1; i >= 0; i--) {
 			const entry = entries[i];
 			if (entry.type === "custom" && entry.customType === OUTPUT_STYLE_ENTRY_TYPE) {
-				const data = entry.data as { name?: string } | undefined;
-				activeStyleName = data?.name;
+				activeStyleName = (entry.data as { name?: string })?.name;
 				return;
 			}
 		}
@@ -626,63 +916,58 @@ export default function outputStylesExtension(pi: ExtensionAPI): void {
 	});
 
 	pi.on("before_agent_start", async (event, ctx: ExtensionContext) => {
-		const resolvedStyleName = activeStyleName ?? resolveActiveStyleName(ctx.cwd);
-		const style = findOutputStyle(ctx.cwd, resolvedStyleName);
-		if (!style) {
-			return;
-		}
-		activeStyleName = style.frontmatter.name;
-		const appended = formatStylePrompt(style);
-		if (!appended) {
-			return;
-		}
-		return { systemPrompt: `${event.systemPrompt}\n\n${appended}` };
+		const styleName = activeStyleName ?? resolveActiveStyleName(ctx.cwd);
+		const style = findOutputStyle(ctx.cwd, styleName);
+		if (!style) return;
+
+		activeStyleName = style.name;
+		const systemPrompt = generateStyleSystemPrompt(style);
+		if (!systemPrompt) return;
+
+		return { systemPrompt: `${event.systemPrompt}\n\n${systemPrompt}` };
 	});
 
+	// Commands
 	pi.registerCommand("output-style", {
 		description: "Switch output style",
 		handler: async (args, ctx) => {
 			const trimmed = args.trim();
 			if (trimmed) {
-				const normalized = normalizeStyleName(trimmed);
-				if ("error" in normalized) {
-					ctx.ui.notify(normalized.error, "error");
+				const result = normalizeStyleName(trimmed);
+				if ("error" in result) {
+					ctx.ui.notify(result.error, "error");
 					return;
 				}
-				applyStyle(normalized.name, ctx);
+				applyStyle(result.name, ctx);
 				return;
 			}
-
 			await showSelector(ctx);
-		},
-	});
-
-	pi.registerShortcut("alt+g", {
-		description: "Set global output style",
-		handler: async (ctx) => {
-			if (!ctx.hasUI) {
-				ctx.ui.notify("Global output style selection requires interactive mode", "error");
-				return;
-			}
-			await showSelector(ctx, "global");
-		},
-	});
-
-	pi.registerShortcut("alt+p", {
-		description: "Set project output style",
-		handler: async (ctx) => {
-			if (!ctx.hasUI) {
-				ctx.ui.notify("Project output style selection requires interactive mode", "error");
-				return;
-			}
-			await showSelector(ctx, "project");
 		},
 	});
 
 	pi.registerCommand("output-style:new", {
 		description: "Create a new output style",
-		handler: async (_args, ctx) => {
-			await createStyle(ctx);
-		},
+		handler: async (_args, ctx) => { await createStyle(ctx); },
+	});
+
+	pi.registerCommand("output-style:toggle", {
+		description: "Open feature toggle panel",
+		handler: async (_args, ctx) => { await showTogglePanel(ctx); },
+	});
+
+	// Shortcuts
+	pi.registerShortcut("alt+g", {
+		description: "Set global output style",
+		handler: async (ctx) => { if (ctx.hasUI) await showSelector(ctx, "global"); },
+	});
+
+	pi.registerShortcut("alt+p", {
+		description: "Set project output style",
+		handler: async (ctx) => { if (ctx.hasUI) await showSelector(ctx, "project"); },
+	});
+
+	pi.registerShortcut("alt+t", {
+		description: "Open feature toggle panel",
+		handler: async (ctx) => { if (ctx.hasUI) await showTogglePanel(ctx); },
 	});
 }

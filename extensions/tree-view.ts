@@ -7,7 +7,7 @@
  * - Default to 2 levels of depth (configurable via DEPTH variable)
  * - Automatically respect .gitignore
  * - Truncate long filenames (>30 chars)
- * - Proper tree formatting with ├── and └──
+ * - Compact 2-level tree output
  * - Directories show "/" suffix
  * - UTF-8 safe (no garbled Chinese characters)
  * - **Injects actual directory tree into system prompt**
@@ -21,26 +21,44 @@ import { writeFileSync, unlinkSync, existsSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 
+const MAX_SECOND_LEVEL_ITEMS = parseInt(process.env.TREE_VIEW_MAX_SECOND_LEVEL_ITEMS || "50", 10);
+
 function getTreeOutput(depth: number = 2): string {
+	const safeDepth = Number.isFinite(depth) && depth > 0 ? Math.floor(depth) : 2;
+	const safeMaxItems = Number.isFinite(MAX_SECOND_LEVEL_ITEMS) && MAX_SECOND_LEVEL_ITEMS > 0 ? MAX_SECOND_LEVEL_ITEMS : 50;
 	const pythonScript = `import os
 import subprocess
 
+
+def safe_run(args):
+    try:
+        result = subprocess.run(args, capture_output=True, text=True)
+        return result.stdout if result.returncode == 0 else ''
+    except Exception:
+        return ''
+
+
+def short_name(name):
+    return f"{name[:10]}...{name[-7:]}" if len(name) > 30 else name
+
+
 # 获取目录列表以判断是否是目录
 depth = os.environ.get('DEPTH', '2')
-dirs_result = subprocess.run(['fd', '-t', 'd', '-d', depth], capture_output=True, text=True)
-dirs = set(line.rstrip('/') for line in dirs_result.stdout.strip().split('\\n') if line)
+max_items = int(os.environ.get('MAX_SECOND_LEVEL_ITEMS', '50'))
+dirs_output = safe_run(['fd', '-t', 'd', '-d', depth])
+dirs = set(line.rstrip('/') for line in dirs_output.strip().split('\\n') if line)
 
 # 处理文件列表
-files_result = subprocess.run(['fd', '-d', depth], capture_output=True, text=True)
+files_output = safe_run(['fd', '-d', depth])
 root = {}
 children = {}
 
-for line in files_result.stdout.strip().split('\\n'):
+for line in files_output.strip().split('\\n'):
     if not line:
         continue
     path = line.rstrip('/')
     parts = path.split('/')
-    
+
     if len(parts) == 1:
         root[parts[0]] = (parts[0] in dirs)
     elif len(parts) == 2:
@@ -54,45 +72,53 @@ for line in files_result.stdout.strip().split('\\n'):
 for path in sorted(root.keys()):
     is_dir = root[path]
     print(f"{path}/" if is_dir else path)
-    
+
     if path in children:
         items = children[path]
-        for i, (name, is_dir) in enumerate(items):
+        visible_items = items[:max_items]
+        hidden_count = max(0, len(items) - len(visible_items))
+
+        for i, (name, is_dir) in enumerate(visible_items):
             suffix = '/' if is_dir else ''
-            if len(name) > 30:
-                name = f"{name[:10]}...{name[-7:]}"
-            if i == len(items) - 1:
-                print(f"└── {name}{suffix}")
-            else:
-                print(f"├── {name}{suffix}")
+            print(f" {short_name(name)}{suffix}")
+
+        if hidden_count > 0:
+            print(f" +{hidden_count}")
 `;
 
+	const tempFile = join(tmpdir(), `tree-view-${Date.now()}.py`);
+
 	try {
-		const tempFile = join(tmpdir(), `tree-view-${Date.now()}.py`);
 		writeFileSync(tempFile, pythonScript, "utf8");
 
-		const result = execSync(`DEPTH=${depth} python3 "${tempFile}"`, {
+		const result = execSync(`python3 "${tempFile}"`, {
 			encoding: "utf8",
 			cwd: process.cwd(),
+			env: {
+				...process.env,
+				DEPTH: String(safeDepth),
+				MAX_SECOND_LEVEL_ITEMS: String(safeMaxItems),
+			},
 		});
 
-		unlinkSync(tempFile);
-		return result.trim();
-	} catch (error) {
-		return `Error generating tree: ${(error as Error).message}`;
+		return result.trim() || "(tree unavailable)";
+	} catch {
+		return "(tree unavailable)";
+	} finally {
+		if (existsSync(tempFile)) {
+			try {
+				unlinkSync(tempFile);
+			} catch {
+				// ignore cleanup errors
+			}
+		}
 	}
 }
 
 const TREE_DEPTH = parseInt(process.env.TREE_DEPTH || "2", 10);
 const treeOutput = getTreeOutput(TREE_DEPTH);
 
-const TREE_VIEW_INJECTION = `
-## Current working directory
-
-\`\`\`
-${treeOutput}
-\`\`\`
-`;
+const TREE_VIEW_INJECTION = `\ncwd:\n${treeOutput}\n`;
 
 export default function (pi: ExtensionAPI) {
 	pi.on("before_agent_start", async (event, ctx: ExtensionContext) => {

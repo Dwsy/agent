@@ -9,6 +9,7 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { getDefaultSpinnerFrames } from "./spinner-utils.ts";
 
 // ============================================================================
 // 配置类型定义
@@ -177,8 +178,8 @@ const DEFAULT_CONFIG: RolePersonaConfig = {
     },
   },
   ui: {
-    spinnerIntervalMs: 260,
-    spinnerFrames: ["✳", "✶", "✧", "✦"],
+    spinnerIntervalMs: 120,
+    spinnerFrames: getDefaultSpinnerFrames(),
     viewerDefaultFilter: "all",
   },
   advanced: {

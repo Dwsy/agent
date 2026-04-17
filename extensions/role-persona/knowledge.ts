@@ -23,6 +23,11 @@ import type { KnowledgeExternalSource } from "./config.ts";
 
 export const GLOBAL_KNOWLEDGE_DIR = join(ROLES_DIR, "knowledge");
 
+/** Skills directory as knowledge source - scanned from ~/.pi/agent/skills/ */
+// ROLES_DIR points to ~/.pi/roles, skills is at ~/.pi/agent/skills
+// So we go: ~/.pi/roles -> .. -> .pi -> agent/skills
+export const SKILLS_KNOWLEDGE_DIR = join(ROLES_DIR, "..", "agent", "skills");
+
 export function getRoleKnowledgeDir(rolePath: string): string {
   return join(rolePath, "knowledge");
 }
@@ -299,11 +304,93 @@ function readEntry(filePath: string, rootDir: string, category: string, source: 
 }
 
 // ============================================================================
+// Skills Source - Readonly
+// ============================================================================
+
+/**
+ * Scan skills directory and return entries from SKILL.md files.
+ * Each skill directory with SKILL.md becomes a knowledge entry.
+ */
+function scanSkillsDir(): KnowledgeEntry[] {
+  const entries: KnowledgeEntry[] = [];
+  if (!existsSync(SKILLS_KNOWLEDGE_DIR)) return entries;
+
+  let children: string[];
+  try {
+    children = readdirSync(SKILLS_KNOWLEDGE_DIR);
+  } catch {
+    return entries;
+  }
+
+  for (const child of children) {
+    if (child.startsWith(".") || child.startsWith("_")) continue;
+    const skillPath = join(SKILLS_KNOWLEDGE_DIR, child);
+
+    let st;
+    try {
+      st = statSync(skillPath);
+    } catch {
+      continue;
+    }
+
+    if (!st.isDirectory()) continue;
+
+    // Look for SKILL.md in the skill directory
+    const skillFile = join(skillPath, "SKILL.md");
+    if (!existsSync(skillFile)) continue;
+
+    let content: string;
+    try {
+      content = readFileSync(skillFile, "utf-8");
+    } catch {
+      continue;
+    }
+
+    // Parse frontmatter from SKILL.md
+    const { meta } = parseFrontmatter(content);
+    const title = (meta.title as string) || child;
+    const description = (meta.description as string) || "";
+    const tags = Array.isArray(meta.tags) ? meta.tags : [];
+
+    // Auto-tag with skill-related keywords for better searchability
+    const autoTags = ["skill", "tool", "capability"];
+    const allTags = [...new Set([...tags, ...autoTags])];
+
+    // Build a summary from description + first section
+    const bodyMatch = content.match(/^---\s*\n[\s\S]*?\n---\s*\n([\s\S]*)/);
+    const firstSection = bodyMatch ? bodyMatch[1].slice(0, 500).trim() : "";
+
+    const fullMeta: KnowledgeFrontmatter = {
+      title,
+      description,
+      tags: allTags,
+      category: "skills",
+      version: 1,
+      created: "",
+      updated: "",
+      scope: "tools",
+    };
+
+    entries.push({
+      relativePath: `${child}/SKILL.md`,
+      absolutePath: skillFile,
+      meta: fullMeta,
+      source: "skills",
+      readonly: true,
+      category: "skills",
+      slug: child,
+    });
+  }
+
+  return entries;
+}
+
+// ============================================================================
 // Public API
 // ============================================================================
 
 /**
- * Collect all entries from all sources (global + role + project + external).
+ * Collect all entries from all sources (global + role + project + external + skills).
  */
 function collectAllEntries(rolePath: string | null): KnowledgeEntry[] {
   const entries: KnowledgeEntry[] = [];
@@ -314,6 +401,8 @@ function collectAllEntries(rolePath: string | null): KnowledgeEntry[] {
   for (const ext of getExternalSources()) {
     entries.push(...scanKnowledgeDir(ext.path, ext.id, true));
   }
+  // Add skills source
+  entries.push(...scanSkillsDir());
   return entries;
 }
 
@@ -334,6 +423,8 @@ export function listKnowledge(rolePath: string | null): KnowledgeListResult {
   for (const ext of getExternalSources()) {
     sourceMap.set(ext.id, { readonly: true, entries: [], description: ext.description });
   }
+  // Skills source - always available, readonly
+  sourceMap.set("skills", { readonly: true, entries: [], description: "Available Pi skills (from ~/.pi/agent/skills/)" });
 
   for (const e of allEntries) {
     const group = sourceMap.get(e.source);
@@ -397,7 +488,8 @@ export function readKnowledge(
   const colonIdx = path.indexOf(":");
   if (colonIdx > 0 && !path.startsWith("/") && !path.startsWith(".")) {
     const prefix = path.slice(0, colonIdx);
-    if (["global", "role", "project"].includes(prefix) || getExternalSources().some((s) => s.id === prefix)) {
+    // Include "skills" as a valid prefix
+    if (["global", "role", "project", "skills"].includes(prefix) || getExternalSources().some((s) => s.id === prefix)) {
       targetSource = prefix;
       path = path.slice(colonIdx + 1);
     }
@@ -420,6 +512,12 @@ export function readKnowledge(
       candidates.push({ dir: ext.path, source: ext.id, readonly: true });
     }
   }
+  // Skills source
+  if (targetSource === "skills") {
+    // Skills are at SKILLS_KNOWLEDGE_DIR/<skill-name>/SKILL.md
+    // The path should be like "agent-browser/SKILL.md"
+    candidates.push({ dir: SKILLS_KNOWLEDGE_DIR, source: "skills", readonly: true });
+  }
 
   for (const c of candidates) {
     const fullPath = join(c.dir, path);
@@ -441,7 +539,7 @@ function readKnowledgeFile(absolutePath: string, source: string, readonly: boole
 
   const { meta, body } = parseFrontmatter(content);
   const fullMeta: KnowledgeFrontmatter = {
-    title: (meta.title as string) || basename(absolutePath, ".md"),
+    title: (meta.title as string) || (meta.name as string) || basename(absolutePath, ".md"),
     description: (meta.description as string) || "",
     tags: Array.isArray(meta.tags) ? meta.tags : [],
     version: typeof meta.version === "number" ? meta.version : 1,

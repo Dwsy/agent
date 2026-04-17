@@ -383,4 +383,5 @@ export function registerRoleMessageRenderers(pi: ExtensionAPI): void {
   pi.registerMessageRenderer("role-notify", createMessageBoxRenderer("Role"));
   pi.registerMessageRenderer("role-memories", createMessageBoxRenderer("🧠 Role Memories"));
   pi.registerMessageRenderer("role-tags", createMessageBoxRenderer("🏷 Role Tags"));
+  pi.registerMessageRenderer("memory-log", createMessageBoxRenderer("🧠 Memory Log"));
 }

@@ -311,11 +311,6 @@ class TetrisComponent {
 }
 
 export const handler = async (_args: unknown, ctx: ExtensionAPI): Promise<void> => {
-	if (!ctx.hasUI) {
-		ctx.ui.notify("Tetris requires interactive mode", "error");
-		return;
-	}
-
 	await ctx.ui.custom((tui, _theme, _kb, done) => {
 		return new TetrisComponent(
 			tui,

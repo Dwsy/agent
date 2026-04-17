@@ -5,6 +5,7 @@
  */
 
 import * as fs from "fs";
+import * as http from "http";
 import * as path from "path";
 import * as os from "os";
 import { exec } from "child_process";
@@ -630,4 +631,57 @@ export async function exportMemoryToBrowser(rolePath: string, roleName: string):
   await execAsync(`${cmd} "${tmpFile}"`);
 
   return tmpFile;
+}
+
+/** Live server mode - 启动 HTTP 服务器，随机端口 */
+export interface LiveServerResult {
+  url: string;
+  port: number;
+  close: () => void;
+}
+
+function findAvailablePort(start: number, maxAttempts = 100): number | null {
+  for (let i = 0; i < maxAttempts; i++) {
+    const port = start + Math.floor(Math.random() * 1000);
+    try {
+      const server = http.createServer();
+      server.listen(port, "127.0.0.1");
+      server.close();
+      return port;
+    } catch {
+      // port in use, try next
+    }
+  }
+  return null;
+}
+
+export function startMemoryLiveServer(rolePath: string, roleName: string): LiveServerResult {
+  const html = buildMemoryExportHtml(rolePath, roleName);
+  const port = findAvailablePort(3000) ?? 8080;
+
+  const server = http.createServer((req, res) => {
+    res.writeHead(200, {
+      "Content-Type": "text/html; charset=utf-8",
+      "Cache-Control": "no-cache",
+    });
+    res.end(html);
+  });
+
+  server.listen(port, "127.0.0.1", () => {});
+
+  return {
+    url: `http://localhost:${port}`,
+    port,
+    close: () => server.close(),
+  };
+}
+
+/** 自动启动 + 打开浏览器 */
+export async function openMemoryLiveServer(rolePath: string, roleName: string): Promise<LiveServerResult> {
+  const result = startMemoryLiveServer(rolePath, roleName);
+
+  const cmd = process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open";
+  await execAsync(`${cmd} "${result.url}"`);
+
+  return result;
 }

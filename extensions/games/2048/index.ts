@@ -287,11 +287,6 @@ class Game2048Component {
 }
 
 export const handler = async (_args: unknown, ctx: ExtensionAPI): Promise<void> => {
-	if (!ctx.hasUI) {
-		ctx.ui.notify("2048 requires interactive mode", "error");
-		return;
-	}
-
 	const entries = ctx.sessionManager.getEntries();
 	let savedState: GameState | undefined;
 	for (let i = entries.length - 1; i >= 0; i--) {

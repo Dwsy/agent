@@ -1,4 +1,10 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+
+/** Check if running in RPC mode (headless, no TUI) */
+function isRpcMode(): boolean {
+	return process.argv.includes("--mode") && process.argv.includes("rpc");
+}
+
 import { handler as snakeHandler } from "./snake/index.js";
 import { handler as tetrisHandler } from "./tetris/index.js";
 import { handler as game2048Handler } from "./2048/index.js";
@@ -8,6 +14,8 @@ import { handler as pongHandler } from "./pong/index.js";
 import { handler as modelTestHandler } from "./model-test.js";
 
 export default function (pi: ExtensionAPI) {
+	if (isRpcMode()) return;
+
 	pi.registerCommand("game:snake", {
 		description: "Play Snake!",
 		handler: snakeHandler,

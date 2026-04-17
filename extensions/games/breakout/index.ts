@@ -299,11 +299,6 @@ class BreakoutComponent {
 }
 
 export const handler = async (_args: unknown, ctx: ExtensionAPI): Promise<void> => {
-	if (!ctx.hasUI) {
-		ctx.ui.notify("Breakout requires interactive mode", "error");
-		return;
-	}
-
 	await ctx.ui.custom((tui, _theme, _kb, done) => {
 		return new BreakoutComponent(
 			tui,

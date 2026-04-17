@@ -32,9 +32,10 @@ import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-age
 import { compact as piCompact } from "@mariozechner/pi-coding-agent";
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, relative, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { StringEnum } from "@mariozechner/pi-ai";
 import { Type } from "@sinclair/typebox";
-import { log } from "./logger.ts";
+import { log, logStart, logEnd, logWarn, logError, setCurrentRole } from "./logger.ts";
 import { SelectList, Text, Container } from "@mariozechner/pi-tui";
 import { config, reloadConfig } from "./config.ts";
 
@@ -143,6 +144,10 @@ const EXTERNAL_READONLY_MIN_CONFIDENCE = config.externalReadonly.minConfidence;
 export default function rolePersonaExtension(pi: ExtensionAPI) {
   registerRoleMessageRenderers(pi);
 
+  // Skills directory — exposed via resources_discover for agent-driven memory management
+  const extDir = dirname(fileURLToPath(import.meta.url));
+  const skillsDir = join(extDir, "skills");
+
   let currentRole: string | null = null;
   let currentRolePath: string | null = null;
   let autoMemoryInFlight = false;
@@ -160,7 +165,7 @@ export default function rolePersonaExtension(pi: ExtensionAPI) {
   interface MemoryLogEntry {
     time: string;
     source: "compaction" | "auto-extract" | "tool" | "manual";
-    op: "learning" | "preference" | "event" | "reinforce" | "consolidate";
+    op: "learning" | "preference" | "event" | "knowledge" | "reinforce" | "consolidate";
     content: string;
     stored: boolean;
     detail?: string; // e.g. category, duplicate reason
@@ -649,23 +654,12 @@ export default function rolePersonaExtension(pi: ExtensionAPI) {
     ensureRoleMemoryFiles(rolePath, roleName);
     autoRepairRoleMemory(rolePath, roleName, ctx, "activateRole");
 
-    // Pending layer: randomly promote 1-2 pending memories per session
-    // This simulates "usage-driven" promotion - memories promoted when relevant
+    // Pending layer: do NOT randomly promote items.
+    // Promotion must remain usage-driven (search/relevance/manual action), otherwise
+    // pending loses its meaning as a verification buffer.
     const pending = getPendingMemories(rolePath);
     if (pending.length > 0) {
-      const promoteCount = Math.min(pending.length, Math.ceil(Math.random() * 2));
-      let promoted = 0;
-      for (let i = 0; i < promoteCount && i < pending.length; i++) {
-        const item = pending[i];
-        const result = promotePendingLearning(rolePath, roleName, item.id);
-        if (result.promoted) {
-          log("pending-promote", `promoted: ${item.text.slice(0, 50)}`);
-          promoted++;
-        }
-      }
-      if (promoted > 0 && isTuiAvailable(ctx)) {
-        log("pending", `session start: promoted ${promoted}/${pending.length} pending memories`);
-      }
+      log("pending", `session start: ${pending.length} pending memories waiting for verification`);
     }
 
     // Expire old pending memories (> 7 days without promotion)
@@ -730,6 +724,7 @@ export default function rolePersonaExtension(pi: ExtensionAPI) {
     const roleName = resolution.role;
 
     if (roleName) {
+      setCurrentRole(roleName);
       const rolePath = join(ROLES_DIR, roleName);
 
       // 默认角色缺失时自动创建，保证默认角色可用
@@ -750,7 +745,15 @@ export default function rolePersonaExtension(pi: ExtensionAPI) {
     }
   });
 
-  // 2. Inject prompts into system prompt
+  // 2. Resource discovery — expose bundled skills for agent-driven memory management
+  pi.on("resources_discover", async () => {
+    if (!existsSync(skillsDir)) return;
+    return {
+      skillPaths: [skillsDir],
+    };
+  });
+
+  // 3. Inject prompts into system prompt
   pi.on("before_agent_start", async (event, ctx) => {
     if (!currentRolePath || !currentRole) return;
 
@@ -776,8 +779,14 @@ They are not a mandatory startup checklist, and you should not mechanically call
 
 ## 📝 MEMORY
 
-Memory is auto-managed in the background. Only use the \`memory\` tool when the user explicitly asks to remember something.
-Do NOT proactively save memories or do reflections unless asked.
+Memory is auto-managed in the background, but you may still use memory tools when they materially improve the task.
+
+Use the \`memory\` tool proactively for **recall/search/reinforce** when past learnings may help.
+Use the \`memory\` tool proactively for **maintenance** when the user asks to organize, tidy, or review memory.
+Use **save/add** actions conservatively: prefer writing memory only for durable, non-obvious insights, or when the user explicitly asks to remember something.
+Do NOT mechanically do memory reflections on every turn, and do NOT save trivial or task-local noise.
+
+Bundled skills may guide this behavior (for example: memory-recall, memory-retro, memory-organize, memory-best-practices).
 
 ${buildMemoryEditInstruction(currentRolePath)}`;
 
@@ -905,7 +914,7 @@ ${buildMemoryEditInstruction(currentRolePath)}`;
     };
   });
 
-  // 3. Smart auto-memory checkpoints (not every turn)
+  // 4. Smart auto-memory checkpoints (not every turn)
   pi.on("agent_end", async (event, ctx) => {
     if (!currentRole || !currentRolePath) return;
 
@@ -932,7 +941,7 @@ ${buildMemoryEditInstruction(currentRolePath)}`;
     scheduleAutoMemoryFlush(event.messages, ctx, decision.reason);
   });
 
-  // 3.5 Intercept compaction to extract memories before context is lost.
+  // 4.5 Intercept compaction to extract memories before context is lost.
   // Piggybacks on the default compaction LLM call by injecting a <memory> extraction
   // instruction into customInstructions. Parses the JSON output and writes to memory/consolidated.md
   // + daily memory, then strips the <memory> block from the summary.
@@ -942,12 +951,18 @@ ${buildMemoryEditInstruction(currentRolePath)}`;
     const { preparation, signal } = event;
     const rolePath = currentRolePath;
     const roleName = currentRole;
+    setCurrentRole(roleName);
     const model = ctx.model;
     if (!model) return;
 
-    const apiKey = await ctx.modelRegistry.getApiKey(model);
-    if (!apiKey) {
-      log("compact-memory", "no apiKey available, skipping memory extraction");
+    const registry = ctx.modelRegistry as any;
+    if (!registry || typeof registry.getApiKeyAndHeaders !== "function") {
+      log("compact-memory", "modelRegistry.getApiKeyAndHeaders not available");
+      return;
+    }
+    const auth = await registry.getApiKeyAndHeaders(model);
+    if (!auth.ok || !auth.apiKey) {
+      log("compact-memory", `no apiKey available: ${auth.error || "unknown"}`);
       return;
     }
 
@@ -955,30 +970,37 @@ ${buildMemoryEditInstruction(currentRolePath)}`;
 
     const memoryInstruction = `
 
-IMPORTANT: In addition to the summary above, extract key memories from this conversation that should be preserved long-term.
+IMPORTANT: In addition to the summary above, extract key memories and knowledge from this conversation.
 Output them in a <memory> block at the END of your response, after the summary.
 Format:
 
 <memory>
 [
-  {"type": "learning", "content": "concise factual insight or pattern"},
+  {"type": "learning", "content": "concise durable insight or pattern"},
   {"type": "preference", "content": "user preference or habit", "category": "Communication|Code|Tools|Workflow|General"},
-  {"type": "event", "content": "significant event or milestone", "date": "YYYY-MM-DD"}
+  {"type": "event", "content": "significant event or milestone"},
+  {"type": "knowledge", "title": "Knowledge Title", "description": "One-line summary", "content": "Reusable artifact: pattern, decision, rule, checklist, or architectural convention", "category": "Code|Design|Architecture|Workflow|Tools|General", "tags": ["tag1"]}
 ]
 </memory>
 
-Rules for memory extraction:
-- Only extract DURABLE, REUSABLE insights (not one-off task details)
-- Keep each item under 120 chars
-- Max 5 items total
-- Skip the <memory> block entirely if nothing worth remembering
-- The <memory> block must contain valid JSON inside the tags`;
+Rules for extraction:
+- Memories (learning/preference) go to PENDING layer first for verification before becoming permanent.
+- "learning": durable cross-session facts, patterns, rules discovered. Suggest 1-3 relevant tags.
+- "preference": user communication style, habits, tool preferences.
+- "event": significant session-level events or milestones worth noting.
+- "knowledge": reusable artifacts worth promoting to the knowledge base. Examples: code patterns, architectural decisions, established conventions, checklists, SOPs.
+- Prefer quality over quantity: extract fewer, higher-value items.
+- Keep memory content under 120 characters.
+- Max ${AUTO_MEMORY_MAX_ITEMS} memory items total (knowledge and event items do not count toward this limit).
+- Skip the <memory> block entirely if nothing worth remembering.
+- The <memory> block must contain valid JSON inside the tags.`;
 
     try {
       const result = await piCompact(
         preparation,
         model,
-        apiKey,
+        auth.apiKey,
+        auth.headers,
         memoryInstruction,
         signal,
       );
@@ -991,17 +1013,18 @@ Rules for memory extraction:
         try {
           const items = JSON.parse(memoryMatch[1]) as Array<{
             type: string;
-            content: string;
+            content?: string;
             category?: string;
             date?: string;
+            tags?: string[];
+            title?: string;
+            description?: string;
           }>;
 
           let storedL = 0, storedP = 0;
           for (const item of items) {
-            if (!item.content?.trim()) continue;
-
             if (item.type === "learning") {
-              // Import and use async version for tag extraction
+              if (!item.content?.trim()) continue;
               const { addRoleLearningWithTags } = await import("./memory-md.ts");
               const r = await addRoleLearningWithTags(ctx, rolePath, roleName, item.content, {
                 source: "compaction",
@@ -1010,14 +1033,33 @@ Rules for memory extraction:
               memLogPush({ source: "compaction", op: "learning", content: item.content, stored: r.stored, detail: r.reason });
               if (r.stored) storedL++;
             } else if (item.type === "preference") {
+              if (!item.content?.trim()) continue;
               const r = addRolePreference(rolePath, roleName, item.category || "General", item.content, {
                 appendDaily: true,
               });
               memLogPush({ source: "compaction", op: "preference", content: item.content, stored: r.stored, detail: item.category });
               if (r.stored) storedP++;
             } else if (item.type === "event") {
+              if (!item.content?.trim()) continue;
               appendDailyRoleMemory(rolePath, "event", item.content);
               memLogPush({ source: "compaction", op: "event", content: item.content, stored: true });
+            } else if (item.type === "knowledge") {
+              if (!item.title?.trim() || !item.content?.trim()) continue;
+              const kwResult = writeKnowledge(rolePath, {
+                title: item.title,
+                description: item.description || "",
+                content: item.content,
+                category: item.category || "General",
+                tags: item.tags || [],
+              });
+              memLogPush({
+                source: "compaction",
+                op: "knowledge",
+                content: `${kwResult.category}/${basename(kwResult.written)}`,
+                stored: true,
+                detail: `v${kwResult.version}`,
+              });
+              log("compact-memory", `+knowledge: ${kwResult.category}/${basename(kwResult.written)} v${kwResult.version}`);
             }
           }
 
@@ -1045,7 +1087,7 @@ Rules for memory extraction:
     }
   });
 
-  // 4. Flush on session shutdown if there are pending turns (best-effort, bounded wait)
+  // 5. Flush on session shutdown if there are pending turns (best-effort, bounded wait)
   pi.on("session_shutdown", async (_event, ctx) => {
     if (AUTO_MEMORY_ENABLED && autoMemoryPendingTurns > 0 && autoMemoryLastMessages) {
       await Promise.race([
@@ -1839,26 +1881,31 @@ Rules for memory extraction:
               container.dispose();
               done();
 
-              if (item.value === "browser") {
-                const { exportMemoryToBrowser } = await import("./memory-export-html.ts");
-                const tmpFile = await exportMemoryToBrowser(currentRolePath!, currentRole!);
-                notify(ctx, `Opened in browser: ${tmpFile}`, "success");
-              } else {
-                // Re-open TUI viewer
-                await ctx.ui.custom<void>(
-                  (tui, theme, _kb, done) =>
-                    new RoleMemoryViewerComponent(currentRolePath!, currentRole!, tui, theme, done),
-                  {
-                    overlay: true,
-                    overlayOptions: {
-                      anchor: "center",
-                      width: "90%",
-                      minWidth: 60,
-                      maxHeight: "95%",
+              // Defer to next tick — lets the TUI finish closing the first overlay
+              // before opening a new one. Without this, overlayStack gets a stale entry
+              // with component === undefined, causing "Cannot read properties of undefined (reading 'render')".
+              setTimeout(async () => {
+                if (item.value === "browser") {
+                  const { exportMemoryToBrowser } = await import("./memory-export-html.ts");
+                  const tmpFile = await exportMemoryToBrowser(currentRolePath!, currentRole!);
+                  notify(ctx, `Opened in browser: ${tmpFile}`, "success");
+                } else {
+                  // Re-open TUI viewer
+                  await ctx.ui.custom<void>(
+                    (tui, theme, _kb, done) =>
+                      new RoleMemoryViewerComponent(currentRolePath!, currentRole!, tui, theme, done),
+                    {
+                      overlay: true,
+                      overlayOptions: {
+                        anchor: "center",
+                        width: "90%",
+                        minWidth: 60,
+                        maxHeight: "95%",
+                      },
                     },
-                  },
-                );
-              }
+                  );
+                }
+              }, 0);
             },
             onCancel: () => {
               container.dispose();
@@ -2011,24 +2058,113 @@ Rules for memory extraction:
         "learning": "📘",
         "preference": "⚙️",
         "event": "📅",
+        "knowledge": "📚",
         "reinforce": "💪",
         "consolidate": "🧹",
       };
+
+      const stored = memoryLog.filter(e => e.stored).length;
+      const skipped = memoryLog.length - stored;
+
+      // 按来源统计
+      const sourceStats: Record<string, { total: number; stored: number }> = {};
+      for (const e of memoryLog) {
+        if (!sourceStats[e.source]) sourceStats[e.source] = { total: 0, stored: 0 };
+        sourceStats[e.source].total++;
+        if (e.stored) sourceStats[e.source].stored++;
+      }
+
+      // 按操作类型统计
+      const opStats: Record<string, { total: number; stored: number }> = {};
+      for (const e of memoryLog) {
+        if (!opStats[e.op]) opStats[e.op] = { total: 0, stored: 0 };
+        opStats[e.op].total++;
+        if (e.stored) opStats[e.op].stored++;
+      }
+
+      // 构建输出
+      const output: string[] = [];
+
+      // 标题
+      output.push(`## 🧠 Memory Log — ${memoryLog.length} 操作`);
+      output.push(``);
+
+      // 汇总卡片
+      output.push(`| 指标 | 数值 |`);
+      output.push(`|------|------|`);
+      output.push(`| 总操作 | ${memoryLog.length} |`);
+      output.push(`| ✓ 已存储 | ${stored} |`);
+      output.push(`| ✗ 跳过 | ${skipped} |`);
+      output.push(`| 成功率 | ${memoryLog.length > 0 ? Math.round(stored / memoryLog.length * 100) : 0}% |`);
+      output.push(``);
+
+      // 来源分布
+      output.push(`### 来源分布`);
+      output.push(``);
+      output.push(`| 来源 | 图标 | 操作 | 存储 |`);
+      output.push(`|------|------|------|------|`);
+      for (const [src, stats] of Object.entries(sourceStats)) {
+        const icon = sourceIcon[src] || "?";
+        output.push(`| ${src} | ${icon} | ${stats.total} | ${stats.stored} |`);
+      }
+      output.push(``);
+
+      // 操作类型分布
+      output.push(`### 操作类型分布`);
+      output.push(``);
+      output.push(`| 类型 | 图标 | 操作 | 存储 |`);
+      output.push(`|------|------|------|------|`);
+      for (const [op, stats] of Object.entries(opStats)) {
+        const icon = opIcon[op] || "?";
+        output.push(`| ${op} | ${icon} | ${stats.total} | ${stats.stored} |`);
+      }
+      output.push(``);
+
+      // 已存储记忆详情
+      const storedEntries = memoryLog.filter(e => e.stored);
+      if (storedEntries.length > 0) {
+        output.push(`### ✓ 已存储记忆`);
+        output.push(``);
+        for (const e of storedEntries) {
+          const op = opIcon[e.op] || "?";
+          const tag = e.detail && !e.detail.startsWith("reason=") ? ` (${e.detail})` : "";
+          output.push(`- ${op} **${e.op}**${tag}: ${e.content}`);
+        }
+        output.push(``);
+      }
+
+      // 跳过记录
+      const skippedEntries = memoryLog.filter(e => !e.stored);
+      if (skippedEntries.length > 0) {
+        output.push(`### ✗ 跳过记录`);
+        output.push(``);
+        for (const e of skippedEntries) {
+          const op = opIcon[e.op] || "?";
+          const reason = e.detail ? ` — ${e.detail}` : "";
+          output.push(`- ${op} **${e.op}**: ${e.content.slice(0, 80)}${e.content.length > 80 ? "…" : ""}${reason}`);
+        }
+        output.push(``);
+      }
+
+      // 时间线日志
+      output.push(`### 📋 时间线`);
+      output.push(``);
+      output.push("```" );
+      output.push(` #    时间      来源           操作          状态  内容`);
+      output.push(` ${"─".repeat(95)}`);
 
       const lines = memoryLog.map((e, i) => {
         const src = sourceIcon[e.source] || "?";
         const op = opIcon[e.op] || "?";
         const status = e.stored ? "✓" : "✗";
-        const detail = e.detail ? ` (${e.detail})` : "";
-        return `${String(i + 1).padStart(3)}  ${e.time}  ${src} ${e.source.padEnd(12)} ${op} ${e.op.padEnd(11)} ${status}  ${e.content.slice(0, 80)}${e.content.length > 80 ? "…" : ""}${detail}`;
+        const contentLen = 100;
+        return `${String(i + 1).padStart(3)}  ${e.time}  ${src} ${e.source.padEnd(12)} ${op} ${e.op.padEnd(11)} ${status}  ${e.content.slice(0, contentLen)}${e.content.length > contentLen ? "…" : ""}`;
       });
 
-      const stored = memoryLog.filter(e => e.stored).length;
-      const skipped = memoryLog.length - stored;
-      const header = `Memory Log — ${memoryLog.length} ops (${stored} stored, ${skipped} skipped)\n${"─".repeat(100)}`;
-      const output = `${header}\n${lines.join("\n")}`;
+      output.push(...lines);
+      output.push("```" );
 
-      pi.sendMessage({ content: output, display: true }, { triggerTurn: false });
+      pi.sendMessage({ customType: "memory-log", content: output.join("\n"), display: true }, { triggerTurn: false });
     },
   });
 

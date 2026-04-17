@@ -37,7 +37,7 @@ const HAIKU_MODEL_ID = "claude-haiku-4-5";
  */
 async function selectExtractionModel(
 	currentModel: Model<Api>,
-	modelRegistry: { find: (provider: string, modelId: string) => Model<Api> | undefined; getApiKey: (model: Model<Api>) => Promise<string | undefined> },
+	modelRegistry: { find: (provider: string, modelId: string) => Model<Api> | undefined; getApiKeyAndHeaders: (model: Model<Api>) => Promise<{ ok: boolean; apiKey?: string }> },
 ): Promise<Model<Api>> {
 	// Only consider switching if the provider is anthropic and the model is opus or sonnet
 	if (currentModel.provider !== "anthropic") {
@@ -57,8 +57,8 @@ async function selectExtractionModel(
 	}
 
 	// Check if we have an API key for the haiku model
-	const apiKey = await modelRegistry.getApiKey(haikuModel);
-	if (!apiKey) {
+	const auth = await modelRegistry.getApiKeyAndHeaders(haikuModel);
+	if (!auth.ok || !auth.apiKey) {
 		return currentModel;
 	}
 
@@ -107,16 +107,16 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			// Select the best model for extraction (prefer haiku for cost efficiency)
-			const extractionModel = await selectExtractionModel(ctx.model, ctx.modelRegistry);
+			const extractionModel = await selectExtractionModel(ctx.model, ctx.modelRegistry as any);
 
 			// Run extraction with loader UI
-			const result = await ctx.ui.custom<string | null>((tui, theme, done) => {
+			const result = await ctx.ui.custom<string | null>((tui, theme, _keybindings, done) => {
 				const loader = new BorderedLoader(tui, theme, `Extracting questions using ${extractionModel.id}...`);
 				loader.onAbort = () => done(null);
 
 				// Do the work
 				const doExtract = async () => {
-					const apiKey = await ctx.modelRegistry.getApiKey(extractionModel);
+					const auth = await (ctx.modelRegistry as any).getApiKeyAndHeaders(extractionModel);
 					const userMessage: UserMessage = {
 						role: "user",
 						content: [{ type: "text", text: lastAssistantText! }],
@@ -126,7 +126,7 @@ export default function (pi: ExtensionAPI) {
 					const response = await complete(
 						extractionModel,
 						{ systemPrompt: SYSTEM_PROMPT, messages: [userMessage] },
-						{ apiKey, signal: loader.signal },
+						{ apiKey: auth.apiKey, signal: loader.signal },
 					);
 
 					if (response.stopReason === "aborted") {

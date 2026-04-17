@@ -73,12 +73,12 @@ export default function (pi: ExtensionAPI) {
 			const currentSessionFile = ctx.sessionManager.getSessionFile();
 
 			// Generate the handoff prompt with loader UI
-			const result = await ctx.ui.custom<string | null>((tui, theme, done) => {
+			const result = await ctx.ui.custom<string | null>((tui, theme, _keybindings, done) => {
 				const loader = new BorderedLoader(tui, theme, `Generating handoff prompt...`);
 				loader.onAbort = () => done(null);
 
 				const doGenerate = async () => {
-					const apiKey = await ctx.modelRegistry.getApiKey(ctx.model!);
+					const auth = await (ctx.modelRegistry as any).getApiKeyAndHeaders(ctx.model!);
 
 					const userMessage: Message = {
 						role: "user",
@@ -94,7 +94,7 @@ export default function (pi: ExtensionAPI) {
 					const response = await complete(
 						ctx.model!,
 						{ systemPrompt: SYSTEM_PROMPT, messages: [userMessage] },
-						{ apiKey, signal: loader.signal },
+						{ apiKey: auth.apiKey, signal: loader.signal },
 					);
 
 					if (response.stopReason === "aborted") {

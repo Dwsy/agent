@@ -32,9 +32,15 @@
     //   - 多个（逗号分隔）: "provider/model-id,provider2/model-id"
     //   - JSON 数组: '[{"provider":"nvidia","model":"qwen/qwen3-coder"}]'
     "model": [
-      { "provider": "openai-codex", "model": "gpt-5.1-codex-mini" },
-      { "provider": "nvidia", "model": "qwen/qwen3-coder-480b-a35b-instruct" },
-      { "provider": "anthropic", "model": "claude-sonnet-4" }
+      { "provider": "longcat", "model": "LongCat-Flash-Thinking-2601" },      // 🥇 深度思考，记忆提取主力
+      { "provider": "modelscope", "model": "ZhipuAI/GLM-5" },                    // 魔搭 GLM-5
+      { "provider": "modelscope", "model": "moonshotai/Kimi-K2.5" },             // 魔搭 Kimi-K2.5
+      { "provider": "modelscope", "model": "Qwen/Qwen3.5-397B-A17B" },           // 魔搭 Qwen3.5
+      { "provider": "nvidia", "model": "openai/gpt-oss-120b" },                // 118.69 t/s - 最快
+      { "provider": "nvidia", "model": "qwen/qwen3-next-80b-a3b-thinking" },   // 72.41 t/s - Qwen 推理
+      { "provider": "nvidia", "model": "minimaxai/minimax-m2.5" },             // 72.18 t/s - MiniMax
+      { "provider": "nvidia", "model": "stepfun-ai/step-3.5-flash" },          // 67.28 t/s - Step 闪电
+      { "provider": "longcat", "model": "LongCat-Flash-Lite" }                      // 轻量兜底
     ],
 
     // 标签提取专用模型（默认继承 autoMemory.model）
@@ -118,11 +124,11 @@
 
   // ==================== UI 配置 ====================
   "ui": {
-    // Checkpoint 动画帧间隔（毫秒）
-    "spinnerIntervalMs": 260,
+    // Checkpoint 动画帧间隔（毫秒；默认对齐 Claude Code 节奏）
+    "spinnerIntervalMs": 120,
 
-    // Checkpoint 动画帧符号
-    "spinnerFrames": ["✳", "✶", "✧", "✦"],
+    // Checkpoint 动画帧符号（可选；默认直接沿用 Claude Code 的 platform-aware 往返序列）
+    // "spinnerFrames": ["·", "✢", "✳", "✶", "✻", "✽", "✽", "✻", "✶", "✳", "✢", "·"],
 
     // 记忆查看器默认过滤
     // "all" | "learnings" | "preferences" | "events"

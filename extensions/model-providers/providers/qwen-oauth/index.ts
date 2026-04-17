@@ -29,9 +29,9 @@ const QWEN_MODELS: ModelConfig[] = [
     name: "Qwen 3.5 Plus",
     reasoning: true,
     input: ["text", "image"],
-    cost: { input: 0.40, output: 1.20, cacheRead: 0, cacheWrite: 0 },
-    contextWindow: 256000,
-    maxTokens: 128000,
+    cost: { input: 0.40, output: 1.20, cacheRead: 0.15, cacheWrite: 0 },
+    contextWindow: 1000000,
+    maxTokens: 32000,
     compat: { supportsDeveloperRole: false, maxTokensField: "max_completion_tokens" },
   },
   {
@@ -268,6 +268,29 @@ function buildQwenTokenResolverCommand(): string {
 
   const encoded = Buffer.from(script, "utf8").toString("base64");
   return `!node -e "eval(Buffer.from('${encoded}','base64').toString())"`;
+}
+
+// ============ Public API (for token-refresh.ts) ============
+
+/**
+ * Refresh Qwen token using pi native auth storage
+ * Returns true if refresh succeeded, false otherwise
+ */
+export async function refreshQwen(): Promise<boolean> {
+  const creds = getQwenCredentials();
+  if (!creds) {
+    console.log("[Qwen] No stored credentials found");
+    return false;
+  }
+
+  try {
+    const refreshed = await refreshQwenToken(creds);
+    console.log(`[Qwen] Token refreshed, expires: ${new Date(refreshed.expires).toISOString()}`);
+    return true;
+  } catch (e: any) {
+    console.error(`[Qwen] Token refresh failed: ${e.message}`);
+    return false;
+  }
 }
 
 // ============ Provider Adapter ============

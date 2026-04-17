@@ -44,8 +44,7 @@
   },
 
   "ui": {
-    "spinnerIntervalMs": 260,
-    "spinnerFrames": ["✳", "✶", "✧", "✦"],
+    "spinnerIntervalMs": 120,
     "viewerDefaultFilter": "all"
   },
 

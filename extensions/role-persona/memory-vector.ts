@@ -312,13 +312,18 @@ async function resolveEmbeddingApiKey(ctx: ExtensionContext): Promise<string | n
 
   // 2. From model registry — find any OpenAI model and get its key
   try {
-    const all = ctx.modelRegistry.getAll();
+    const registry = ctx.modelRegistry as any;
+    if (!registry || typeof registry.getAll !== "function" || typeof registry.getApiKeyAndHeaders !== "function") {
+      log("memory-vector", "modelRegistry not fully available, skipping registry lookup");
+      throw new Error("modelRegistry unavailable");
+    }
+    const all = registry.getAll();
     const openaiModel = all.find(
-      (m) => m.provider === "openai" || m.provider === "openai-responses"
+      (m: any) => m.provider === "openai" || m.provider === "openai-responses"
     );
     if (openaiModel) {
-      const key = await ctx.modelRegistry.getApiKey(openaiModel);
-      if (key) return key;
+      const auth = await registry.getApiKeyAndHeaders(openaiModel);
+      if (auth.ok && auth.apiKey) return auth.apiKey;
     }
   } catch {
     // modelRegistry may not be available

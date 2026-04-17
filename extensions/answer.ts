@@ -76,7 +76,7 @@ async function selectExtractionModel(
 	currentModel: Model<Api>,
 	modelRegistry: {
 		find: (provider: string, modelId: string) => Model<Api> | undefined;
-		getApiKey: (model: Model<Api>) => Promise<string | undefined>;
+		getApiKeyAndHeaders: (model: Model<Api>) => Promise<{ ok: boolean; apiKey?: string }>;
 	},
 ): Promise<Model<Api>> {
 	if (currentModel.provider !== "anthropic") {
@@ -94,8 +94,8 @@ async function selectExtractionModel(
 		return currentModel;
 	}
 
-	const apiKey = await modelRegistry.getApiKey(haikuModel);
-	if (!apiKey) {
+	const auth = await modelRegistry.getApiKeyAndHeaders(haikuModel);
+	if (!auth.ok || !auth.apiKey) {
 		return currentModel;
 	}
 
@@ -161,16 +161,16 @@ class QnAComponent implements Component {
 		this.onDone = onDone;
 
 		// Create a minimal theme for the editor
-		const editorTheme: EditorTheme = {
+		const editorTheme = {
 			borderColor: this.dim,
 			selectList: {
 				selectedBg: (s: string) => `\x1b[44m${s}\x1b[0m`,
 				matchHighlight: this.cyan,
 				itemSecondary: this.gray,
 			},
-		};
+		} as any;
 
-		this.editor = new Editor(editorTheme);
+		this.editor = new Editor(editorTheme, undefined, undefined);
 		// Disable the editor's built-in submit (which clears the editor)
 		// We'll handle Enter ourselves to preserve the text
 		this.editor.disableSubmit = true;
@@ -451,15 +451,15 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			// Select the best model for extraction (prefer haiku for cost efficiency)
-			const extractionModel = await selectExtractionModel(ctx.model, ctx.modelRegistry);
+			const extractionModel = await selectExtractionModel(ctx.model, ctx.modelRegistry as any);
 
 			// Run extraction with loader UI
-			const extractionResult = await ctx.ui.custom<ExtractionResult | null>((tui, theme, done) => {
+			const extractionResult = await ctx.ui.custom<ExtractionResult | null>((tui, theme, _keybindings, done) => {
 				const loader = new BorderedLoader(tui, theme, `Extracting questions using ${extractionModel.id}...`);
 				loader.onAbort = () => done(null);
 
 				const doExtract = async () => {
-					const apiKey = await ctx.modelRegistry.getApiKey(extractionModel);
+					const auth = await (ctx.modelRegistry as any).getApiKeyAndHeaders(extractionModel);
 					const userMessage: UserMessage = {
 						role: "user",
 						content: [{ type: "text", text: lastAssistantText! }],
@@ -469,7 +469,7 @@ export default function (pi: ExtensionAPI) {
 					const response = await complete(
 						extractionModel,
 						{ systemPrompt: SYSTEM_PROMPT, messages: [userMessage] },
-						{ apiKey, signal: loader.signal },
+						{ apiKey: auth.apiKey, signal: loader.signal },
 					);
 
 					if (response.stopReason === "aborted") {
@@ -502,7 +502,7 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			// Show the Q&A component
-			const answersResult = await ctx.ui.custom<string | null>((tui, _theme, done) => {
+			const answersResult = await ctx.ui.custom<string | null>((tui, _theme, _keybindings, done) => {
 				return new QnAComponent(extractionResult.questions, tui, done);
 			});
 

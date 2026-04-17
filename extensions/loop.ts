@@ -12,7 +12,14 @@ import { compact } from "@mariozechner/pi-coding-agent";
 import { Container, type SelectItem, SelectList, Text } from "@mariozechner/pi-tui";
 import { DynamicBorder } from "@mariozechner/pi-coding-agent";
 
-type LoopMode = "tests" | "custom" | "self";
+type LoopMode = "tests" | "custom" | "self" | "plan";
+
+type LoopTask = {
+	id: number;
+	description: string;
+	criteria: string[];
+	passes: boolean;
+};
 
 type LoopStateData = {
 	active: boolean;
@@ -21,10 +28,13 @@ type LoopStateData = {
 	prompt?: string;
 	summary?: string;
 	loopCount?: number;
+	tasks?: LoopTask[];
+	currentTaskIndex?: number;
 };
 
 const LOOP_PRESETS = [
 	{ value: "tests", label: "直到测试通过", description: "" },
+	{ value: "plan", label: "计划模式 (拆解为子任务)", description: "" },
 	{ value: "custom", label: "直到满足自定义条件", description: "" },
 	{ value: "self", label: "自主模式 (Agent 自行决定)", description: "" },
 ] as const;
@@ -41,7 +51,7 @@ const SUMMARY_SYSTEM_PROMPT = `你为状态小部件总结循环跳出条件。
 使用最适合该循环条件的形式。
 `;
 
-function buildPrompt(mode: LoopMode, condition?: string): string {
+function buildPrompt(mode: LoopMode, condition?: string, tasks?: LoopTask[], currentTaskIndex?: number): string {
 	switch (mode) {
 		case "tests":
 			return (
@@ -57,6 +67,28 @@ function buildPrompt(mode: LoopMode, condition?: string): string {
 		}
 		case "self":
 			return "继续执行，直到完成。完成后，调用 signal_loop_success 工具。";
+		case "plan": {
+			if (!tasks || tasks.length === 0 || currentTaskIndex === undefined) {
+				const goal = condition?.trim() || "完成目标";
+				return (
+					`请为以下目标制定执行计划：${goal}\n\n` +
+					`要求：\n` +
+					`1. 将目标拆分为 3-5 个可独立执行的小任务\n` +
+					`2. 每个任务必须包含：简短描述、明确的验收标准（可客观验证）\n` +
+					`3. 任务应该按依赖顺序排列\n` +
+					`4. 制定完成后，调用 submit_loop_plan 工具提交计划\n` +
+					`5. 不要直接开始执行，先提交计划`
+				);
+			}
+			const task = tasks[currentTaskIndex];
+			const isLast = currentTaskIndex === tasks.length - 1;
+			const progress = `(${currentTaskIndex + 1}/${tasks.length})`;
+			return (
+				`执行任务 ${progress}: ${task.description}\n\n` +
+				`验收标准：\n${task.criteria.map(c => `- ${c}`).join('\n')}\n\n` +
+				`完成后调用 signal_loop_success 工具。${isLast ? '这是最后一个任务，完成后循环将结束。' : '循环将自动推进到下一个任务。'}`
+			);
+		}
 	}
 }
 
@@ -70,6 +102,10 @@ function summarizeCondition(mode: LoopMode, condition?: string): string {
 		}
 		case "self":
 			return "完成";
+		case "plan": {
+			const summary = condition?.trim() || "计划执行";
+			return summary.length > 48 ? `${summary.slice(0, 45)}...` : summary;
+		}
 	}
 }
 
@@ -81,6 +117,8 @@ function getConditionText(mode: LoopMode, condition?: string): string {
 			return condition?.trim() || "自定义条件";
 		case "self":
 			return "完成";
+		case "plan":
+			return condition?.trim() || "计划执行完成";
 	}
 }
 
@@ -92,16 +130,16 @@ async function selectSummaryModel(
 	if (ctx.model.provider === "anthropic") {
 		const haikuModel = ctx.modelRegistry.find("anthropic", HAIKU_MODEL_ID);
 		if (haikuModel) {
-			const apiKey = await ctx.modelRegistry.getApiKey(haikuModel);
-			if (apiKey) {
-				return { model: haikuModel, apiKey };
+			const auth = await ctx.modelRegistry.getApiKeyAndHeaders(haikuModel);
+			if (auth.ok && auth.apiKey) {
+				return { model: haikuModel, apiKey: auth.apiKey };
 			}
 		}
 	}
 
-	const apiKey = await ctx.modelRegistry.getApiKey(ctx.model);
-	if (!apiKey) return null;
-	return { model: ctx.model, apiKey };
+	const auth = await ctx.modelRegistry.getApiKeyAndHeaders(ctx.model);
+	if (!auth.ok || !auth.apiKey) return null;
+	return { model: ctx.model, apiKey: auth.apiKey };
 }
 
 async function summarizeBreakoutCondition(
@@ -141,7 +179,11 @@ async function summarizeBreakoutCondition(
 	return summary.length > 60 ? `${summary.slice(0, 57)}...` : summary;
 }
 
-function getCompactionInstructions(mode: LoopMode, condition?: string): string {
+function getCompactionInstructions(mode: LoopMode, condition?: string, tasks?: LoopTask[], currentTaskIndex?: number): string {
+	if (mode === "plan" && tasks && currentTaskIndex !== undefined) {
+		const task = tasks[currentTaskIndex];
+		return `循环进行中（计划模式）。当前任务 (${currentTaskIndex + 1}/${tasks.length}): ${task.description}。请在摘要中保留当前循环状态和任务进度。`;
+	}
 	const conditionText = getConditionText(mode, condition);
 	return `循环进行中。跳出条件：${conditionText}。请在摘要中保留此循环状态和跳出条件。`;
 }
@@ -154,10 +196,13 @@ function updateStatus(ctx: ExtensionContext, state: LoopStateData): void {
 	}
 	const loopCount = state.loopCount ?? 0;
 	const turnText = `(第 ${loopCount} 轮)`;
+	const taskText = state.mode === "plan" && state.tasks && state.currentTaskIndex !== undefined
+		? ` [${state.currentTaskIndex + 1}/${state.tasks.length}]`
+		: "";
 	const summary = state.summary?.trim();
 	const text = summary
-		? `循环进行中: ${summary} ${turnText}`
-		: `循环进行中 ${turnText}`;
+		? `循环进行中: ${summary}${taskText} ${turnText}`
+		: `循环进行中${taskText} ${turnText}`;
 	ctx.ui.setWidget("loop", [ctx.ui.theme.fg("accent", text)]);
 }
 
@@ -172,8 +217,22 @@ async function loadState(ctx: ExtensionContext): Promise<LoopStateData> {
 	return { active: false };
 }
 
+/** Check if running in RPC mode (headless, no TUI) */
+function isRpcMode(): boolean {
+	return process.argv.includes("--mode") && process.argv.includes("rpc");
+}
+
+/** Notify user — falls back to console in headless (RPC) mode */
+function notify(ctx: ExtensionContext, message: string, type: "info" | "warning" | "error" = "info"): void {
+	if (ctx.hasUI && ctx.ui.notify) {
+		ctx.ui.notify(message, type);
+	} else if (!isRpcMode()) {
+		// eslint-disable-next-line no-console
+		console.log(`[${type.toUpperCase()}] ${message}`);
+	}
+}
+
 export default function loopExtension(pi: ExtensionAPI): void {
-	if (process.argv.includes("--mode") && process.argv.includes("rpc")) return;
 	let loopState: LoopStateData = { active: false };
 
 	function persistState(state: LoopStateData): void {
@@ -195,7 +254,7 @@ export default function loopExtension(pi: ExtensionAPI): void {
 
 	function breakLoop(ctx: ExtensionContext): void {
 		clearLoopState(ctx);
-		ctx.ui.notify("循环已结束", "info");
+		notify(ctx, "循环已结束", "info");
 	}
 
 	function wasLastAssistantAborted(messages: Array<{ role?: string; stopReason?: string }>): boolean {
@@ -285,6 +344,16 @@ export default function loopExtension(pi: ExtensionAPI): void {
 					prompt: buildPrompt("custom", condition.trim()),
 				};
 			}
+			case "plan": {
+				const condition = await ctx.ui.editor("输入计划目标:", "");
+				if (!condition?.trim()) return null;
+				return {
+					active: true,
+					mode: "plan",
+					condition: condition.trim(),
+					prompt: buildPrompt("plan", condition.trim()),
+				};
+			}
 			default:
 				return null;
 		}
@@ -310,10 +379,73 @@ export default function loopExtension(pi: ExtensionAPI): void {
 					prompt: buildPrompt("custom", condition),
 				};
 			}
+			case "plan": {
+				const condition = parts.slice(1).join(" ").trim();
+				if (!condition) return null;
+				return {
+					active: true,
+					mode: "plan",
+					condition,
+					prompt: buildPrompt("plan", condition),
+				};
+			}
 			default:
 				return null;
 		}
 	}
+
+	pi.registerTool({
+		name: "submit_loop_plan",
+		label: "提交循环计划",
+		description: "在 plan 模式下，提交由子任务组成的执行计划。",
+		parameters: Type.Object({
+			tasks: Type.Array(
+				Type.Object({
+					description: Type.String({ description: "任务描述" }),
+					criteria: Type.Array(Type.String({ description: "验收标准" })),
+				}),
+				{ description: "子任务列表" }
+			),
+		}),
+		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+			if (!loopState.active || loopState.mode !== "plan") {
+				return {
+					content: [{ type: "text", text: "没有正在运行的 plan 模式循环。" }],
+					details: { active: false },
+				};
+			}
+
+			const tasks: LoopTask[] = params.tasks.map((t, i) => ({
+				id: i + 1,
+				description: t.description,
+				criteria: t.criteria,
+				passes: false,
+			}));
+
+			if (tasks.length === 0) {
+				return {
+					content: [{ type: "text", text: "计划不能为空。" }],
+					details: { active: true },
+				};
+			}
+
+			const newState: LoopStateData = {
+				...loopState,
+				tasks,
+				currentTaskIndex: 0,
+				prompt: buildPrompt("plan", loopState.condition, tasks, 0),
+				loopCount: 0,
+			};
+
+			setLoopState(newState, ctx);
+			notify(ctx, `计划已提交，共 ${tasks.length} 个任务`, "info");
+
+			return {
+				content: [{ type: "text", text: `计划已提交，共 ${tasks.length} 个任务。开始执行第一个任务。` }],
+				details: { active: true, taskCount: tasks.length },
+			};
+		},
+	});
 
 	pi.registerTool({
 		name: "signal_loop_success",
@@ -325,6 +457,34 @@ export default function loopExtension(pi: ExtensionAPI): void {
 				return {
 					content: [{ type: "text", text: "没有正在运行的循环。" }],
 					details: { active: false },
+				};
+			}
+
+			if (loopState.mode === "plan" && loopState.tasks && loopState.currentTaskIndex !== undefined) {
+				const tasks = [...loopState.tasks];
+				tasks[loopState.currentTaskIndex].passes = true;
+				const nextIndex = loopState.currentTaskIndex + 1;
+
+				if (nextIndex >= tasks.length) {
+					clearLoopState(ctx);
+					return {
+						content: [{ type: "text", text: "所有任务已完成，循环结束。" }],
+						details: { active: false },
+					};
+				}
+
+				const newState: LoopStateData = {
+					...loopState,
+					tasks,
+					currentTaskIndex: nextIndex,
+					prompt: buildPrompt("plan", loopState.condition, tasks, nextIndex),
+					loopCount: 0,
+				};
+				setLoopState(newState, ctx);
+
+				return {
+					content: [{ type: "text", text: `任务 ${loopState.currentTaskIndex + 1}/${tasks.length} 已完成，准备执行下一个任务。` }],
+					details: { active: true, currentTask: nextIndex + 1 },
 				};
 			}
 
@@ -343,7 +503,7 @@ export default function loopExtension(pi: ExtensionAPI): void {
 			let nextState = parseArgs(args);
 			if (!nextState) {
 				if (!ctx.hasUI) {
-					ctx.ui.notify("用法: /loop tests | /loop custom <条件> | /loop self", "warning");
+					ctx.ui.notify("用法: /loop tests | /loop plan <目标> | /loop custom <条件> | /loop self", "warning");
 					return;
 				}
 				nextState = await showLoopSelector(ctx);
@@ -400,15 +560,15 @@ export default function loopExtension(pi: ExtensionAPI): void {
 
 	pi.on("session_before_compact", async (event, ctx) => {
 		if (!loopState.active || !loopState.mode || !ctx.model) return;
-		const apiKey = await ctx.modelRegistry.getApiKey(ctx.model);
-		if (!apiKey) return;
+		const auth = await ctx.modelRegistry.getApiKeyAndHeaders(ctx.model);
+		if (!auth.ok || !auth.apiKey) return;
 
-		const instructionParts = [event.customInstructions, getCompactionInstructions(loopState.mode, loopState.condition)]
+		const instructionParts = [event.customInstructions, getCompactionInstructions(loopState.mode, loopState.condition, loopState.tasks, loopState.currentTaskIndex)]
 			.filter(Boolean)
 			.join("\n\n");
 
 		try {
-			const compaction = await compact(event.preparation, ctx.model, apiKey, instructionParts, event.signal);
+			const compaction = await compact(event.preparation, ctx.model, auth.apiKey, instructionParts, event.signal);
 			return { compaction };
 		} catch (error) {
 			if (ctx.hasUI) {

@@ -1020,11 +1020,28 @@ export async function addRoleLearningWithTags(
   const normalized = normalizeText(text);
   if (!normalized || normalized === "(none)") return { stored: false, reason: "empty" };
 
+  // Auto-extracted and compaction items MUST go through pending layer for verification
+  const usePendingLayer = options?.source === "auto" || options?.source === "compaction";
+  if (usePendingLayer) {
+    const result = addPendingLearning(rolePath, normalized, options?.source || "auto");
+    if (!result.stored) {
+      return { stored: false, duplicate: result.duplicate, id: result.id, reason: "duplicate", layer: "pending" as const };
+    }
+    let tags: string[] = [];
+    try {
+      const extraction = await extractTagsWithLLM(normalized, ctx, options?.tagModel);
+      tags = extraction.tags.map((t) => t.tag);
+    } catch { /* tag extraction is non-critical */ }
+    if (options?.appendDaily !== false) {
+      appendDailyRoleMemory(rolePath, "lesson", normalized);
+    }
+    return { stored: true, id: result.id, reason: "pending", tags, layer: "pending" as const };
+  }
+
   const data = readRoleMemory(rolePath, roleName);
   const duplicate = data.learnings.find((l) => normalizeText(l.text).toLowerCase() === normalized.toLowerCase());
   if (duplicate) return { stored: false, duplicate: true, id: duplicate.id, reason: "duplicate" };
 
-  // Extract tags using LLM
   const extraction = await extractTagsWithLLM(normalized, ctx, options?.tagModel);
   const tags = extraction.tags.map((t) => t.tag);
 
