@@ -28,6 +28,7 @@ import { buildCapabilityProfile } from "./core/capability-profile.ts";
 import { ExtensionUIForwarder } from "./core/extension-ui-forwarder.ts";
 
 import { DeduplicationCache } from "./core/dedup-cache.ts";
+import { forEachLimit } from "./core/async-limit.ts";
 import { MetricsCollector, type MetricsDataSource } from "./core/metrics.ts";
 import { DelegateExecutor } from "./core/delegate-executor.ts";
 import { GatewayObservability } from "./core/gateway-observability.ts";
@@ -229,15 +230,17 @@ export class Gateway {
       }
     }
 
-    // Start channel plugins
-    for (const [id, channel] of this.registry.channels) {
+    // Start channel plugins with bounded concurrency.
+    const channelEntries = Array.from(this.registry.channels.entries());
+    const channelConcurrency = Math.min(3, Math.max(1, channelEntries.length));
+    await forEachLimit(channelEntries, channelConcurrency, async ([id, channel]) => {
       try {
         await channel.start();
         this.log.info(`Channel started: ${id}`);
       } catch (err: unknown) {
         this.log.error(`Channel ${id} failed to start: ${(err instanceof Error ? err.message : String(err))}`);
       }
-    }
+    });
 
     const capabilityIssues = auditChannelCapabilities(this.registry);
     for (const issue of capabilityIssues) {
@@ -252,15 +255,17 @@ export class Gateway {
     // Register built-in commands
     registerBuiltinCommands(this.ctx);
 
-    // Start background services
-    for (const service of this.registry.services) {
+    // Start background services with bounded concurrency.
+    const services = [...this.registry.services];
+    const serviceConcurrency = Math.min(3, Math.max(1, services.length));
+    await forEachLimit(services, serviceConcurrency, async (service) => {
       try {
         await service.start(createPluginApi(service.name, { id: service.name, name: service.name, main: "" }, this.ctx));
         this.log.info(`Service started: ${service.name}`);
       } catch (err: unknown) {
         this.log.error(`Service ${service.name} failed to start: ${(err instanceof Error ? err.message : String(err))}`);
       }
-    }
+    });
 
     // Start heartbeat executor (v3.1)
     this.heartbeatExecutor?.start();

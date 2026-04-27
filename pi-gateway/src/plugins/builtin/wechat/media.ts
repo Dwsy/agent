@@ -5,9 +5,10 @@ import path from "node:path";
 import type { WechatAccountRuntime, WechatUploadedFile } from "./types.ts";
 
 /**
- * CDN upload endpoint path.
+ * openclaw-weixin CDN endpoints.
  */
-const CDN_UPLOAD_PATH = "/cgi-bin/mmwebwx-bin/webwxupload";
+const CDN_UPLOAD_PATH = "/upload";
+const CDN_DOWNLOAD_PATH = "/download";
 
 /**
  * Upload media type constants (from ilink API).
@@ -125,9 +126,7 @@ async function uploadBufferToCdn(
   // Encrypt the buffer with AES-128-ECB
   const encrypted = encryptAesEcb(buf, aeskey);
 
-  // Parse uploadParam to get CDN URL
-  // uploadParam format: typically contains signature, auth info
-  const uploadUrl = `${cdnBaseUrl}${CDN_UPLOAD_PATH}?${uploadParam}`;
+  const uploadUrl = `${cdnBaseUrl}${CDN_UPLOAD_PATH}?encrypted_query_param=${encodeURIComponent(uploadParam)}&filekey=${encodeURIComponent(filekey)}`;
 
   runtime.api.logger.debug(
     `${label}: uploading ${encrypted.length} encrypted bytes to CDN`
@@ -137,9 +136,8 @@ async function uploadBufferToCdn(
     method: "POST",
     headers: {
       "Content-Type": "application/octet-stream",
-      "Content-Length": String(encrypted.length),
     },
-    body: encrypted,
+    body: new Uint8Array(encrypted),
   });
 
   if (!res.ok) {
@@ -147,12 +145,12 @@ async function uploadBufferToCdn(
     throw new Error(`${label}: CDN upload failed: ${res.status} ${text.slice(0, 200)}`);
   }
 
-  const resp = (await res.json()) as { downloadParam?: string };
-  if (!resp.downloadParam) {
-    throw new Error(`${label}: CDN upload response missing downloadParam`);
+  const downloadParam = res.headers.get("x-encrypted-param") ?? undefined;
+  if (!downloadParam) {
+    throw new Error(`${label}: CDN upload response missing x-encrypted-param header`);
   }
 
-  return { downloadParam: resp.downloadParam };
+  return { downloadParam };
 }
 
 /**
@@ -233,6 +231,9 @@ async function uploadMediaToCdn(
   });
 
   const uploadParam = uploadUrlResp.upload_param;
+  runtime.api.logger.debug(
+    `${label}: upload params ready hasUploadParam=${Boolean(uploadParam)} hasThumbUploadParam=${Boolean(uploadUrlResp.thumb_upload_param)}`,
+  );
   if (!uploadParam) {
     throw new Error(`${label}: getUploadUrl returned no upload_param`);
   }
@@ -251,6 +252,7 @@ async function uploadMediaToCdn(
     filekey,
     fileSize: rawsize,
     fileSizeCiphertext: filesize,
+    fileMd5: rawfilemd5,
     aeskey,
     downloadEncryptedQueryParam: downloadParam,
   };
@@ -330,13 +332,24 @@ export async function uploadWechatMedia(
 /**
  * Download and decrypt media from Weixin CDN.
  */
+function parseWechatAesKey(raw: string): Buffer {
+  if (/^[0-9a-fA-F]{32}$/.test(raw)) {
+    return Buffer.from(raw, "hex");
+  }
+  const decoded = Buffer.from(raw, "base64");
+  if (decoded.length === 16) {
+    return decoded;
+  }
+  throw new Error(`Invalid WeChat aes_key, expected hex(32) or base64(16 bytes), got ${decoded.length} bytes`);
+}
+
 export async function downloadWechatMedia(
   runtime: WechatAccountRuntime,
   encryptQueryParam: string,
   aesKeyHex: string,
   destDir: string
 ): Promise<string> {
-  const cdnUrl = `${runtime.cdnBaseUrl}${CDN_UPLOAD_PATH}?${encryptQueryParam}`;
+  const cdnUrl = `${runtime.cdnBaseUrl}${CDN_DOWNLOAD_PATH}?encrypted_query_param=${encodeURIComponent(encryptQueryParam)}`;
 
   runtime.api.logger.debug(`downloadWechatMedia: fetching from CDN`);
 
@@ -346,7 +359,7 @@ export async function downloadWechatMedia(
   }
 
   const encrypted = Buffer.from(await res.arrayBuffer());
-  const aeskey = Buffer.from(aesKeyHex, "hex");
+  const aeskey = parseWechatAesKey(aesKeyHex);
 
   // Decrypt with AES-128-ECB
   const decrypted = decryptAesEcb(encrypted, aeskey);

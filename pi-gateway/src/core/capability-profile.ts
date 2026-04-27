@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 import type { Config, RoleCapabilityConfig } from "./config.ts";
 import { buildGatewaySystemPrompt, type PromptFeatureFlags } from "./system-prompts.ts";
 import { getGatewayInternalToken } from "../api/media-send.ts";
+import type { GatewayIdentityContext } from "./interface/plugins/system-prompts/types.ts";
 import type { SessionKey } from "./types.ts";
 
 export interface CapabilityProfileInput {
@@ -44,7 +45,7 @@ export function buildCapabilityProfile(input: CapabilityProfileInput): Capabilit
   // Hard args: tools, runtime prompts, discovery flags (model excluded — can change at runtime via /model, /think)
   const hardArgs: string[] = [];
   appendToolArgs(hardArgs, config);
-  appendRuntimePromptArgs(hardArgs, config);
+  appendRuntimePromptArgs(hardArgs, config, input.sessionKey);
   appendDiscoveryFlags(hardArgs, config);
 
   // Soft args: model (switchable at runtime), extensions, skills, promptTemplates
@@ -151,14 +152,15 @@ function appendToolArgs(args: string[], config: Config): void {
   }
 }
 
-function appendRuntimePromptArgs(args: string[], config: Config): void {
+function appendRuntimePromptArgs(args: string[], config: Config, sessionKey?: SessionKey): void {
   if (config.agent.systemPrompt?.trim()) {
     args.push("--system-prompt", expandHome(config.agent.systemPrompt.trim()));
   }
 
   const flags = buildPromptFeatureFlags(config);
+  const promptContext = buildPromptContext(sessionKey);
   const userAppend = config.agent.appendSystemPrompt?.trim() ?? "";
-  const gatewayAppend = buildGatewaySystemPrompt(config, undefined, flags);
+  const gatewayAppend = buildGatewaySystemPrompt(config, promptContext, flags);
   const combined = combinePromptText(userAppend, gatewayAppend ?? "");
   if (combined) {
     args.push("--append-system-prompt", combined);
@@ -207,6 +209,14 @@ function normalizePromptGate(value: boolean | "auto" | undefined): boolean | und
     return undefined;
   }
   return value;
+}
+
+function buildPromptContext(sessionKey?: SessionKey): GatewayIdentityContext | undefined {
+  if (!sessionKey) return undefined;
+  const parts = sessionKey.split(":");
+  const channel = parts[2]?.trim();
+  if (!channel) return undefined;
+  return { channel };
 }
 
 function buildPromptFeatureFlags(config: Config): PromptFeatureFlags {

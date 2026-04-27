@@ -5,8 +5,10 @@ import {
   initSyncBuf,
   updateSyncBuf,
   isSessionPaused,
+  isSessionExpired,
   getRemainingPauseMs,
   handleSessionExpiry,
+  resetSessionState,
   isDuplicate,
 } from "./session.ts";
 import { logger } from "./logger.ts";
@@ -37,19 +39,24 @@ const MAX_CONSECUTIVE_FAILURES = 3;
 const EXTENDED_BACKOFF_MS = 30000;
 
 /**
- * Session pause duration (milliseconds) - 8 minutes.
+ * Session timeout handling is delegated to session.ts (30s → 2m → 5m → expired).
  */
-const SESSION_PAUSE_DURATION_MS = 8 * 60 * 1000;
 
 /**
  * Start the Weixin long-poll gateway for a single account.
  * Continuously polls ilink getUpdates API and dispatches messages.
  */
+export interface StartWechatGatewayOptions {
+  onSessionExpired?: (runtime: WechatAccountRuntime) => Promise<void> | void;
+}
+
 export async function startWechatGateway(
   runtime: WechatAccountRuntime,
-  onMessage: (msg: WechatInboundMessage) => Promise<void>
+  onMessage: (msg: WechatInboundMessage) => Promise<void>,
+  options: StartWechatGatewayOptions = {},
 ): Promise<void> {
   logger.info(`[wechat:gateway] starting for accountId=${runtime.accountId}`);
+  resetSessionState(runtime.accountId);
 
   // Initialize sync buffer
   initSyncBuf(runtime);
@@ -63,7 +70,11 @@ export async function startWechatGateway(
       return;
     }
 
-    // Check session pause
+    if (isSessionExpired(runtime.accountId)) {
+      logger.warn(`[wechat:gateway] session expired for accountId=${runtime.accountId}, stopping polling until re-login`);
+      return;
+    }
+
     if (isSessionPaused(runtime.accountId)) {
       const remainingMs = getRemainingPauseMs(runtime.accountId);
       logger.info(
@@ -88,13 +99,15 @@ export async function startWechatGateway(
 
       // Reset consecutive failures on success
       consecutiveFailures = 0;
+      runtime.lastError = undefined;
+      resetSessionState(runtime.accountId);
 
       // Update last event time
       runtime.lastEventAt = Date.now();
 
       // Process messages
       for (const msg of messages) {
-        const msgId = msg.msg_id ?? `${msg.from_user_id}-${msg.create_time_ms}`;
+        const msgId = String(msg.message_id ?? msg.msg_id ?? `${msg.from_user_id}-${msg.create_time_ms}`);
 
         // Deduplication
         if (isDuplicate(runtime, msgId)) {
@@ -115,16 +128,30 @@ export async function startWechatGateway(
       runtime.pollTimer = setTimeout(poll, nextPollInterval);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
+      runtime.lastError = errorMessage;
       logger.warn(`[wechat:gateway] poll error for accountId=${runtime.accountId}: ${errorMessage}`);
 
       // Check for session expiry (errcode -14)
       const anyErr = err as any;
-      if (handleSessionExpiry(runtime.accountId, anyErr?.errcode, anyErr?.ret)) {
-        logger.warn(
-          `[wechat:gateway] session expired for accountId=${runtime.accountId}, pausing for ${Math.ceil(SESSION_PAUSE_DURATION_MS / 60000)} minutes`
-        );
+      const expiry = handleSessionExpiry(runtime.accountId, anyErr?.errcode, anyErr?.ret);
+      if (expiry.matched) {
         consecutiveFailures = 0;
-        runtime.reconnectTimer = setTimeout(poll, SESSION_PAUSE_DURATION_MS);
+        if (expiry.state === "paused") {
+          logger.warn(
+            `[wechat:gateway] session timeout for accountId=${runtime.accountId}, backing off ${Math.ceil(expiry.delayMs / 1000)}s (attempt ${expiry.attempts})`
+          );
+          runtime.reconnectTimer = setTimeout(poll, expiry.delayMs);
+          return;
+        }
+
+        logger.error(
+          `[wechat:gateway] session expired for accountId=${runtime.accountId} after ${expiry.attempts} timeouts, please re-login via WeChat QR`
+        );
+        Promise.resolve(options.onSessionExpired?.(runtime)).catch((callbackErr) => {
+          logger.error(
+            `[wechat:gateway] session-expired callback failed for accountId=${runtime.accountId}: ${callbackErr instanceof Error ? callbackErr.message : String(callbackErr)}`
+          );
+        });
         return;
       }
 
@@ -149,8 +176,12 @@ export async function startWechatGateway(
     }
   };
 
-  // Start polling
-  await poll();
+  // Start polling in background so channel startup is not blocked by the first long poll.
+  void poll().catch((err) => {
+    logger.error(
+      `[wechat:gateway] background poll loop crashed for accountId=${runtime.accountId}: ${err instanceof Error ? err.message : String(err)}`
+    );
+  });
 }
 
 /**

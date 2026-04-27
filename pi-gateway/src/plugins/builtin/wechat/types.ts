@@ -116,7 +116,7 @@ export interface WechatInboundAuthor {
  * Inbound message item from ilink API.
  */
 export interface WechatMessageItem {
-  type: "text" | "image" | "video" | "file" | "voice";
+  type: "text" | "image" | "video" | "file" | "voice" | 1 | 2 | 3 | 4 | 5;
   text_item?: { text: string };
   image_item?: {
     media: {
@@ -165,6 +165,7 @@ export interface WechatInboundMessage {
   from_user_id: string;
   to_user_id: string;
   msg_id?: string;
+  message_id?: string | number;
   create_time_ms?: number;
   message_type?: number;
   message_state?: number;
@@ -282,7 +283,7 @@ export interface WechatPluginRuntime {
  * Outbound message item for ilink sendMessage API.
  */
 export interface WechatOutboundItem {
-  type: "text" | "image" | "video" | "file";
+  type: "text" | "image" | "video" | "file" | 1 | 2 | 4 | 5;
   text_item?: { text: string };
   image_item?: {
     media: {
@@ -290,7 +291,9 @@ export interface WechatOutboundItem {
       aes_key: string;
       encrypt_type: number;
     };
+    aeskey?: string;
     mid_size: number;
+    hd_size?: number;
   };
   video_item?: {
     media: {
@@ -299,6 +302,7 @@ export interface WechatOutboundItem {
       encrypt_type: number;
     };
     video_size: number;
+    video_md5?: string;
   };
   file_item?: {
     media: {
@@ -307,6 +311,7 @@ export interface WechatOutboundItem {
       encrypt_type: number;
     };
     file_name: string;
+    md5?: string;
     len: string;
   };
 }
@@ -333,6 +338,7 @@ export interface WechatUploadedFile {
   filekey: string;
   fileSize: number;
   fileSizeCiphertext: number;
+  fileMd5?: string;
   aeskey: Buffer;
   downloadEncryptedQueryParam: string;
 }

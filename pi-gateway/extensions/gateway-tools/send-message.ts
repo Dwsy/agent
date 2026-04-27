@@ -10,6 +10,27 @@ const STREAM_CHUNK_DELAY_MS = 80;
 // Max length for Telegram draft mode
 const MAX_DRAFT_TEXT_LENGTH = 4096;
 
+function channelSupportsEditing(channel?: string): boolean {
+  return channel === "telegram" || channel === "discord" || channel === "feishu";
+}
+
+async function resolveSessionChannel(gatewayUrl: string, internalToken: string, authToken?: string, sessionKey?: string): Promise<string | undefined> {
+  const key = sessionKey || process.env.PI_GATEWAY_SESSION_KEY || "";
+  if (!key) return undefined;
+
+  try {
+    const res = await fetch(`${gatewayUrl}/api/sessions/${encodeURIComponent(key)}`, {
+      headers: gatewayHeaders(authToken ?? internalToken),
+    });
+    const data = await parseResponseJson(res);
+    if (!res.ok) return undefined;
+    const session = data.session as Record<string, unknown> | undefined;
+    return typeof session?.lastChannel === "string" ? session.lastChannel : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export function createSendMessageTool(gatewayUrl: string, internalToken: string, authToken?: string) {
   return {
     name: "send_message",
@@ -49,6 +70,8 @@ export function createSendMessageTool(gatewayUrl: string, internalToken: string,
       };
 
       const sessionKey = process.env.PI_GATEWAY_SESSION_KEY || "";
+      const sessionChannel = await resolveSessionChannel(gatewayUrl, internalToken, authToken, sessionKey);
+      const editableChannel = channelSupportsEditing(sessionChannel);
       const normalizedDraftId = typeof draftId === "number" && Number.isFinite(draftId) && draftId > 0
         ? Math.floor(draftId)
         : undefined;
@@ -56,15 +79,16 @@ export function createSendMessageTool(gatewayUrl: string, internalToken: string,
       const wantsPartial = streamMode === "partial";
       const wantsStreaming = streamMode === "draft" || streamMode === "partial";
       const draftSuppressedByLength = wantsDraft && text.length > MAX_DRAFT_TEXT_LENGTH;
+      const streamingSuppressedByChannel = wantsStreaming && !editableChannel;
 
       // Limit total display text to Telegram's 4096 char limit to avoid edit failures
       const maxDisplayLength = 4096;
 
-      // Auto-streaming: enable for longer messages to show typing effect
-      const shouldAutoStream = !wantsStreaming && text.length > STREAM_CHUNK_SIZE * 2;
+      // Auto-streaming: enable for longer messages to show typing effect on editable channels only
+      const shouldAutoStream = editableChannel && !wantsStreaming && text.length > STREAM_CHUNK_SIZE * 2;
       // Partial mode: show typing effect via message edits
-      // For messages > 4096 chars, we'll create multiple messages as needed
-      const effectivePartial = wantsPartial || shouldAutoStream;
+      // For messages > 4096 chars, we send multiple messages and continue editing the latest one
+      const effectivePartial = editableChannel && (wantsPartial || shouldAutoStream);
 
       try {
         // Draft mode: use draft streaming (edit same message for each chunk)
@@ -238,7 +262,11 @@ export function createSendMessageTool(gatewayUrl: string, internalToken: string,
         }
 
         const chunkInfo = typeof data.chunkCount === "number" ? `, ${data.chunkCount} chunks` : "";
-        const draftInfo = draftSuppressedByLength ? "; draft stream disabled due to length limit" : "";
+        const draftInfo = draftSuppressedByLength
+          ? "; draft stream disabled due to length limit"
+          : streamingSuppressedByChannel
+            ? `; stream disabled for ${sessionChannel ?? "non-editable"} channel`
+            : "";
         const summary = replyTo
           ? `Message sent (reply to ${replyTo}, ${data.textLength} chars${chunkInfo}${draftInfo})`
           : `Message sent (${data.textLength} chars${chunkInfo}${draftInfo})`;

@@ -10,8 +10,8 @@ import type {
   WechatMessageItem,
   WechatTarget,
 } from "./types.ts";
+import { getWechatConfig, sendWechatTyping } from "./api.ts";
 import { sendWechatText } from "./outbound.ts";
-import { isDuplicate } from "./session.ts";
 import { handleSlashCommand, buildSlashCommandContext } from "./commands.ts";
 import { logger } from "./logger.ts";
 import { recordWechatUser } from "./known-users.ts";
@@ -27,7 +27,22 @@ function storeContextToken(
   token: string
 ): void {
   runtime.contextTokens.set(userId, token);
+  runtime.contextTokens.set(`${runtime.accountId}:${userId}`, token);
   logger.debug(`[wechat:handlers] stored context token for userId=${userId}`);
+}
+
+/**
+ * ilink inbound payloads use numeric item types; local mocks/docs may use strings.
+ */
+function isItemType(item: WechatMessageItem, kind: "text" | "image" | "voice" | "file" | "video"): boolean {
+  const typeMap = {
+    text: ["text", 1],
+    image: ["image", 2],
+    voice: ["voice", 3],
+    file: ["file", 4],
+    video: ["video", 5],
+  } as const;
+  return typeMap[kind].includes(item.type as never);
 }
 
 /**
@@ -35,10 +50,10 @@ function storeContextToken(
  */
 function isMediaItem(item: WechatMessageItem): boolean {
   return (
-    item.type === "image" ||
-    item.type === "video" ||
-    item.type === "file" ||
-    item.type === "voice"
+    isItemType(item, "image") ||
+    isItemType(item, "video") ||
+    isItemType(item, "file") ||
+    isItemType(item, "voice")
   );
 }
 
@@ -48,7 +63,7 @@ function isMediaItem(item: WechatMessageItem): boolean {
 function bodyFromItemList(itemList?: WechatMessageItem[]): string {
   if (!itemList?.length) return "";
   for (const item of itemList) {
-    if (item.type === "text" && item.text_item?.text != null) {
+    if (isItemType(item, "text") && item.text_item?.text != null) {
       const text = String(item.text_item.text);
       const ref = item.ref_msg;
       if (!ref) return text;
@@ -65,7 +80,7 @@ function bodyFromItemList(itemList?: WechatMessageItem[]): string {
       return `[引用: ${parts.join(" | ")}]\n${text}`;
     }
     // Voice-to-text transcription
-    if (item.type === "voice" && item.voice_item?.text) {
+    if (isItemType(item, "voice") && item.voice_item?.text) {
       return item.voice_item.text;
     }
   }
@@ -80,26 +95,26 @@ function extractMediaAttachments(itemList?: WechatMessageItem[]): WechatInboundA
   const attachments: WechatInboundAttachment[] = [];
 
   for (const item of itemList) {
-    if (item.type === "image" && item.image_item) {
+    if (isItemType(item, "image") && item.image_item) {
       attachments.push({
         type: "image",
         encryptQueryParam: item.image_item.media.encrypt_query_param,
         aesKey: item.image_item.media.aes_key,
       });
-    } else if (item.type === "video" && item.video_item) {
+    } else if (isItemType(item, "video") && item.video_item) {
       attachments.push({
         type: "video",
         encryptQueryParam: item.video_item.media.encrypt_query_param,
         aesKey: item.video_item.media.aes_key,
       });
-    } else if (item.type === "file" && item.file_item) {
+    } else if (isItemType(item, "file") && item.file_item) {
       attachments.push({
         type: "file",
         encryptQueryParam: item.file_item.media.encrypt_query_param,
         aesKey: item.file_item.media.aes_key,
         filename: item.file_item.file_name,
       });
-    } else if (item.type === "voice" && item.voice_item) {
+    } else if (isItemType(item, "voice") && item.voice_item) {
       attachments.push({
         type: "voice",
         encryptQueryParam: item.voice_item.media.encrypt_query_param,
@@ -123,7 +138,7 @@ export function parseWechatMessage(
 
   const text = bodyFromItemList(msg.item_list);
   const attachments = extractMediaAttachments(msg.item_list);
-  const messageId = msg.msg_id || `${fromUserId}-${msg.create_time_ms}`;
+  const messageId = String(msg.message_id ?? msg.msg_id ?? `${fromUserId}-${msg.create_time_ms}`);
 
   // Store context token for outbound replies
   const contextToken = msg.context_token;
@@ -178,6 +193,17 @@ function buildTarget(ctx: WechatMessageContext): WechatTarget {
   };
 }
 
+async function ensureTypingTicket(
+  runtime: WechatAccountRuntime,
+  userId: string,
+  contextToken?: string,
+): Promise<string | undefined> {
+  if (runtime.typingTicket) return runtime.typingTicket;
+  const config = await getWechatConfig(runtime, userId, contextToken);
+  runtime.typingTicket = config.typingTicket;
+  return runtime.typingTicket;
+}
+
 /**
  * Handle an inbound message from ilink getUpdates.
  */
@@ -200,13 +226,6 @@ export async function handleWechatMessage(
   logger.info(
     `[wechat:handlers] inbound: sender=${ctx.senderId} text=${JSON.stringify(ctx.text.slice(0, 120))}`
   );
-
-  // Deduplication
-  const dedupKey = `${ctx.messageId}`;
-  if (isDuplicate(runtime, dedupKey)) {
-    logger.info(`[wechat:handlers] message dropped: duplicate ${dedupKey}`);
-    return;
-  }
 
   // Skip empty content
   if (!ctx.text.trim() && !(ctx.attachments?.length)) {
@@ -258,6 +277,7 @@ export async function handleWechatMessage(
   // Build source for routing
   const source: MessageSource = {
     channel: "wechat",
+    accountId: runtime.accountId,
     chatType: "dm",
     chatId: ctx.senderId,
     senderId: ctx.senderId,
@@ -312,8 +332,18 @@ export async function handleWechatMessage(
       
       await sendWechatText(runtime, `c2c|${target.id}`, output);
     },
-    setTyping: async () => {
-      // Weixin doesn't support typing indicators
+    setTyping: async (typing: boolean) => {
+      try {
+        const ticket = await ensureTypingTicket(runtime, target.id, ctx.contextToken);
+        if (!ticket) return;
+        await sendWechatTyping(runtime, {
+          ilink_user_id: target.id,
+          typing_ticket: ticket,
+          status: typing ? 1 : 2,
+        });
+      } catch (err) {
+        logger.warn(`[wechat:handlers] sendTyping failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
     },
   });
 }

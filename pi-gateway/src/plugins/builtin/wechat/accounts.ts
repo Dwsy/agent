@@ -7,6 +7,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
+import { homedir } from "node:os";
 import type { GatewayPluginApi } from "../../types.ts";
 import type { WechatChannelConfig, WechatAccountConfig, WechatResolvedAccount } from "./types.ts";
 import { logger } from "./logger.ts";
@@ -187,22 +188,30 @@ export function clearWechatAccount(accountId: string): void {
 // ---------------------------------------------------------------------------
 
 export function resolveDefaultAccountId(cfg: WechatChannelConfig): string {
-  // First enabled account in config
+  if (cfg.accountId?.trim()) {
+    return normalizeAccountId(cfg.accountId.trim());
+  }
+
   if (cfg.accounts) {
     for (const [id, account] of Object.entries(cfg.accounts)) {
       if (account.enabled !== false) return id;
     }
   }
-  return "default";
+
+  const indexed = listIndexedAccountIds();
+  return indexed[0] ?? "default";
 }
 
 export function resolveWechatAccounts(cfg: WechatChannelConfig): WechatResolvedAccount[] {
   const result: WechatResolvedAccount[] = [];
+  const configuredAccountIds = new Set<string>();
 
   if (cfg.accounts) {
     for (const [id, account] of Object.entries(cfg.accounts)) {
       if (account.enabled === false) continue;
 
+      configuredAccountIds.add(id);
+      configuredAccountIds.add(normalizeAccountId(id));
       const data = loadWechatAccount(id);
       const token = data?.token?.trim() || account.token?.trim();
 
@@ -223,10 +232,30 @@ export function resolveWechatAccounts(cfg: WechatChannelConfig): WechatResolvedA
     }
   }
 
+  for (const accountId of listIndexedAccountIds()) {
+    if (configuredAccountIds.has(accountId)) continue;
+
+    const data = loadWechatAccount(accountId);
+    const token = data?.token?.trim();
+    if (!token) continue;
+
+    result.push({
+      accountId,
+      enabled: true,
+      configured: true,
+      baseUrl: data?.baseUrl?.trim() || cfg.baseUrl || DEFAULT_BASE_URL,
+      cdnBaseUrl: cfg.cdnBaseUrl || CDN_BASE_URL,
+      token,
+      userId: data?.userId,
+      dmPolicy: cfg.dmPolicy ?? "pairing",
+      allowFrom: cfg.allowFrom ?? [],
+    });
+  }
+
   // Legacy single-account mode
   if (result.length === 0 && cfg.token) {
     result.push({
-      accountId: "default",
+      accountId: resolveDefaultAccountId(cfg),
       enabled: true,
       configured: Boolean(cfg.token),
       baseUrl: cfg.baseUrl || DEFAULT_BASE_URL,
@@ -525,13 +554,37 @@ export async function waitForWechatLogin(opts: {
 // Config Route Tag (for SKRouteTag header)
 // ---------------------------------------------------------------------------
 
+function resolveGatewayConfigPath(): string | undefined {
+  if (process.env.PI_GATEWAY_CONFIG?.trim()) {
+    return process.env.PI_GATEWAY_CONFIG.trim();
+  }
+
+  const home = process.env.HOME || process.env.USERPROFILE || homedir();
+  for (const candidate of [
+    path.join(home, ".pi", "gateway", "pi-gateway.jsonc"),
+    path.join(home, ".pi", "gateway", "pi-gateway.json"),
+    path.join(process.cwd(), "pi-gateway.jsonc"),
+    path.join(process.cwd(), "pi-gateway.json"),
+  ]) {
+    if (fs.existsSync(candidate)) return candidate;
+  }
+
+  return undefined;
+}
+
+function stripJsonComments(raw: string): string {
+  return raw
+    .replace(/^\s*\/\/.*$/gm, "")
+    .replace(/\/\*[\s\S]*?\*\//g, "");
+}
+
 export function loadConfigRouteTag(accountId?: string): string | undefined {
   try {
-    const configPath = path.join(resolveStateDir(), "pi-gateway.json");
-    if (!fs.existsSync(configPath)) return undefined;
+    const configPath = resolveGatewayConfigPath();
+    if (!configPath || !fs.existsSync(configPath)) return undefined;
 
     const raw = fs.readFileSync(configPath, "utf-8");
-    const cfg = JSON.parse(raw) as Record<string, unknown>;
+    const cfg = JSON.parse(stripJsonComments(raw)) as Record<string, unknown>;
     const channels = cfg.channels as Record<string, unknown> | undefined;
     const section = channels?.["wechat"] as Record<string, unknown> | undefined;
 

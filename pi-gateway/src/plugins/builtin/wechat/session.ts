@@ -14,7 +14,27 @@ import { logger } from "./logger.ts";
 // ---------------------------------------------------------------------------
 
 export const SESSION_EXPIRED_ERRCODE = -14;
-const SESSION_PAUSE_DURATION_MS = 8 * 60 * 1000; // 8 minutes
+const SESSION_EXPIRY_BACKOFF_MS = [30_000, 120_000, 300_000] as const;
+
+interface SessionState {
+  pauseUntil?: number;
+  expiryCount: number;
+  expired: boolean;
+}
+
+export interface SessionStatus {
+  paused: boolean;
+  expired: boolean;
+  expiryCount: number;
+  remainingPauseMs: number;
+}
+
+export interface SessionExpiryResult {
+  matched: boolean;
+  state: "ignored" | "paused" | "expired";
+  delayMs: number;
+  attempts: number;
+}
 
 // ---------------------------------------------------------------------------
 // State Directory
@@ -126,18 +146,53 @@ export function updateSyncBuf(runtime: WechatAccountRuntime, newBuf: string): vo
 // Session Expiry Handling (errcode -14)
 // ---------------------------------------------------------------------------
 
-const sessionPauseStore = new Map<string, number>(); // accountId -> pauseUntil timestamp
+const sessionStateStore = new Map<string, SessionState>();
+
+function getOrCreateSessionState(accountId: string): SessionState {
+  const key = normalizeId(accountId);
+  let state = sessionStateStore.get(key);
+  if (!state) {
+    state = { expiryCount: 0, expired: false };
+    sessionStateStore.set(key, state);
+  }
+  return state;
+}
+
+function resolvePauseState(accountId: string): { state: SessionState; remainingPauseMs: number } {
+  const state = getOrCreateSessionState(accountId);
+  if (!state.pauseUntil) {
+    return { state, remainingPauseMs: 0 };
+  }
+
+  const remainingPauseMs = Math.max(0, state.pauseUntil - Date.now());
+  if (remainingPauseMs === 0) {
+    state.pauseUntil = undefined;
+    logger.info(`[wechat:session] session pause ended for accountId=${accountId}`);
+  }
+
+  return { state, remainingPauseMs };
+}
+
+export function getSessionStatus(accountId: string): SessionStatus {
+  const { state, remainingPauseMs } = resolvePauseState(accountId);
+  return {
+    paused: !state.expired && remainingPauseMs > 0,
+    expired: state.expired,
+    expiryCount: state.expiryCount,
+    remainingPauseMs,
+  };
+}
 
 /**
- * Pause a session due to expiry (errcode -14).
- * The session will be paused for 8 minutes.
+ * Pause a session using the supplied backoff delay.
  */
-export function pauseSession(accountId: string): void {
-  const pauseUntil = Date.now() + SESSION_PAUSE_DURATION_MS;
-  sessionPauseStore.set(normalizeId(accountId), pauseUntil);
+export function pauseSession(accountId: string, delayMs: number): void {
+  const state = getOrCreateSessionState(accountId);
+  state.pauseUntil = Date.now() + delayMs;
+  state.expired = false;
 
   logger.warn(
-    `[wechat:session] session expired for accountId=${accountId}, pausing for ${Math.ceil(SESSION_PAUSE_DURATION_MS / 60_000)} minutes`
+    `[wechat:session] session timeout for accountId=${accountId}, backing off ${Math.ceil(delayMs / 1000)}s (attempt ${state.expiryCount})`
   );
 }
 
@@ -145,40 +200,31 @@ export function pauseSession(accountId: string): void {
  * Check if a session is currently paused.
  */
 export function isSessionPaused(accountId: string): boolean {
-  const key = normalizeId(accountId);
-  const pauseUntil = sessionPauseStore.get(key);
+  return getSessionStatus(accountId).paused;
+}
 
-  if (!pauseUntil) return false;
-
-  if (Date.now() >= pauseUntil) {
-    sessionPauseStore.delete(key);
-    logger.info(`[wechat:session] session pause ended for accountId=${accountId}`);
-    return false;
-  }
-
-  return true;
+export function isSessionExpired(accountId: string): boolean {
+  return getSessionStatus(accountId).expired;
 }
 
 /**
  * Get remaining pause time in milliseconds.
  */
 export function getRemainingPauseMs(accountId: string): number {
-  const key = normalizeId(accountId);
-  const pauseUntil = sessionPauseStore.get(key);
-
-  if (!pauseUntil) return 0;
-
-  const remaining = pauseUntil - Date.now();
-  return Math.max(0, remaining);
+  return getSessionStatus(accountId).remainingPauseMs;
 }
 
 /**
- * Resume a paused session immediately.
+ * Resume a paused session immediately while preserving expiry escalation count.
  */
 export function resumeSession(accountId: string): void {
-  const key = normalizeId(accountId);
-  sessionPauseStore.delete(key);
+  const state = getOrCreateSessionState(accountId);
+  state.pauseUntil = undefined;
   logger.info(`[wechat:session] session resumed for accountId=${accountId}`);
+}
+
+export function resetSessionState(accountId: string): void {
+  sessionStateStore.delete(normalizeId(accountId));
 }
 
 // ---------------------------------------------------------------------------
@@ -190,10 +236,14 @@ export function resumeSession(accountId: string): void {
  * Returns true if the session is active, false if paused.
  */
 export function checkSessionActive(runtime: WechatAccountRuntime): boolean {
-  if (isSessionPaused(runtime.accountId)) {
-    const remaining = getRemainingPauseMs(runtime.accountId);
+  const status = getSessionStatus(runtime.accountId);
+  if (status.expired) {
+    logger.warn(`[wechat:session] session expired for accountId=${runtime.accountId}, re-login required`);
+    return false;
+  }
+  if (status.paused) {
     logger.debug(
-      `[wechat:session] session paused for accountId=${runtime.accountId}, ${Math.ceil(remaining / 1000)}s remaining`
+      `[wechat:session] session paused for accountId=${runtime.accountId}, ${Math.ceil(status.remainingPauseMs / 1000)}s remaining`
     );
     return false;
   }
@@ -202,14 +252,28 @@ export function checkSessionActive(runtime: WechatAccountRuntime): boolean {
 
 /**
  * Handle session expiry from API response.
- * Returns true if the error indicates session expiry.
+ * Applies escalating backoff and eventually marks the session expired.
  */
-export function handleSessionExpiry(accountId: string, errcode?: number, ret?: number): boolean {
-  if (errcode === SESSION_EXPIRED_ERRCODE || ret === SESSION_EXPIRED_ERRCODE) {
-    pauseSession(accountId);
-    return true;
+export function handleSessionExpiry(accountId: string, errcode?: number, ret?: number): SessionExpiryResult {
+  if (errcode !== SESSION_EXPIRED_ERRCODE && ret !== SESSION_EXPIRED_ERRCODE) {
+    return { matched: false, state: "ignored", delayMs: 0, attempts: 0 };
   }
-  return false;
+
+  const state = getOrCreateSessionState(accountId);
+  state.expiryCount += 1;
+
+  const delayMs = SESSION_EXPIRY_BACKOFF_MS[state.expiryCount - 1];
+  if (delayMs) {
+    pauseSession(accountId, delayMs);
+    return { matched: true, state: "paused", delayMs, attempts: state.expiryCount };
+  }
+
+  state.pauseUntil = undefined;
+  state.expired = true;
+  logger.error(
+    `[wechat:session] session expired permanently for accountId=${accountId} after ${state.expiryCount} timeouts, re-login required`
+  );
+  return { matched: true, state: "expired", delayMs: 0, attempts: state.expiryCount };
 }
 
 // ---------------------------------------------------------------------------

@@ -33,6 +33,20 @@ export function resolveWechatConfig(
       editThrottleMs: raw?.streaming?.editThrottleMs ?? 1200,
       streamStartChars: raw?.streaming?.streamStartChars ?? 80,
     },
+    accounts: raw?.accounts
+      ? Object.fromEntries(
+          Object.entries(raw.accounts).map(([id, account]) => [
+            id,
+            {
+              ...account,
+              name: account.name?.trim() || undefined,
+              token: account.token?.trim() || undefined,
+              baseUrl: account.baseUrl?.trim() || undefined,
+              cdnBaseUrl: account.cdnBaseUrl?.trim() || undefined,
+            },
+          ]),
+        )
+      : undefined,
   };
   return cfg;
 }

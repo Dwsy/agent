@@ -1,6 +1,9 @@
 import crypto from "node:crypto";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import type { WechatAccountRuntime, WechatSendMessageReq, WechatInboundMessage } from "./types.ts";
 import { loadConfigRouteTag } from "./accounts.ts";
+import { checkSessionActive, getSessionStatus, SESSION_EXPIRED_ERRCODE } from "./session.ts";
 import { redactUrl, redactBody, logger } from "./logger.ts";
 
 /**
@@ -26,6 +29,20 @@ const LONG_POLL_TIMEOUT_MS = 60_000;
  * Config request timeout.
  */
 const DEFAULT_CONFIG_TIMEOUT_MS = 10_000;
+
+const CHANNEL_VERSION = (() => {
+  try {
+    const pkgPath = path.resolve(process.cwd(), "package.json");
+    const pkg = JSON.parse(readFileSync(pkgPath, "utf-8")) as { version?: string };
+    return pkg.version ?? "unknown";
+  } catch {
+    return "unknown";
+  }
+})();
+
+function buildBaseInfo(): { channel_version: string } {
+  return { channel_version: CHANNEL_VERSION };
+}
 
 /**
  * Generate X-WECHAT-UIN header: random uint32 -> base64.
@@ -54,6 +71,14 @@ async function ilinkRequest<T>(
 
   const url = `${baseUrl}${path}`;
 
+  if ("accountId" in runtime && !checkSessionActive(runtime)) {
+    const status = getSessionStatus(runtime.accountId);
+    const reason = status.expired
+      ? `WeChat session expired for accountId=${runtime.accountId}; please re-login via QR`
+      : `WeChat session paused for accountId=${runtime.accountId}; retry after ${Math.ceil(status.remainingPauseMs / 1000)}s`;
+    throw new WechatApiError(reason, { errcode: SESSION_EXPIRED_ERRCODE, errmsg: reason });
+  }
+
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     "AuthorizationType": "ilink_bot_token",
@@ -64,7 +89,7 @@ async function ilinkRequest<T>(
     headers["Authorization"] = `Bearer ${token}`;
   }
 
-  const routeTag = loadConfigRouteTag();
+  const routeTag = "accountId" in runtime ? loadConfigRouteTag(runtime.accountId) : loadConfigRouteTag();
   if (routeTag) {
     headers["SKRouteTag"] = routeTag;
   }
@@ -122,6 +147,36 @@ interface GetUpdatesResponse {
   msgs?: WechatInboundMessage[];
   get_updates_buf?: string;
   longpolling_timeout_ms?: number;
+}
+
+export class WechatApiError extends Error {
+  ret?: number;
+  errcode?: number;
+  errmsg?: string;
+
+  constructor(message: string, details?: { ret?: number; errcode?: number; errmsg?: string }) {
+    super(message);
+    this.name = "WechatApiError";
+    this.ret = details?.ret;
+    this.errcode = details?.errcode;
+    this.errmsg = details?.errmsg;
+  }
+}
+
+function assertWechatApiOk(
+  label: string,
+  response: { ret?: number; errcode?: number; errmsg?: string },
+): void {
+  const ret = response.ret;
+  const errcode = response.errcode;
+  const errmsg = response.errmsg;
+
+  if ((typeof ret === "number" && ret !== 0) || (typeof errcode === "number" && errcode !== 0)) {
+    throw new WechatApiError(
+      `Weixin ${label} failed: ret=${ret ?? "undefined"} errcode=${errcode ?? "undefined"} msg=${errmsg ?? ""}`,
+      { ret, errcode, errmsg },
+    );
+  }
 }
 
 /**
@@ -192,14 +247,12 @@ export async function fetchWechatUpdates(
 ): Promise<{ messages: WechatInboundMessage[]; getUpdatesBuf?: string; longpollingTimeoutMs?: number }> {
   const response = await ilinkRequest<GetUpdatesResponse>(runtime, ILINK_GETUPDATES, {
     method: "POST",
-    body: { get_updates_buf: runtime.syncBuf ?? "" },
+    body: { get_updates_buf: runtime.syncBuf ?? "", base_info: buildBaseInfo() },
     timeoutMs: LONG_POLL_TIMEOUT_MS + 10_000,
     label: "getUpdates",
   });
 
-  if (response.ret !== undefined && response.ret !== 0) {
-    throw new Error(`Weixin getUpdates failed: ret=${response.ret} errcode=${response.errcode} msg=${response.errmsg}`);
-  }
+  assertWechatApiOk("getUpdates", response);
 
   return {
     messages: response.msgs ?? [],
@@ -221,13 +274,11 @@ export async function sendWechatMessage(
 
   const response = await ilinkRequest<SendMessageResponse>(runtime, ILINK_SENDMESSAGE, {
     method: "POST",
-    body: req,
+    body: { ...req, base_info: buildBaseInfo() },
     label: "sendMessage",
   });
 
-  if (response.ret !== undefined && response.ret !== 0) {
-    throw new Error(`Weixin sendMessage failed: ret=${response.ret} errcode=${response.errcode} msg=${response.errmsg}`);
-  }
+  assertWechatApiOk("sendMessage", response);
 
   return {
     messageId: response.data?.msg_id || response.data?.client_id || req.msg.client_id,
@@ -247,14 +298,13 @@ export async function getWechatConfig(
     body: {
       ilink_user_id: ilinkUserId,
       context_token: contextToken,
+      base_info: buildBaseInfo(),
     },
     timeoutMs: DEFAULT_CONFIG_TIMEOUT_MS,
     label: "getConfig",
   });
 
-  if (response.ret !== undefined && response.ret !== 0) {
-    throw new Error(`Weixin getConfig failed: ret=${response.ret} errcode=${response.errcode} msg=${response.errmsg}`);
-  }
+  assertWechatApiOk("getConfig", response);
 
   return {
     typingTicket: response.typing_ticket,
@@ -268,12 +318,13 @@ export async function sendWechatTyping(
   runtime: WechatAccountRuntime,
   req: SendTypingRequest
 ): Promise<void> {
-  await ilinkRequest<{ ret?: number; errcode?: number; errmsg?: string }>(runtime, ILINK_SENDTYPING, {
+  const response = await ilinkRequest<{ ret?: number; errcode?: number; errmsg?: string }>(runtime, ILINK_SENDTYPING, {
     method: "POST",
-    body: req,
+    body: { ...req, base_info: buildBaseInfo() },
     timeoutMs: DEFAULT_CONFIG_TIMEOUT_MS,
     label: "sendTyping",
   });
+  assertWechatApiOk("sendTyping", response);
 }
 
 /**
@@ -285,13 +336,11 @@ export async function getWechatUploadUrl(
 ): Promise<{ uploadParam: string; thumbUploadParam?: string }> {
   const response = await ilinkRequest<GetUploadUrlResponse>(runtime, ILINK_GETUPLOADURL, {
     method: "POST",
-    body: req,
+    body: { ...req, base_info: buildBaseInfo() },
     label: "getUploadUrl",
   });
 
-  if (response.ret !== undefined && response.ret !== 0) {
-    throw new Error(`Weixin getUploadUrl failed: ret=${response.ret} errcode=${response.errcode} msg=${response.errmsg}`);
-  }
+  assertWechatApiOk("getUploadUrl", response);
 
   return {
     uploadParam: response.upload_param ?? "",

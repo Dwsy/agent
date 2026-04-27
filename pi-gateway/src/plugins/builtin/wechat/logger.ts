@@ -32,7 +32,14 @@ class WechatLogger implements Logger {
     return `${timestamp} ${this.prefix}${account} ${message}`;
   }
 
+  private shouldSuppressDebug(message: string): boolean {
+    return message.includes("[wechat:api]");
+  }
+
   debug(message: string): void {
+    if (this.shouldSuppressDebug(message)) {
+      return;
+    }
     console.debug(this.format(message));
   }
 

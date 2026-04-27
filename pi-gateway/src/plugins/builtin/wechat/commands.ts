@@ -5,6 +5,7 @@
  */
 
 import type { WechatAccountRuntime } from "./types.ts";
+import { getSessionStatus } from "./session.ts";
 import { logger } from "./logger.ts";
 import { toggleWechatDebugMode } from "./debug-mode.ts";
 
@@ -40,6 +41,8 @@ export interface SlashCommandStatus {
   dedupSize: number;
   syncBufSize: number;
   sessionPaused: boolean;
+  sessionExpired: boolean;
+  sessionExpiryCount: number;
   sessionPauseRemaining?: number;
 }
 
@@ -86,14 +89,18 @@ const COMMANDS: SlashCommand[] = [
         `同步游标: ${status.syncBufSize} 字符`,
       ];
 
-      if (status.sessionPaused) {
+      if (status.sessionExpired) {
+        lines.push(`会话状态: ❌ 已失效，请重新扫码登录`);
+      } else if (status.sessionPaused) {
         const remaining = status.sessionPauseRemaining
           ? Math.ceil(status.sessionPauseRemaining / 1000)
           : "未知";
-        lines.push(`会话状态: ⏸️ 已暂停 (${remaining}s)`);
+        lines.push(`会话状态: ⏸️ 退避中 (${remaining}s)`);
       } else {
         lines.push(`会话状态: ✅ 活跃`);
       }
+
+      lines.push(`超时次数: ${status.sessionExpiryCount}`);
 
       if (status.lastInboundAt) {
         const inbound = new Date(status.lastInboundAt).toLocaleString("zh-CN");
@@ -204,9 +211,8 @@ export async function handleSlashCommand(
   // Find the command
   const cmd = COMMANDS.find((c) => c.name === cmdName);
   if (!cmd) {
-    // Unknown command
-    await ctx.send(`❓ 未知命令: ${cmdName}\n输入 /help 查看可用命令。`);
-    return { handled: true };
+    // Not a local WeChat command - let the agent handle pi/global slash commands such as /new
+    return { handled: false };
   }
 
   // Execute the command
@@ -264,18 +270,23 @@ export function buildSlashCommandContext(
     toggleDebug: () => {
       debugMode = !debugMode;
     },
-    getStatus: () => ({
-      accountId: runtime.accountId,
-      connected: !!runtime.token,
-      lastInboundAt: runtime.lastInboundAt,
-      lastOutboundAt: runtime.lastOutboundAt,
-      lastError: runtime.lastError,
-      contextTokensSize: runtime.contextTokens.size,
-      dedupSize: runtime.dedup.size,
-      syncBufSize: runtime.syncBuf.length,
-      sessionPaused: false, // Would need to import isSessionPaused
-      sessionPauseRemaining: undefined,
-    }),
+    getStatus: () => {
+      const session = getSessionStatus(runtime.accountId);
+      return {
+        accountId: runtime.accountId,
+        connected: !!runtime.token && !session.expired,
+        lastInboundAt: runtime.lastInboundAt,
+        lastOutboundAt: runtime.lastOutboundAt,
+        lastError: runtime.lastError,
+        contextTokensSize: runtime.contextTokens.size,
+        dedupSize: runtime.dedup.size,
+        syncBufSize: runtime.syncBuf.length,
+        sessionPaused: session.paused,
+        sessionExpired: session.expired,
+        sessionExpiryCount: session.expiryCount,
+        sessionPauseRemaining: session.remainingPauseMs,
+      };
+    },
     receivedAt,
   };
 }

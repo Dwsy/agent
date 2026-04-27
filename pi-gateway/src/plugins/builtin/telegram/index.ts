@@ -302,8 +302,12 @@ const telegramPlugin: ChannelPlugin = {
     for (const account of runtime.accounts.values()) {
       await startAccountRuntime(runtime, account);
     }
-    // Prewarm bot-level RPC sessions (DM main), group/topic sessions remain lazy.
-    await prewarmTelegramBotSessions(runtime);
+    // Prewarm bot-level RPC sessions (DM main) in background; group/topic sessions remain lazy.
+    void prewarmTelegramBotSessions(runtime).catch((err) => {
+      runtime?.api.logger.warn(
+        `[telegram:prewarm] background prewarm failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    });
   },
 
   async stop() {

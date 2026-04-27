@@ -1084,7 +1084,11 @@ export async function setupTelegramCommands(runtime: TelegramPluginRuntime, acco
   registerModelCommand(bot, runtime, account);
   registerCallbackHandler(bot, runtime, account);
 
-  // 初始化时尝试获取 pi 命令，如果 RPC 还没连接则只注册本地命令
-  // 用户可以稍后用 /refresh 手动刷新
-  await refreshPiCommands(account, runtime.api.config);
+  // 初始化时异步刷新 pi 命令；启动路径只保证本地命令可用。
+  // 用户也可以稍后用 /refresh 手动刷新。
+  void refreshPiCommands(account, runtime.api.config).catch((err) => {
+    runtime.api.logger.warn(
+      `[telegram:${account.accountId}] initial refreshPiCommands failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  });
 }

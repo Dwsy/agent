@@ -10,6 +10,10 @@ import type {
 import { sendWechatMessage, generateClientId } from "./api.ts";
 import { WECHAT_PLATFORM_TEXT_LIMIT } from "./config.ts";
 
+export function encodeWechatMediaAesKey(aeskey: Buffer): string {
+  return Buffer.from(aeskey.toString("hex"), "utf-8").toString("base64");
+}
+
 /**
  * Encode a WechatTarget to a string for internal routing.
  */
@@ -89,8 +93,8 @@ export function getWechatContextToken(
   runtime: WechatAccountRuntime,
   userId: string
 ): string | undefined {
-  const key = `${runtime.accountId}:${userId}`;
-  return runtime.contextTokens.get(key);
+  return runtime.contextTokens.get(`${runtime.accountId}:${userId}`)
+    ?? runtime.contextTokens.get(userId);
 }
 
 /**
@@ -119,17 +123,17 @@ export async function sendWechatText(
 
     for (const chunk of chunks) {
       const item: WechatOutboundItem = {
-        type: "text",
+        type: 1,
         text_item: { text: chunk },
-      };
+      } as WechatOutboundItem;
 
       const req: WechatSendMessageReq = {
         msg: {
           from_user_id: "",
           to_user_id: target.id,
           client_id: generateClientId(),
-          message_type: 1, // BOT
-          message_state: 1, // FINISH
+          message_type: 2, // BOT
+          message_state: 2, // FINISH
           item_list: [item],
           context_token: contextToken,
         },
@@ -185,43 +189,50 @@ export async function sendWechatMedia(
     // Build the appropriate item based on media type
     let item: WechatOutboundItem;
     
+    const encodedAesKey = encodeWechatMediaAesKey(uploaded.aeskey);
+    const rawHexAesKey = uploaded.aeskey.toString("hex");
+
     if (mediaType === "image") {
       item = {
-        type: "image",
+        type: 2,
         image_item: {
           media: {
             encrypt_query_param: uploaded.downloadEncryptedQueryParam,
-            aes_key: uploaded.aeskey.toString("base64"),
+            aes_key: encodedAesKey,
             encrypt_type: 1,
           },
+          aeskey: rawHexAesKey,
           mid_size: uploaded.fileSizeCiphertext,
+          hd_size: uploaded.fileSizeCiphertext,
         },
-      };
+      } as WechatOutboundItem;
     } else if (mediaType === "video") {
       item = {
-        type: "video",
+        type: 5,
         video_item: {
           media: {
             encrypt_query_param: uploaded.downloadEncryptedQueryParam,
-            aes_key: uploaded.aeskey.toString("base64"),
+            aes_key: encodedAesKey,
             encrypt_type: 1,
           },
           video_size: uploaded.fileSizeCiphertext,
+          video_md5: uploaded.fileMd5,
         },
-      };
+      } as WechatOutboundItem;
     } else {
       item = {
-        type: "file",
+        type: 4,
         file_item: {
           media: {
             encrypt_query_param: uploaded.downloadEncryptedQueryParam,
-            aes_key: uploaded.aeskey.toString("base64"),
+            aes_key: encodedAesKey,
             encrypt_type: 1,
           },
           file_name: path.basename(filePath),
+          md5: uploaded.fileMd5,
           len: String(uploaded.fileSize),
         },
-      };
+      } as WechatOutboundItem;
     }
 
     // Send caption text first if provided
@@ -230,14 +241,18 @@ export async function sendWechatMedia(
       await sendWechatText(runtime, rawTarget, caption);
     }
 
+    runtime.api.logger.debug(
+      `sendWechatMedia: mediaType=${mediaType} to=${target.id} file=${path.basename(filePath)} cipherSize=${uploaded.fileSizeCiphertext} plainSize=${uploaded.fileSize}`,
+    );
+
     // Send the media message
     const req: WechatSendMessageReq = {
       msg: {
         from_user_id: "",
         to_user_id: target.id,
         client_id: generateClientId(),
-        message_type: 1, // BOT
-        message_state: 1, // FINISH
+        message_type: 2, // BOT
+        message_state: 2, // FINISH
         item_list: [item],
         context_token: contextToken,
       },

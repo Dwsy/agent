@@ -43,6 +43,7 @@ export async function handleMessageSendRequest(
   const internalToken = typeof body.token === "string" ? body.token.trim() : "";
   const callerPid = typeof body.pid === "number" ? body.pid : 0;
   let text = typeof body.text === "string" ? body.text : "";
+  let resolvedRpcId: string | undefined;
   let replyTo = typeof body.replyTo === "string" ? body.replyTo.trim() : undefined;
   const parseMode = typeof body.parseMode === "string" ? body.parseMode as "Markdown" | "HTML" | "plain" : undefined;
   let streamMode = typeof body.streamMode === "string" ? body.streamMode : undefined;
@@ -71,9 +72,11 @@ export async function handleMessageSendRequest(
 
   // Auth: verify via active session OR internal token
   if (sessionKey) {
-    if (!ctx.pool.getForSession(sessionKey as SessionKey)) {
+    const activeClient = ctx.pool.getForSession(sessionKey as SessionKey);
+    if (!activeClient) {
       return Response.json({ error: "Invalid or inactive session" }, { status: 403 });
     }
+    resolvedRpcId = activeClient.id;
   } else if (internalToken) {
     const expected = getGatewayInternalToken(ctx.config);
     if (internalToken !== expected) {
@@ -84,6 +87,7 @@ export async function handleMessageSendRequest(
       const client = ctx.pool.getByPid(callerPid);
       if (client?.sessionKey) {
         sessionKey = client.sessionKey;
+        resolvedRpcId = client.id;
         ctx.log.info(`[message-send] resolved session from PID ${callerPid}: ${sessionKey}`);
       } else {
         ctx.log.warn(`[message-send] PID ${callerPid} not found in pool — cannot resolve session`);
@@ -117,6 +121,9 @@ export async function handleMessageSendRequest(
 
   const target = resolveChannelTarget(channelPlugin, chatId, sessionKey, session);
 
+  const pluginId = ((channelPlugin as { __pluginId?: string }).__pluginId) ?? channelPlugin.id;
+  const accountId = session?.lastAccountId ?? "n/a";
+  const rpcId = resolvedRpcId ?? session?.rpcProcessId ?? ctx.pool.getForSession(sessionKey as SessionKey)?.id ?? "none";
   const maxLength = channelPlugin.outbound.maxLength;
 
   // Get default streamMode from channel config if not provided
@@ -148,7 +155,7 @@ export async function handleMessageSendRequest(
   }
 
   ctx.log.info(
-    `[message-send] channel=${channel} target=${target} text=${text.length} chars replyTo=${replyTo ?? "none"} maxLength=${maxLength ?? "n/a"}`,
+    `[message-send] channel=${channel} plugin=${pluginId} account=${accountId} rpc=${rpcId} target=${target} text=${text.length} chars replyTo=${replyTo ?? "none"} maxLength=${maxLength ?? "n/a"}`,
   );
 
   // Tool hook integration for send_message

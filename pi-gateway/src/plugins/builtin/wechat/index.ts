@@ -10,15 +10,16 @@ import type {
   ReadHistoryResult,
   ChannelSecurityAdapter,
 } from "../../types.ts";
-import type { WechatChannelConfig, WechatAccountRuntime } from "./types.ts";
-import { resolveWechatConfig, hasWechatCredentials } from "./config.ts";
-import { resolveWechatAccounts, resolveDefaultAccountId, startWechatLoginWithQr, waitForWechatLogin, saveWechatAccount, type WechatQrStartResult, type WechatQrWaitResult } from "./accounts.ts";
+import type { WechatChannelConfig, WechatAccountRuntime, WechatResolvedAccount } from "./types.ts";
+import { resolveWechatConfig } from "./config.ts";
+import { normalizeAccountId, resolveWechatAccounts, resolveDefaultAccountId, startWechatLoginWithQr, waitForWechatLogin } from "./accounts.ts";
 import { sendWechatText, sendWechatMedia, sendWechatKeyboard } from "./outbound.ts";
 import { startWechatGateway, stopWechatGateway } from "./gateway.ts";
 import { flushWechatKnownUsers } from "./known-users.ts";
 import { handleWechatMessage } from "./handlers.ts";
 import { logger } from "./logger.ts";
 import { initWechatImageServer } from "./image-server.ts";
+import { activateWechatAccount } from "./runtime.ts";
 
 /**
  * WeChat plugin runtime (multi-account).
@@ -31,15 +32,85 @@ interface WechatPluginRuntimeMulti {
 }
 
 let runtime: WechatPluginRuntimeMulti | null = null;
+const autoLoginInFlight = new Set<string>();
+
+function toResolvedAccount(rt: WechatPluginRuntimeMulti, account: {
+  accountId: string;
+  token: string;
+  baseUrl: string;
+  userId?: string;
+}): WechatResolvedAccount {
+  return {
+    accountId: account.accountId,
+    enabled: true,
+    configured: true,
+    baseUrl: account.baseUrl,
+    cdnBaseUrl: rt.channelCfg.cdnBaseUrl || "https://novac2c.cdn.weixin.qq.com/c2c",
+    token: account.token,
+    userId: account.userId,
+    dmPolicy: rt.channelCfg.dmPolicy ?? "pairing",
+    allowFrom: rt.channelCfg.allowFrom ?? [],
+  };
+}
+
+function applySecurityAdapter(account: WechatResolvedAccount): void {
+  wechatPlugin.security = {
+    dmPolicy: account.dmPolicy,
+    dmAllowFrom: account.allowFrom,
+    supportsPairing: account.dmPolicy === "pairing",
+    accountId: account.accountId,
+  } satisfies ChannelSecurityAdapter;
+}
+
+async function activateLoggedInAccount(
+  rt: WechatPluginRuntimeMulti,
+  account: { accountId: string; token: string; baseUrl: string; userId?: string },
+): Promise<void> {
+  const resolvedAccount = toResolvedAccount(rt, account);
+  const { defaultAccountId } = await activateWechatAccount({
+    api: rt.api,
+    channelCfg: rt.channelCfg,
+    accounts: rt.accounts,
+    defaultAccountId: rt.defaultAccountId,
+    account: resolvedAccount,
+    onMessage: async (msg) => {
+      const active = rt.accounts.get(resolvedAccount.accountId);
+      if (!active) return;
+      await handleWechatMessage(active, msg);
+    },
+  });
+
+  rt.defaultAccountId = defaultAccountId;
+  applySecurityAdapter(resolvedAccount);
+}
+
+async function handleExpiredWechatAccount(rt: WechatPluginRuntimeMulti, accountId: string): Promise<void> {
+  console.log("");
+  console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+  console.log("❌ 微信登录已失效");
+  console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+  console.log(`📋 账号ID: ${accountId}`);
+  console.log("🔄 正在重新输出扫码二维码...");
+  console.log("");
+
+  logger.warn(`[wechat:auto-login] account expired, requesting QR re-login for accountId=${accountId}`);
+  await startAutoLogin(rt, accountId);
+}
 
 /**
  * Auto-start QR login flow when no token is configured.
  * Displays QR code in terminal and polls for scan result.
  */
-async function startAutoLogin(rt: WechatPluginRuntimeMulti): Promise<void> {
+async function startAutoLogin(rt: WechatPluginRuntimeMulti, preferredAccountId?: string): Promise<void> {
   const baseUrl = rt.channelCfg.baseUrl || "https://ilinkai.weixin.qq.com";
-  const accountId = rt.defaultAccountId || "default";
+  const accountId = normalizeAccountId(preferredAccountId || rt.defaultAccountId || "default");
 
+  if (autoLoginInFlight.has(accountId)) {
+    logger.info(`[wechat:auto-login] QR login already in progress for accountId=${accountId}`);
+    return;
+  }
+
+  autoLoginInFlight.add(accountId);
   logger.info(`[wechat:auto-login] starting QR login for accountId=${accountId}`);
 
   try {
@@ -85,34 +156,26 @@ async function startAutoLogin(rt: WechatPluginRuntimeMulti): Promise<void> {
     });
 
     if (loginResult.connected && loginResult.botToken) {
-      // Step 4: Save account
-      const normalizedId = loginResult.accountId 
-        ? loginResult.accountId.replace(/[@.]/g, "-") 
-        : accountId;
-      
-      saveWechatAccount(normalizedId, {
+      const normalizedId = normalizeAccountId(loginResult.accountId || accountId);
+
+      await activateLoggedInAccount(rt, {
+        accountId: normalizedId,
         token: loginResult.botToken,
         baseUrl: loginResult.baseUrl || baseUrl,
         userId: loginResult.userId,
       });
 
+      autoLoginInFlight.delete(normalizedId);
       console.log("");
       console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
       console.log("✅ 登录成功！");
       console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
       console.log(`📋 账号ID: ${normalizedId}`);
       console.log("💾 凭证已保存");
-      console.log("");
-      console.log("🔄 正在重新加载 gateway...");
+      console.log("🟢 账号已热加载，无需重启 gateway");
       console.log("");
 
-      // Step 5: Notify user to restart
-      // Note: We can't auto-reload from plugin, user needs to restart gateway
-      logger.info("[wechat:auto-login] login successful, please restart gateway");
-      console.log("🔄 请重启 gateway 以加载新账号:");
-      console.log("   tmux send-keys -t gateway C-c Enter");
-      console.log("   tmux send-keys -t gateway 'cd ~/.pi/agent/pi-gateway && bun run dev' Enter");
-      console.log("");
+      logger.info(`[wechat:auto-login] login successful and activated accountId=${normalizedId}`);
     } else {
       logger.error(`[wechat:auto-login] login failed: ${loginResult.message}`);
       console.log("");
@@ -123,6 +186,8 @@ async function startAutoLogin(rt: WechatPluginRuntimeMulti): Promise<void> {
     logger.error(`[wechat:auto-login] error: ${String(err)}`);
     console.log("");
     console.log("❌ 登录出错:", String(err));
+  } finally {
+    autoLoginInFlight.delete(accountId);
   }
 }
 
@@ -238,7 +303,7 @@ const wechatPlugin: ChannelPlugin = {
       
       // Create a minimal runtime for the outbound functions
       const accountRuntime = { ...account, channelCfg: runtime.channelCfg };
-      return sendWechatText(accountRuntime, userId, text, opts);
+      return sendWechatText(accountRuntime, `c2c|${userId}`, text, opts);
     },
     async sendMedia(
       target: string,
@@ -251,7 +316,7 @@ const wechatPlugin: ChannelPlugin = {
       if (!account) return { ok: false, error: `Account ${accountId} not found` };
       
       const accountRuntime = { ...account, channelCfg: runtime.channelCfg };
-      return sendWechatMedia(accountRuntime, userId, filePath, opts);
+      return sendWechatMedia(accountRuntime, `c2c|${userId}`, filePath, opts);
     },
     async editMessage(): Promise<MessageActionResult> {
       return { ok: false, error: "WeChat does not support message editing" };
@@ -273,7 +338,7 @@ const wechatPlugin: ChannelPlugin = {
       if (!account) return { ok: false, error: `Account ${accountId} not found` };
       
       const accountRuntime = { ...account, channelCfg: runtime.channelCfg };
-      return sendWechatKeyboard(accountRuntime, userId, text, keyboard);
+      return sendWechatKeyboard(accountRuntime, `c2c|${userId}`, text, keyboard);
     },
   },
   async init(api: GatewayPluginApi) {
@@ -309,7 +374,7 @@ const wechatPlugin: ChannelPlugin = {
       try {
         const baseUrl = channelCfg.baseUrl || "https://ilinkai.weixin.qq.com";
         const result = await startWechatLoginWithQr({
-          accountId: defaultAccountId || "default",
+          accountId: runtime?.defaultAccountId || defaultAccountId || "default",
           apiBaseUrl: baseUrl,
           botType: "3",
         });
@@ -347,18 +412,22 @@ const wechatPlugin: ChannelPlugin = {
         });
 
         if (result.connected && result.botToken) {
-          // Save the account
-          saveWechatAccount(result.accountId || "default", {
+          if (!runtime) {
+            return Response.json({ ok: false, error: "WeChat runtime not initialized" }, { status: 503 });
+          }
+
+          await activateLoggedInAccount(runtime, {
+            accountId: normalizeAccountId(result.accountId || runtime.defaultAccountId || "default"),
             token: result.botToken,
             baseUrl: result.baseUrl || baseUrl,
             userId: result.userId,
           });
-          
+
           return Response.json({ 
             ok: true, 
             connected: true, 
             accountId: result.accountId,
-            message: "Login successful! Restart gateway to use the account."
+            message: "Login successful! Account is active now, no restart required."
           });
         }
 
@@ -416,12 +485,7 @@ const wechatPlugin: ChannelPlugin = {
 
     // Set security adapter
     const defaultAccount = resolved.find((a) => a.accountId === defaultAccountId) ?? resolved[0];
-    wechatPlugin.security = {
-      dmPolicy: defaultAccount.dmPolicy,
-      dmAllowFrom: defaultAccount.allowFrom,
-      supportsPairing: defaultAccount.dmPolicy === "pairing",
-      accountId: defaultAccount.accountId,
-    } satisfies ChannelSecurityAdapter;
+    applySecurityAdapter(defaultAccount);
 
     api.logger.info(`WeChat: initialized accounts=${Array.from(runtime.accounts.keys()).join(",")}`);
   },
@@ -437,6 +501,11 @@ const wechatPlugin: ChannelPlugin = {
 
       await startWechatGateway(account, async (msg) => {
         await handleWechatMessage(account, msg);
+      }, {
+        onSessionExpired: async (expiredRuntime) => {
+          if (!runtime) return;
+          await handleExpiredWechatAccount(runtime, expiredRuntime.accountId);
+        },
       });
     }
 

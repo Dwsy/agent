@@ -22,6 +22,7 @@ export type { Config };
 export interface GatewayIdentityContext {
   agentId?: string;
   hostname?: string;
+  channel?: string;
 }
 
 /**
