@@ -360,6 +360,37 @@ export async function initVectorMemory(
 
       log("vector", `initialized (provider=local, baseUrl=${baseUrl}, dim=${activeEmbedding.dim})`);
       return true;
+    } else if (provider === "minilm-direct") {
+      // Use all-MiniLM-L6-v2 with direct (single-process) mode
+      const { createMiniLMProvider } = await import("./embedding-minilm.ts");
+      activeEmbedding = await createMiniLMProvider({
+        modelPath: config.vectorMemory?.minilm?.modelPath,
+        maxSeqLength: config.vectorMemory?.minilm?.maxSeqLength ?? 512,
+        batchSize: config.vectorMemory?.minilm?.batchSize ?? 1,
+        useGPU: config.vectorMemory?.minilm?.useGPU ?? false,
+      });
+      activeDB = new VectorDB(getVectorDBPath(rolePath), activeEmbedding.dim);
+      activeRolePath = rolePath;
+
+      log("vector", `initialized (provider=minilm-direct, dim=${activeEmbedding.dim})`);
+      return true;
+    } else if (provider === "minilm-daemon") {
+      // Use all-MiniLM-L6-v2 with daemon (shared process) mode
+      const { createMiniLMDaemonProvider } = await import("./embedding-minilm-daemon-client.ts");
+      activeEmbedding = await createMiniLMDaemonProvider({
+        socketPath: config.vectorMemory?.minilm?.daemonSocketPath,
+        timeoutMs: config.vectorMemory?.minilm?.timeoutMs ?? 5000,
+        autoStartDaemon: config.vectorMemory?.minilm?.autoStartDaemon ?? true,
+        daemonConfig: {
+          modelPath: config.vectorMemory?.minilm?.modelPath,
+          maxBatchSize: config.vectorMemory?.minilm?.batchSize ?? 8,
+        },
+      });
+      activeDB = new VectorDB(getVectorDBPath(rolePath), activeEmbedding.dim);
+      activeRolePath = rolePath;
+
+      log("vector", `initialized (provider=minilm-daemon, dim=${activeEmbedding.dim})`);
+      return true;
     } else {
       // Use OpenAI embedding
       const apiKey = await resolveEmbeddingApiKey(ctx);

@@ -8,7 +8,8 @@
  */
 
 import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
+import { homedir } from "node:os";
 import { getDefaultSpinnerFrames } from "./spinner-utils.ts";
 
 // ============================================================================
@@ -71,12 +72,33 @@ export interface UIConfig {
   viewerDefaultFilter: "all" | "learnings" | "preferences" | "events";
 }
 
+export interface MiniLMConfig {
+  /** Provider mode: direct (single-process) or daemon (shared process) */
+  mode: "direct" | "daemon";
+  /** Path to ONNX model file. Auto-resolved if not provided */
+  modelPath?: string;
+  /** Daemon socket path (Unix socket or Windows named pipe). Auto-resolved if not provided */
+  daemonSocketPath?: string;
+  /** Max sequence length for tokenization (default: 512) */
+  maxSeqLength?: number;
+  /** Batch size for inference (default: 8 for daemon, 1 for direct) */
+  batchSize?: number;
+  /** Request timeout in milliseconds (default: 5000) */
+  timeoutMs?: number;
+  /** Auto-start daemon if not running (daemon mode only, default: true) */
+  autoStartDaemon?: boolean;
+  /** Use GPU acceleration if available (direct mode only, default: false) */
+  useGPU?: boolean;
+}
+
 export interface VectorMemoryConfig {
   enabled: boolean;
-  provider: "openai" | "local";
+  provider: "openai" | "local" | "minilm-direct" | "minilm-daemon";
   model: string;
   apiKey: string | null;
   baseUrl: string;  // for local provider (pi-session-manager embedding service)
+  /** all-MiniLM-L6-v2 specific configuration (provider=minilm-*) */
+  minilm?: MiniLMConfig;
   autoRecall: boolean;
   autoIndex: boolean;
   recallLimit: number;
@@ -158,7 +180,7 @@ const DEFAULT_CONFIG: RolePersonaConfig = {
   },
   logging: {
     enabled: true,
-    level: "info",
+    level: "debug",
     retentionDays: 7,
   },
   memory: {
@@ -193,6 +215,14 @@ const DEFAULT_CONFIG: RolePersonaConfig = {
     model: "embeddinggemma-300m-qat-q8_0",
     apiKey: null,
     baseUrl: "http://127.0.0.1:52131",
+    minilm: {
+      mode: "daemon",
+      maxSeqLength: 512,
+      batchSize: 8,
+      timeoutMs: 5000,
+      autoStartDaemon: true,
+      useGPU: false,
+    },
     autoRecall: true,
     autoIndex: true,
     hybridSearch: true,
@@ -483,6 +513,77 @@ function applyEnvOverrides(config: RolePersonaConfig): RolePersonaConfig {
 }
 
 // ============================================================================
+// 跨平台路径工具
+// ============================================================================
+
+/**
+ * 展开路径中的 ~ 为用户主目录（跨平台支持 macOS/Linux/Windows）
+ */
+function expandHomeDir(input: string): string {
+  if (!input || !input.startsWith("~")) return input;
+  return join(homedir(), input.slice(1));
+}
+
+/**
+ * 获取配置搜索路径列表（按优先级降序）
+ * 1. 环境变量 PI_ROLES_DIR / PI_AGENT_ROLES_DIR 指定的目录
+ * 2. ~/.pi/roles/ 目录
+ * 3. 脚本所在目录 (extensionDir)
+ * 4. 当前工作目录 (cwd)
+ */
+function getConfigSearchPaths(extensionDir?: string): string[] {
+  const paths: string[] = [];
+
+  // 1. 环境变量指定的目录
+  if (process.env.PI_ROLES_DIR) {
+    paths.push(expandHomeDir(process.env.PI_ROLES_DIR));
+  }
+  if (process.env.PI_AGENT_ROLES_DIR) {
+    paths.push(expandHomeDir(process.env.PI_AGENT_ROLES_DIR));
+  }
+
+  // 2. ~/.pi/roles/ 目录
+  paths.push(join(homedir(), ".pi", "roles"));
+
+  // 3. 脚本/扩展所在目录
+  const scriptDir = extensionDir || (typeof __dirname !== "undefined" ? __dirname : ".");
+  paths.push(scriptDir);
+
+  // 4. 当前工作目录
+  paths.push(process.cwd());
+
+  // 去重（保留顺序）
+  return paths.filter((p, i, arr) => arr.indexOf(p) === i);
+}
+
+/**
+ * 从多个配置源加载配置（高优先级覆盖低优先级）
+ */
+function loadConfigFromSources(searchPaths: string[]): Partial<RolePersonaConfig> {
+  const mergedConfig: Partial<RolePersonaConfig> = {};
+
+  // 按优先级顺序加载（低优先级先加载，高优先级后覆盖）
+  // 数组已按优先级降序排列，所以反转后从低到高加载
+  const paths = [...searchPaths].reverse();
+
+  for (const dir of paths) {
+    const configPath = join(dir, "pi-role-persona.jsonc");
+    if (existsSync(configPath)) {
+      try {
+        const content = readFileSync(configPath, "utf-8");
+        const parsed = parseJsonc(content) as Partial<RolePersonaConfig>;
+        // 深度合并到结果（高优先级覆盖低优先级）
+        Object.assign(mergedConfig, deepMerge(mergedConfig, parsed));
+      } catch (err) {
+        console.warn(`[role-persona] Warning: Failed to load config from ${configPath}:`, err);
+      }
+    }
+  }
+
+  return mergedConfig;
+}
+
+// ============================================================================
 // 配置加载
 // ============================================================================
 
@@ -493,27 +594,18 @@ export function loadConfig(extensionDir?: string): RolePersonaConfig {
     return cachedConfig;
   }
 
-  // 从配置文件加载
-  // 注意：在 Bun 中使用 import.meta.dir，在 Node 中使用 __dirname
-  const configDir = extensionDir || (typeof __dirname !== "undefined" ? __dirname : ".");
-  const configPath = join(configDir, "pi-role-persona.jsonc");
+  // 获取配置搜索路径（按优先级降序）
+  const searchPaths = getConfigSearchPaths(extensionDir);
 
-  let fileConfig: Partial<RolePersonaConfig> = {};
-  if (existsSync(configPath)) {
-    try {
-      const content = readFileSync(configPath, "utf-8");
-      fileConfig = parseJsonc(content) as Partial<RolePersonaConfig>;
-    } catch (err) {
-      console.error(`[role-persona] Failed to load config from ${configPath}:`, err);
-    }
-  }
+  // 从所有配置源加载（合并）
+  const fileConfig = loadConfigFromSources(searchPaths);
 
-  // 深度合并
+  // 深度合并：默认值 <- 配置文件（低优先级到高优先级）
   const merged = deepMerge(DEFAULT_CONFIG, fileConfig);
-  
-  // 应用环境变量覆盖
+
+  // 应用环境变量覆盖（最高优先级）
   cachedConfig = applyEnvOverrides(merged);
-  
+
   return cachedConfig;
 }
 

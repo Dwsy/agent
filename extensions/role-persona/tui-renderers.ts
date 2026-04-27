@@ -4,8 +4,8 @@ import { Box, Markdown, Spacer, Text } from "@mariozechner/pi-tui";
 import { homedir } from "node:os";
 
 type ThemeLike = {
-  fg: (color: string, text: string) => string;
-  bg: (color: string, text: string) => string;
+  fg: (color: any, text: string) => string;
+  bg: (color: any, text: string) => string;
   bold: (text: string) => string;
 };
 
@@ -194,59 +194,9 @@ function createActionToolRenderers(toolName: string, options?: {
   });
 }
 
-export const roleReadToolRenderers = createTextToolRenderers({
-  call(args, theme) {
-    const path = shortenPath(args?.path);
-    const maxChars = typeof args?.maxChars === "number" ? ` ${theme.fg("muted", `(${args.maxChars} chars)`)} ` : " ";
-    return `${theme.fg("toolTitle", theme.bold("role_read"))}${maxChars}${theme.fg("accent", path)}`;
-  },
-  result(result, options, theme, context) {
-    if (result.isError) {
-      return formatSimpleResult(extractText(result), { ...options, expanded: true }, theme, { color: "error" });
-    }
-
-    const details = result.details || {};
-    const path = textValue(details.path) || textValue(context?.args?.path);
-    const truncated = details.truncated === true;
-    const bytes = typeof details.bytes === "number" ? `${details.bytes} chars` : undefined;
-    const warning = [bytes, truncated ? "[source truncated]" : undefined].filter(Boolean).join(" · ");
-
-    return formatStructuredPreview(extractText(result), options, theme, {
-      path,
-      collapsedLines: 12,
-      warning: warning || undefined,
-    });
-  },
-});
-
-export const roleWriteToolRenderers = createTextToolRenderers({
-  call(args, theme, context) {
-    const path = shortenPath(args?.path, "(missing path)");
-    const mode = textValue(args?.mode) || "overwrite";
-    const content = textValue(args?.content) || "";
-    let text = `${theme.fg("toolTitle", theme.bold("role_write"))} ${theme.fg("accent", path)} ${theme.fg("muted", `[${mode}]`)}`;
-
-    if (content) {
-      text += formatStructuredPreview(content, { expanded: context?.expanded }, theme, {
-        path: textValue(args?.path),
-        collapsedLines: 10,
-      });
-    }
-
-    return text;
-  },
-  result(result, _options, theme) {
-    const output = extractText(result).trim() || (result.isError ? "Write failed" : "Saved");
-    return `\n${theme.fg(result.isError ? "error" : "success", output)}`;
-  },
-});
-
-export const roleListToolRenderers = createTextToolRenderers({
-  call(args, theme) {
-    const path = shortenPath(args?.path);
-    const recursive = args?.recursive ? theme.fg("warning", "recursive") : theme.fg("muted", "flat");
-    const limit = typeof args?.maxEntries === "number" ? theme.fg("muted", `limit ${args.maxEntries}`) : theme.fg("muted", "limit 200");
-    return `${theme.fg("toolTitle", theme.bold("role_list"))} ${theme.fg("accent", path)} ${recursive} ${limit}`;
+export const roleInfoToolRenderers = createTextToolRenderers({
+  call(_args, theme) {
+    return `${theme.fg("toolTitle", theme.bold("role_info"))} ${theme.fg("muted", "get role directory structure")}`;
   },
   result(result, options, theme) {
     const details = result.details || {};
@@ -254,19 +204,6 @@ export const roleListToolRenderers = createTextToolRenderers({
     const base = textValue(details.base);
     const warning = [count, base ? `base ${base}` : undefined].filter(Boolean).join(" · ");
     return formatSimpleResult(extractText(result), options, theme, { collapsedLines: 20, warning: warning || undefined });
-  },
-});
-
-export const roleSearchToolRenderers = createTextToolRenderers({
-  call(args, theme) {
-    const query = textValue(args?.query) || "(empty query)";
-    const path = shortenPath(args?.path);
-    const limit = typeof args?.maxResults === "number" ? args.maxResults : 30;
-    return `${theme.fg("toolTitle", theme.bold("role_search"))} ${theme.fg("accent", JSON.stringify(query))} ${theme.fg("muted", `in ${path} · limit ${limit}`)}`;
-  },
-  result(result, options, theme) {
-    const count = typeof result.details?.count === "number" ? `${result.details.count} hits` : undefined;
-    return formatSimpleResult(extractText(result), options, theme, { collapsedLines: 14, warning: count || undefined });
   },
 });
 
@@ -334,12 +271,13 @@ function formatMemorySearchResult(result: ToolResultLike, options: ToolRenderOpt
 
 export const memoryToolRenderers = createTextToolRenderers({
   call(args, theme) {
-    const extra = textValue(args?.query)
-      ? `query=${JSON.stringify(args.query)}`
-      : textValue(args?.id)
-        ? `id=${args.id}`
-        : textValue(args?.category)
-          ? `category=${args.category}`
+    const a = args || {};
+    const extra = textValue(a.query)
+      ? `query=${JSON.stringify(a.query)}`
+      : textValue(a.id)
+        ? `id=${a.id}`
+        : textValue(a.category)
+          ? `category=${a.category}`
           : undefined;
     return formatActionCall("memory", args, theme, extra);
   },
@@ -364,12 +302,13 @@ export const memoryToolRenderers = createTextToolRenderers({
 
 export const knowledgeToolRenderers = createActionToolRenderers("knowledge", {
   callExtra(args) {
-    return textValue(args?.path)
-      ? shortenPath(args.path)
-      : textValue(args?.query)
-        ? JSON.stringify(args.query)
-        : textValue(args?.category)
-          ? `category=${args.category}`
+    const a = args || {};
+    return textValue(a.path)
+      ? shortenPath(a.path)
+      : textValue(a.query)
+        ? JSON.stringify(a.query)
+        : textValue(a.category)
+          ? `category=${a.category}`
           : undefined;
   },
   resultWarning(result) {

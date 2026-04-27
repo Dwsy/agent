@@ -46,6 +46,7 @@ export interface KnowledgeFrontmatter {
   updated: string;
   scope?: string;
   author?: string;
+  name?: string;
 }
 
 export interface KnowledgeEntry {
@@ -97,6 +98,7 @@ export interface KnowledgeListResult {
 }
 
 export interface KnowledgeWriteResult {
+  [key: string]: unknown;
   written: string;
   category: string;
   isNew: boolean;
@@ -678,7 +680,7 @@ export function writeKnowledge(
   const today = new Date().toISOString().split("T")[0];
 
   // Resolve category
-  let category = opts.category;
+  let category: string | null | undefined = opts.category;
   let suggestion: string | undefined;
 
   if (!category) {

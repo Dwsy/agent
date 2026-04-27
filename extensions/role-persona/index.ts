@@ -35,7 +35,7 @@ import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { StringEnum } from "@mariozechner/pi-ai";
 import { Type } from "@sinclair/typebox";
-import { log, logStart, logEnd, logWarn, logError, setCurrentRole } from "./logger.ts";
+import { log, logStart, logEnd, logWarn, logError, setCurrentRole, setSessionId } from "./logger.ts";
 import { SelectList, Text, Container } from "@mariozechner/pi-tui";
 import { config, reloadConfig } from "./config.ts";
 
@@ -102,10 +102,7 @@ import {
   knowledgeToolRenderers,
   memoryToolRenderers,
   registerRoleMessageRenderers,
-  roleListToolRenderers,
-  roleReadToolRenderers,
-  roleSearchToolRenderers,
-  roleWriteToolRenderers,
+  roleInfoToolRenderers,
 } from "./tui-renderers.ts";
 
 // 配置从 config.ts 加载，环境变量可覆盖
@@ -165,7 +162,7 @@ export default function rolePersonaExtension(pi: ExtensionAPI) {
   interface MemoryLogEntry {
     time: string;
     source: "compaction" | "auto-extract" | "tool" | "manual";
-    op: "learning" | "preference" | "event" | "knowledge" | "reinforce" | "consolidate";
+    op: "learning" | "preference" | "event" | "knowledge" | "reinforce" | "consolidate" | "update_learning" | "update_preference" | "delete_learning" | "delete_preference";
     content: string;
     stored: boolean;
     detail?: string; // e.g. category, duplicate reason
@@ -388,23 +385,23 @@ export default function rolePersonaExtension(pi: ExtensionAPI) {
   function setMemoryCheckpointResult(ctx: ExtensionContext, reason: string, learnings: number, prefs: number): void {
     if (!isTuiAvailable(ctx)) return;
 
-    const badge = reason === "keyword"
-      ? "✳"
-      : reason === "batch-5-turns"
-        ? "✶"
-        : reason === "interval-30m"
-          ? "✦"
-          : "✧";
+const reasonConfig = {
+  keyword:         { badge: "✳", label: "KEY" },     // 关键词触发
+  "batch-5-turns": { badge: "✶", label: "B5" },      // 批量5轮
+  "interval-30m":  { badge: "✦", label: "30M" },     // 30分钟定时
+  "session-shutdown": { badge: "✧", label: "EXIT" }, // 会话退出
+};
 
-    const reasonLabel = reason === "keyword"
-      ? "关键词"
-      : reason === "batch-5-turns"
-        ? "5轮"
-        : reason === "interval-30m"
-          ? "30m"
-          : reason === "session-shutdown"
-            ? "退出"
-            : "check";
+const getBadgeAndLabel = (reason) => {
+  const config = reasonConfig[reason] || { badge: "✧", label: "CHECK" };
+  return {
+    badge: config.badge,
+    reasonLabel: config.label,
+  };
+};
+
+
+const { badge, reasonLabel } = getBadgeAndLabel(reason);
 
     ctx.ui.setStatus("memory-checkpoint", `${badge} ${reasonLabel} ${learnings}L ${prefs}P`);
   }
@@ -712,6 +709,12 @@ export default function rolePersonaExtension(pi: ExtensionAPI) {
       }
     }
     
+    // Capture session ID from sessionManager for logging correlation
+    const sessionId = ctx.sessionManager?.getSessionId?.();
+    if (sessionId) {
+      setSessionId(sessionId);
+    }
+
     // Reset first message flag for on-demand memory search
     isFirstUserMessage = true;
 
@@ -970,8 +973,12 @@ ${buildMemoryEditInstruction(currentRolePath)}`;
 
     const memoryInstruction = `
 
-IMPORTANT: In addition to the summary above, extract key memories and knowledge from this conversation.
-Output them in a <memory> block at the END of your response, after the summary.
+IMPORTANT: Write the session summary in CHINESE (中文). The summary should capture the main discussion points and outcomes in Chinese.
+
+In addition to the summary, extract key memories and knowledge from this conversation.
+Output them in a <memory> block at the END of your response, after the Chinese summary.
+The memory block content must remain in ENGLISH.
+
 Format:
 
 <memory>
@@ -983,7 +990,9 @@ Format:
 ]
 </memory>
 
-Rules for extraction:
+Rules:
+- Summary: MUST be written in Chinese (中文).
+- Memory block: MUST remain in English for storage consistency.
 - Memories (learning/preference) go to PENDING layer first for verification before becoming permanent.
 - "learning": durable cross-session facts, patterns, rules discovered. Suggest 1-3 relevant tags.
 - "preference": user communication style, habits, tool preferences.
@@ -1130,7 +1139,7 @@ Rules for extraction:
       content: Type.Optional(Type.String({ description: "Markdown body (write)" })),
       global: Type.Optional(Type.Boolean({ description: "true=global, false=role (write, default true)" })),
     }),
-    async execute(_toolCallId, params) {
+    async execute(_toolCallId: string, params: Record<string, any>) {
       if (!config.knowledge?.enabled) {
         return { content: [{ type: "text", text: "Knowledge base is disabled in config." }], details: { error: true } };
       }
@@ -1304,7 +1313,7 @@ Rules for extraction:
       id: Type.Optional(Type.String({ description: "Memory id" })),
       model: Type.Optional(Type.String({ description: "Optional model override, e.g. openai/gpt-4.1-mini" })),
     }),
-    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+    async execute(_toolCallId: string, params: Record<string, any>, _signal?: any, _onUpdate?: any, ctx?: any) {
       if (!currentRole || !currentRolePath) {
         return { content: [{ type: "text", text: "No active role mapped in current directory." }], details: { error: true } };
       }
@@ -1598,107 +1607,17 @@ Rules for extraction:
     ...memoryToolRenderers,
   });
 
-  // Structured role file CRUD tools (pi-memory-md style)
+  // Role directory structure info (read/write/search use knowledge/memory tools)
   pi.registerTool({
-    name: "role_read",
-    label: "Role Read",
-    description: "Read a file from the active role directory (core/*, memory/*, context/*).",
-    parameters: Type.Object({
-      path: Type.Optional(Type.String({ description: "Relative path inside role directory. Default: memory/consolidated.md" })),
-      maxChars: Type.Optional(Type.Number({ description: "Max chars to return (default 12000)", minimum: 1000, maximum: 100000 })),
-    }),
-    async execute(_toolCallId, params) {
-      if (!currentRolePath) {
-        return { content: [{ type: "text", text: "No active role mapped in current directory." }], details: { error: true } };
-      }
-
-      const target = resolveRoleScopedPath(currentRolePath, params.path || "memory/consolidated.md");
-      if (!target.ok) {
-        const error = "error" in target ? target.error : "invalid path";
-        return { content: [{ type: "text", text: `Invalid path: ${error}` }], details: { error: true } };
-      }
-
-      if (!existsSync(target.absolutePath)) {
-        return { content: [{ type: "text", text: `File not found: ${target.normalizedRelative}` }], details: { error: true } };
-      }
-
-      let content = "";
-      try {
-        content = readFileSync(target.absolutePath, "utf-8");
-      } catch (err) {
-        return { content: [{ type: "text", text: `Read failed: ${String(err)}` }], details: { error: true } };
-      }
-
-      const maxChars = Math.max(1000, Math.min(100000, Math.floor(params.maxChars || 12000)));
-      const truncated = content.length > maxChars;
-      const output = truncated ? `${content.slice(0, maxChars)}\n\n...[truncated ${content.length - maxChars} chars]` : content;
-
-      return {
-        content: [{ type: "text", text: output || "(empty file)" }],
-        details: {
-          path: target.normalizedRelative,
-          bytes: content.length,
-          truncated,
-        },
-      };
-    },
-    ...roleReadToolRenderers,
-  });
-
-  pi.registerTool({
-    name: "role_write",
-    label: "Role Write",
-    description: "Create or update a file inside the active role directory.",
-    parameters: Type.Object({
-      path: Type.String({ description: "Relative path inside role directory" }),
-      content: Type.String({ description: "File content to write" }),
-      mode: Type.Optional(StringEnum(["overwrite", "append"] as const)),
-    }),
-    async execute(_toolCallId, params) {
-      if (!currentRolePath) {
-        return { content: [{ type: "text", text: "No active role mapped in current directory." }], details: { error: true } };
-      }
-
-      const target = resolveRoleScopedPath(currentRolePath, params.path);
-      if (!target.ok) {
-        const error = "error" in target ? target.error : "invalid path";
-        return { content: [{ type: "text", text: `Invalid path: ${error}` }], details: { error: true } };
-      }
-
-      const mode = params.mode || "overwrite";
-
-      try {
-        mkdirSync(dirname(target.absolutePath), { recursive: true });
-
-        if (mode === "append") {
-          const exists = existsSync(target.absolutePath);
-          const prefix = exists ? "\n" : "";
-          writeFileSync(target.absolutePath, `${prefix}${params.content}`, { encoding: "utf-8", flag: "a" });
-        } else {
-          writeFileSync(target.absolutePath, params.content, "utf-8");
-        }
-      } catch (err) {
-        return { content: [{ type: "text", text: `Write failed: ${String(err)}` }], details: { error: true } };
-      }
-
-      return {
-        content: [{ type: "text", text: `Saved ${target.normalizedRelative}` }],
-        details: { path: target.normalizedRelative, mode },
-      };
-    },
-    ...roleWriteToolRenderers,
-  });
-
-  pi.registerTool({
-    name: "role_list",
-    label: "Role List",
-    description: "List files under the active role directory.",
+    name: "role_info",
+    label: "Role Info",
+    description: "Get the active role directory structure. For reading/writing/searching role files, use the knowledge and memory tools instead.",
     parameters: Type.Object({
       path: Type.Optional(Type.String({ description: "Relative directory path. Default: ." })),
       recursive: Type.Optional(Type.Boolean({ description: "Whether to list recursively" })),
       maxEntries: Type.Optional(Type.Number({ description: "Max files to return", minimum: 1, maximum: 500 })),
     }),
-    async execute(_toolCallId, params) {
+    async execute(_toolCallId: string, params: Record<string, any>) {
       if (!currentRolePath) {
         return { content: [{ type: "text", text: "No active role mapped in current directory." }], details: { error: true } };
       }
@@ -1730,84 +1649,13 @@ Rules for extraction:
       const roleRoot = resolve(currentRolePath);
       const relFiles = files.slice(0, maxEntries).map((p) => relative(roleRoot, p) || ".");
 
+      const header = `Role directory: ${currentRolePath}\nBase: ${target.normalizedRelative}\nHint: 如需编辑/读取请直接阅读原文，使用 read_file + edit 工具\n---\n`;
       return {
-        content: [{ type: "text", text: relFiles.length > 0 ? relFiles.join("\n") : "(no files)" }],
+        content: [{ type: "text", text: header + (relFiles.length > 0 ? relFiles.join("\n") : "(no files)") }],
         details: { count: relFiles.length, recursive, base: target.normalizedRelative },
       };
     },
-    ...roleListToolRenderers,
-  });
-
-  pi.registerTool({
-    name: "role_search",
-    label: "Role Search",
-    description: "Full-text search across role files.",
-    parameters: Type.Object({
-      query: Type.String({ description: "Search keyword" }),
-      path: Type.Optional(Type.String({ description: "Relative path scope. Default: ." })),
-      maxResults: Type.Optional(Type.Number({ description: "Max hits", minimum: 1, maximum: 200 })),
-    }),
-    async execute(_toolCallId, params) {
-      if (!currentRolePath) {
-        return { content: [{ type: "text", text: "No active role mapped in current directory." }], details: { error: true } };
-      }
-
-      const query = params.query.trim();
-      if (!query) {
-        return { content: [{ type: "text", text: "query is required" }], details: { error: true } };
-      }
-
-      const target = resolveRoleScopedPath(currentRolePath, params.path || ".");
-      if (!target.ok) {
-        const error = "error" in target ? target.error : "invalid path";
-        return { content: [{ type: "text", text: `Invalid path: ${error}` }], details: { error: true } };
-      }
-      if (!existsSync(target.absolutePath)) {
-        return { content: [{ type: "text", text: `Path not found: ${target.normalizedRelative}` }], details: { error: true } };
-      }
-
-      const maxResults = Math.max(1, Math.min(200, Math.floor(params.maxResults || 30)));
-      const roleRoot = resolve(currentRolePath);
-      const queryLower = query.toLowerCase();
-
-      const textLike = /\.(md|txt|json|jsonc|ya?ml)$/i;
-      const files: string[] = [];
-      try {
-        const st = statSync(target.absolutePath);
-        if (st.isFile()) files.push(target.absolutePath);
-        else files.push(...walkFiles(target.absolutePath, true, 1000));
-      } catch (err) {
-        return { content: [{ type: "text", text: `Search failed: ${String(err)}` }], details: { error: true } };
-      }
-
-      const hits: string[] = [];
-      for (const file of files) {
-        if (hits.length >= maxResults) break;
-        if (!textLike.test(file)) continue;
-
-        let content = "";
-        try {
-          content = readFileSync(file, "utf-8");
-        } catch {
-          continue;
-        }
-
-        const lines = content.split(/\r?\n/);
-        for (let i = 0; i < lines.length; i++) {
-          if (hits.length >= maxResults) break;
-          const line = lines[i];
-          if (!line.toLowerCase().includes(queryLower)) continue;
-          const rel = relative(roleRoot, file) || ".";
-          hits.push(`${rel}:${i + 1}: ${line.trim()}`);
-        }
-      }
-
-      return {
-        content: [{ type: "text", text: hits.length > 0 ? hits.join("\n") : "No matches" }],
-        details: { query, count: hits.length, scope: target.normalizedRelative },
-      };
-    },
-    ...roleSearchToolRenderers,
+    ...roleInfoToolRenderers,
   });
 
   pi.registerCommand("memory-distill", {
@@ -2367,7 +2215,7 @@ Rules for extraction:
             lines.push("");
           }
 
-          pi.sendMessage({ content: lines.join("\n"), display: true }, { triggerTurn: false });
+          pi.sendMessage({ customType: "kb-list", content: lines.join("\n"), display: true }, { triggerTurn: false });
           break;
         }
 
@@ -2386,7 +2234,7 @@ Rules for extraction:
             const e = r.entry;
             return `${i + 1}. [${e.source}] ${e.meta.title} (${r.relevance.toFixed(2)}) — ${e.relativePath}`;
           });
-          pi.sendMessage({ content: lines.join("\n"), display: true }, { triggerTurn: false });
+          pi.sendMessage({ customType: "kb-search", content: lines.join("\n"), display: true }, { triggerTurn: false });
           break;
         }
 
