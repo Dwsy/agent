@@ -193,3 +193,6 @@ episodic-memory/*.db
 episodic-memory/*.db-shm
 episodic-memory/*.db-wal
 qqbot-credentials/
+
+# Pi FFF (fff)
+pi-fff/

@@ -21,7 +21,7 @@
       "enabled": true,
       "maxChars": 20000
     },
-    "sourceCodeFiltering": "aggressive",
+    "sourceCodeFiltering": "minimal",
     "smartTruncate": {
       "enabled": true,
       "maxLines": 220

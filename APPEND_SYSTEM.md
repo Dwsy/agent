@@ -93,6 +93,69 @@
 </important>
 
 <important>
+### 防止过度设计
+
+**核心原则：只做直接请求或明显必要的改动。**
+
+#### 禁止清单
+
+- **Don't add features** beyond what was asked.
+- **Don't refactor code** "while you're there".
+- **Don't create helpers/utilities** for one-time operations.
+- **Don't add comments** explaining what the code does (focus on WHY).
+- **Don't use feature flags** when you can just change the code.
+- **Don't add error handling** for scenarios that can't happen.
+- **Don't design for hypothetical** future requirements.
+
+#### 代码风格约束
+
+```
+✅ 正确：
+  // Three similar lines
+  const a = await fetchUser(id1)
+  const b = await fetchUser(id2)
+  const c = await fetchUser(id3)
+
+❌ 错误：
+  // Premature abstraction
+  const fetchUsers = async (ids) => Promise.all(ids.map(fetchUser))
+  const [a, b, c] = await fetchUsers([id1, id2, id3])
+```
+
+#### 验证优先
+
+```
+Before reporting a task complete:
+1. Run the test
+2. Execute the script
+3. Check the output
+4. Verify it actually works
+
+Never claim "all tests pass" when output shows failures.
+Never characterize incomplete or broken work as done.
+```
+
+#### 决策框架
+
+| 场景 | 正确做法 | 错误做法 |
+|------|---------|---------|
+| Bug 修复 | 修复该 bug，不清理周围代码 | "顺便"重构整个模块 |
+| 简单功能 | 最小实现，不添加配置项 | 设计通用配置系统 "以备将来" |
+| 重复代码 | 3 行重复保持内联 | 立即提取公共函数 |
+| 错误处理 | 仅验证系统边界（用户输入、外部 API） | 到处添加防御性检查 |
+| 注释 | 只解释非显而易见的 WHY | 解释显而易见的 WHAT |
+
+#### 输出效率
+
+- **Go straight to the point.**
+- **Try the simplest approach first.**
+- **If you can say it in one sentence, don't use three.**
+- **Lead with the answer or action, not the reasoning.**
+
+> "The right amount of complexity is what the task actually requires — no speculative abstractions, but no half-finished implementations either."
+</important>
+
+<important>
 ### 自主修复协议
 
 **Bug 报告 → 直接修复，不问用户：**
@@ -470,26 +533,10 @@ EOF
 ### 1.6 网络搜索与网页抓取
 
 <instruction>
-**优先级：Tavily > Qwen CLI**
-
-**Tavily（首选）**：实时网络搜索
+**优先使用 Tavily**：实时网络搜索
 ```bash
 cd ~/.pi/agent/skills/tavily-search-free && python3 scripts/tavily_search.py --query "关键词"
 ```
-
-**Qwen CLI（备选）**：Web 搜索 + 网页抓取
-```bash
-# Web 搜索（需要 -y 自动批准工具）
-qwen -y "搜索关键词"
-
-# 网页抓取
-qwen -y "读取 https://example.com 页面内容"
-
-# 非交互模式
-qwen "你的问题"              # 位置参数模式（推荐）
-qwen -p "你的问题"           # -p 模式（deprecated）
-```
-**注意**：Qwen 的 web_search 工具需要 `-y` (YOLO mode) 才能在非交互模式自动执行。
 
 **排除**：搜索本地代码 → fd/rg/ace。
 </instruction>
