@@ -1,5 +1,6 @@
 # Session records (large files, not needed in version control)
 sessions/
+sessions.db
 pi-session-*.html
 
 # Cache directories
@@ -126,6 +127,7 @@ test-interview.json
 
 # Local archive (backups, logs, sessions)
 archive/
+backups/
 
 # Landing page development files
 landing-page/ANALYSIS_SUMMARY.md
@@ -196,3 +198,12 @@ qqbot-credentials/
 
 # Pi FFF (fff)
 pi-fff/
+
+# Local binaries
+bin/
+
+# MCP cache
+mcp*.json
+
+# Credentials
+wechat-credentials/
