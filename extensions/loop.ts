@@ -33,10 +33,10 @@ type LoopStateData = {
 };
 
 const LOOP_PRESETS = [
+	{ value: "self", label: "自主模式 (Agent 自行决定)", description: "" },
 	{ value: "tests", label: "直到测试通过", description: "" },
 	{ value: "plan", label: "计划模式 (拆解为子任务)", description: "" },
 	{ value: "custom", label: "直到满足自定义条件", description: "" },
-	{ value: "self", label: "自主模式 (Agent 自行决定)", description: "" },
 ] as const;
 
 const LOOP_STATE_ENTRY = "loop-state";
@@ -66,7 +66,15 @@ function buildPrompt(mode: LoopMode, condition?: string, tasks?: LoopTask[], cur
 			);
 		}
 		case "self":
-			return "继续执行，直到完成。完成后，调用 signal_loop_success 工具。";
+			return (
+				"你将自主执行任务直到完成。\n\n" +
+				"执行原则：\n" +
+				"1. 明确识别任务范围和目标\n" +
+				"2. 分步骤执行，必要时使用工具\n" +
+				"3. 完成后调用 signal_loop_success 工具\n\n" +
+				"判断完成的标准：所有子任务已完成、文件已创建/修改、预期结果已达成。\n" +
+				"如果任务复杂，主动拆解为可验证的里程碑。"
+			);
 		case "plan": {
 			if (!tasks || tasks.length === 0 || currentTaskIndex === undefined) {
 				const goal = condition?.trim() || "完成目标";
@@ -147,6 +155,10 @@ async function summarizeBreakoutCondition(
 	mode: LoopMode,
 	condition?: string,
 ): Promise<string> {
+	// 功能已禁用，直接返回本地摘要
+	return Promise.resolve(summarizeCondition(mode, condition));
+
+	/* 原来使用 AI 模型生成摘要的逻辑已禁用
 	const fallback = summarizeCondition(mode, condition);
 	const selection = await selectSummaryModel(ctx);
 	if (!selection) return fallback;
@@ -177,6 +189,7 @@ async function summarizeBreakoutCondition(
 
 	if (!summary) return fallback;
 	return summary.length > 60 ? `${summary.slice(0, 57)}...` : summary;
+	*/
 }
 
 function getCompactionInstructions(mode: LoopMode, condition?: string, tasks?: LoopTask[], currentTaskIndex?: number): string {

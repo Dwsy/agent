@@ -1,0 +1,11 @@
+{
+  "name": "pi-theme-studio",
+  "version": "1.0.0",
+  "type": "module",
+  "pi": {
+    "extensions": ["./extension.ts"]
+  },
+  "dependencies": {
+    "ws": "^8.16.0"
+  }
+}

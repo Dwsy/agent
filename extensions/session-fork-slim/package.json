@@ -1,0 +1,41 @@
+{
+  "name": "@pi-extension/session-fork-slim",
+  "version": "1.0.0",
+  "description": "Export Pi sessions to slimmed JSONL with interactive TUI — removes thinking noise and tool execution traces",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "pi-extension",
+    "pi",
+    "session",
+    "export",
+    "slim",
+    "cleanup"
+  ],
+  "author": "",
+  "license": "MIT",
+  "peerDependencies": {
+    "@mariozechner/pi-coding-agent": ">=0.67.0",
+    "@mariozechner/pi-tui": ">=0.67.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.0"
+  },
+  "pi": {
+    "extension": true,
+    "entry": "dist/index.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://gitlab.com/your-username/session-fork-slim.git"
+  }
+}

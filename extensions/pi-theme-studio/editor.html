@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pi Theme Studio</title>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    :root{--bg:#08080c;--s:#101018;--c:#181824;--h:#202030;--a:#7c5cff;--t:#e4e4ec;--m:#555568;--b:#282838;--r:10px}
+    body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Inter',sans-serif;background:var(--bg);color:var(--t);height:100vh;overflow:hidden}
+    .app{display:flex;flex-direction:column;height:100vh}
+    .header{padding:16px 20px;border-bottom:1px solid var(--b);display:flex;align-items:center;justify-content:space-between}
+    .logo{font-size:14px;font-weight:600;display:flex;align-items:center;gap:8px}
+    .dot{width:8px;height:8px;border-radius:50%;background:var(--a);box-shadow:0 0 6px var(--a)}
+    .conn{font-size:11px;color:var(--m);display:flex;align-items:center;gap:5px}
+    .cdot{width:5px;height:5px;border-radius:50%;background:var(--m)}
+    .cdot.on{background:#4ade80}
+    .actions{display:flex;gap:8px}
+    .btn{padding:6px 14px;border:1px solid var(--b);border-radius:8px;background:var(--c);color:var(--t);font-size:12px;cursor:pointer;transition:all .12s}
+    .btn:hover{border-color:var(--a)}
+    .btn-warn{border-color:#f59e0b;color:#f59e0b}
+    .btn-warn:hover{background:rgba(245,158,11,.1)}
+    .previewing{font-size:12px;color:#4ade80;padding:4px 10px;background:rgba(74,222,128,.1);border-radius:6px;animation:pulse 1.5s infinite}
+    @keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+    .content{flex:1;overflow-y:auto;padding:20px}
+    .vt{display:flex;background:var(--c);border-radius:8px;padding:2px;margin-bottom:12px;max-width:200px}
+    .vb{flex:1;padding:6px;border:none;background:transparent;color:var(--m);font-size:11px;border-radius:6px;cursor:pointer}
+    .vb.on{background:var(--a);color:#fff}
+    .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}
+    .card{background:var(--c);border:1px solid var(--b);border-radius:12px;padding:14px;cursor:pointer;transition:all .15s}
+    .card:hover{border-color:var(--a);transform:translateY(-2px)}
+    .card.active{border-color:#4ade80;box-shadow:0 0 0 2px rgba(74,222,128,.2)}
+    .card-name{font-size:13px;font-weight:600;margin-bottom:8px}
+    .card-colors{display:flex;gap:4px;margin-bottom:8px}
+    .card-dot{width:24px;height:24px;border-radius:6px}
+    .card-variant{font-size:10px;color:var(--m)}
+    .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(15px);background:var(--c);border:1px solid var(--b);border-radius:10px;padding:10px 16px;font-size:12px;opacity:0;transition:all .2s;pointer-events:none}
+    .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+    ::-webkit-scrollbar{width:6px}
+    ::-webkit-scrollbar-track{background:transparent}
+    ::-webkit-scrollbar-thumb{background:var(--b);border-radius:3px}
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="header">
+      <div style="display:flex;align-items:center;gap:16px">
+        <div class="logo"><div class="dot"></div>Theme Studio</div>
+        <div class="conn"><div class="cdot" id="cd"></div><span id="ct">Connecting...</span></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px">
+        <span id="pv" style="display:none" class="previewing">● Previewing</span>
+        <div class="actions">
+          <button class="btn btn-warn" id="rb" style="display:none">↩ Restore Original</button>
+        </div>
+      </div>
+    </div>
+    <div class="content">
+      <div class="vt">
+        <button class="vb on" data-v="dark">🌙 Dark</button>
+        <button class="vb" data-v="light">☀️ Light</button>
+      </div>
+      <div class="grid" id="grid"></div>
+    </div>
+  </div>
+  <div class="toast" id="to"></div>
+  <script>
+    let ws,themes=[],variant="dark",previewing="",original="";
+    const $=id=>document.getElementById(id);
+
+    function connect(){
+      const p='__WS_PORT__';
+      ws=new WebSocket(`ws://${location.hostname}:${p}`);
+      ws.onopen=()=>{$("cd").className="cdot on";$("ct").textContent="Connected"};
+      ws.onmessage=e=>{
+        const m=JSON.parse(e.data);
+        if(m.type==="themes"){themes=m.data;render()}
+        if(m.type==="previewing"){previewing=m.name;$("pv").style.display="";$("pv").textContent=`● Previewing: ${m.name}`;$("rb").style.display="";hl()}
+        if(m.type==="restored"){previewing="";$("pv").style.display="none";$("rb").style.display="none";hl();toast("Restored!")}
+        if(m.type==="error")toast(m.message,false)
+      };
+      ws.onclose=()=>{$("cd").className="cdot";$("ct").textContent="Reconnecting...";setTimeout(connect,2000)}
+    }
+    function send(m){if(ws?.readyState===1)ws.send(JSON.stringify(m))}
+
+    function render(){
+      const f=themes.filter(t=>t.variant===variant);
+      $("grid").innerHTML=f.map(t=>`
+        <div class="card ${previewing===t.name?'active':''}" data-n="${t.name}">
+          <div class="card-name">${t.name.replace('pi-desktop-','')}</div>
+          <div class="card-colors">
+            <div class="card-dot" style="background:${t.colors.accent}"></div>
+            <div class="card-dot" style="background:${t.colors.surface}"></div>
+            <div class="card-dot" style="background:${t.colors.text}"></div>
+            <div class="card-dot" style="background:${t.colors.success}"></div>
+            <div class="card-dot" style="background:${t.colors.error}"></div>
+          </div>
+          <div class="card-variant">${t.variant}</div>
+        </div>`).join("");
+      $("grid").querySelectorAll(".card").forEach(el=>{
+        el.onclick=()=>{
+          send({type:"preview",name:el.dataset.n});
+          previewing=el.dataset.n;
+          hl()
+        }
+      })
+    }
+    function hl(){$("grid").querySelectorAll(".card").forEach(el=>el.classList.toggle("active",el.dataset.n===previewing))}
+    function toast(m,ok=true){const e=$("to");e.textContent=m;e.className="toast show";setTimeout(()=>e.className="toast",2000)}
+
+    document.querySelectorAll(".vb").forEach(b=>b.onclick=()=>{variant=b.dataset.v;document.querySelectorAll(".vb").forEach(x=>x.classList.remove("on"));b.classList.add("on");render()});
+    $("rb").onclick=()=>send({type:"restore"});
+    connect()
+  </script>
+</body>
+</html>

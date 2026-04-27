@@ -1,0 +1,38 @@
+{
+  "name": "pi-tui-kit",
+  "version": "1.0.1",
+  "description": "High-level TUI component library for Pi - Batteries-included Ratatui-inspired components",
+  "type": "module",
+  "main": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./utils": "./src/utils/text.js",
+    "./theme": "./src/utils/style.js",
+    "./border": "./src/utils/border.js"
+  },
+  "scripts": {
+    "test": "vitest",
+    "test:run": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "@mariozechner/pi-coding-agent": ">=0.50.0",
+    "@mariozechner/pi-tui": ">=0.50.0"
+  },
+  "devDependencies": {
+    "vitest": "^1.0.0",
+    "typescript": "^5.0.0"
+  },
+  "keywords": [
+    "pi",
+    "tui",
+    "terminal",
+    "ui",
+    "components",
+    "ratatui",
+    "console",
+    "cli"
+  ],
+  "author": "Pi Extensions",
+  "license": "MIT"
+}
