@@ -11,26 +11,26 @@ description: 读取和写入输出风格目录的工具技能。当用户需要�
 
 | 范围 | 路径 |
 |-----|------|
-| **全局** | `~/.pi/agent/output-styles/` |
+| **全局** | `~/.pi/output-styles/` |
 | **项目** | `.pi/output-styles/` |
 
 ## 读取风格
 
 ### 读取单个风格文件
 ```bash
-cat ~/.pi/agent/output-styles/<style-name>.md
+cat ~/.pi/output-styles/<style-name>.md
 cat .pi/output-styles/<style-name>.md
 ```
 
 ### 列出所有风格文件
 ```bash
-ls -la ~/.pi/agent/output-styles/
+ls -la ~/.pi/output-styles/
 ls -la .pi/output-styles/
 ```
 
 ### 读取激活的风格
 ```bash
-cat ~/.pi/agent/output-styles/active.json
+cat ~/.pi/output-styles/active.json
 cat .pi/output-styles/active.json
 ```
 
@@ -38,7 +38,7 @@ cat .pi/output-styles/active.json
 
 ### 创建/覆盖风格文件
 ```bash
-cat > ~/.pi/agent/output-styles/<style-name>.md << 'EOF'
+cat > ~/.pi/output-styles/<style-name>.md << 'EOF'
 ---
 name: style-name
 description: Style description
@@ -51,13 +51,13 @@ EOF
 
 ### 删除风格文件
 ```bash
-trash ~/.pi/agent/output-styles/<style-name>.md
+trash ~/.pi/output-styles/<style-name>.md
 trash .pi/output-styles/<style-name>.md
 ```
 
 ### 设置激活风格
 ```bash
-echo '{"name": "style-name"}' > ~/.pi/agent/output-styles/active.json
+echo '{"name": "style-name"}' > ~/.pi/output-styles/active.json
 echo '{"name": "style-name"}' > .pi/output-styles/active.json
 ```
 
@@ -82,17 +82,17 @@ Your custom output style instructions here.
 
 ### 检查风格是否存在
 ```bash
-test -f ~/.pi/agent/output-styles/<name>.md && echo "exists" || echo "not found"
+test -f ~/.pi/output-styles/<name>.md && echo "exists" || echo "not found"
 ```
 
 ### 读取风格内容（排除 frontmatter）
 ```bash
-awk '/^---$/{if(p)exit;p=1;next}p' ~/.pi/agent/output-styles/<name>.md
+awk '/^---$/{if(p)exit;p=1;next}p' ~/.pi/output-styles/<name>.md
 ```
 
 ### 解析 frontmatter
 ```bash
-sed -n '/^---$/,/^---$/p' ~/.pi/agent/output-styles/<name>.md | head -n -1 | tail -n +2
+sed -n '/^---$/,/^---$/p' ~/.pi/output-styles/<name>.md | head -n -1 | tail -n +2
 ```
 
 ## 写入示例
@@ -100,7 +100,7 @@ sed -n '/^---$/,/^---$/p' ~/.pi/agent/output-styles/<name>.md | head -n -1 | tai
 ### 批量创建风格
 ```bash
 for style in style1 style2 style3; do
-  cat > ~/.pi/agent/output-styles/$style.md << EOF
+  cat > ~/.pi/output-styles/$style.md << EOF
 ---
 name: $style
 description: Description for $style
@@ -114,7 +114,7 @@ done
 
 ### 备份所有风格
 ```bash
-tar -czf output-styles-backup.tar.gz ~/.pi/agent/output-styles/
+tar -czf output-styles-backup.tar.gz ~/.pi/output-styles/
 tar -czf output-styles-backup.tar.gz .pi/output-styles/
 ```
 
@@ -259,7 +259,7 @@ EOF
 激活新风格并向用户确认：
 
 ```bash
-echo '{"name": "<style-name>"}' > ~/.pi/agent/output-styles/active.json
+echo '{"name": "<style-name>"}' > ~/.pi/output-styles/active.json
 ```
 
 反馈示例：
