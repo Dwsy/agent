@@ -61,6 +61,7 @@ auth.json
 
 # Gateway configuration (local only)
 pi-gateway/pi-gateway.jsonc
+pi-gateway/downloads/
 
 # Environment files
 .env
