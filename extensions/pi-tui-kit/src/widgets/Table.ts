@@ -65,11 +65,21 @@ export class Table implements Component {
 		let fixedWidth = 0;
 		let fillColumn: number | null = null;
 
+		// Calculate max content width for each auto column (including CJK)
+		const autoMaxWidths: number[] = [];
+
 		// Count auto and fill columns
 		for (let i = 0; i < this.columns.length; i++) {
 			const w = this.columns[i].width;
 			if (w === "auto") {
 				autoCount++;
+				// Calculate max width from header + all data rows
+				let maxWidth = visibleWidth(this.columns[i].header);
+				for (const row of this.data) {
+					const cellWidth = visibleWidth(row[this.columns[i].key] ?? "");
+					maxWidth = Math.max(maxWidth, cellWidth);
+				}
+				autoMaxWidths.push(maxWidth);
 			} else if (w === "fill") {
 				if (fillColumn === null) {
 					fillColumn = i;
@@ -87,10 +97,14 @@ export class Table implements Component {
 		const widths: number[] = [];
 		const autoWidth = autoCount > 0 ? Math.floor(availableWidth / (autoCount + (fillColumn !== null ? 1 : 0))) : 0;
 
+		let autoIdx = 0;
 		for (let i = 0; i < this.columns.length; i++) {
 			const w = this.columns[i].width;
 			if (w === "auto") {
-				widths.push(Math.max(3, autoWidth));
+				// Use content-based width, capped by autoWidth allocation
+				const contentWidth = autoMaxWidths[autoIdx] ?? 0;
+				widths.push(Math.max(3, Math.min(contentWidth, autoWidth)));
+				autoIdx++;
 			} else if (w === "fill") {
 				// Fill column takes all remaining
 				if (i === fillColumn) {

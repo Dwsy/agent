@@ -86,12 +86,20 @@ function writeTokenFile(path: string, data: TokenData): boolean {
 }
 
 // ============ iFlow Config ============
+function getIflowClientSecret(): string {
+  const secret = process.env.IFLOW_CLIENT_SECRET;
+  if (!secret) {
+    throw new Error("IFLOW_CLIENT_SECRET environment variable is not set");
+  }
+  return secret;
+}
+
 const IFLOW_CONFIG = {
   name: "iflow",
   oauthEndpoint: "https://iflow.cn/oauth/token",
   apiKeyEndpoint: "https://platform.iflow.cn/api/openapi/apikey",
   clientId: "10009311001",
-  clientSecret: "4Z3YjXycVsQvyGF1etiNlIBB4RsqSDtW",
+  get clientSecret() { return getIflowClientSecret(); },
   tokenDir: join(homedir(), ".cli-proxy-api"),
 };
 

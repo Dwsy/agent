@@ -8,7 +8,7 @@ import { Borders, BorderStyle } from "../utils/border.js";
 import { safeLine, buildLine } from "../utils/text.js";
 import type { Theme, ColorFunction } from "../utils/style.js";
 import { DefaultTheme } from "../utils/style.js";
-import { visibleWidth } from "@mariozechner/pi-tui";
+import { visibleWidth, truncateToWidth } from "@mariozechner/pi-tui";
 
 export interface PanelOptions {
 	title?: string;
@@ -60,9 +60,9 @@ export class Panel extends Container implements Component {
 		const lines: string[] = [];
 
 		// Top border with title
-		if (this.title && this.title.length > 0) {
-			const titleWidth = Math.min(this.title.length, innerWidth - 2);
-			const titleText = this.title.slice(0, titleWidth);
+		if (this.title && visibleWidth(this.title) > 0) {
+			const titleWidth = Math.min(visibleWidth(this.title), innerWidth - 2);
+			const titleText = truncateToWidth(this.title, titleWidth);
 			const pad = innerWidth - titleWidth;
 			const left = Math.floor(pad / 2);
 			const right = pad - left;

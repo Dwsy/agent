@@ -37,6 +37,7 @@ const LOOP_PRESETS = [
 	{ value: "tests", label: "直到测试通过", description: "" },
 	{ value: "plan", label: "计划模式 (拆解为子任务)", description: "" },
 	{ value: "custom", label: "直到满足自定义条件", description: "" },
+	{ value: "stop", label: "停止当前循环", description: "" },
 ] as const;
 
 const LOOP_STATE_ENTRY = "loop-state";
@@ -299,7 +300,7 @@ export default function loopExtension(pi: ExtensionAPI): void {
 		});
 	}
 
-	async function showLoopSelector(ctx: ExtensionContext): Promise<LoopStateData | null> {
+	async function showLoopSelector(ctx: ExtensionContext): Promise<LoopStateData | "stop" | null> {
 		const items: SelectItem[] = LOOP_PRESETS.map((preset) => ({
 			value: preset.value,
 			label: preset.label,
@@ -343,6 +344,8 @@ export default function loopExtension(pi: ExtensionAPI): void {
 		if (!selection) return null;
 
 		switch (selection) {
+			case "stop":
+				return "stop";
 			case "tests":
 				return { active: true, mode: "tests", prompt: buildPrompt("tests") };
 			case "self":
@@ -372,12 +375,14 @@ export default function loopExtension(pi: ExtensionAPI): void {
 		}
 	}
 
-	function parseArgs(args: string | undefined): LoopStateData | null {
+	function parseArgs(args: string | undefined): LoopStateData | "stop" | null {
 		if (!args?.trim()) return null;
 		const parts = args.trim().split(/\s+/);
 		const mode = parts[0]?.toLowerCase();
 
 		switch (mode) {
+			case "stop":
+				return "stop";
 			case "tests":
 				return { active: true, mode: "tests", prompt: buildPrompt("tests") };
 			case "self":
@@ -516,7 +521,7 @@ export default function loopExtension(pi: ExtensionAPI): void {
 			let nextState = parseArgs(args);
 			if (!nextState) {
 				if (!ctx.hasUI) {
-					ctx.ui.notify("用法: /loop tests | /loop plan <目标> | /loop custom <条件> | /loop self", "warning");
+					ctx.ui.notify("用法: /loop tests | /loop plan <目标> | /loop custom <条件> | /loop self | /loop stop", "warning");
 					return;
 				}
 				nextState = await showLoopSelector(ctx);
@@ -524,6 +529,15 @@ export default function loopExtension(pi: ExtensionAPI): void {
 
 			if (!nextState) {
 				ctx.ui.notify("循环已取消", "info");
+				return;
+			}
+
+			if (nextState === "stop") {
+				if (!loopState.active) {
+					ctx.ui.notify("当前没有运行中的循环", "info");
+					return;
+				}
+				breakLoop(ctx);
 				return;
 			}
 

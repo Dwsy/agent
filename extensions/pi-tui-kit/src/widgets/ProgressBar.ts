@@ -62,7 +62,7 @@ export class ProgressBar implements Component {
 
 	render(width: number): string[] {
 		// Label takes space if present
-		const labelWidth = this.label ? this.label.length + 2 : 0;
+		const labelWidth = this.label ? visibleWidth(this.label) + 2 : 0;
 		const valueWidth = this.showValue ? 6 : 0; // " 100% " or " 50/100"
 		const barWidth = Math.max(10, width - labelWidth - valueWidth);
 

@@ -62,7 +62,7 @@ import {
   repairRoleMemory,
   searchRoleMemory,
 } from "./memory-md.ts";
-import { RoleMemoryViewerComponent, buildRoleMemoryViewerMarkdown } from "./memory-viewer.ts";
+import { RoleMemoryViewerComponent, buildRoleMemoryViewerMarkdown, openMemoryServer } from "./memory-viewer.ts";
 import { runAutoMemoryExtraction, runLlmMemoryTidy } from "./memory-llm.ts";
 import { getAllTags, buildTagCloudHTML } from "./memory-tags.ts";
 import {
@@ -1702,75 +1702,35 @@ Rules:
   });
 
   pi.registerCommand("memories", {
-    description: "View role memory (TUI or browser)",
-    handler: async (_args, ctx) => {
+    description: "View role memory (server by default, use /memories tui for terminal)",
+    handler: async (args, ctx) => {
       if (!currentRole || !currentRolePath) {
         notify(ctx, "当前目录未映射角色", "warning");
         return;
       }
 
-      // TUI available: show selection
-      if (isTuiAvailable(ctx)) {
-        const { SelectList, Text, Container } = await import("@mariozechner/pi-tui");
+      const mode = (args || "").trim().toLowerCase();
 
-        await ctx.ui.custom<void>((tui, theme, _kb, done) => {
-          const container = new Container();
-
-          container.addChild(new Text(theme.fg("accent", theme.bold(`📊 Memories - ${currentRole}`))));
-          container.addChild(new Text(""));
-
-          const items = [
-            { label: "🖥️  TUI Viewer (terminal)", value: "tui" },
-            { label: "🌐 Export to Browser (HTML)", value: "browser" },
-          ];
-
-          const list = new SelectList(items, {
-            onSelect: async (item) => {
-              container.dispose();
-              done();
-
-              // Defer to next tick — lets the TUI finish closing the first overlay
-              // before opening a new one. Without this, overlayStack gets a stale entry
-              // with component === undefined, causing "Cannot read properties of undefined (reading 'render')".
-              setTimeout(async () => {
-                if (item.value === "browser") {
-                  const { exportMemoryToBrowser } = await import("./memory-export-html.ts");
-                  const tmpFile = await exportMemoryToBrowser(currentRolePath!, currentRole!);
-                  notify(ctx, `Opened in browser: ${tmpFile}`, "success");
-                } else {
-                  // Re-open TUI viewer
-                  await ctx.ui.custom<void>(
-                    (tui, theme, _kb, done) =>
-                      new RoleMemoryViewerComponent(currentRolePath!, currentRole!, tui, theme, done),
-                    {
-                      overlay: true,
-                      overlayOptions: {
-                        anchor: "center",
-                        width: "90%",
-                        minWidth: 60,
-                        maxHeight: "95%",
-                      },
-                    },
-                  );
-                }
-              }, 0);
-            },
-            onCancel: () => {
-              container.dispose();
-              done();
-            },
-          });
-
-          container.addChild(list);
-          tui.addChild(container);
-        }, { overlay: true, overlayOptions: { anchor: "center", width: 50, maxHeight: 15 } });
-
+      // /memories tui — terminal viewer
+      if (mode === "tui" && isTuiAvailable(ctx)) {
+        await ctx.ui.custom<void>(
+          (tui, theme, _kb, done) =>
+            new RoleMemoryViewerComponent(currentRolePath!, currentRole!, tui, theme, done),
+          {
+            overlay: true,
+            overlayOptions: { anchor: "center", width: "90%", minWidth: 60, maxHeight: "95%" },
+          },
+        );
         return;
       }
 
-      // No TUI: just show markdown
-      const content = buildRoleMemoryViewerMarkdown(currentRolePath, currentRole);
-      pi.sendMessage({ customType: "role-memories", content, display: true }, { triggerTurn: false });
+      // Default: start HTTP server + open browser
+      try {
+        const handle = await openMemoryServer(currentRolePath, currentRole);
+        notify(ctx, `Memory server: ${handle.url} (port ${handle.port})`, "success");
+      } catch (err) {
+        notify(ctx, `Server failed: ${err}`, "error");
+      }
     },
   });
 

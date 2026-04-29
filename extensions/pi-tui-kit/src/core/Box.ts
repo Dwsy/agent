@@ -3,7 +3,7 @@
  */
 import type { Component, Container } from "@mariozechner/pi-tui";
 import { Container as TuiContainer } from "@mariozechner/pi-tui";
-import { visibleWidth } from "@mariozechner/pi-tui";
+import { visibleWidth, truncateToWidth } from "@mariozechner/pi-tui";
 import { Borders, BorderStyle, renderBox } from "../utils/border.js";
 import { safeLine } from "../utils/text.js";
 import type { Theme } from "../utils/style.js";
@@ -58,7 +58,7 @@ export class Box extends TuiContainer implements Component {
 		lines = lines.map((line) => {
 			const lineWidth = visibleWidth(line);
 			if (lineWidth > contentWidth) {
-				return padding + line.slice(0, contentWidth) + padding;
+				return padding + truncateToWidth(line, contentWidth) + padding;
 			}
 			return padding + line + " ".repeat(contentWidth - lineWidth) + padding;
 		});
@@ -74,8 +74,8 @@ export class Box extends TuiContainer implements Component {
 
 			// Top border with optional title
 			if (this.title) {
-				const titleWidth = Math.min(this.title.length, inner - 2);
-				const titleText = this.title.slice(0, titleWidth);
+				const titleWidth = Math.min(visibleWidth(this.title), inner - 2);
+				const titleText = truncateToWidth(this.title, titleWidth);
 				const pad = inner - titleWidth;
 				const left = Math.floor(pad / 2);
 				const right = pad - left;

@@ -3,7 +3,7 @@
  * Inspired by pi-powerline-footer's notify
  */
 import type { Component } from "@mariozechner/pi-tui";
-import { visibleWidth } from "@mariozechner/pi-tui";
+import { visibleWidth, truncateToWidth } from "@mariozechner/pi-tui";
 import { safeLine, leftAlign } from "../utils/text.js";
 import type { Theme, ColorFunction } from "../utils/style.js";
 import { DefaultTheme } from "../utils/style.js";
@@ -62,7 +62,7 @@ export class Toast implements Component {
 
 		let displayMessage = message;
 		if (totalWidth > available) {
-			displayMessage = message.slice(0, available - 3) + "...";
+			displayMessage = truncateToWidth(message, available - 3) + "...";
 		}
 
 		const paddedMessage = leftAlign(displayMessage, available - visibleWidth(closeBtn));

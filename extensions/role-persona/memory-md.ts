@@ -2125,7 +2125,7 @@ export function exportMemoryToHtml(rolePath: string, roleName: string): string {
 /**
  * Read all daily memory files
  */
-function readDailyMemories(rolePath: string): Array<{ text: string; date: string; time?: string }> {
+export function readDailyMemories(rolePath: string): Array<{ text: string; date: string; time?: string }> {
   const dailyDir = join(rolePath, "memory", "daily");
   const memories: Array<{ text: string; date: string; time?: string }> = [];
 

@@ -133,8 +133,8 @@ export class Dialog extends Container implements Component, Focusable {
 		const lines: string[] = [];
 
 		// Top border with title
-		const titleWidth = Math.min(this.title.length, inner - 2);
-		const titleText = this.title.slice(0, titleWidth);
+		const titleWidth = Math.min(visibleWidth(this.title), inner - 2);
+		const titleText = truncateToWidth(this.title, titleWidth);
 		const pad = inner - titleWidth;
 		const left = Math.floor(pad / 2);
 		const right = pad - left;
@@ -170,11 +170,11 @@ export class Dialog extends Container implements Component, Focusable {
 			let currentLine = "";
 			for (const word of words) {
 				const test = currentLine ? currentLine + " " + word : word;
-				if (test.length > inner - 2) {
+				if (visibleWidth(test) > inner - 2) {
 					if (currentLine) {
 						contentLines.push(currentLine);
 					}
-					currentLine = word.length > inner - 2 ? word.slice(0, inner - 2) : word;
+					currentLine = visibleWidth(word) > inner - 2 ? truncateToWidth(word, inner - 2) : word;
 				} else {
 					currentLine = test;
 				}
@@ -225,15 +225,24 @@ export class Dialog extends Container implements Component, Focusable {
 		// Buttons row
 		const buttonWidth = Math.floor((inner - 2) / this.actionButtons.length);
 		let buttonRow = B(this.border.v) + " ";
+		let buttonRowWidth = 1; // Start after left border
 
 		for (let i = 0; i < this.actionButtons.length; i++) {
 			const btn = this.actionButtons[i];
 			const btnLines = btn.render(buttonWidth - 2);
 			const btnLine = btnLines[0] ?? "";
-			buttonRow += leftAlign(btnLine, buttonWidth - 2) + "  ";
+			const alignedBtn = leftAlign(btnLine, buttonWidth - 2);
+			buttonRow += alignedBtn;
+			buttonRowWidth += visibleWidth(alignedBtn);
+			if (i < this.actionButtons.length - 1) {
+				buttonRow += "  ";
+				buttonRowWidth += 2;
+			}
 		}
 
-		buttonRow = buttonRow.slice(0, -2) + " " + B(this.border.v);
+		// Pad to fill inner width and add right border
+		const remainingPad = Math.max(0, inner - buttonRowWidth);
+		buttonRow += " ".repeat(remainingPad) + " " + B(this.border.v);
 		lines.push(safeLine(buttonRow, dialogWidth));
 
 		// Bottom border

@@ -4,7 +4,7 @@
  */
 import type { Component, Container } from "@mariozechner/pi-tui";
 import { Container as TuiContainer } from "@mariozechner/pi-tui";
-import { visibleWidth } from "@mariozechner/pi-tui";
+import { visibleWidth, truncateToWidth } from "@mariozechner/pi-tui";
 import { safeLine } from "../utils/text.js";
 
 export type FlexDirection = "row" | "column";
@@ -165,17 +165,19 @@ export class Flex implements Component {
 			let merged = "";
 			for (let i = 0; i < childLines.length; i++) {
 				const line = childLines[i][row] ?? " ".repeat(widths[i]);
-				// Ensure line width matches calculated width exactly
-				const visibleW = Math.max(0, Math.min(widths[i], line.length));
-				const paddedLine = line + " ".repeat(Math.max(0, widths[i] - visibleW));
-				merged += paddedLine.slice(0, widths[i]);
+				// Ensure line width matches calculated width exactly using visibleWidth
+				const visibleW = visibleWidth(line);
+				const clampedLine = visibleW > widths[i] ? truncateToWidth(line, widths[i]) : line;
+				const paddedLine = clampedLine + " ".repeat(Math.max(0, widths[i] - visibleWidth(clampedLine)));
+				merged += paddedLine;
 				if (i < childLines.length - 1) {
 					merged += " ".repeat(this.gap);
 				}
 			}
 			// Ensure total width matches
-			if (merged.length < totalWidth) {
-				merged += " ".repeat(totalWidth - merged.length);
+			const mergedWidth = visibleWidth(merged);
+			if (mergedWidth < totalWidth) {
+				merged += " ".repeat(totalWidth - mergedWidth);
 			}
 			result.push(safeLine(merged, totalWidth));
 		}
