@@ -207,3 +207,10 @@ mcp*.json
 
 # Credentials
 wechat-credentials/
+
+# MCP config files (may contain API keys in URLs)
+mcp-config.json
+**/mcp-config.json
+
+# Lock files for auth
+auth.json.lock
