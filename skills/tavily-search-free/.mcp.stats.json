@@ -1,0 +1,35 @@
+{
+  "total_calls": 56,
+  "successful_calls": 56,
+  "failed_calls": 0,
+  "tools": {
+    "tavily_search": {
+      "count": 32,
+      "success": 32,
+      "failed": 0,
+      "total_duration": 48.42522120475769
+    },
+    "tavily_extract": {
+      "count": 22,
+      "success": 22,
+      "failed": 0,
+      "total_duration": 45.24585294723511
+    },
+    "tavily_crawl": {
+      "count": 1,
+      "success": 1,
+      "failed": 0,
+      "total_duration": 0.8041942119598389
+    },
+    "tavily_research": {
+      "count": 1,
+      "success": 1,
+      "failed": 0,
+      "total_duration": 27.32617712020874
+    }
+  },
+  "first_call": 1777362569.861838,
+  "last_call": 1777365917.5231009,
+  "created_at": 1777362568.398904,
+  "session_name": "production-v1"
+}
