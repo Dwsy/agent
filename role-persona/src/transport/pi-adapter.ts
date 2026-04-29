@@ -471,11 +471,11 @@ export default function rolePersonaExtension(pi: ExtensionAPI) {
   });
 
   pi.registerCommand("memories", {
-    description: "View role memory",
+    description: "View role memory (server by default, use /memories tui for terminal)",
     handler: async (args, ctx) => {
       const mode = (args || "").trim().toLowerCase();
 
-      // TUI viewer
+      // /memories tui — terminal viewer
       if (mode === "tui" && isTuiAvailable(ctx)) {
         try {
           const { RoleMemoryViewerComponent } = await import("./tui-renderers.ts");
@@ -487,16 +487,16 @@ export default function rolePersonaExtension(pi: ExtensionAPI) {
         return;
       }
 
-      // Default: formatted memory list
-      const r = await cli(["memory", "list"], { cwd: cwdOf(ctx) });
-      if (!r.ok || !r.data) { notify(ctx, r.error || "失败", "error"); return; }
-      const d = r.data as any;
-      let info = `## Memory\n\n`;
-      info += `- Learnings: ${d.learnings}\n`;
-      info += `- Preferences: ${d.preferences}\n`;
-      info += `- Issues: ${d.issues}\n\n`;
-      if (d.text) info += d.text;
-      msg("memories", info);
+      // Default: start HTTP server + open browser
+      const role = svc.getActiveRole();
+      if (!role) { notify(ctx, "未映射角色", "warning"); return; }
+      try {
+        const { openMemoryServer } = await import("./memory-server.ts");
+        const handle = await openMemoryServer(role.path, role.name);
+        notify(ctx, `Memory server: ${handle.url} (port ${handle.port})`, "success");
+      } catch (err) {
+        notify(ctx, `Server failed: ${err}`, "error");
+      }
     },
   });
 
