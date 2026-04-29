@@ -34,3 +34,6 @@
 	path = extensions/pi-super-curl
 	url = https://github.com/Graffioh/pi-super-curl.git
 
+[submodule "role-persona"]
+	path = role-persona
+	url = https://github.com/Dwsy/role-persona.git
