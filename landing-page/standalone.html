@@ -1,0 +1,1257 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Pi Agent — 企业级 AI 编码代理系统。5 阶段工作流 · 多模型编排 · 多通道网关 · 40+ 技能">
+  <meta name="theme-color" content="#09090b">
+  <meta property="og:title" content="Pi Agent — 企业级 AI 编码代理">
+  <meta property="og:description" content="Stop babysitting AI agents. 5阶段工作流 · 多模型编排 · 多通道网关">
+  <meta property="og:type" content="website">
+  <meta name="twitter:card" content="summary_large_image">
+  <title>Pi Agent — 企业级 AI 编码代理</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>π</text></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+  <style>
+    /* ─── Design Tokens ─── */
+    :root {
+      --bg:         #09090b;
+      --bg2:        #0f0f12;
+      --bg3:        #16161a;
+      --bg4:        #1e1e24;
+      --bg5:        #27272f;
+      --border:     rgba(255,255,255,0.06);
+      --border2:    rgba(255,255,255,0.11);
+      --text:       #f0f0f2;
+      --text2:      #9898a4;
+      --text3:      #5a5a68;
+      --accent:     #3ecf8e;
+      --accent-d:   #2ba272;
+      --accent-g:   rgba(62,207,142,0.18);
+      --accent-g2:  rgba(62,207,142,0.08);
+      --violet:     #9b8af5;
+      --violet-d:   rgba(155,138,245,0.15);
+      --blue:       #60a5fa;
+      --blue-d:     rgba(96,165,250,0.12);
+      --amber:      #fbbf24;
+      --amber-d:    rgba(251,191,36,0.12);
+      --rose:       #f87171;
+      --font:       'Plus Jakarta Sans', system-ui, sans-serif;
+      --mono:       'JetBrains Mono', monospace;
+      --r-sm:       6px;
+      --r-md:       12px;
+      --r-lg:       18px;
+      --r-xl:       28px;
+      --r-full:     999px;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      overflow-x: hidden;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 5px; }
+    ::-webkit-scrollbar-track { background: var(--bg); }
+    ::-webkit-scrollbar-thumb { background: var(--bg5); border-radius: 4px; }
+    ::selection { background: var(--accent-g); color: var(--accent); }
+
+    /* ─── Background atmosphere ─── */
+    .bg-atmosphere {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 0;
+      overflow: hidden;
+    }
+    .bg-atmosphere::before {
+      content: '';
+      position: absolute;
+      width: 900px;
+      height: 900px;
+      top: -200px;
+      left: -200px;
+      background: radial-gradient(circle, rgba(62,207,142,0.07) 0%, transparent 65%);
+    }
+    .bg-atmosphere::after {
+      content: '';
+      position: absolute;
+      width: 700px;
+      height: 700px;
+      bottom: -100px;
+      right: -100px;
+      background: radial-gradient(circle, rgba(155,138,245,0.05) 0%, transparent 65%);
+    }
+
+    /* ─── Nav ─── */
+    nav {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      z-index: 100;
+      height: 60px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 2rem;
+      background: rgba(9,9,11,0.6);
+      backdrop-filter: blur(24px) saturate(160%);
+      -webkit-backdrop-filter: blur(24px) saturate(160%);
+      border-bottom: 1px solid var(--border);
+    }
+    .nav-logo {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      text-decoration: none;
+      color: var(--text);
+      font-weight: 700;
+      font-size: 1.05rem;
+      letter-spacing: -0.02em;
+    }
+    .nav-logo-icon {
+      width: 30px;
+      height: 30px;
+      background: linear-gradient(145deg, var(--accent), var(--accent-d));
+      border-radius: 7px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--mono);
+      font-size: 1rem;
+      font-weight: 600;
+      color: #000;
+      flex-shrink: 0;
+    }
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 0.15rem;
+      list-style: none;
+    }
+    .nav-links a {
+      color: var(--text2);
+      text-decoration: none;
+      font-size: 0.85rem;
+      font-weight: 500;
+      padding: 0.4rem 0.8rem;
+      border-radius: var(--r-sm);
+      transition: color 0.15s, background 0.15s;
+    }
+    .nav-links a:hover { color: var(--text); background: var(--bg3); }
+    .nav-btn {
+      background: var(--accent) !important;
+      color: #000 !important;
+      font-weight: 600 !important;
+      margin-left: 0.5rem;
+    }
+    .nav-btn:hover { background: #4de0a0 !important; }
+
+    /* ─── Layout helpers ─── */
+    .container {
+      max-width: 1160px;
+      margin: 0 auto;
+      padding: 0 2rem;
+      position: relative;
+      z-index: 1;
+    }
+    section { padding: 7rem 0; position: relative; z-index: 1; }
+
+    /* ─── Typography helpers ─── */
+    .eyebrow {
+      font-family: var(--mono);
+      font-size: 0.7rem;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      color: var(--accent);
+      margin-bottom: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+    }
+    .eyebrow::before {
+      content: '';
+      display: inline-block;
+      width: 18px;
+      height: 1px;
+      background: var(--accent);
+    }
+    .h1 {
+      font-size: clamp(2.6rem, 6vw, 4.4rem);
+      font-weight: 900;
+      line-height: 1.04;
+      letter-spacing: -0.04em;
+    }
+    .h2 {
+      font-size: clamp(1.7rem, 3.5vw, 2.4rem);
+      font-weight: 800;
+      line-height: 1.1;
+      letter-spacing: -0.03em;
+    }
+    .lead {
+      font-size: clamp(0.95rem, 1.8vw, 1.1rem);
+      color: var(--text2);
+      line-height: 1.75;
+      max-width: 560px;
+    }
+
+    /* ─── Gradient text ─── */
+    .gradient-text {
+      background: linear-gradient(135deg, var(--accent) 0%, #6ee7b7 50%, var(--violet) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    /* ─── Buttons ─── */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.6rem 1.3rem;
+      border-radius: var(--r-md);
+      font-size: 0.875rem;
+      font-weight: 600;
+      font-family: var(--font);
+      text-decoration: none;
+      transition: all 0.2s;
+      border: none;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .btn-primary {
+      background: var(--accent);
+      color: #000;
+    }
+    .btn-primary:hover { background: #4de0a0; transform: translateY(-1px); }
+    .btn-ghost {
+      background: var(--bg3);
+      color: var(--text);
+      border: 1px solid var(--border2);
+    }
+    .btn-ghost:hover { background: var(--bg4); border-color: rgba(255,255,255,0.18); }
+    .btn-sm { padding: 0.4rem 0.9rem; font-size: 0.8rem; }
+
+    /* ─── Tag / badge ─── */
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.3rem 0.75rem;
+      border-radius: var(--r-full);
+      font-size: 0.72rem;
+      font-weight: 600;
+      font-family: var(--mono);
+      background: var(--accent-g2);
+      color: var(--accent);
+      border: 1px solid rgba(62,207,142,0.15);
+    }
+    .tag-violet { background: var(--violet-d); color: var(--violet); border-color: rgba(155,138,245,0.2); }
+    .tag-blue { background: var(--blue-d); color: var(--blue); border-color: rgba(96,165,250,0.2); }
+    .tag-amber { background: var(--amber-d); color: var(--amber); border-color: rgba(251,191,36,0.2); }
+
+    /* ─── Cards ─── */
+    .card {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: var(--r-lg);
+      padding: 1.75rem;
+      transition: border-color 0.2s, background 0.2s, transform 0.2s;
+    }
+    .card:hover {
+      border-color: rgba(62,207,142,0.25);
+      background: var(--bg3);
+      transform: translateY(-2px);
+    }
+    .card-icon {
+      width: 42px;
+      height: 42px;
+      border-radius: var(--r-md);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 1.2rem;
+      font-size: 1.1rem;
+    }
+    .card h3 { font-size: 1rem; font-weight: 700; margin-bottom: 0.5rem; letter-spacing: -0.02em; }
+    .card p { font-size: 0.875rem; color: var(--text2); line-height: 1.7; }
+
+    /* ─── Divider ─── */
+    .divider { height: 1px; background: var(--border); margin: 0 2rem; position: relative; z-index: 1; }
+
+    /* ══════════════════════════════════════════
+       HERO
+    ══════════════════════════════════════════ */
+    #hero {
+      min-height: 100svh;
+      display: grid;
+      place-items: center;
+      padding-top: 60px;
+      padding-bottom: 4rem;
+    }
+    .hero-inner {
+      text-align: center;
+      max-width: 860px;
+      margin: 0 auto;
+    }
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.35rem 1.1rem;
+      border-radius: var(--r-full);
+      background: var(--accent-g2);
+      border: 1px solid rgba(62,207,142,0.2);
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: var(--accent);
+      margin-bottom: 2rem;
+      animation: fadeUp 0.5s ease both;
+    }
+    .hero-badge .pulse-dot {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: var(--accent);
+      animation: pulseDot 2s ease-in-out infinite;
+    }
+    .hero-title {
+      font-size: clamp(3rem, 7vw, 5.2rem);
+      font-weight: 900;
+      line-height: 1.03;
+      letter-spacing: -0.045em;
+      margin-bottom: 1.5rem;
+      animation: fadeUp 0.5s 0.08s ease both;
+    }
+    .hero-desc {
+      font-size: clamp(1rem, 2vw, 1.15rem);
+      color: var(--text2);
+      max-width: 600px;
+      margin: 0 auto 2.5rem;
+      line-height: 1.75;
+      animation: fadeUp 0.5s 0.16s ease both;
+    }
+    .hero-actions {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+      animation: fadeUp 0.5s 0.24s ease both;
+    }
+    .hero-stats {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 2.5rem;
+      margin-top: 4rem;
+      padding-top: 2.5rem;
+      border-top: 1px solid var(--border);
+      animation: fadeUp 0.5s 0.32s ease both;
+    }
+    .hero-stat { text-align: center; }
+    .hero-stat .val {
+      font-size: 1.6rem;
+      font-weight: 800;
+      letter-spacing: -0.04em;
+      color: var(--text);
+      font-family: var(--mono);
+    }
+    .hero-stat .lbl {
+      font-size: 0.72rem;
+      color: var(--text3);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-top: 0.15rem;
+    }
+    .hero-terminal {
+      margin-top: 3.5rem;
+      border: 1px solid var(--border2);
+      border-radius: var(--r-lg);
+      overflow: hidden;
+      background: var(--bg2);
+      text-align: left;
+      animation: fadeUp 0.6s 0.4s ease both;
+      max-width: 680px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+    .terminal-bar {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.65rem 1rem;
+      background: var(--bg3);
+      border-bottom: 1px solid var(--border);
+    }
+    .terminal-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+    .terminal-dot.r { background: #ff5f57; }
+    .terminal-dot.y { background: #febc2e; }
+    .terminal-dot.g { background: #28c840; }
+    .terminal-title {
+      flex: 1;
+      text-align: center;
+      font-size: 0.72rem;
+      font-family: var(--mono);
+      color: var(--text3);
+    }
+    .terminal-body {
+      padding: 1.25rem 1.5rem;
+      font-family: var(--mono);
+      font-size: 0.8rem;
+      line-height: 1.9;
+      color: var(--text2);
+    }
+    .terminal-body .prompt { color: var(--accent); }
+    .terminal-body .cmd { color: var(--text); }
+    .terminal-body .out { color: var(--text3); }
+    .terminal-body .ok { color: var(--accent); }
+    .terminal-body .arrow { color: var(--violet); }
+
+    /* ══════════════════════════════════════════
+       WORKFLOW
+    ══════════════════════════════════════════ */
+    #workflow { padding-top: 7rem; }
+    .workflow-header { margin-bottom: 4rem; }
+    .workflow-grid {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 0;
+      position: relative;
+    }
+    .workflow-step {
+      position: relative;
+      padding: 1.5rem;
+      border: 1px solid var(--border);
+      border-right: none;
+      background: var(--bg2);
+      transition: all 0.25s;
+    }
+    .workflow-step:last-child { border-right: 1px solid var(--border); border-radius: 0 var(--r-lg) var(--r-lg) 0; }
+    .workflow-step:first-child { border-radius: var(--r-lg) 0 0 var(--r-lg); }
+    .workflow-step:hover { background: var(--bg3); border-color: rgba(62,207,142,0.2); z-index: 2; }
+    .step-num {
+      font-family: var(--mono);
+      font-size: 0.65rem;
+      font-weight: 600;
+      color: var(--accent);
+      margin-bottom: 0.6rem;
+      letter-spacing: 0.1em;
+    }
+    .step-title {
+      font-size: 0.95rem;
+      font-weight: 700;
+      margin-bottom: 0.35rem;
+      letter-spacing: -0.02em;
+    }
+    .step-desc {
+      font-size: 0.78rem;
+      color: var(--text2);
+      line-height: 1.6;
+    }
+    .step-arrow {
+      position: absolute;
+      right: -10px;
+      top: 50%;
+      transform: translateY(-50%);
+      z-index: 3;
+      color: var(--text3);
+      font-size: 0.9rem;
+    }
+
+    /* ══════════════════════════════════════════
+       GATEWAY
+    ══════════════════════════════════════════ */
+    #gateway { background: var(--bg2); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+    .gateway-layout {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 4rem;
+      align-items: center;
+    }
+    .gateway-visual {
+      position: relative;
+    }
+    .gateway-diagram {
+      background: var(--bg3);
+      border: 1px solid var(--border2);
+      border-radius: var(--r-xl);
+      padding: 2rem;
+      position: relative;
+    }
+    .gw-row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.75rem;
+      margin-bottom: 1rem;
+    }
+    .gw-row:last-child { margin-bottom: 0; }
+    .gw-node {
+      padding: 0.45rem 0.9rem;
+      border-radius: var(--r-md);
+      font-size: 0.75rem;
+      font-weight: 600;
+      font-family: var(--mono);
+      border: 1px solid;
+      white-space: nowrap;
+    }
+    .gw-node.tg { background: var(--blue-d); border-color: rgba(96,165,250,0.3); color: var(--blue); }
+    .gw-node.dc { background: var(--violet-d); border-color: rgba(155,138,245,0.3); color: var(--violet); }
+    .gw-node.fs { background: var(--amber-d); border-color: rgba(251,191,36,0.3); color: var(--amber); }
+    .gw-node.wx { background: var(--accent-g2); border-color: rgba(62,207,142,0.3); color: var(--accent); }
+    .gw-node.wc { background: var(--bg4); border-color: var(--border2); color: var(--text2); }
+    .gw-node.center {
+      background: var(--bg);
+      border-color: var(--accent);
+      color: var(--accent);
+      border-width: 2px;
+    }
+    .gw-connector {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      margin: 0.5rem 0;
+    }
+    .gw-line {
+      width: 1px;
+      height: 20px;
+      background: linear-gradient(to bottom, transparent, var(--border2), transparent);
+    }
+    .gw-hub {
+      width: 60px;
+      height: 60px;
+      border-radius: 50%;
+      background: var(--accent-g);
+      border: 2px solid var(--accent);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--mono);
+      font-size: 1.2rem;
+      font-weight: 700;
+      color: var(--accent);
+      margin: 0.5rem 0;
+      position: relative;
+    }
+    .gw-hub::after {
+      content: '';
+      position: absolute;
+      inset: -6px;
+      border-radius: 50%;
+      border: 1px solid rgba(62,207,142,0.2);
+    }
+    .gw-label {
+      font-size: 0.7rem;
+      font-family: var(--mono);
+      color: var(--text3);
+      text-align: center;
+      margin-top: 0.5rem;
+    }
+    .gw-outbound {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    /* ══════════════════════════════════════════
+       FEATURES GRID
+    ══════════════════════════════════════════ */
+    #features { padding-top: 7rem; }
+    .features-header { text-align: center; margin-bottom: 3.5rem; }
+    .features-header .lead { margin: 0 auto; }
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1rem;
+    }
+    .feat-icon { background: var(--accent-g2); color: var(--accent); }
+    .feat-icon.v { background: var(--violet-d); color: var(--violet); }
+    .feat-icon.b { background: var(--blue-d); color: var(--blue); }
+    .feat-icon.a { background: var(--amber-d); color: var(--amber); }
+    .feat-icon.r { background: rgba(248,113,113,0.12); color: var(--rose); }
+
+    /* ══════════════════════════════════════════
+       ARCHITECTURE
+    ══════════════════════════════════════════ */
+    #arch { background: var(--bg2); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+    .arch-layout {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 4rem;
+      align-items: center;
+    }
+    .arch-layers {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+    .arch-layer {
+      border: 1px solid var(--border);
+      border-radius: var(--r-md);
+      overflow: hidden;
+    }
+    .arch-layer-hdr {
+      padding: 0.6rem 1rem;
+      background: var(--bg3);
+      border-bottom: 1px solid var(--border);
+      font-size: 0.72rem;
+      font-weight: 600;
+      font-family: var(--mono);
+      color: var(--text3);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .arch-layer-hdr .dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+    }
+    .arch-layer-body {
+      padding: 0.75rem 1rem;
+      background: var(--bg2);
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+    }
+    .arch-layer-item {
+      font-size: 0.7rem;
+      font-family: var(--mono);
+      padding: 0.2rem 0.55rem;
+      border-radius: var(--r-sm);
+      background: var(--bg4);
+      color: var(--text2);
+      border: 1px solid var(--border);
+    }
+
+    /* ══════════════════════════════════════════
+       SKILLS
+    ══════════════════════════════════════════ */
+    #skills { padding-top: 7rem; }
+    .skills-header { text-align: center; margin-bottom: 3rem; }
+    .skills-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 0.75rem;
+    }
+    .skill-item {
+      padding: 1rem 1.2rem;
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: var(--r-md);
+      transition: all 0.2s;
+    }
+    .skill-item:hover { border-color: rgba(62,207,142,0.2); background: var(--bg3); }
+    .skill-name {
+      font-size: 0.85rem;
+      font-weight: 700;
+      margin-bottom: 0.25rem;
+      letter-spacing: -0.01em;
+    }
+    .skill-desc { font-size: 0.75rem; color: var(--text2); }
+
+    /* ══════════════════════════════════════════
+       CTA
+    ══════════════════════════════════════════ */
+    #cta {
+      padding-top: 7rem;
+      padding-bottom: 8rem;
+    }
+    .cta-box {
+      background: linear-gradient(145deg, var(--bg3), var(--bg2));
+      border: 1px solid rgba(62,207,142,0.2);
+      border-radius: var(--r-xl);
+      padding: 4rem;
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+    }
+    .cta-box::before {
+      content: '';
+      position: absolute;
+      width: 400px;
+      height: 400px;
+      top: -150px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: radial-gradient(circle, rgba(62,207,142,0.08) 0%, transparent 70%);
+      pointer-events: none;
+    }
+    .cta-box .h2 { margin-bottom: 1rem; }
+    .cta-box .lead { margin: 0 auto 2.5rem; }
+    .cta-actions { display: flex; justify-content: center; gap: 0.75rem; flex-wrap: wrap; }
+
+    /* ─── Footer ─── */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 2rem;
+      text-align: center;
+      font-size: 0.8rem;
+      color: var(--text3);
+      position: relative;
+      z-index: 1;
+    }
+    footer a { color: var(--text2); text-decoration: none; }
+    footer a:hover { color: var(--accent); }
+
+    /* ══════════════════════════════════════════
+       ANIMATIONS
+    ══════════════════════════════════════════ */
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(18px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes pulseDot {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50%       { opacity: 0.4; transform: scale(0.7); }
+    }
+    @keyframes float {
+      0%, 100% { transform: translateY(0px); }
+      50%       { transform: translateY(-8px); }
+    }
+    @keyframes spin {
+      from { transform: rotate(0deg); }
+      to   { transform: rotate(360deg); }
+    }
+
+    /* ─── Scroll reveal ─── */
+    .reveal {
+      opacity: 0;
+      transform: translateY(24px);
+      transition: opacity 0.6s ease, transform 0.6s ease;
+    }
+    .reveal.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    .reveal-d1 { transition-delay: 0.08s; }
+    .reveal-d2 { transition-delay: 0.16s; }
+    .reveal-d3 { transition-delay: 0.24s; }
+    .reveal-d4 { transition-delay: 0.32s; }
+    .reveal-d5 { transition-delay: 0.40s; }
+    .reveal-d6 { transition-delay: 0.48s; }
+
+    /* ─── Responsive ─── */
+    @media (max-width: 1024px) {
+      .features-grid { grid-template-columns: repeat(2, 1fr); }
+      .skills-grid { grid-template-columns: repeat(2, 1fr); }
+      .workflow-grid { grid-template-columns: repeat(3, 1fr); }
+      .workflow-step:nth-child(3) { border-right: 1px solid var(--border); }
+      .workflow-step:nth-child(4) { border-radius: 0; border-right: 1px solid var(--border); }
+      .workflow-step:nth-child(5) { border-radius: 0 0 var(--r-lg) var(--r-lg); }
+      .gateway-layout, .arch-layout { grid-template-columns: 1fr; gap: 3rem; }
+    }
+    @media (max-width: 640px) {
+      section { padding: 5rem 0; }
+      .features-grid { grid-template-columns: 1fr; }
+      .skills-grid { grid-template-columns: repeat(2, 1fr); }
+      .workflow-grid { grid-template-columns: 1fr; }
+      .workflow-step { border: 1px solid var(--border); border-bottom: none; }
+      .workflow-step:last-child { border-bottom: 1px solid var(--border); border-radius: 0 0 var(--r-lg) var(--r-lg); }
+      .workflow-step:first-child { border-radius: var(--r-lg) var(--r-lg) 0 0; }
+      .step-arrow { display: none; }
+      .hero-stats { gap: 1.5rem; }
+      .cta-box { padding: 2.5rem 1.5rem; }
+      .nav-links { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="bg-atmosphere"></div>
+
+<!-- ════════════════════════════ NAV ════════════════════════════ -->
+<nav>
+  <a href="#hero" class="nav-logo">
+    <div class="nav-logo-icon">π</div>
+    Pi Agent
+  </a>
+  <ul class="nav-links">
+    <li><a href="#workflow">工作流</a></li>
+    <li><a href="#gateway">网关</a></li>
+    <li><a href="#features">功能</a></li>
+    <li><a href="#arch">架构</a></li>
+    <li><a href="#skills">技能</a></li>
+    <li><a href="#cta" class="nav-btn">快速开始</a></li>
+  </ul>
+</nav>
+
+<!-- ════════════════════════════ HERO ════════════════════════════ -->
+<section id="hero">
+  <div class="container">
+    <div class="hero-inner">
+      <div class="hero-badge">
+        <span class="pulse-dot"></span>
+        企业级 AI 编码代理 · Open Source
+      </div>
+
+      <h1 class="hero-title">
+        你的<span class="gradient-text"> AI 工程师</span><br>
+        真正能自主完成工作
+      </h1>
+
+      <p class="hero-desc">
+        告别反复调校的 AI 助手。Pi Agent 通过强制性的 5 阶段工作流、自主子代理编排、沙箱安全审计，将 Claude、Gemini 和 Codex 变成真正可靠的工程力量。
+      </p>
+
+      <div class="hero-actions">
+        <a href="#" class="btn btn-primary">
+          <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+          开始使用
+        </a>
+        <a href="#workflow" class="btn btn-ghost">探索架构</a>
+      </div>
+
+      <div class="hero-stats">
+        <div class="hero-stat">
+          <div class="val">5</div>
+          <div class="lbl">阶段工作流</div>
+        </div>
+        <div class="hero-stat">
+          <div class="val">40+</div>
+          <div class="lbl">技能模块</div>
+        </div>
+        <div class="hero-stat">
+          <div class="val">6</div>
+          <div class="lbl">通信通道</div>
+        </div>
+        <div class="hero-stat">
+          <div class="val">3</div>
+          <div class="lbl">模型编排</div>
+        </div>
+        <div class="hero-stat">
+          <div class="val">20+</div>
+          <div class="lbl">子代理</div>
+        </div>
+      </div>
+
+      <div class="hero-terminal">
+        <div class="terminal-bar">
+          <div class="terminal-dot r"></div>
+          <div class="terminal-dot y"></div>
+          <div class="terminal-dot g"></div>
+          <span class="terminal-title">pi-agent — gateway</span>
+        </div>
+        <div class="terminal-body">
+          <div><span class="prompt">pi</span> <span class="cmd">/analyze multi-model orchestration</span></div>
+          <div class="out">→ Context retrieval: 3 files scanned</div>
+          <div class="out">→ Analysis: capability matrix built</div>
+          <div class="out">→ Implementation: routing logic generated</div>
+          <div class="out" style="color: var(--accent)">✓ Audit: security review passed (2 suggestions)</div>
+          <br>
+          <div><span class="prompt">pi</span> <span class="cmd">/scout authentication flow</span></div>
+          <div class="out">→ Routing: 4 files · 2 issues · 1 suggestion</div>
+          <div class="out" style="color: var(--accent)">✓ Summary ready</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- ════════════════════════════ WORKFLOW ════════════════════════════ -->
+<section id="workflow">
+  <div class="container">
+    <div class="workflow-header reveal">
+      <div class="eyebrow">5-Phase Workflow</div>
+      <h2 class="h2">强制性工作流，<br>不让 AI 跳过关键步骤</h2>
+      <p class="lead" style="margin-top:1rem">
+        每个任务都必须经历 5 个阶段，防止 AI 在不完整理解的情况下生成代码。
+      </p>
+    </div>
+
+    <div class="workflow-grid reveal reveal-d1">
+      <div class="workflow-step">
+        <div class="step-num">PHASE 01</div>
+        <div class="step-title">上下文检索</div>
+        <div class="step-desc">定位相关代码文件、测试、用例，构建完整上下文图谱</div>
+        <div class="step-arrow">→</div>
+      </div>
+      <div class="workflow-step">
+        <div class="step-num">PHASE 02</div>
+        <div class="step-title">深度分析</div>
+        <div class="step-desc">理解需求本质，识别边界情况，评估技术可行性</div>
+        <div class="step-arrow">→</div>
+      </div>
+      <div class="workflow-step">
+        <div class="step-num">PHASE 03</div>
+        <div class="step-title">原型设计</div>
+        <div class="step-desc">快速验证方案方向，收集早期反馈</div>
+        <div class="step-arrow">→</div>
+      </div>
+      <div class="workflow-step">
+        <div class="step-num">PHASE 04</div>
+        <div class="step-title">实现</div>
+        <div class="step-desc">生成生产级代码，遵循项目规范与风格</div>
+        <div class="step-arrow">→</div>
+      </div>
+      <div class="workflow-step">
+        <div class="step-num">PHASE 05</div>
+        <div class="step-title">审计</div>
+        <div class="step-desc">安全审查、性能分析、回归测试、文档补全</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- ════════════════════════════ GATEWAY ════════════════════════════ -->
+<section id="gateway">
+  <div class="container">
+    <div class="gateway-layout">
+      <div class="reveal">
+        <div class="eyebrow">Multi-Channel Gateway</div>
+        <h2 class="h2">单端口网关，<br>连接所有通信渠道</h2>
+        <p class="lead" style="margin-top:1rem; margin-bottom:1.5rem">
+          Telegram、Discord、飞书、微信、WebChat — 通过一个 HTTP+WebSocket 端口统一接入。消息自动路由到隔离的 RPC 进程处理。
+        </p>
+        <div style="display:flex;flex-wrap:wrap;gap:0.5rem;margin-bottom:1.5rem">
+          <span class="tag tag-blue">Telegram</span>
+          <span class="tag tag-violet">Discord</span>
+          <span class="tag tag-amber">飞书</span>
+          <span class="tag">微信</span>
+          <span class="tag">WebChat</span>
+          <span class="tag tag-violet">QQBot</span>
+        </div>
+        <a href="#" class="btn btn-ghost">查看网关文档</a>
+      </div>
+
+      <div class="gateway-visual reveal reveal-d1">
+        <div class="gateway-diagram">
+          <div class="gw-label" style="margin-bottom:0.75rem">Inbound Channels</div>
+          <div class="gw-row">
+            <span class="gw-node tg">Telegram</span>
+            <span class="gw-node dc">Discord</span>
+            <span class="gw-node fs">飞书</span>
+          </div>
+          <div class="gw-row">
+            <span class="gw-node wx">微信</span>
+            <span class="gw-node wc">WebChat</span>
+          </div>
+          <div class="gw-connector">
+            <div class="gw-line"></div>
+            <div class="gw-line" style="background: linear-gradient(to bottom, transparent, rgba(62,207,142,0.4), transparent)"></div>
+          </div>
+          <div class="gw-hub">
+            <svg width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>
+            </svg>
+          </div>
+          <div class="gw-label">π-Gateway · Single Port</div>
+          <div class="gw-connector">
+            <div class="gw-line" style="background: linear-gradient(to top, transparent, rgba(62,207,142,0.4), transparent)"></div>
+          </div>
+          <div class="gw-outbound">
+            <span class="gw-node center" style="font-size:0.7rem">RPC Pool</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- ════════════════════════════ FEATURES ════════════════════════════ -->
+<section id="features">
+  <div class="container">
+    <div class="features-header reveal">
+      <div class="eyebrow">Core Capabilities</div>
+      <h2 class="h2">不只是聊天机器人</h2>
+      <p class="lead" style="margin-top:0.75rem">
+        每个功能都经过生产环境验证，为企业级使用场景设计。
+      </p>
+    </div>
+
+    <div class="features-grid">
+      <div class="card reveal reveal-d1">
+        <div class="card-icon feat-icon">
+          <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        </div>
+        <h3>多模型编排</h3>
+        <p>同时调度 Claude、Gemini 和 Codex，根据任务类型智能路由到最合适的模型。</p>
+      </div>
+
+      <div class="card reveal reveal-d2">
+        <div class="card-icon feat-icon v">
+          <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+        </div>
+        <h3>沙箱安全</h3>
+        <p>ExecGuard 执行守卫、SSRF 防护、allowlist 授权、exec-backlist 黑名单，防止误操作。</p>
+      </div>
+
+      <div class="card reveal reveal-d3">
+        <div class="card-icon feat-icon b">
+          <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        </div>
+        <h3>定时任务</h3>
+        <p>内置 Cron Engine，支持 announce/silent 投递模式、并发守卫、错误退避策略。</p>
+      </div>
+
+      <div class="card reveal reveal-d4">
+        <div class="card-icon feat-icon a">
+          <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+        </div>
+        <h3>角色人格隔离</h3>
+        <p>role-persona 支持按角色隔离记忆、向量检索和人格配置，不同场景独立运行。</p>
+      </div>
+
+      <div class="card reveal reveal-d5">
+        <div class="card-icon feat-icon r">
+          <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+        </div>
+        <h3>并发背压控制</h3>
+        <p>async-limit 并发限制器 + 优先级消息队列，防止网关在高负载下崩溃。</p>
+      </div>
+
+      <div class="card reveal reveal-d6">
+        <div class="card-icon feat-icon">
+          <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+        </div>
+        <h3>会话持久化</h3>
+        <p>Session Store 跨会话保持上下文，Transcript Logger 记录完整对话历史。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- ════════════════════════════ ARCHITECTURE ════════════════════════════ -->
+<section id="arch">
+  <div class="container">
+    <div class="arch-layout">
+      <div class="reveal">
+        <div class="eyebrow">Clean Architecture v4.0</div>
+        <h2 class="h2">4 层清晰架构，<br>每一层职责分明</h2>
+        <p class="lead" style="margin-top:1rem">
+          Domain → Application → Infrastructure → Interface，依赖方向严格单向。700+ 测试用例保障架构契约不被破坏。
+        </p>
+        <div style="margin-top:2rem;display:flex;flex-direction:column;gap:0.5rem">
+          <div style="display:flex;align-items:center;gap:0.75rem;padding:0.7rem 1rem;background:var(--bg3);border:1px solid var(--border);border-radius:var(--r-md)">
+            <div style="width:8px;height:8px;border-radius:50%;background:var(--accent);flex-shrink:0"></div>
+            <span style="font-size:0.85rem;font-weight:600">Domain — 纯业务逻辑，无外部依赖</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:0.75rem;padding:0.7rem 1rem;background:var(--bg3);border:1px solid var(--border);border-radius:var(--r-md)">
+            <div style="width:8px;height:8px;border-radius:50%;background:var(--violet);flex-shrink:0"></div>
+            <span style="font-size:0.85rem;font-weight:600">Application — 用例编排，定义端口接口</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:0.75rem;padding:0.7rem 1rem;background:var(--bg3);border:1px solid var(--border);border-radius:var(--r-md)">
+            <div style="width:8px;height:8px;border-radius:50%;background:var(--blue);flex-shrink:0"></div>
+            <span style="font-size:0.85rem;font-weight:600">Infrastructure — 外部系统实现</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:0.75rem;padding:0.7rem 1rem;background:var(--bg3);border:1px solid var(--border);border-radius:var(--r-md)">
+            <div style="width:8px;height:8px;border-radius:50%;background:var(--amber);flex-shrink:0"></div>
+            <span style="font-size:0.85rem;font-weight:600">Interface — 适配层（HTTP/WS/Plugins）</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="arch-layers reveal reveal-d1">
+        <div class="arch-layer">
+          <div class="arch-layer-hdr"><div class="dot" style="background:var(--accent)"></div>Interface Layer</div>
+          <div class="arch-layer-body">
+            <span class="arch-layer-item">plugins/telegram</span>
+            <span class="arch-layer-item">plugins/discord</span>
+            <span class="arch-layer-item">plugins/feishu</span>
+            <span class="arch-layer-item">plugins/wechat</span>
+            <span class="arch-layer-item">api/http-router</span>
+            <span class="arch-layer-item">ws/ws-router</span>
+          </div>
+        </div>
+        <div class="arch-layer">
+          <div class="arch-layer-hdr"><div class="dot" style="background:var(--violet)"></div>Application Layer</div>
+          <div class="arch-layer-body">
+            <span class="arch-layer-item">gateway/</span>
+            <span class="arch-layer-item">message-pipeline</span>
+            <span class="arch-layer-item">message-queue</span>
+            <span class="arch-layer-item">delegate-executor</span>
+          </div>
+        </div>
+        <div class="arch-layer">
+          <div class="arch-layer-hdr"><div class="dot" style="background:var(--blue)"></div>Domain Layer</div>
+          <div class="arch-layer-body">
+            <span class="arch-layer-item">types.ts</span>
+            <span class="arch-layer-item">config/entities</span>
+            <span class="arch-layer-item">session/repository</span>
+          </div>
+        </div>
+        <div class="arch-layer">
+          <div class="arch-layer-hdr"><div class="dot" style="background:var(--amber)"></div>Infrastructure Layer</div>
+          <div class="arch-layer-body">
+            <span class="arch-layer-item">security/</span>
+            <span class="arch-layer-item">rpc-pool</span>
+            <span class="arch-layer-item">session-store</span>
+            <span class="arch-layer-item">auth-service</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- ════════════════════════════ SKILLS ════════════════════════════ -->
+<section id="skills">
+  <div class="container">
+    <div class="skills-header reveal">
+      <div class="eyebrow">Skills Ecosystem</div>
+      <h2 class="h2">40+ 可组合技能，<br>覆盖全栈开发场景</h2>
+      <p class="lead" style="margin-top:0.75rem">
+        每个技能都是可注入的提示词模块，按需加载，即插即用。
+      </p>
+    </div>
+
+    <div class="skills-grid reveal reveal-d1">
+      <div class="skill-item">
+        <div class="skill-name">ace-tool</div>
+        <div class="skill-desc">语义代码搜索</div>
+      </div>
+      <div class="skill-item">
+        <div class="skill-name">web-browser</div>
+        <div class="skill-desc">Chromium CDP 自动化</div>
+      </div>
+      <div class="skill-item">
+        <div class="skill-name">tmux</div>
+        <div class="skill-desc">远程终端会话</div>
+      </div>
+      <div class="skill-item">
+        <div class="skill-name">workhub</div>
+        <div class="skill-desc">Issue/PR 文档管理</div>
+      </div>
+      <div class="skill-item">
+        <div class="skill-name">office-combo</div>
+        <div class="skill-desc">Excel · PPT · PDF · Word</div>
+      </div>
+      <div class="skill-item">
+        <div class="skill-name">baoyu-post-to-wechat</div>
+        <div class="skill-desc">公众号内容发布</div>
+      </div>
+      <div class="skill-item">
+        <div class="skill-name">baoyu-post-to-x</div>
+        <div class="skill-desc">X (Twitter) 文章发布</div>
+      </div>
+      <div class="skill-item">
+        <div class="skill-name">baoyu-image-gen</div>
+        <div class="skill-desc">多 API 图像生成</div>
+      </div>
+      <div class="skill-item">
+        <div class="skill-name">codemap-generative-ui</div>
+        <div class="skill-desc">代码流程图生成</div>
+      </div>
+      <div class="skill-item">
+        <div class="skill-name">pi-interactive-shell</div>
+        <div class="skill-desc">CLI 覆盖层</div>
+      </div>
+      <div class="skill-item">
+        <div class="skill-name">plan-mode</div>
+        <div class="skill-desc">只读规划 + 命令拦截</div>
+      </div>
+      <div class="skill-item">
+        <div class="skill-name">safety-gates</div>
+        <div class="skill-desc">破坏性操作守卫</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- ════════════════════════════ CTA ════════════════════════════ -->
+<section id="cta">
+  <div class="container">
+    <div class="cta-box reveal">
+      <div class="eyebrow" style="justify-content:center">Get Started</div>
+      <h2 class="h2">准备好升级你的<br><span class="gradient-text">AI 开发体验</span></h2>
+      <p class="lead">
+        一条命令启动网关，立即在 Telegram、Discord 或任何你喜欢的平台上使用 Pi Agent。
+      </p>
+      <div class="cta-actions">
+        <a href="#" class="btn btn-primary" style="padding:0.7rem 1.8rem;font-size:0.9rem">
+          <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+          立即开始
+        </a>
+        <a href="#" class="btn btn-ghost" style="padding:0.7rem 1.8rem;font-size:0.9rem">
+          <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/></svg>
+          GitHub
+        </a>
+      </div>
+      <div style="margin-top:2rem;font-family:var(--mono);font-size:0.75rem;color:var(--text3)">
+        <code style="background:var(--bg4);padding:0.3rem 0.7rem;border-radius:4px;border:1px solid var(--border)">
+          cd pi-gateway && bun install && bun run start
+        </code>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════════════════ FOOTER ════════════════════════════ -->
+<footer>
+  <div style="display:flex;align-items:center;justify-content:center;gap:0.5rem;margin-bottom:0.5rem">
+    <div style="width:18px;height:18px;background:linear-gradient(135deg,var(--accent),var(--accent-d));border-radius:4px;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:0.7rem;font-weight:600;color:#000">π</div>
+    <span style="font-weight:600">Pi Agent</span>
+  </div>
+  <div>
+    Built with Bun + TypeScript · <a href="#">GitHub</a> · <a href="#">Docs</a> · <a href="#">Discord</a>
+  </div>
+</footer>
+
+<!-- ════════════════════════════ SCRIPTS ════════════════════════════ -->
+<script>
+  // ─── Scroll Reveal ───
+  const revealEls = document.querySelectorAll('.reveal');
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(e => {
+      if (e.isIntersecting) {
+        e.target.classList.add('visible');
+        observer.unobserve(e.target);
+      }
+    });
+  }, { threshold: 0.08, rootMargin: '0px 0px -40px 0px' });
+
+  revealEls.forEach(el => observer.observe(el));
+
+  // ─── Smooth scroll for nav links ───
+  document.querySelectorAll('a[href^="#"]').forEach(a => {
+    a.addEventListener('click', e => {
+      const target = document.querySelector(a.getAttribute('href'));
+      if (target) {
+        e.preventDefault();
+        target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    });
+  });
+
+  // ─── Nav background on scroll ───
+  const nav = document.querySelector('nav');
+  window.addEventListener('scroll', () => {
+    nav.style.background = window.scrollY > 20
+      ? 'rgba(9,9,11,0.92)'
+      : 'rgba(9,9,11,0.6)';
+  }, { passive: true });
+</script>
+
+</body>
+</html>
