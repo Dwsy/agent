@@ -384,15 +384,10 @@ export default function rolePersonaExtension(pi: ExtensionAPI) {
     ...roleInfoToolRenderers,
   });
 
-  // ── Commands (delegated to CLI) ──
+  // ── Formatted command helpers ──
 
-  /** Generic command helper: run CLI, send result as pi message */
-  async function runCmd(name: string, args: string[], ctx: ExtensionContext, opts?: { timeoutMs?: number }) {
-    const result = await cli(args, { cwd: cwdOf(ctx), timeoutMs: opts?.timeoutMs || 10000 });
-    const text = result.ok
-      ? (result.message || JSON.stringify(result.data, null, 2))
-      : `Error: ${result.error}`;
-    pi.sendMessage({ customType: name, content: text, display: true }, { triggerTurn: false });
+  function msg(customType: string, content: string) {
+    pi.sendMessage({ customType, content, display: true }, { triggerTurn: false });
   }
 
   pi.registerCommand("role", {
@@ -400,35 +395,173 @@ export default function rolePersonaExtension(pi: ExtensionAPI) {
     handler: async (args, ctx) => {
       const argv = (args || "").trim().split(/\s+/);
       const cmd = argv[0] || "info";
-      await runCmd("role", ["role", cmd, ...argv.slice(1)], ctx);
+      const cwd = cwdOf(ctx);
+
+      switch (cmd) {
+        case "info": {
+          const res = await cli(["role", "info"], { cwd });
+          if (!res.ok || !res.data) { notify(ctx, res.error || "No role", "warning"); return; }
+          const d = res.data as any;
+          const resolution = await cli(["init"], { cwd });
+          const rd = resolution.data as any;
+          let info = `## 角色状态\n\n`;
+          info += `**当前目录**: ${cwd}\n`;
+          info += `**生效角色**: ${d.name || "无"}\n`;
+          info += `**来源**: ${rd?.source || "unknown"}\n\n`;
+          info += `**角色名称**: ${d.name}\n`;
+          info += `**显示名称**: ${d.identity?.name || "未设置"}\n`;
+          info += `**状态**: ${d.isFirstRun ? "[FIRST RUN] 首次运行" : "[OK] 已配置"}\n`;
+          info += `**路径**: ${d.path}\n\n`;
+          info += `### 可用命令\n\n`;
+          info += `- \`/role create [name]\` - 创建新角色\n`;
+          info += `- \`/role map [role]\` - 映射目录到角色\n`;
+          info += `- \`/role unmap\` - 取消映射\n`;
+          info += `- \`/role list\` - 列出所有角色\n`;
+          info += `- \`/memories\` - 查看记忆\n`;
+          info += `- \`/memory-log\` - 记忆操作日志\n`;
+          info += `- \`/memory-fix\` - 修复记忆结构\n`;
+          info += `- \`/memory-tidy\` - 整理记忆\n`;
+          info += `- \`/memory-tags\` - 标签云\n`;
+          info += `- \`/kb\` - 知识库\n`;
+          msg("role-info", info);
+          break;
+        }
+        case "create": {
+          let name = argv[1];
+          if (!name && isTuiAvailable(ctx)) {
+            name = await ctx.ui.input("新角色名称:", "my-assistant") || "";
+          }
+          if (!name?.trim()) { notify(ctx, "未提供角色名", "warning"); return; }
+          const r = await cli(["role", "create", name.trim()], { cwd });
+          if (!r.ok) { notify(ctx, r.error || "创建失败", "error"); return; }
+          await cli(["role", "map", name.trim()], { cwd });
+          notify(ctx, `[OK] 创建角色: ${name.trim()}`, "success");
+          break;
+        }
+        case "map": {
+          const name = argv[1];
+          if (!name) { notify(ctx, "Usage: /role map <name>", "warning"); return; }
+          const r = await cli(["role", "map", name], { cwd });
+          if (r.ok) notify(ctx, `已映射: ${cwd} → ${name}`, "success");
+          else notify(ctx, r.error || "映射失败", "error");
+          break;
+        }
+        case "unmap": {
+          const r = await cli(["role", "unmap"], { cwd });
+          notify(ctx, r.ok ? "已取消映射" : (r.error || "失败"), r.ok ? "info" : "error");
+          break;
+        }
+        case "list": {
+          const r = await cli(["role", "list"], { cwd });
+          if (!r.ok || !Array.isArray(r.data)) { notify(ctx, r.error || "失败", "error"); return; }
+          const roles = r.data as any[];
+          let info = `## 角色列表 (${roles.length})\n\n`;
+          for (const role of roles) {
+            const name = typeof role === "string" ? role : role.name;
+            const identity = typeof role === "object" ? role.identity : null;
+            info += `- **${name}** ${identity?.name ? `(${identity.name})` : ""}\n`;
+          }
+          msg("role-list", info);
+          break;
+        }
+        default:
+          notify(ctx, `未知命令: ${cmd}`, "error");
+      }
     },
   });
 
   pi.registerCommand("memories", {
     description: "View role memory",
-    handler: async (_args, ctx) => {
-      await runCmd("memories", ["memory", "list"], ctx);
+    handler: async (args, ctx) => {
+      const mode = (args || "").trim().toLowerCase();
+
+      // TUI viewer
+      if (mode === "tui" && isTuiAvailable(ctx)) {
+        try {
+          const { RoleMemoryViewerComponent } = await import("./tui-renderers.ts");
+          await ctx.ui.custom<void>(
+            (tui, theme, _kb, done) => new RoleMemoryViewerComponent("", "", tui, theme, done),
+            { overlay: true, overlayOptions: { anchor: "center", width: "90%", maxHeight: "95%" } }
+          );
+        } catch { notify(ctx, "TUI viewer not available", "warning"); }
+        return;
+      }
+
+      // Default: formatted memory list
+      const r = await cli(["memory", "list"], { cwd: cwdOf(ctx) });
+      if (!r.ok || !r.data) { notify(ctx, r.error || "失败", "error"); return; }
+      const d = r.data as any;
+      let info = `## Memory\n\n`;
+      info += `- Learnings: ${d.learnings}\n`;
+      info += `- Preferences: ${d.preferences}\n`;
+      info += `- Issues: ${d.issues}\n\n`;
+      if (d.text) info += d.text;
+      msg("memories", info);
     },
   });
 
   pi.registerCommand("memory-log", {
     description: "Session memory log",
     handler: async (_args, ctx) => {
-      await runCmd("memory-log", ["memory", "log"], ctx);
+      const r = await cli(["memory", "log"], { cwd: cwdOf(ctx) });
+      if (!r.ok) { notify(ctx, r.error || "失败", "error"); return; }
+      const log = r.data as any[];
+      if (!log || log.length === 0) { notify(ctx, "本次会话暂无记忆操作", "info"); return; }
+
+      const sourceIcon: Record<string, string> = { compaction: "🗜", "auto-extract": "🤖", tool: "🔧", manual: "✏️" };
+      const opIcon: Record<string, string> = { learning: "📘", preference: "⚙️", event: "📅", knowledge: "📚", reinforce: "💪", consolidate: "🧹" };
+
+      const stored = log.filter((e: any) => e.stored).length;
+      const skipped = log.length - stored;
+
+      let output = `## 🧠 Memory Log — ${log.length} 操作\n\n`;
+      output += `| 指标 | 数值 |\n|------|------|\n`;
+      output += `| 总操作 | ${log.length} |\n`;
+      output += `| ✓ 已存储 | ${stored} |\n`;
+      output += `| ✗ 跳过 | ${skipped} |\n\n`;
+
+      const storedEntries = log.filter((e: any) => e.stored);
+      if (storedEntries.length > 0) {
+        output += `### ✓ 已存储记忆\n\n`;
+        for (const e of storedEntries) {
+          const op = opIcon[e.op] || "?";
+          output += `- ${op} **${e.op}**: ${e.content}\n`;
+        }
+      }
+
+      const skippedEntries = log.filter((e: any) => !e.stored);
+      if (skippedEntries.length > 0) {
+        output += `### ✗ 跳过记录\n\n`;
+        for (const e of skippedEntries) {
+          const op = opIcon[e.op] || "?";
+          const reason = e.detail ? ` — ${e.detail}` : "";
+          output += `- ${op} **${e.op}**: ${e.content.slice(0, 80)}${reason}\n`;
+        }
+      }
+
+      msg("memory-log", output);
     },
   });
 
   pi.registerCommand("memory-fix", {
     description: "Repair consolidated.md",
     handler: async (_args, ctx) => {
-      await runCmd("memory-fix", ["memory", "repair", "--force"], ctx);
+      const r = await cli(["memory", "repair", "--force"], { cwd: cwdOf(ctx) });
+      if (!r.ok) { notify(ctx, r.error || "失败", "error"); return; }
+      const d = r.data as any;
+      notify(ctx, d.repaired ? `memory/consolidated.md 已修复 (${d.issues} issues)` : "无需修复", d.repaired ? "success" : "info");
     },
   });
 
   pi.registerCommand("memory-tidy", {
     description: "Manual memory tidy",
     handler: async (_args, ctx) => {
-      await runCmd("memory-tidy", ["memory", "consolidate"], ctx);
+      const r = await cli(["memory", "consolidate"], { cwd: cwdOf(ctx) });
+      if (!r.ok) { notify(ctx, r.error || "失败", "error"); return; }
+      const d = r.data as any;
+      const msg = [`Memory tidy done`, `- consolidate: L ${d.beforeLearnings}→${d.afterLearnings}, P ${d.beforePreferences}→${d.afterPreferences}`].join("\n");
+      notify(ctx, "memory/consolidated.md 已整理", "success");
+      pi.sendMessage({ customType: "memory-tidy", content: msg, display: true }, { triggerTurn: false });
     },
   });
 
@@ -436,7 +569,18 @@ export default function rolePersonaExtension(pi: ExtensionAPI) {
     description: "LLM memory tidy",
     handler: async (args, ctx) => {
       const argv = args?.trim() ? ["--model", args.trim()] : [];
-      await runCmd("memory-tidy-llm", ["memory", "tidy", ...argv], ctx, { timeoutMs: 120000 });
+      notify(ctx, "LLM memory tidy running...", "info");
+      const r = await cli(["memory", "tidy", ...argv], { cwd: cwdOf(ctx), timeoutMs: 120000 });
+      if (!r.ok) { notify(ctx, `LLM tidy 失败: ${r.error}`, "error"); return; }
+      const d = r.data as any;
+      const summary = [
+        `LLM tidy done`,
+        `- model: ${d.model}`,
+        `- learnings: ${d.apply.beforeLearnings} → ${d.apply.afterLearnings}`,
+        `- preferences: ${d.apply.beforePreferences} → ${d.apply.afterPreferences}`,
+      ].join("\n");
+      notify(ctx, "LLM 记忆整理完成", "success");
+      pi.sendMessage({ customType: "memory-tidy-llm", content: summary, display: true }, { triggerTurn: false });
     },
   });
 
@@ -444,29 +588,73 @@ export default function rolePersonaExtension(pi: ExtensionAPI) {
     description: "Vector memory: /memory-vector stats | rebuild",
     handler: async (args, ctx) => {
       const sub = (args || "").trim().toLowerCase() || "stats";
-      await runCmd("memory-vector", ["embedding", sub], ctx);
+
+      if (sub === "rebuild") {
+        notify(ctx, "正在重建向量索引...", "info");
+        const r = await cli(["embedding", "rebuild"], { cwd: cwdOf(ctx), timeoutMs: 60000 });
+        if (!r.ok) { notify(ctx, r.error || "失败", "error"); return; }
+        const d = r.data as any;
+        notify(ctx, `向量索引重建完成: ${d.indexed}/${d.total} 条已索引`, "success");
+        return;
+      }
+
+      const r = await cli(["embedding", "stats"], { cwd: cwdOf(ctx) });
+      if (!r.ok) { notify(ctx, r.error || "失败", "error"); return; }
+      const d = r.data as any;
+      const lines = [
+        `向量记忆状态`,
+        `- 启用: ${d.enabled}`,
+        `- 激活: ${d.active}`,
+        `- 模型: ${d.model || "n/a"}`,
+        `- 维度: ${d.dim || "n/a"}`,
+        `- 已索引: ${d.count} 条`,
+        `- 路径: ${d.dbPath || "n/a"}`,
+      ];
+      pi.sendMessage({ customType: "memory-vector-stats", content: lines.join("\n"), display: true }, { triggerTurn: false });
     },
   });
 
   pi.registerCommand("memory-tags", {
     description: "Browse memory tags",
     handler: async (_args, ctx) => {
-      await runCmd("memory-tags", ["memory", "list"], ctx);
+      const r = await cli(["memory", "list"], { cwd: cwdOf(ctx) });
+      if (!r.ok || !r.data) { notify(ctx, r.error || "失败", "error"); return; }
+      const d = r.data as any;
+      // The list command returns text with tag info embedded
+      // For now, show the memory summary
+      let output = `# Tag Cloud\n\n`;
+      output += `Learnings: ${d.learnings}, Preferences: ${d.preferences}\n\n`;
+      if (d.text) output += d.text;
+      msg("memory-tags", output);
     },
   });
 
   pi.registerCommand("memory-conflicts", {
     description: "Detect memory conflicts",
     handler: async (_args, ctx) => {
-      await runCmd("memory-conflicts", ["memory", "conflicts"], ctx);
+      const r = await cli(["memory", "conflicts"], { cwd: cwdOf(ctx) });
+      if (!r.ok) { notify(ctx, r.error || "失败", "error"); return; }
+      const d = r.data as any;
+      if (!d.conflicts || d.conflicts.length === 0) {
+        notify(ctx, "✅ 未检测到记忆冲突", "success");
+      } else {
+        let output = `## 记忆冲突 (${d.conflicts.length})\n\n`;
+        for (const c of d.conflicts) {
+          output += `- [${(c.similarity * 100).toFixed(0)}%] ${c.text1}\n`;
+          output += `  ${c.text2}\n\n`;
+        }
+        msg("memory-conflicts", output);
+      }
     },
   });
 
   pi.registerCommand("memory-export", {
     description: "Export memory to HTML",
     handler: async (args, ctx) => {
-      const argv = args?.trim() ? ["--output", args.trim()] : [];
-      await runCmd("memory-export", ["memory", "export", ...argv], ctx);
+      const outputPath = (args || "").trim();
+      const r = await cli(["memory", "export", ...(outputPath ? ["--output", outputPath] : [])], { cwd: cwdOf(ctx) });
+      if (!r.ok) { notify(ctx, `导出失败: ${r.error}`, "error"); return; }
+      notify(ctx, `✅ 记忆已导出`, "success");
     },
   });
 
@@ -489,12 +677,50 @@ export default function rolePersonaExtension(pi: ExtensionAPI) {
     handler: async (args, ctx) => {
       const argv = (args || "").trim().split(/\s+/);
       const cmd = argv[0] || "list";
-      if (cmd === "search" && argv[1]) {
-        await runCmd("kb", ["knowledge", "search", argv.slice(1).join(" ")], ctx);
-      } else if (cmd === "stats") {
-        await runCmd("kb", ["knowledge", "list"], ctx);
-      } else {
-        await runCmd("kb", ["knowledge", "list", ...argv.slice(1)], ctx);
+
+      switch (cmd) {
+        case "list": {
+          const r = await cli(["knowledge", "list", ...argv.slice(1)], { cwd: cwdOf(ctx) });
+          if (!r.ok || !r.data) { notify(ctx, r.error || "失败", "error"); return; }
+          const d = r.data as any;
+          let output = `Knowledge Base — ${d.totalEntries} entries\n\n`;
+          for (const src of d.sources) {
+            const total = src.categories.reduce((s: number, c: any) => s + c.entries.length, 0);
+            if (total === 0) continue;
+            const ro = src.readonly ? " (readonly)" : "";
+            output += `[${src.id}${ro}]\n`;
+            for (const cat of src.categories) {
+              output += `  ${cat.category}/ — ${cat.entries.length} entries\n`;
+              for (const e of cat.entries) {
+                output += `    ${e.file}: ${e.title}\n`;
+              }
+            }
+            output += `\n`;
+          }
+          msg("kb-list", output);
+          break;
+        }
+        case "search": {
+          const query = argv.slice(1).join(" ");
+          if (!query) { notify(ctx, "Usage: /kb search <query>", "warning"); return; }
+          const r = await cli(["knowledge", "search", query], { cwd: cwdOf(ctx) });
+          if (!r.ok || !r.data) { notify(ctx, "No matches", "info"); return; }
+          const results = r.data as any[];
+          const lines = results.map((item: any, i: number) =>
+            `${i + 1}. [${item.entry.source}] ${item.entry.meta.title} (${item.relevance.toFixed(2)}) — ${item.entry.relativePath}`
+          );
+          msg("kb-search", lines.join("\n") || "No matches");
+          break;
+        }
+        case "stats": {
+          const r = await cli(["knowledge", "list"], { cwd: cwdOf(ctx) });
+          if (!r.ok || !r.data) { notify(ctx, r.error || "失败", "error"); return; }
+          const d = r.data as any;
+          notify(ctx, `${d.totalEntries} entries | ${Object.keys(d.tagIndex || {}).length} tags`, "info");
+          break;
+        }
+        default:
+          notify(ctx, "Usage: /kb [list|search <query>|stats]", "info");
       }
     },
   });
