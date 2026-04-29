@@ -28,6 +28,10 @@ extensions/dist/
 !extensions/*/*.js
 !extensions/*/*/*.js
 
+# MCP log/stats files
+**/.mcp.logs.jsonl
+**/.mcp.stats.json
+
 # Log files
 *.log
 pi-crash.log
