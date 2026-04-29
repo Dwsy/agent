@@ -214,3 +214,11 @@ mcp-config.json
 
 # Lock files for auth
 auth.json.lock
+
+# Generated / temp
+.qoder/
+.superset/
+30
+models.json.backup-*
+session-slim-*.jsonl
+usage-data/
