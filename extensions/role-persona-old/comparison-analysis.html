@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Role Persona vs Claude Code — 深度对比分析</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+--bg:#f8f7f4;--surface:#fff;--border:#e5e3de;--border-light:#f0eeea;
+--text:#2c2c2a;--text2:#5f5e5a;--text3:#888780;
+--purple:#534ab7;--purple-light:#eeedfe;--purple-bg:#f5f3ff;
+--coral:#d85a30;--coral-light:#faece7;--coral-bg:#fff5f2;
+--teal:#0f6e56;--teal-light:#e1f5ee;--teal-bg:#f0fdf8;
+--amber:#ba7517;--amber-light:#faeeda;
+--blue:#185fa5;--blue-light:#e6f1fb;
+--green:#3b6d11;--green-light:#eaf3de;
+--red:#a32d2d;--red-light:#fcebeb;
+--radius:12px;--radius-sm:8px;
+}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif;background:var(--bg);color:var(--text);line-height:1.6;font-size:14px}
+.container{max-width:1200px;margin:0 auto;padding:24px 20px}
+.header{text-align:center;padding:48px 0 32px}
+.header h1{font-size:28px;font-weight:600;margin-bottom:8px}
+.header .subtitle{font-size:15px;color:var(--text2);max-width:700px;margin:0 auto}
+.header .badges{display:flex;justify-content:center;gap:12px;margin-top:16px;flex-wrap:wrap}
+.badge{display:inline-flex;align-items:center;gap:6px;padding:6px 14px;border-radius:20px;font-size:12px;font-weight:500}
+.badge-purple{background:var(--purple-light);color:var(--purple)}
+.badge-coral{background:var(--coral-light);color:var(--coral)}
+.metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:32px}
+.metric{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px;text-align:center}
+.metric .row{display:flex;justify-content:center;gap:24px;margin-top:8px}
+.metric .val{text-align:center}
+.metric .val .num{font-size:22px;font-weight:600}
+.metric .val .lbl{font-size:11px;color:var(--text3)}
+.metric .vs{display:flex;align-items:center;color:var(--text3);font-size:18px}
+.metric .label{font-size:12px;color:var(--text2);margin-bottom:4px}
+.num.purple{color:var(--purple)}
+.num.coral{color:var(--coral)}
+.section{margin-bottom:36px}
+.section-title{font-size:18px;font-weight:600;margin-bottom:16px;padding-bottom:8px;border-bottom:2px solid var(--purple-light);display:flex;align-items:center;gap:8px}
+.section-title .icon{width:24px;height:24px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:#fff}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:20px;margin-bottom:16px}
+.card h3{font-size:15px;font-weight:600;margin-bottom:12px}
+.card p{font-size:13px;color:var(--text2);line-height:1.7}
+.chart-container{position:relative;height:320px;margin:16px 0}
+.chart-row{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media(max-width:768px){.chart-row{grid-template-columns:1fr}}
+.compare-table{width:100%;border-collapse:collapse;font-size:13px}
+.compare-table th{text-align:left;padding:12px;background:var(--bg);font-weight:500;color:var(--text2);border-bottom:2px solid var(--border)}
+.compare-table td{padding:12px;border-bottom:1px solid var(--border-light);vertical-align:top}
+.compare-table tr:hover td{background:var(--purple-bg)}
+.compare-table .feat{font-weight:500;color:var(--text);min-width:140px}
+.compare-table .yes{color:var(--teal);font-weight:500}
+.compare-table .no{color:var(--text3)}
+.compare-table .partial{color:var(--amber);font-weight:500}
+.compare-table .highlight{background:var(--purple-bg)}
+.vs-grid{display:grid;grid-template-columns:1fr 60px 1fr;gap:0;margin:16px 0}
+@media(max-width:768px){.vs-grid{grid-template-columns:1fr;}.vs-divider{display:none}}
+.vs-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:20px}
+.vs-card.left{border-right:none;border-radius:var(--radius) 0 0 var(--radius)}
+.vs-card.right{border-left:none;border-radius:0 var(--radius) var(--radius) 0}
+.vs-card h4{font-size:14px;font-weight:600;margin-bottom:12px;display:flex;align-items:center;gap:8px}
+.vs-card .dot{width:10px;height:10px;border-radius:50%}
+.vs-card .dot.purple{background:var(--purple)}
+.vs-card .dot.coral{background:var(--coral)}
+.vs-divider{display:flex;align-items:center;justify-content:center;background:var(--bg);border-top:1px solid var(--border);border-bottom:1px solid var(--border);font-size:16px;font-weight:600;color:var(--text3)}
+.vs-item{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border-light);font-size:12px}
+.vs-item:last-child{border-bottom:none}
+.vs-item .k{color:var(--text2)}
+.vs-item .v{font-weight:500}
+.tag-list{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
+.tg{display:inline-block;padding:3px 10px;border-radius:4px;font-size:11px;font-weight:500}
+.tg-purple{background:var(--purple-light);color:#3c3489}
+.tg-teal{background:var(--teal-light);color:#085041}
+.tg-amber{background:var(--amber-light);color:#633806}
+.tg-coral{background:var(--coral-light);color:#712b13}
+.tg-blue{background:var(--blue-light);color:#0c447c}
+.insight{display:flex;gap:12px;padding:14px 0;border-bottom:1px solid var(--border-light)}
+.insight:last-child{border-bottom:none}
+.insight .icon{width:36px;height:36px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0}
+.insight .content h4{font-size:14px;font-weight:600;margin-bottom:2px}
+.insight .content p{font-size:12px;color:var(--text2)}
+.arch-svg{overflow-x:auto;padding:8px 0}
+.arch-svg svg{max-width:100%;height:auto}
+.footer{text-align:center;padding:32px 0 16px;color:var(--text3);font-size:12px}
+.flow{display:flex;align-items:stretch;gap:10px;margin:12px 0;flex-wrap:wrap}
+.flow-step{flex:1;min-width:100px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px;text-align:center}
+.flow-step .sn{width:22px;height:22px;border-radius:50%;color:#fff;font-size:11px;font-weight:600;display:flex;align-items:center;justify-content:center;margin:0 auto 6px}
+.flow-step .st{font-size:12px;font-weight:600;margin-bottom:2px}
+.flow-step .sd{font-size:10px;color:var(--text3)}
+.flow-arrow{display:flex;align-items:center;color:var(--text3);font-size:16px;flex-shrink:0}
+</style>
+</head>
+<body>
+<div class="container">
+
+<div class="header">
+<h1>Role Persona vs Claude Code</h1>
+<p class="subtitle">两种 AI 记忆架构的深度对比 — 从设计理念到实现细节</p>
+<div class="badges">
+<span class="badge badge-purple">🧩 Role Persona v2.0.0 · Pi Extension</span>
+<span class="badge badge-coral">🤖 Claude Code · Anthropic 官方</span>
+</div>
+</div>
+
+<!-- Key Metrics -->
+<div class="metrics">
+<div class="metric">
+<div class="label">代码规模</div>
+<div class="row">
+<div class="val"><div class="num purple">10.6K</div><div class="lbl">Role Persona</div></div>
+<div class="vs">vs</div>
+<div class="val"><div class="num coral">218K</div><div class="lbl">Claude Code</div></div>
+</div>
+</div>
+<div class="metric">
+<div class="label">模块文件数</div>
+<div class="row">
+<div class="val"><div class="num purple">18</div><div class="lbl">Role Persona</div></div>
+<div class="vs">vs</div>
+<div class="val"><div class="num coral">764</div><div class="lbl">Claude Code</div></div>
+</div>
+</div>
+<div class="metric">
+<div class="label">依赖包数</div>
+<div class="row">
+<div class="val"><div class="num purple">2</div><div class="lbl">Role Persona</div></div>
+<div class="vs">vs</div>
+<div class="val"><div class="num coral">60+</div><div class="lbl">Claude Code</div></div>
+</div>
+</div>
+<div class="metric">
+<div class="label">架构定位</div>
+<div class="row">
+<div class="val"><div class="num purple" style="font-size:14px">扩展插件</div><div class="lbl">Pi Extension</div></div>
+<div class="vs">vs</div>
+<div class="val"><div class="num coral" style="font-size:14px">完整产品</div><div class="lbl">Standalone CLI</div></div>
+</div>
+</div>
+</div>
+
+<!-- Section 1: Architecture Comparison -->
+<div class="section">
+<div class="section-title"><span class="icon" style="background:var(--purple)">1</span>架构定位对比</div>
+
+<div class="vs-grid">
+<div class="vs-card left">
+<h4><span class="dot purple"></span>Role Persona</h4>
+<div class="vs-item"><span class="k">定位</span><span class="v">Pi Agent 扩展插件</span></div>
+<div class="vs-item"><span class="k">运行时</span><span class="v">Node.js (ESM)</span></div>
+<div class="vs-item"><span class="k">UI 框架</span><span class="v">pi-tui (自研)</span></div>
+<div class="vs-item"><span class="k">API 调用</span><span class="v">pi-ai (封装层)</span></div>
+<div class="vs-item"><span class="k">状态管理</span><span class="v">文件系统 + 闭包变量</span></div>
+<div class="vs-item"><span class="k">记忆存储</span><span class="v">Markdown 文件</span></div>
+<div class="vs-item"><span class="k">向量索引</span><span class="v">LanceDB (可选)</span></div>
+<div class="vs-item"><span class="k">团队协作</span><span class="v">单角色隔离</span></div>
+</div>
+<div class="vs-divider">VS</div>
+<div class="vs-card right">
+<h4><span class="dot coral"></span>Claude Code</h4>
+<div class="vs-item"><span class="k">定位</span><span class="v">独立 CLI 产品</span></div>
+<div class="vs-item"><span class="k">运行时</span><span class="v">Bun + React</span></div>
+<div class="vs-item"><span class="k">UI 框架</span><span class="v">Ink (React TUI)</span></div>
+<div class="vs-item"><span class="k">API 调用</span><span class="v">@anthropic-ai/sdk</span></div>
+<div class="vs-item"><span class="k">状态管理</span><span class="v">AppState (React 状态树)</span></div>
+<div class="vs-item"><span class="k">记忆存储</span><span class="v">MEMORY.md + 子文件</span></div>
+<div class="vs-item"><span class="k">向量索引</span><span class="v">无 (纯文件搜索)</span></div>
+<div class="vs-item"><span class="k">团队协作</span><span class="v">Team Memory (共享)</span></div>
+</div>
+</div>
+</div>
+
+<!-- Section 2: Memory System -->
+<div class="section">
+<div class="section-title"><span class="icon" style="background:var(--amber)">2</span>记忆系统架构对比</div>
+
+<div class="card">
+<h3>存储模型</h3>
+<table class="compare-table">
+<tr><th class="feat">维度</th><th>Role Persona</th><th>Claude Code</th></tr>
+<tr><td class="feat">存储格式</td><td>结构化 Markdown (YAML frontmatter)</td><td>自由格式 Markdown + XML 标签</td></tr>
+<tr class="highlight"><td class="feat">记忆分层</td><td>3 层: L1(daily) → L2(consolidated) → L3(vector)</td><td>1 层: MEMORY.md + 子文件</td></tr>
+<tr><td class="feat">记忆类型</td><td>learning / preference / event</td><td>user / feedback / project / reference</td></tr>
+<tr class="highlight"><td class="feat">自动提取</td><td class="yes">✓ 多触发器 + LLM 提取</td><td class="partial">△ 仅手动 (Write 到文件)</td></tr>
+<tr><td class="feat">Pending 验证</td><td class="yes">✓ 使用驱动价值验证</td><td class="no">✗ 提取即永久</td></tr>
+<tr class="highlight"><td class="feat">去重机制</td><td class="yes">✓ Jaccard + 精确匹配</td><td class="no">✗ 依赖 LLM 自行判断</td></tr>
+<tr><td class="feat">遗忘曲线</td><td class="yes">✓ Ebbinghaus 算法</td><td class="no">✗ 无衰减机制</td></tr>
+<tr class="highlight"><td class="feat">向量搜索</td><td class="yes">✓ LanceDB + 混合搜索</td><td class="no">✗ 纯关键词 (grep)</td></tr>
+<tr><td class="feat">标签系统</td><td class="yes">✓ LLM 自动打标 + 关联网络</td><td class="no">✗ 无标签机制</td></tr>
+<tr class="highlight"><td class="feat">上限控制</td><td>200 chars/条, 3 条/次, 25KB 文件</td><td>200 行, 25KB (MEMORY.md)</td></tr>
+<tr><td class="feat">可推导过滤</td><td class="yes">✓ 硬规则排除文件路径/git 引用</td><td class="yes">✓ XML 标签明确排除</td></tr>
+</table>
+</div>
+
+<div class="chart-row">
+<div class="card">
+<h3>记忆类型对比</h3>
+<div class="chart-container"><canvas id="chartMemTypes"></canvas></div>
+</div>
+<div class="card">
+<h3>自动化程度对比</h3>
+<div class="chart-container"><canvas id="chartAuto"></canvas></div>
+</div>
+</div>
+</div>
+
+<!-- Section 3: Memory Flow -->
+<div class="section">
+<div class="section-title"><span class="icon" style="background:var(--teal)">3</span>记忆写入流程对比</div>
+
+<div class="card">
+<h3 style="color:var(--purple)">Role Persona — 自动化记忆流水线</h3>
+<div class="flow">
+<div class="flow-step"><div class="sn" style="background:var(--purple)">1</div><div class="st">对话进行</div><div class="sd">每轮计数</div></div>
+<div class="flow-arrow">→</div>
+<div class="flow-step"><div class="sn" style="background:var(--purple)">2</div><div class="st">触发条件</div><div class="sd">5轮/30min/关键词</div></div>
+<div class="flow-arrow">→</div>
+<div class="flow-step"><div class="sn" style="background:var(--amber)">3</div><div class="st">LLM 提取</div><div class="sd">JSON 结构化</div></div>
+<div class="flow-arrow">→</div>
+<div class="flow-step"><div class="sn" style="background:var(--teal)">4</div><div class="st">规则过滤</div><div class="sd">排除可推导内容</div></div>
+<div class="flow-arrow">→</div>
+<div class="flow-step"><div class="sn" style="background:var(--green)">5</div><div class="st">Pending</div><div class="sd">待验证层</div></div>
+<div class="flow-arrow">→</div>
+<div class="flow-step"><div class="sn" style="background:var(--blue)">6</div><div class="st">晋升</div><div class="sd">使用驱动验证</div></div>
+</div>
+</div>
+
+<div class="card">
+<h3 style="color:var(--coral)">Claude Code — 手动记忆流程</h3>
+<div class="flow">
+<div class="flow-step"><div class="sn" style="background:var(--coral)">1</div><div class="st">对话进行</div><div class="sd">LLM 自行判断</div></div>
+<div class="flow-arrow">→</div>
+<div class="flow-step"><div class="sn" style="background:var(--coral)">2</div><div class="st">判断有价值</div><div class="sd">基于 prompt 指导</div></div>
+<div class="flow-arrow">→</div>
+<div class="flow-step"><div class="sn" style="background:var(--amber)">3</div><div class="st">调用 Write</div><div class="sd">写入 MEMORY.md</div></div>
+<div class="flow-arrow">→</div>
+<div class="flow-step"><div class="sn" style="background:var(--teal)">4</div><div class="st">完成</div><div class="sd">无后续验证</div></div>
+</div>
+</div>
+</div>
+
+<!-- Section 4: Tool System -->
+<div class="section">
+<div class="section-title"><span class="icon" style="background:var(--blue)">4</span>工具系统对比</div>
+
+<div class="card">
+<table class="compare-table">
+<tr><th class="feat">维度</th><th>Role Persona</th><th>Claude Code</th></tr>
+<tr><td class="feat">工具注册</td><td>pi.registerTool() (声明式)</td><td>Tool class (OOP 继承)</td></tr>
+<tr class="highlight"><td class="feat">工具数量</td><td>3 个 (memory/role_*/knowledge)</td><td>30+ 个 (Bash/Edit/Read/Glob...)</td></tr>
+<tr><td class="feat">记忆工具</td><td class="yes">✓ 15 个 action 的统一 CRUD</td><td class="no">✗ 无专用工具 (靠 Write/Edit)</td></tr>
+<tr class="highlight"><td class="feat">权限系统</td><td class="no">✗ 无 (扩展层)</td><td class="yes">✓ PermissionMode + 确认对话</td></tr>
+<tr><td class="feat">MCP 支持</td><td class="no">✗ 无</td><td class="yes">✓ 完整 MCP 协议</td></tr>
+<tr class="highlight"><td class="feat">插件系统</td><td class="no">✗ 无</td><td class="yes">✓ Plugin 架构 + 市场</td></tr>
+<tr><td class="feat">Agent 编排</td><td class="no">✗ 单 agent</td><td class="yes">✓ Agent Tool + Swarm</td></tr>
+<tr class="highlight"><td class="feat">TUI 渲染</td><td>自定义 renderer</td><td>React 组件 (Ink)</td></tr>
+</table>
+</div>
+</div>
+
+<!-- Section 5: Design Philosophy -->
+<div class="section">
+<div class="section-title"><span class="icon" style="background:var(--green)">5</span>设计理念对比</div>
+
+<div class="chart-row">
+<div class="card">
+<h3>设计哲学雷达图</h3>
+<div class="chart-container"><canvas id="chartPhilosophy"></canvas></div>
+</div>
+<div class="card">
+<h3>核心差异</h3>
+<div class="insight">
+<div class="icon" style="background:var(--purple-light)">🎯</div>
+<div class="content"><h4>Role Persona: 专精记忆工程</h4><p>像《攻壳机动队》的电子脑——专注于构建 AI 的人格连续性和记忆生命周期管理。</p></div>
+</div>
+<div class="insight">
+<div class="icon" style="background:var(--coral-light)">🌍</div>
+<div class="content"><h4>Claude Code: 全能编程助手</h4><p>像钢铁侠的 JARVIS——完整的开发环境，记忆只是众多能力之一。</p></div>
+</div>
+<div class="insight">
+<div class="icon" style="background:var(--teal-light)">💡</div>
+<div class="content"><h4>互补而非竞争</h4><p>Role Persona 的记忆机制可作为 Claude Code 的参考实现，Claude Code 的工具生态可扩展 Role Persona 的能力边界。</p></div>
+</div>
+</div>
+</div>
+</div>
+
+<!-- Section 6: Strengths & Weaknesses -->
+<div class="section">
+<div class="section-title"><span class="icon" style="background:var(--amber)">6</span>优劣势分析</div>
+
+<div class="chart-row">
+<div class="card">
+<h3 style="color:var(--purple)">Role Persona 独特优势</h3>
+<div class="tag-list">
+<span class="tg tg-purple">Pending 验证层</span>
+<span class="tg tg-purple">压缩搭便车</span>
+<span class="tg tg-purple">遗忘曲线</span>
+<span class="tg tg-purple">标签关联网络</span>
+<span class="tg tg-purple">混合搜索 RRF</span>
+<span class="tg tg-purple">零外部依赖</span>
+<span class="tg tg-purple">人类可读 Markdown</span>
+</div>
+<p style="margin-top:12px">核心创新在于<strong>记忆生命周期管理</strong>——不只是存储，而是通过 pending 验证、遗忘曲线、标签关联等机制主动管理记忆的价值和衰减。</p>
+</div>
+<div class="card">
+<h3 style="color:var(--coral)">Claude Code 独特优势</h3>
+<div class="tag-list">
+<span class="tg tg-coral">Team Memory</span>
+<span class="tg tg-coral">完整工具生态</span>
+<span class="tg tg-coral">MCP 协议</span>
+<span class="tg tg-coral">权限系统</span>
+<span class="tg tg-coral">Agent 编排</span>
+<span class="tg tg-coral">插件市场</span>
+<span class="tg tg-coral">React TUI</span>
+</div>
+<p style="margin-top:12px">核心优势在于<strong>生态完整性</strong>——从工具到插件到团队协作，构建了一个完整的 AI 编程助手平台，记忆只是其中一个模块。</p>
+</div>
+</div>
+</div>
+
+<!-- Section 7: Learning from Each Other -->
+<div class="section">
+<div class="section-title"><span class="icon" style="background:var(--purple)">7</span>互相借鉴的价值</div>
+
+<div class="card">
+<table class="compare-table">
+<tr><th class="feat">借鉴方向</th><th>Role Persona → Claude Code</th><th>Claude Code → Role Persona</th></tr>
+<tr><td class="feat">记忆系统</td><td>Pending 验证层 + 遗忘曲线</td><td>Team Memory 共享机制</td></tr>
+<tr class="highlight"><td class="feat">搜索能力</td><td>向量索引 + 混合搜索</td><td>语义搜索集成</td></tr>
+<tr><td class="feat">类型体系</td><td>4 类记忆 + 结构化 frontmatter</td><td>learning/preference/event 分类</td></tr>
+<tr class="highlight"><td class="feat">自动化</td><td>多触发器自动提取</td><td>压缩搭便车机制</td></tr>
+<tr><td class="feat">工具设计</td><td>15 个 action 的统一 CRUD</td><td>权限系统 + 确认对话</td></tr>
+<tr class="highlight"><td class="feat">架构</td><td>插件化扩展架构</td><td>AppState 状态管理</td></tr>
+</table>
+</div>
+</div>
+
+<!-- Section 8: Summary -->
+<div class="section">
+<div class="section-title"><span class="icon" style="background:var(--teal)">8</span>总结</div>
+<div class="card">
+<div class="chart-container"><canvas id="chartSummary"></canvas></div>
+<p style="margin-top:16px;text-align:center;color:var(--text2)">两个项目在不同层面解决 AI 记忆问题：Role Persona 专注于记忆的<strong>生命周期管理</strong>，Claude Code 专注于记忆的<strong>生态集成</strong>。两者的设计理念可以互相启发。</p>
+</div>
+</div>
+
+<div class="footer">
+<p>Generated by π-zero · Deep Comparison Analysis · 2026-04-02</p>
+</div>
+
+</div>
+
+<script>
+Chart.defaults.font.family = '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif';
+Chart.defaults.font.size = 12;
+Chart.defaults.color = '#5f5e5a';
+
+// 1. Memory Types
+new Chart(document.getElementById('chartMemTypes'), {
+type: 'bar',
+data: {
+labels: ['Role Persona','Claude Code'],
+datasets: [
+{ label: 'User/Personal', data: [0, 1], backgroundColor: '#534ab7' },
+{ label: 'Feedback/Preference', data: [1, 1], backgroundColor: '#ba7517' },
+{ label: 'Project/Event', data: [1, 1], backgroundColor: '#0f6e56' },
+{ label: 'Reference/Knowledge', data: [1, 1], backgroundColor: '#185fa5' },
+{ label: 'Learning (独有)', data: [1, 0], backgroundColor: '#d4537e' }
+]
+},
+options: {
+responsive: true, maintainAspectRatio: false,
+plugins: { legend: { display: true, position: 'top', labels: { padding: 12, usePointStyle: true, pointStyleWidth: 10, font: { size: 11 } } } },
+scales: { x: { stacked: true, grid: { display: false } }, y: { stacked: true, grid: { color: '#f0eeea' }, max: 5 } }
+}
+});
+
+// 2. Automation Level
+new Chart(document.getElementById('chartAuto'), {
+type: 'radar',
+data: {
+labels: ['自动提取','自动去重','自动过滤','自动索引','自动衰减','自动晋升'],
+datasets: [
+{ label: 'Role Persona', data: [5, 5, 5, 4, 5, 4], backgroundColor: 'rgba(83,74,183,0.15)', borderColor: '#534ab7', pointBackgroundColor: '#534ab7' },
+{ label: 'Claude Code', data: [1, 1, 3, 1, 1, 1], backgroundColor: 'rgba(216,90,48,0.15)', borderColor: '#d85a30', pointBackgroundColor: '#d85a30' }
+]
+},
+options: {
+responsive: true, maintainAspectRatio: false,
+plugins: { legend: { display: true, position: 'top', labels: { padding: 16, usePointStyle: true, pointStyleWidth: 10, font: { size: 11 } } } },
+scales: { r: { beginAtZero: true, max: 5, ticks: { stepSize: 1, backdropColor: 'transparent' }, grid: { color: '#e5e3de' }, pointLabels: { font: { size: 11 } } } }
+}
+});
+
+// 3. Philosophy Radar
+new Chart(document.getElementById('chartPhilosophy'), {
+type: 'radar',
+data: {
+labels: ['专精度','自动化','可扩展性','生态完整性','团队协作','易用性'],
+datasets: [
+{ label: 'Role Persona', data: [5, 5, 3, 2, 1, 4], backgroundColor: 'rgba(83,74,183,0.15)', borderColor: '#534ab7', pointBackgroundColor: '#534ab7' },
+{ label: 'Claude Code', data: [3, 2, 5, 5, 4, 5], backgroundColor: 'rgba(216,90,48,0.15)', borderColor: '#d85a30', pointBackgroundColor: '#d85a30' }
+]
+},
+options: {
+responsive: true, maintainAspectRatio: false,
+plugins: { legend: { display: true, position: 'top', labels: { padding: 16, usePointStyle: true, pointStyleWidth: 10, font: { size: 11 } } } },
+scales: { r: { beginAtZero: true, max: 5, ticks: { stepSize: 1, backdropColor: 'transparent' }, grid: { color: '#e5e3de' }, pointLabels: { font: { size: 11 } } } }
+}
+});
+
+// 4. Summary Comparison
+new Chart(document.getElementById('chartSummary'), {
+type: 'bar',
+data: {
+labels: ['记忆深度','自动化','搜索能力','类型系统','工具生态','团队协作','插件扩展','整体规模'],
+datasets: [
+{ label: 'Role Persona', data: [95, 90, 85, 80, 30, 10, 5, 15], backgroundColor: '#534ab7', borderRadius: 4 },
+{ label: 'Claude Code', data: [40, 20, 30, 60, 95, 70, 85, 100], backgroundColor: '#d85a30', borderRadius: 4 }
+]
+},
+options: {
+responsive: true, maintainAspectRatio: false,
+plugins: { legend: { display: true, position: 'top', labels: { padding: 16, usePointStyle: true, pointStyleWidth: 10, font: { size: 11 } } }, tooltip: { callbacks: { label: ctx => ctx.dataset.label + ': ' + ctx.raw + '%' } } },
+scales: { x: { grid: { display: false } }, y: { beginAtZero: true, max: 100, grid: { color: '#f0eeea' }, ticks: { callback: v => v + '%' } } }
+}
+});
+</script>
+</body>
+</html>

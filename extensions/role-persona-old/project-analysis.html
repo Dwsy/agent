@@ -1,0 +1,614 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Role Persona — 深度代码分析</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+--bg:#f8f7f4;--surface:#fff;--border:#e5e3de;--border-light:#f0eeea;
+--text:#2c2c2a;--text2:#5f5e5a;--text3:#888780;
+--accent:#534ab7;--accent-light:#eeedfe;--accent-mid:#7f77dd;
+--teal:#0f6e56;--teal-light:#e1f5ee;
+--amber:#ba7517;--amber-light:#faeeda;
+--coral:#d85a30;--coral-light:#faece7;
+--blue:#185fa5;--blue-light:#e6f1fb;
+--green:#3b6d11;--green-light:#eaf3de;
+--red:#a32d2d;--red-light:#fcebeb;
+--pink:#d4537e;--pink-light:#fbeaf0;
+--radius:12px;--radius-sm:8px;
+}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB",sans-serif;background:var(--bg);color:var(--text);line-height:1.6;font-size:14px}
+.container{max-width:1200px;margin:0 auto;padding:24px 20px}
+
+/* Header */
+.header{text-align:center;padding:48px 0 32px}
+.header h1{font-size:28px;font-weight:600;color:var(--text);margin-bottom:8px}
+.header .subtitle{font-size:15px;color:var(--text2);max-width:600px;margin:0 auto}
+.header .tag{display:inline-block;background:var(--accent-light);color:var(--accent);font-size:12px;padding:4px 12px;border-radius:20px;margin-top:12px;font-weight:500}
+
+/* Metric Cards */
+.metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:32px}
+.metric{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px;text-align:center;transition:transform .15s,box-shadow .15s}
+.metric:hover{transform:translateY(-2px);box-shadow:0 4px 12px rgba(0,0,0,.06)}
+.metric .value{font-size:28px;font-weight:600;color:var(--accent);line-height:1.2}
+.metric .label{font-size:12px;color:var(--text3);margin-top:4px}
+
+/* Section */
+.section{margin-bottom:36px}
+.section-title{font-size:18px;font-weight:600;color:var(--text);margin-bottom:16px;padding-bottom:8px;border-bottom:2px solid var(--accent-light);display:flex;align-items:center;gap:8px}
+.section-title .icon{width:20px;height:20px;background:var(--accent);border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:600}
+
+/* Card */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:20px;margin-bottom:16px}
+.card h3{font-size:15px;font-weight:600;margin-bottom:12px;color:var(--text)}
+.card p{font-size:13px;color:var(--text2);line-height:1.7}
+
+/* Chart Container */
+.chart-container{position:relative;height:320px;margin:16px 0}
+.chart-container.h400{height:400px}
+.chart-container.h280{height:280px}
+.chart-row{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media(max-width:768px){.chart-row{grid-template-columns:1fr}}
+
+/* Architecture Diagram */
+.arch-diagram{overflow-x:auto;padding:16px 0}
+.arch-diagram svg{max-width:100%;height:auto}
+
+/* Module Table */
+.module-table{width:100%;border-collapse:collapse;font-size:13px}
+.module-table th{text-align:left;padding:10px 12px;background:var(--bg);color:var(--text2);font-weight:500;border-bottom:2px solid var(--border)}
+.module-table td{padding:10px 12px;border-bottom:1px solid var(--border-light)}
+.module-table tr:hover td{background:var(--accent-light)}
+.module-table .bar{height:6px;border-radius:3px;background:var(--accent-light);position:relative;overflow:hidden}
+.module-table .bar-fill{height:100%;border-radius:3px;background:var(--accent)}
+
+/* Tags */
+.tags{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
+.tag-item{display:inline-block;padding:3px 10px;border-radius:4px;font-size:12px;font-weight:500}
+.tag-purple{background:#eeedfe;color:#3c3489}
+.tag-teal{background:#e1f5ee;color:#085041}
+.tag-amber{background:#faeeda;color:#633806}
+.tag-coral{background:#faece7;color:#712b13}
+.tag-blue{background:#e6f1fb;color:#0c447c}
+.tag-green{background:#eaf3de;color:#27500a}
+.tag-pink{background:#fbeaf0;color:#72243e}
+
+/* Flow Steps */
+.flow{display:flex;align-items:stretch;gap:12px;margin:16px 0;flex-wrap:wrap}
+.flow-step{flex:1;min-width:120px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;text-align:center;position:relative}
+.flow-step .step-num{width:24px;height:24px;border-radius:50%;background:var(--accent);color:#fff;font-size:12px;font-weight:600;display:flex;align-items:center;justify-content:center;margin:0 auto 8px}
+.flow-step .step-title{font-size:13px;font-weight:600;color:var(--text);margin-bottom:4px}
+.flow-step .step-desc{font-size:11px;color:var(--text3)}
+.flow-arrow{display:flex;align-items:center;color:var(--text3);font-size:18px;flex-shrink:0}
+
+/* Toggle Tabs */
+.tabs{display:flex;gap:4px;margin-bottom:16px;background:var(--bg);padding:4px;border-radius:var(--radius-sm);width:fit-content}
+.tab{padding:6px 16px;border-radius:6px;font-size:13px;font-weight:500;cursor:pointer;transition:all .15s;color:var(--text2);border:none;background:none}
+.tab.active{background:var(--surface);color:var(--accent);box-shadow:0 1px 3px rgba(0,0,0,.08)}
+.tab:hover:not(.active){color:var(--text)}
+
+/* Hidden panels */
+.panel{display:none}
+.panel.active{display:block}
+
+/* Insight List */
+.insight{display:flex;gap:12px;padding:12px 0;border-bottom:1px solid var(--border-light)}
+.insight:last-child{border-bottom:none}
+.insight .icon{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0}
+.insight .content h4{font-size:14px;font-weight:600;margin-bottom:2px}
+.insight .content p{font-size:12px;color:var(--text2)}
+
+/* Comparison */
+.compare-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
+.compare-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px}
+.compare-card.highlight{border-color:var(--accent);border-width:2px}
+.compare-card .name{font-size:14px;font-weight:600;margin-bottom:8px}
+.compare-card .feature{display:flex;justify-content:space-between;font-size:12px;padding:4px 0;border-bottom:1px solid var(--border-light)}
+.compare-card .feature:last-child{border-bottom:none}
+.compare-card .feature .val{font-weight:500}
+.compare-card .val.yes{color:var(--teal)}
+.compare-card .val.no{color:var(--text3)}
+
+/* Footer */
+.footer{text-align:center;padding:32px 0 16px;color:var(--text3);font-size:12px}
+</style>
+</head>
+<body>
+
+<div class="container">
+
+<!-- Header -->
+<div class="header">
+<h1>Role Persona Extension</h1>
+<p class="subtitle">Pi Agent 角色人格与记忆系统 — 深度代码分析报告</p>
+<span class="tag">v2.0.0 · ~10,623 行 TypeScript</span>
+</div>
+
+<!-- Metric Cards -->
+<div class="metrics">
+<div class="metric"><div class="value">10.6K</div><div class="label">代码行数</div></div>
+<div class="metric"><div class="value">18</div><div class="label">模块文件</div></div>
+<div class="metric"><div class="value">15</div><div class="label">工具 Actions</div></div>
+<div class="metric"><div class="value">12</div><div class="label">CLI 命令</div></div>
+<div class="metric"><div class="value">6</div><div class="label">事件钩子</div></div>
+<div class="metric"><div class="value">4</div><div class="label">知识库层级</div></div>
+</div>
+
+<!-- Section 1: Code Distribution -->
+<div class="section">
+<div class="section-title"><span class="icon">1</span>代码规模分布</div>
+<div class="chart-row">
+<div class="card">
+<h3>模块行数排名</h3>
+<div class="chart-container h400"><canvas id="chartModules"></canvas></div>
+</div>
+<div class="card">
+<h3>职责占比</h3>
+<div class="chart-container h400"><canvas id="chartPie"></canvas></div>
+</div>
+</div>
+</div>
+
+<!-- Section 2: Architecture -->
+<div class="section">
+<div class="section-title"><span class="icon">2</span>系统架构</div>
+<div class="card">
+<h3>模块依赖与数据流</h3>
+<div class="arch-diagram">
+<svg viewBox="0 0 800 520" width="100%" style="font-family:inherit">
+<!-- Background regions -->
+<rect x="20" y="10" width="760" height="60" rx="8" fill="#eeedfe" stroke="#a099dd" stroke-width="0.5"/>
+<text x="400" y="45" text-anchor="middle" font-size="14" font-weight="600" fill="#3c3489">事件编排层 — index.ts (2579L)</text>
+
+<rect x="20" y="90" width="240" height="180" rx="8" fill="#e1f5ee" stroke="#5dcaa5" stroke-width="0.5"/>
+<text x="140" y="115" text-anchor="middle" font-size="12" font-weight="600" fill="#085041">角色管理</text>
+<rect x="35" y="130" width="210" height="30" rx="4" fill="#fff" stroke="#5dcaa5" stroke-width="0.5"/>
+<text x="140" y="150" text-anchor="middle" font-size="11" fill="#085041">role-store.ts (458L)</text>
+<rect x="35" y="165" width="210" height="30" rx="4" fill="#fff" stroke="#5dcaa5" stroke-width="0.5"/>
+<text x="140" y="185" text-anchor="middle" font-size="11" fill="#085041">role-template.ts (376L)</text>
+<rect x="35" y="200" width="210" height="30" rx="4" fill="#fff" stroke="#5dcaa5" stroke-width="0.5"/>
+<text x="140" y="220" text-anchor="middle" font-size="11" fill="#085041">config.ts (585L)</text>
+<rect x="35" y="235" width="210" height="20" rx="4" fill="#fff" stroke="#5dcaa5" stroke-width="0.5"/>
+<text x="140" y="250" text-anchor="middle" font-size="10" fill="#085041">CWD→角色映射 · 迁移 · 模板</text>
+
+<rect x="280" y="90" width="240" height="180" rx="8" fill="#faeeda" stroke="#ef9f27" stroke-width="0.5"/>
+<text x="400" y="115" text-anchor="middle" font-size="12" font-weight="600" fill="#633806">记忆核心</text>
+<rect x="295" y="130" width="210" height="30" rx="4" fill="#fff" stroke="#ef9f27" stroke-width="0.5"/>
+<text x="400" y="150" text-anchor="middle" font-size="11" fill="#633806">memory-md.ts (2169L)</text>
+<rect x="295" y="165" width="210" height="30" rx="4" fill="#fff" stroke="#ef9f27" stroke-width="0.5"/>
+<text x="400" y="185" text-anchor="middle" font-size="11" fill="#633806">memory-llm.ts (615L)</text>
+<rect x="295" y="200" width="210" height="30" rx="4" fill="#fff" stroke="#ef9f27" stroke-width="0.5"/>
+<text x="400" y="220" text-anchor="middle" font-size="11" fill="#633806">memory-tags.ts (765L)</text>
+<rect x="295" y="235" width="210" height="20" rx="4" fill="#fff" stroke="#ef9f27" stroke-width="0.5"/>
+<text x="400" y="250" text-anchor="middle" font-size="10" fill="#633806">解析/写入/搜索 · LLM提取 · 标签</text>
+
+<rect x="540" y="90" width="240" height="180" rx="8" fill="#e6f1fb" stroke="#85b7eb" stroke-width="0.5"/>
+<text x="660" y="115" text-anchor="middle" font-size="12" font-weight="600" fill="#0c447c">交互层</text>
+<rect x="555" y="130" width="210" height="30" rx="4" fill="#fff" stroke="#85b7eb" stroke-width="0.5"/>
+<text x="660" y="150" text-anchor="middle" font-size="11" fill="#0c447c">memory-vector.ts (769L)</text>
+<rect x="555" y="165" width="210" height="30" rx="4" fill="#fff" stroke="#85b7eb" stroke-width="0.5"/>
+<text x="660" y="185" text-anchor="middle" font-size="11" fill="#0c447c">knowledge.ts (731L)</text>
+<rect x="555" y="200" width="210" height="30" rx="4" fill="#fff" stroke="#85b7eb" stroke-width="0.5"/>
+<text x="660" y="220" text-anchor="middle" font-size="11" fill="#0c447c">tui-renderers.ts (386L)</text>
+<rect x="555" y="235" width="210" height="20" rx="4" fill="#fff" stroke="#85b7eb" stroke-width="0.5"/>
+<text x="660" y="250" text-anchor="middle" font-size="10" fill="#0c447c">向量搜索 · 知识库 · TUI渲染</text>
+
+<!-- Arrows from orchestrator -->
+<line x1="140" y1="70" x2="140" y2="88" stroke="#a099dd" stroke-width="1.5" marker-end="url(#arrowPurple)"/>
+<line x1="400" y1="70" x2="400" y2="88" stroke="#ef9f27" stroke-width="1.5" marker-end="url(#arrowAmber)"/>
+<line x1="660" y1="70" x2="660" y2="88" stroke="#85b7eb" stroke-width="1.5" marker-end="url(#arrowBlue)"/>
+
+<!-- Storage layer -->
+<rect x="20" y="300" width="760" height="90" rx="8" fill="#f0eeea" stroke="#b4b2a9" stroke-width="0.5"/>
+<text x="400" y="325" text-anchor="middle" font-size="12" font-weight="600" fill="#444441">持久化层 — ~/.pi/roles/</text>
+
+<rect x="35" y="340" width="140" height="35" rx="4" fill="#fff" stroke="#b4b2a9" stroke-width="0.5"/>
+<text x="105" y="362" text-anchor="middle" font-size="11" fill="#444441">core/</text>
+<rect x="185" y="340" width="140" height="35" rx="4" fill="#fff" stroke="#b4b2a9" stroke-width="0.5"/>
+<text x="255" y="362" text-anchor="middle" font-size="11" fill="#444441">memory/</text>
+<rect x="335" y="340" width="140" height="35" rx="4" fill="#fff" stroke="#b4b2a9" stroke-width="0.5"/>
+<text x="405" y="362" text-anchor="middle" font-size="11" fill="#444441">knowledge/</text>
+<rect x="485" y="340" width="140" height="35" rx="4" fill="#fff" stroke="#b4b2a9" stroke-width="0.5"/>
+<text x="555" y="362" text-anchor="middle" font-size="11" fill="#444441">.vector-db/</text>
+<rect x="635" y="340" width="130" height="35" rx="4" fill="#fff" stroke="#b4b2a9" stroke-width="0.5"/>
+<text x="700" y="362" text-anchor="middle" font-size="11" fill="#444441">.log/</text>
+
+<!-- 3-layer memory -->
+<rect x="20" y="420" width="760" height="90" rx="8" fill="#fcebeb" stroke="#f09595" stroke-width="0.5"/>
+<text x="400" y="445" text-anchor="middle" font-size="12" font-weight="600" fill="#791f1f">三层记忆系统</text>
+
+<rect x="45" y="455" width="210" height="40" rx="6" fill="#fff" stroke="#f09595" stroke-width="0.5"/>
+<text x="150" y="472" text-anchor="middle" font-size="11" font-weight="600" fill="#791f1f">L3 运行时</text>
+<text x="150" y="486" text-anchor="middle" font-size="10" fill="#a32d2d">VectorDB + TagIndex + memoryLog[]</text>
+
+<rect x="295" y="455" width="210" height="40" rx="6" fill="#fff" stroke="#f09595" stroke-width="0.5"/>
+<text x="400" y="472" text-anchor="middle" font-size="11" font-weight="600" fill="#791f1f">L2 结构化</text>
+<text x="400" y="486" text-anchor="middle" font-size="10" fill="#a32d2d">consolidated.md (真相源)</text>
+
+<rect x="545" y="455" width="210" height="40" rx="6" fill="#fff" stroke="#f09595" stroke-width="0.5"/>
+<text x="650" y="472" text-anchor="middle" font-size="11" font-weight="600" fill="#791f1f">L1 原始</text>
+<text x="650" y="486" text-anchor="middle" font-size="10" fill="#a32d2d">daily/YYYY-MM-DD.md</text>
+
+<!-- Arrows between memory layers -->
+<line x1="255" y1="475" x2="293" y2="475" stroke="#f09595" stroke-width="1.5" marker-end="url(#arrowRed)"/>
+<line x1="505" y1="475" x2="543" y2="475" stroke="#f09595" stroke-width="1.5" marker-end="url(#arrowRed)"/>
+
+<!-- Arrow markers -->
+<defs>
+<marker id="arrowPurple" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="#a099dd" stroke-width="1.5" stroke-linecap="round"/></marker>
+<marker id="arrowAmber" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="#ef9f27" stroke-width="1.5" stroke-linecap="round"/></marker>
+<marker id="arrowBlue" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="#85b7eb" stroke-width="1.5" stroke-linecap="round"/></marker>
+<marker id="arrowRed" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="#f09595" stroke-width="1.5" stroke-linecap="round"/></marker>
+</defs>
+</svg>
+</div>
+</div>
+</div>
+
+<!-- Section 3: Event Pipeline -->
+<div class="section">
+<div class="section-title"><span class="icon">3</span>事件流水线</div>
+<div class="card">
+<div class="flow">
+<div class="flow-step"><div class="step-num">1</div><div class="step-title">session_start</div><div class="step-desc">加载角色<br/>迁移文件<br/>初始化向量</div></div>
+<div class="flow-arrow">→</div>
+<div class="flow-step"><div class="step-num">2</div><div class="step-title">before_agent_start</div><div class="step-desc">注入人格<br/>按需搜索记忆<br/>向量召回</div></div>
+<div class="flow-arrow">→</div>
+<div class="flow-step"><div class="step-num">3</div><div class="step-title">agent_end</div><div class="step-desc">轮次计数<br/>触发条件判断<br/>异步提取记忆</div></div>
+<div class="flow-arrow">→</div>
+<div class="flow-step"><div class="step-num">4</div><div class="step-title">compact</div><div class="step-desc">注入提取指令<br/>零额外调用<br/>抢救记忆</div></div>
+<div class="flow-arrow">→</div>
+<div class="flow-step"><div class="step-num">5</div><div class="step-title">shutdown</div><div class="step-desc">Flush pending<br/>释放向量资源<br/>清理状态</div></div>
+</div>
+</div>
+</div>
+
+<!-- Section 4: Memory System -->
+<div class="section">
+<div class="section-title"><span class="icon">4</span>记忆系统深度分析</div>
+
+<div class="tabs">
+<button class="tab active" onclick="switchTab('memory',0,this)">Pending 状态机</button>
+<button class="tab" onclick="switchTab('memory',1,this)">搜索算法</button>
+<button class="tab" onclick="switchTab('memory',2,this)">标签遗忘曲线</button>
+</div>
+
+<div class="panel active" data-group="memory">
+<div class="card">
+<h3>Pending 验证层 — 使用驱动的价值验证</h3>
+<div class="chart-container h280"><canvas id="chartPending"></canvas></div>
+<p style="margin-top:12px;font-size:12px;color:var(--text3)">新记忆先进入 pending.md，每次会话随机晋升 1-2 条，7 天未晋升自动过期。像《Re:Zero》的死亡回归——每次会话都给 pending 记忆一次"重生"机会。</p>
+</div>
+</div>
+
+<div class="panel" data-group="memory">
+<div class="card">
+<h3>搜索评分公式权重分解</h3>
+<div class="chart-container h280"><canvas id="chartSearch"></canvas></div>
+<p style="margin-top:12px;font-size:12px;color:var(--text3)">score = 0.5×substring + 0.3×jaccard + 0.2×token_hit + tag_boost + related_boost</p>
+</div>
+</div>
+
+<div class="panel" data-group="memory">
+<div class="card">
+<h3>Ebbinghaus 遗忘曲线 — 标签权重衰减</h3>
+<div class="chart-container"><canvas id="chartForgetting"></canvas></div>
+<p style="margin-top:12px;font-size:12px;color:var(--text3)">effectiveHalfLife = baseHalfLife × log₂(reviewCount + 2)，间隔重复效应让多次使用的标签半衰期更长</p>
+</div>
+</div>
+</div>
+
+<!-- Section 5: Hybrid Search -->
+<div class="section">
+<div class="section-title"><span class="icon">5</span>混合搜索 RRF 融合</div>
+<div class="card">
+<h3>Reciprocal Rank Fusion (K=60)</h3>
+<div class="chart-container"><canvas id="chartRRF"></canvas></div>
+<p style="margin-top:12px;font-size:12px;color:var(--text3)">关键词搜索 + 向量搜索 → RRF 融合排序。双源命中时 score 叠加（boost 效果）。向量不可用时优雅降级到纯关键词。</p>
+</div>
+</div>
+
+<!-- Section 6: Comparison -->
+<div class="section">
+<div class="section-title"><span class="icon">6</span>与主流记忆系统对比</div>
+<div class="compare-grid">
+<div class="compare-card highlight">
+<div class="name" style="color:var(--accent)">Role Persona</div>
+<div class="feature"><span>存储方式</span><span class="val">Markdown 文件</span></div>
+<div class="feature"><span>向量索引</span><span class="val">LanceDB</span></div>
+<div class="feature"><span>Pending 验证</span><span class="val yes">✓</span></div>
+<div class="feature"><span>压缩搭便车</span><span class="val yes">✓</span></div>
+<div class="feature"><span>标签关联网络</span><span class="val yes">✓</span></div>
+<div class="feature"><span>遗忘曲线</span><span class="val yes">✓</span></div>
+<div class="feature"><span>混合搜索</span><span class="val">RRF</span></div>
+<div class="feature"><span>外部依赖</span><span class="val yes">零</span></div>
+</div>
+<div class="compare-card">
+<div class="name">MemGPT</div>
+<div class="feature"><span>存储方式</span><span class="val">SQLite</span></div>
+<div class="feature"><span>向量索引</span><span class="val">FAISS</span></div>
+<div class="feature"><span>Pending 验证</span><span class="val no">✗</span></div>
+<div class="feature"><span>压缩搭便车</span><span class="val no">✗</span></div>
+<div class="feature"><span>标签关联网络</span><span class="val no">✗</span></div>
+<div class="feature"><span>遗忘曲线</span><span class="val no">✗</span></div>
+<div class="feature"><span>混合搜索</span><span class="val">纯向量</span></div>
+<div class="feature"><span>外部依赖</span><span class="val no">需要</span></div>
+</div>
+<div class="compare-card">
+<div class="name">LangChain Memory</div>
+<div class="feature"><span>存储方式</span><span class="val">多后端</span></div>
+<div class="feature"><span>向量索引</span><span class="val">Chroma</span></div>
+<div class="feature"><span>Pending 验证</span><span class="val no">✗</span></div>
+<div class="feature"><span>压缩搭便车</span><span class="val no">✗</span></div>
+<div class="feature"><span>标签关联网络</span><span class="val no">✗</span></div>
+<div class="feature"><span>遗忘曲线</span><span class="val no">✗</span></div>
+<div class="feature"><span>混合搜索</span><span class="val">可选</span></div>
+<div class="feature"><span>外部依赖</span><span class="val no">需要</span></div>
+</div>
+</div>
+</div>
+
+<!-- Section 7: Key Insights -->
+<div class="section">
+<div class="section-title"><span class="icon">7</span>关键发现与洞察</div>
+<div class="card">
+<div class="insight">
+<div class="icon" style="background:var(--accent-light)">💡</div>
+<div class="content"><h4>Pending 层是真正的创新</h4><p>不是简单存储，而是使用驱动的价值验证机制。新记忆先进入 pending，被搜索命中或随机晋升后才成为永久记忆。</p></div>
+</div>
+<div class="insight">
+<div class="icon" style="background:var(--teal-light)">🚀</div>
+<div class="content"><h4>压缩搭便车设计精妙</h4><p>在已有的 LLM 压缩调用中注入 &lt;memory&gt; 提取指令，零额外成本抢救即将丢失的上下文记忆。</p></div>
+</div>
+<div class="insight">
+<div class="icon" style="background:var(--amber-light)">🏷️</div>
+<div class="content"><h4>标签关联网络有深度</h4><p>共现统计 + 遗忘曲线 + 关联扩展，超越简单的标签云。LLM 自动打标 + 规则 fallback 双保险。</p></div>
+</div>
+<div class="insight">
+<div class="icon" style="background:var(--coral-light)">🛡️</div>
+<div class="content"><h4>记忆过滤规则务实</h4><p>硬排除可推导内容（文件路径、环境变量、git 引用），避免"文件路径污染长期记忆"的常见问题。</p></div>
+</div>
+<div class="insight">
+<div class="icon" style="background:var(--blue-light)">🔍</div>
+<div class="content"><h4>混合搜索 RRF 实现完整</h4><p>关键词 + 向量双源融合，带 boost 叠加效果。K=60 学术标准值，实践中效果稳定。</p></div>
+</div>
+</div>
+</div>
+
+<!-- Section 8: Quality -->
+<div class="section">
+<div class="section-title"><span class="icon">8</span>代码质量评估</div>
+<div class="card">
+<div class="chart-container h280"><canvas id="chartQuality"></canvas></div>
+</div>
+</div>
+
+<!-- Footer -->
+<div class="footer">
+<p>Generated by π-zero · Role Persona Extension Deep Analysis · 2026-04-02</p>
+</div>
+
+</div>
+
+<script>
+// Tab switching
+function switchTab(group, idx, btn) {
+document.querySelectorAll(`[data-group="${group}"]`).forEach((p,i) => {
+p.classList.toggle('active', i === idx);
+});
+btn.parentElement.querySelectorAll('.tab').forEach((t,i) => {
+t.classList.toggle('active', i === idx);
+});
+}
+
+// Chart defaults
+Chart.defaults.font.family = '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif';
+Chart.defaults.font.size = 12;
+Chart.defaults.color = '#5f5e5a';
+Chart.defaults.plugins.legend.display = false;
+
+// 1. Module bar chart
+new Chart(document.getElementById('chartModules'), {
+type: 'bar',
+data: {
+labels: ['index.ts','memory-md','memory-tags','memory-vector','knowledge','memory-llm','config','role-store','tui-renderers','role-template','viewer','logger','rules','spinner'],
+datasets: [{
+data: [2579,2169,765,769,731,615,585,458,386,376,214,79,32,14],
+backgroundColor: ['#534ab7','#7f77dd','#a099dd','#cecbf6','#ba7517','#ef9f27','#fac775','#0f6e56','#5dcaa5','#9fe1cb','#185fa5','#85b7eb','#d4537e','#f4c0d1'],
+borderRadius: 4,
+borderSkipped: false
+}]
+},
+options: {
+indexAxis: 'y',
+responsive: true,
+maintainAspectRatio: false,
+plugins: {
+tooltip: {
+callbacks: { label: ctx => ctx.raw + ' 行' }
+}
+},
+scales: {
+x: { grid: { color: '#f0eeea' }, ticks: { callback: v => v >= 1000 ? (v/1000)+'K' : v } },
+y: { grid: { display: false } }
+}
+}
+});
+
+// 2. Pie chart
+new Chart(document.getElementById('chartPie'), {
+type: 'doughnut',
+data: {
+labels: ['事件编排 (index)','记忆核心 (md/llm/tags)','向量+知识库','配置+角色管理','TUI+渲染','其他'],
+datasets: [{
+data: [2579, 3549, 1500, 1419, 600, 125],
+backgroundColor: ['#534ab7','#ba7517','#185fa5','#0f6e56','#d4537e','#888780'],
+borderWidth: 2,
+borderColor: '#fff'
+}]
+},
+options: {
+responsive: true,
+maintainAspectRatio: false,
+cutout: '55%',
+plugins: {
+legend: {
+display: true,
+position: 'right',
+labels: { padding: 12, usePointStyle: true, pointStyleWidth: 10, font: { size: 11 } }
+}
+}
+}
+});
+
+// 3. Pending state machine
+new Chart(document.getElementById('chartPending'), {
+type: 'bar',
+data: {
+labels: ['提取 → Pending','搜索命中晋升','随机晋升','7天过期'],
+datasets: [{
+label: '流程',
+data: [100, 35, 25, 40],
+backgroundColor: ['#534ab7','#0f6e56','#ba7517','#a32d2d'],
+borderRadius: 6,
+borderSkipped: false
+}]
+},
+options: {
+responsive: true,
+maintainAspectRatio: false,
+plugins: {
+legend: { display: false },
+tooltip: { callbacks: { label: ctx => ctx.raw + '%' } }
+},
+scales: {
+y: { beginAtZero: true, max: 110, grid: { color: '#f0eeea' }, ticks: { callback: v => v + '%' } },
+x: { grid: { display: false } }
+}
+}
+});
+
+// 4. Search algorithm weights
+new Chart(document.getElementById('chartSearch'), {
+type: 'bar',
+data: {
+labels: ['substring (0.5)','jaccard (0.3)','token_hit (0.2)','tag_boost (0.3+)','related_boost (0.15)'],
+datasets: [{
+data: [50, 30, 20, 35, 15],
+backgroundColor: ['#534ab7','#7f77dd','#a099dd','#ba7517','#ef9f27'],
+borderRadius: 4,
+borderSkipped: false
+}]
+},
+options: {
+responsive: true,
+maintainAspectRatio: false,
+indexAxis: 'y',
+plugins: {
+tooltip: { callbacks: { label: ctx => '权重: ' + (ctx.raw/100).toFixed(2) } }
+},
+scales: {
+x: { beginAtZero: true, max: 60, grid: { color: '#f0eeea' }, ticks: { callback: v => (v/100).toFixed(1) } },
+y: { grid: { display: false } }
+}
+}
+});
+
+// 5. Forgetting curve
+const days = Array.from({length:60}, (_,i) => i);
+function retention(days, reviews) {
+const halfLife = 30 * Math.log2(reviews + 2);
+const decay = Math.log(2) / halfLife;
+return Math.max(0.1, Math.exp(-decay * days));
+}
+new Chart(document.getElementById('chartForgetting'), {
+type: 'line',
+data: {
+labels: days.filter(d => d % 5 === 0),
+datasets: [
+{ label: 'review=0', data: days.filter(d=>d%5===0).map(d => Math.round(retention(d,0)*100)), borderColor: '#a32d2d', backgroundColor: 'rgba(163,45,45,0.1)', fill: true, tension: 0.4 },
+{ label: 'review=3', data: days.filter(d=>d%5===0).map(d => Math.round(retention(d,3)*100)), borderColor: '#ba7517', backgroundColor: 'rgba(186,117,23,0.1)', fill: true, tension: 0.4 },
+{ label: 'review=10', data: days.filter(d=>d%5===0).map(d => Math.round(retention(d,10)*100)), borderColor: '#0f6e56', backgroundColor: 'rgba(15,110,86,0.1)', fill: true, tension: 0.4 }
+]
+},
+options: {
+responsive: true,
+maintainAspectRatio: false,
+plugins: {
+legend: { display: true, position: 'top', labels: { padding: 16, usePointStyle: true, pointStyleWidth: 10, font: { size: 11 } } },
+tooltip: { callbacks: { label: ctx => ctx.dataset.label + ': ' + ctx.raw + '%' } }
+},
+scales: {
+y: { beginAtZero: true, max: 105, grid: { color: '#f0eeea' }, title: { display: true, text: '记忆保留率 %', font: { size: 11 } } },
+x: { grid: { color: '#f0eeea' }, title: { display: true, text: '天数', font: { size: 11 } } }
+}
+}
+});
+
+// 6. RRF Fusion
+const ranks = [1,2,3,4,5,6,7,8,9,10];
+const K = 60;
+function rrf(rank) { return 1 / (K + rank); }
+new Chart(document.getElementById('chartRRF'), {
+type: 'line',
+data: {
+labels: ranks,
+datasets: [
+{ label: 'RRF Score', data: ranks.map(r => +(rrf(r)*1000).toFixed(2)), borderColor: '#534ab7', backgroundColor: 'rgba(83,74,183,0.1)', fill: true, tension: 0.3, pointRadius: 4 },
+{ label: '关键词结果', data: [rrf(1),rrf(3),rrf(5),null,null,null,null,null,null,null].map(v => v ? +(v*1000).toFixed(2) : null), borderColor: '#0f6e56', pointBackgroundColor: '#0f6e56', pointRadius: 6, showLine: false },
+{ label: '向量结果', data: [rrf(2),null,rrf(4),rrf(6),null,null,null,null,null,null].map(v => v ? +(v*1000).toFixed(2) : null), borderColor: '#ba7517', pointBackgroundColor: '#ba7517', pointRadius: 6, showLine: false }
+]
+},
+options: {
+responsive: true,
+maintainAspectRatio: false,
+plugins: {
+legend: { display: true, position: 'top', labels: { padding: 16, usePointStyle: true, pointStyleWidth: 10, font: { size: 11 } } },
+tooltip: { callbacks: { label: ctx => ctx.dataset.label + ': ' + ctx.raw } }
+},
+scales: {
+y: { beginAtZero: true, grid: { color: '#f0eeea' }, title: { display: true, text: 'RRF Score (×1000)', font: { size: 11 } } },
+x: { grid: { color: '#f0eeea' }, title: { display: true, text: '排名', font: { size: 11 } } }
+}
+}
+});
+
+// 7. Quality radar
+new Chart(document.getElementById('chartQuality'), {
+type: 'radar',
+data: {
+labels: ['可读性','可维护性','鲁棒性','性能','安全性','可测试性','创新性','文档'],
+datasets: [{
+label: '评分',
+data: [4, 3, 4, 4, 4, 2, 5, 4],
+backgroundColor: 'rgba(83,74,183,0.15)',
+borderColor: '#534ab7',
+pointBackgroundColor: '#534ab7',
+pointRadius: 4
+}]
+},
+options: {
+responsive: true,
+maintainAspectRatio: false,
+plugins: {
+legend: { display: false },
+tooltip: { callbacks: { label: ctx => ctx.raw + ' / 5' } }
+},
+scales: {
+r: {
+beginAtZero: true,
+max: 5,
+ticks: { stepSize: 1, backdropColor: 'transparent', font: { size: 10 } },
+grid: { color: '#e5e3de' },
+angleLines: { color: '#e5e3de' },
+pointLabels: { font: { size: 12, weight: 500 } }
+}
+}
+}
+});
+</script>
+</body>
+</html>

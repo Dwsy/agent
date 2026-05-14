@@ -1,0 +1,24 @@
+{
+  "name": "pi-thinking-steps-custom-cn",
+  "version": "0.9.6-cn.1",
+  "description": "Chinese-localized thinking-step rendering for Pi's TUI.",
+  "type": "module",
+  "main": "index.ts",
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "scripts": {
+    "build": "tsc --noEmit",
+    "test": "npm run build && node --import tsx test/thinking-steps.test.ts"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-ai": "latest",
+    "@earendil-works/pi-coding-agent": "latest",
+    "@earendil-works/pi-tui": "latest",
+    "@types/node": "^24.5.2",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2"
+  }
+}

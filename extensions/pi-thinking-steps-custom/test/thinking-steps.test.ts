@@ -1,0 +1,1227 @@
+import assert from "node:assert/strict";
+import { describe, it } from "node:test";
+import { dirname, join } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { deriveThinkingSteps, iconForThinkingRole, inferThinkingRole, parseThinkingMode, summarizeThinkingText } from "../parse.js";
+import { assertPatchableAssistantMessageComponent, assertThinkingStepsTheme, retainThinkingStepsPatch } from "../internal-patch.js";
+import { renderThinkingStepsLines } from "../render.js";
+import {
+	clearActiveThinkingState,
+	getActiveThinkingState,
+	getPatchCleanup,
+	getPatchInstallPromise,
+	getPatchRefCount,
+	setActiveThinkingState,
+	setPatchCleanup,
+	setPatchInstallPromise,
+	setThinkingStepsMode,
+} from "../state.js";
+import type { ThinkingThemeLike } from "../types.js";
+import thinkingStepsExtension from "../index.js";
+import { Key } from "@earendil-works/pi-tui";
+
+function stripAnsi(text: string): string {
+	return text.replace(/\x1b\[[0-9;]*m/g, "");
+}
+
+function createPlainTheme(): ThinkingThemeLike {
+	return {
+		fg: (_color, text) => text,
+		bold: (text) => text,
+	};
+}
+
+function createAnsiTheme(): ThinkingThemeLike {
+	return {
+		fg: (color, text) => `[${color === "accent" ? "36" : "37"}m${text}[39m`,
+		bold: (text) => `[1m${text}[22m`,
+	};
+}
+
+function getPackageRoot(packageName: string): string {
+	const entryUrl = import.meta.resolve(packageName);
+	const entryPath = fileURLToPath(entryUrl);
+	return dirname(dirname(entryPath));
+}
+
+async function importPiInternal<TModule>(relativePath: string): Promise<TModule> {
+	const packageRoot = getPackageRoot("@earendil-works/pi-coding-agent");
+	const moduleUrl = pathToFileURL(join(packageRoot, relativePath)).href;
+	return (await import(moduleUrl)) as TModule;
+}
+
+type FakeSessionEntry = { type?: string; customType?: string; data?: { mode?: string } };
+
+type RegisteredCommand = {
+	description: string;
+	getArgumentCompletions?: (prefix: string) => Array<{ value: string; label: string }> | null;
+	handler: (args: string, ctx: FakeExtensionContext) => Promise<void>;
+};
+
+type RegisteredShortcut = {
+	key: unknown;
+	description: string;
+	handler: (ctx: FakeExtensionContext) => Promise<void>;
+};
+
+type FakeEventHandler = (...args: any[]) => Promise<void>;
+
+interface FakeUI {
+	theme: ThinkingThemeLike;
+	hiddenThinkingLabels: string[];
+	statuses: Array<{ key: string; value: string | undefined }>;
+	notifications: Array<{ message: string; level: string }>;
+	selectCalls: Array<{ title: string; options: string[] }>;
+	selectionQueue: Array<string | undefined>;
+	setHiddenThinkingLabel(label: string): void;
+	setStatus(key: string, value: string | undefined): void;
+	notify(message: string, level: string): void;
+	select(title: string, options: string[]): Promise<string | undefined>;
+}
+
+interface FakeExtensionContext {
+	hasUI: boolean;
+	ui: FakeUI;
+	sessionManager: { getEntries(): FakeSessionEntry[] };
+}
+
+interface FakeExtensionAPI {
+	commands: Map<string, RegisteredCommand>;
+	shortcuts: RegisteredShortcut[];
+	handlers: Map<string, FakeEventHandler[]>;
+	appendedEntries: Array<{ type: "custom"; customType: string; data: { mode: string } }>;
+	registerCommand(name: string, command: RegisteredCommand): void;
+	registerShortcut(key: unknown, shortcut: Omit<RegisteredShortcut, "key">): void;
+	on(event: string, handler: FakeEventHandler): void;
+	appendEntry(customType: string, data: { mode: string }): void;
+}
+
+function createFakeUI(): FakeUI {
+	const hiddenThinkingLabels: string[] = [];
+	const statuses: Array<{ key: string; value: string | undefined }> = [];
+	const notifications: Array<{ message: string; level: string }> = [];
+	const selectCalls: Array<{ title: string; options: string[] }> = [];
+	const selectionQueue: Array<string | undefined> = [];
+
+	return {
+		theme: createPlainTheme(),
+		hiddenThinkingLabels,
+		statuses,
+		notifications,
+		selectCalls,
+		selectionQueue,
+		setHiddenThinkingLabel(label: string) {
+			hiddenThinkingLabels.push(label);
+		},
+		setStatus(key: string, value: string | undefined) {
+			statuses.push({ key, value });
+		},
+		notify(message: string, level: string) {
+			notifications.push({ message, level });
+		},
+		async select(title: string, options: string[]) {
+			selectCalls.push({ title, options: [...options] });
+			return selectionQueue.shift();
+		},
+	};
+}
+
+function createFakeContext(entries: FakeSessionEntry[] = [], hasUI = true): FakeExtensionContext {
+	const sessionEntries = [...entries];
+	return {
+		hasUI,
+		ui: createFakeUI(),
+		sessionManager: {
+			getEntries() {
+				return sessionEntries;
+			},
+		},
+	};
+}
+
+function createFakeExtensionAPI(): FakeExtensionAPI {
+	const commands = new Map<string, RegisteredCommand>();
+	const shortcuts: RegisteredShortcut[] = [];
+	const handlers = new Map<string, FakeEventHandler[]>();
+	const appendedEntries: Array<{ type: "custom"; customType: string; data: { mode: string } }> = [];
+
+	return {
+		commands,
+		shortcuts,
+		handlers,
+		appendedEntries,
+		registerCommand(name: string, command: RegisteredCommand) {
+			commands.set(name, command);
+		},
+		registerShortcut(key: unknown, shortcut: Omit<RegisteredShortcut, "key">) {
+			shortcuts.push({ key, ...shortcut });
+		},
+		on(event: string, handler: FakeEventHandler) {
+			const registered = handlers.get(event) ?? [];
+			registered.push(handler);
+			handlers.set(event, registered);
+		},
+		appendEntry(customType: string, data: { mode: string }) {
+			appendedEntries.push({ type: "custom", customType, data });
+		},
+	};
+}
+
+function createExtensionHarness(entries: FakeSessionEntry[] = [], hasUI = true): {
+	pi: FakeExtensionAPI;
+	ctx: FakeExtensionContext;
+} {
+	const pi = createFakeExtensionAPI();
+	const ctx = createFakeContext(entries, hasUI);
+	thinkingStepsExtension(pi as any);
+	return { pi, ctx };
+}
+
+function getSingleHandler(pi: FakeExtensionAPI, event: string): FakeEventHandler {
+	const handlers = pi.handlers.get(event) ?? [];
+	assert.equal(handlers.length, 1, `expected exactly one ${event} handler`);
+	return handlers[0]!;
+}
+
+function resetExtensionState(): void {
+	clearActiveThinkingState();
+	setThinkingStepsMode("summary");
+}
+
+describe("deriveThinkingSteps", () => {
+	it("splits paragraphs and list items into meaningful steps", () => {
+		const steps = deriveThinkingSteps([
+			{
+				contentIndex: 0,
+				text: `I need to inspect the current assistant renderer.\n\n1. Compare the extension API to the TUI internals.\n2. Verify how thinking visibility is toggled.`,
+			},
+		]);
+
+		assert.equal(steps.length, 3);
+		assert.equal(steps[0]?.summary, "Inspect the current assistant renderer.");
+		assert.equal(steps[1]?.summary, "Compare the extension API to the TUI internals.");
+		assert.equal(steps[2]?.summary, "Verify how thinking visibility is toggled.");
+		assert.equal(steps[0]?.icon, "◫");
+		assert.equal(steps[2]?.icon, "✓");
+	});
+
+	it("keeps markdown heading paragraphs attached to their following body", () => {
+		const steps = deriveThinkingSteps([
+			{
+				contentIndex: 0,
+				text: "## Inspecting render pipeline\n\nVerify that refreshes can be triggered safely.",
+			},
+		]);
+
+		assert.equal(steps.length, 1);
+		assert.equal(steps[0]?.body, "## Inspecting render pipeline\n\nVerify that refreshes can be triggered safely.");
+		assert.match(steps[0]?.summary ?? "", /Inspect render pipeline|Verify that refreshes can be triggered safely/);
+	});
+
+	it("keeps emphasized heading paragraphs attached to their following body", () => {
+		const steps = deriveThinkingSteps([
+			{
+				contentIndex: 0,
+				text: "**Inspecting event listeners**\n\nVerify that refreshes can be triggered safely.",
+			},
+		]);
+
+		assert.equal(steps.length, 1);
+		assert.equal(steps[0]?.body, "**Inspecting event listeners**\n\nVerify that refreshes can be triggered safely.");
+		assert.match(steps[0]?.summary ?? "", /Inspect event listeners|Verify that refreshes can be triggered safely/);
+	});
+
+	it("creates a faithful fallback summary for redacted reasoning", () => {
+		const steps = deriveThinkingSteps([{ contentIndex: 2, text: "", redacted: true }]);
+		assert.equal(steps.length, 1);
+		assert.equal(steps[0]?.summary, "推理内容被提供商隐藏。");
+	});
+});
+
+describe("patch guards", () => {
+	it("rejects incompatible AssistantMessageComponent exports with a clear error", () => {
+		assert.throws(
+			() => assertPatchableAssistantMessageComponent({ prototype: {} }),
+			/missing updateContent, setHideThinkingBlock, setHiddenThinkingLabel/,
+		);
+	});
+
+	it("rejects incompatible theme exports with a clear error", () => {
+		assert.throws(
+			() => assertThinkingStepsTheme({ fg: () => "ok" }),
+			/interactive theme export is incompatible/,
+		);
+	});
+});
+
+
+describe("iconForThinkingRole", () => {
+	it("uses a restrained icon set with distinct inspect and search glyphs", () => {
+		assert.equal(iconForThinkingRole("inspect"), "◫");
+		assert.equal(iconForThinkingRole("search"), "⌕");
+		assert.equal(iconForThinkingRole("plan"), "◇");
+		assert.equal(iconForThinkingRole("compare"), "↔");
+		assert.equal(iconForThinkingRole("verify"), "✓");
+		assert.equal(iconForThinkingRole("write"), "✎");
+		assert.equal(iconForThinkingRole("error"), "!");
+		assert.equal(iconForThinkingRole("default"), "·");
+	});
+});
+describe("summarizeThinkingText", () => {
+	it("strips leading first-person filler without inventing new meaning", () => {
+		assert.equal(
+			summarizeThinkingText("I need to compare the current renderer with Pi's extension hooks."),
+			"Compare the current renderer with Pi's extension hooks.",
+		);
+	});
+
+	it("prefers concrete action clauses over truncated meta-thinking", () => {
+		const summary = summarizeThinkingText(
+			"I’m considering how we can connect and orient ourselves. It seems like using Larra edit workflows could be helpful here. I need to know the arguments for it, so I might look into using MCP to describe the tools available to me. It could be useful to inspect the connection first, just to make sure everything is set up right before diving into the workflows. Let's see what we can find!",
+		);
+		assert.match(summary, /Larra edit workflows|inspect the connection first/i);
+		assert.doesNotMatch(summary, /considering how we can connect and orient ourselves|Let\'s see what we can find/i);
+	});
+
+	it("prefers concrete actions over meta setup in a real transcript delta", () => {
+		const summary = summarizeThinkingText(
+			"I think I need to gather project instructions and workspace details, possibly through Larra. I should really look into using the get_project_instructions function, but my project memory might have a conflicting inference about being \"Likely Python-based\" when it's actually TypeScript. I need to flag that! This could mean there's stale or inaccurate memory that needs updating later. Before moving forward, I should have a mandatory 5-line checkpoint for the developer after loading the current context. Let me retrieve the relevant instructions as well.",
+		);
+		assert.match(summary, /gather project instructions and workspace details|look into using the get_project_instructions function/i);
+		assert.doesNotMatch(summary, /possibly through Larra|flag that|Clarifying project details/i);
+	});
+
+	it("prefers the concrete next step over contemplative framing in a real transcript delta", () => {
+		const summary = summarizeThinkingText(
+			"I’m contemplating whether I need to get workspaces or if that's necessary. Maybe I should look into using linked workspaces instead? I think the next step might be to inspect the list of workspaces I currently have available. I’m curious about what options I have and which would be the most efficient for my needs. Let's take a closer look and see what makes the most sense!",
+		);
+		assert.match(summary, /inspect the list of workspaces/i);
+		assert.doesNotMatch(summary, /contemplating whether I need to get workspaces/i);
+	});
+
+	it("avoids negative tool-availability chatter in a real transcript delta", () => {
+		const summary = summarizeThinkingText(
+			"I need to find actual examples of transcripts, perhaps starting with the Larra transcript. While there's a tool for it, I might not retrieve the transcripts directly. I could search for session history or even look for previous sessions with relevant prompt files. Real examples would be better than synthetic ones. Gathering some actual thinking deltas from conversations or prompts would provide insights, so I should explore logs for phrases that show reasoning styles.",
+		);
+		assert.match(summary, /find actual examples of transcripts|search for session history|explore logs/i);
+		assert.doesNotMatch(summary, /might not retrieve the transcripts directly|while there's a tool for it|worth checking out/i);
+	});
+
+	it("keeps the concrete retry step instead of the heading label or repair aside in a real transcript delta", () => {
+		const summary = summarizeThinkingText(
+			"I plan to retry once and check the index state. This involves direct actions like \"retry once\" and \"check,\" indicating some uncertainty that I should include. I don't necessarily need to stick to a classical formula since the user is asking for a deterministic classical pipeline. I'll keep some centrality based on tf-like methods. Since the file is currently broken, I’ll write the entire parse.ts with all contents while being careful and replacing only the summarize function. It should be manageable at about 400 lines.",
+		);
+		assert.match(summary, /retry once and check the index state/i);
+		assert.doesNotMatch(summary, /Retrying and checking state|write the entire parse|since the file is currently broken/i);
+	});
+
+	it("deduplicates redundant candidates", () => {
+		const summary = summarizeThinkingText(
+			"Found TS2322 in render.ts. Found TS2322 in render.ts. Retry npm test after updating the type.",
+		);
+		assert.equal((summary.match(/TS2322/g) ?? []).length, 1);
+	});
+
+	it("preserves failure semantics", () => {
+		const summary = summarizeThinkingText(
+			"Ran npm test and it failed with TS2322 in render.ts. Need to update the type mismatch before retrying.",
+		);
+		assert.ok(summary.toLowerCase().includes("failed"));
+		assert.ok(summary.includes("TS2322"));
+	});
+
+	it("preserves unverified suspicion instead of restating it as fact", () => {
+		const summary = summarizeThinkingText(
+			"This looks like a stale lock, but I haven't verified it yet. I will retry once and check the index state.",
+		);
+		assert.ok(/looks like|haven't verified/i.test(summary));
+		assert.ok(!summary.includes("This is a stale lock."));
+	});
+
+	it("does not imply a commit completed when it did not", () => {
+		const summary = summarizeThinkingText(
+			"Prepared the commit message, but the commit did not complete because .git/index.lock exists.",
+		);
+		assert.ok(summary.toLowerCase().includes("did not complete"));
+		assert.ok(!summary.toLowerCase().includes("commit completed"));
+	});
+
+	it("filters noisy tool-log lines", () => {
+		const summary = summarizeThinkingText(
+			"12:41:22\n-----\nThinking...\n> npm test\nloading...\nFound TS2322 in render.ts and need to retry after patching.",
+		);
+		assert.ok(summary.includes("TS2322"));
+		assert.ok(!/Thinking|loading|12:41:22/.test(summary));
+	});
+
+	it("handles very short deltas cleanly", () => {
+		assert.equal(
+			summarizeThinkingText("Compare the extension API to the TUI internals."),
+			"Compare the extension API to the TUI internals.",
+		);
+	});
+
+	it("enforces the summary budget on long input", () => {
+		const summary = summarizeThinkingText(
+			"Found a lock in .git/index.lock. The commit did not complete. Need to inspect the running git process, verify the lock owner, and retry only after the repository is idle. Also compare whether Larra or git created the lock and preserve the exact failure semantics.",
+		);
+		assert.ok(summary.length <= 84);
+	});
+
+	it("handles mixed bullets and prose", () => {
+		const summary = summarizeThinkingText(
+			"We need to decide the safest next step.\n\n- Found TS2322 in render.ts.\n- Retry npm test after patching the type.\n\nThat should confirm the fix.",
+		);
+		assert.ok(summary.includes("TS2322"));
+		assert.ok(/Retry|retry/.test(summary));
+	});
+
+	it("returns deterministic output for identical input", () => {
+		const input = "Found TS2322 in render.ts. Retry npm test after patching the type mismatch.";
+		assert.equal(summarizeThinkingText(input), summarizeThinkingText(input));
+	});
+});
+describe("inferThinkingRole", () => {
+	it("prefers inspect over weak write or verify cues in exploratory reasoning", () => {
+		assert.equal(
+			inferThinkingRole(
+				"Use Larra edit workflows, then inspect the connection first. I need to describe the tools available and orient myself.",
+			),
+			"inspect",
+		);
+	});
+
+	it("still detects concrete verification steps", () => {
+		assert.equal(
+			inferThinkingRole("Verify that refreshes can be triggered safely."),
+			"verify",
+		);
+	});
+});
+describe("renderThinkingStepsLines", () => {
+	const theme = createPlainTheme();
+	const steps = deriveThinkingSteps([
+		{
+			contentIndex: 0,
+			text: `Inspect the current renderer implementation.\n\nCompare how visibility toggling works.\n\nVerify the refresh path after mode changes.`,
+		},
+	]);
+
+	it("collapsed mode renders exactly one summary line", () => {
+		const lines = renderThinkingStepsLines(theme, 120, {
+			mode: "collapsed",
+			steps,
+			activeStepId: steps[2]?.id,
+			isActive: false,
+			nowMs: 0,
+		});
+		assert.equal(lines.length, 1);
+		assert.match(lines[0] ?? "", /Thinking/);
+		assert.match(lines[0] ?? "", /Verify the refresh path after mode changes/);
+	});
+
+	it("collapsed mode wraps long summaries instead of truncating them with an ellipsis", () => {
+		const longSummarySteps = deriveThinkingSteps([
+			{
+				contentIndex: 0,
+				text: "I’m considering how we can connect and orient ourselves. It seems like using Larra edit workflows could be helpful here. I need to know the arguments for it, so I might look into using MCP to describe the tools available to me. It could be useful to inspect the connection first, just to make sure everything is set up right before diving into the workflows. Let's see what we can find!",
+			},
+		]);
+		const lines = renderThinkingStepsLines(theme, 48, {
+			mode: "collapsed",
+			steps: longSummarySteps,
+			activeStepId: longSummarySteps[0]?.id,
+			isActive: false,
+			nowMs: 0,
+		});
+		assert.ok(lines.length > 1);
+		const normalized = stripAnsi(lines.join(" "))
+			.replace(/[│·]/g, " ")
+			.replace(/\bThinking\b/g, " ")
+			.replace(/\s+/g, " ")
+			.trim();
+		assert.match(normalized, /Larra edit workflows|inspect the connection first/i);
+		assert.ok(!normalized.includes("…"));
+	});
+
+	it("collapsed mode renders inline formatting instead of raw markdown markers", () => {
+		const ansiTheme = createAnsiTheme();
+		const markdownSummarySteps = deriveThinkingSteps([
+			{
+				contentIndex: 0,
+				text: "Inspect `render.ts` carefully.",
+			},
+		]);
+		const lines = renderThinkingStepsLines(ansiTheme, 120, {
+			mode: "collapsed",
+			steps: markdownSummarySteps,
+			activeStepId: markdownSummarySteps[0]?.id,
+			isActive: false,
+			nowMs: 0,
+		});
+		assert.equal(lines.length, 1);
+		assert.ok((lines[0] ?? "").includes("[1m"));
+		const joined = stripAnsi(lines.join("\n"));
+		assert.ok(joined.includes("Inspect render.ts carefully."));
+		assert.ok(!joined.includes("`render.ts`"));
+	});
+
+	it("summary mode renders one summarized line per step with pipe connectors", () => {
+		const lines = renderThinkingStepsLines(theme, 120, {
+			mode: "summary",
+			steps,
+			activeStepId: steps[1]?.id,
+			isActive: false,
+		});
+		assert.equal(stripAnsi(lines[0] ?? ""), "┆ Thinking Steps · Summary");
+		const stepLines = lines.filter((line) => /^(├─|└─)/.test(stripAnsi(line)));
+		assert.equal(stepLines.length, 3);
+		assert.ok(stepLines.some((line) => stripAnsi(line).includes("◫ Inspect the current renderer implementation.")));
+		assert.ok(stepLines.some((line) => stripAnsi(line).includes("↔ Compare how visibility toggling works.")));
+		assert.ok(stepLines.some((line) => stripAnsi(line).includes("✓ Verify the refresh path after mode changes.")));
+	});
+
+	it("summary mode strips raw markdown markers from visible summaries", () => {
+		const markdownSummarySteps = deriveThinkingSteps([
+			{
+				contentIndex: 0,
+				text: "Inspect `render.ts` carefully.\n\nVerify that **refreshes** can be triggered safely.",
+			},
+		]);
+		const lines = renderThinkingStepsLines(theme, 120, {
+			mode: "summary",
+			steps: markdownSummarySteps,
+			activeStepId: undefined,
+			isActive: false,
+		});
+		const joined = stripAnsi(lines.join("\n"));
+		assert.ok(joined.includes("Inspect render.ts carefully."));
+		assert.ok(joined.includes("Verify that refreshes can be triggered safely."));
+		assert.ok(!joined.includes("`render.ts`"));
+		assert.ok(!joined.includes("**refreshes**"));
+	});
+
+	it("expanded mode renders full step details with cleaner continuation pipes", () => {
+		const lines = renderThinkingStepsLines(theme, 64, {
+			mode: "expanded",
+			steps,
+			activeStepId: undefined,
+			isActive: false,
+		});
+		const joined = stripAnsi(lines.join("\n"));
+		assert.ok(joined.includes("Thinking Steps · Expanded"));
+		assert.ok(joined.includes("├─ ◫ Inspect the current renderer implementation."));
+		assert.ok(joined.includes("│  Inspect the current renderer implementation."));
+		assert.ok(joined.includes("└─ ✓ Verify the refresh path after mode changes."));
+		assert.ok(joined.includes("   Verify the refresh path after mode changes."));
+		assert.ok(!joined.includes("│  Verify the refresh path after mode changes."));
+	});
+
+	it("expanded mode renders markdown as terminal formatting instead of raw markers", () => {
+		const markdownSteps = deriveThinkingSteps([
+			{
+				contentIndex: 0,
+				text: "## Inspecting `render.ts`\n\n- Verify that **refreshes** can be triggered safely.",
+			},
+		]);
+		const lines = renderThinkingStepsLines(theme, 80, {
+			mode: "expanded",
+			steps: markdownSteps,
+			activeStepId: undefined,
+			isActive: false,
+		});
+		const joined = stripAnsi(lines.join("\n"));
+		assert.ok(joined.includes("Inspecting render.ts"));
+		assert.ok(joined.includes("• Verify that refreshes can be triggered safely."));
+		assert.ok(!joined.includes("## Inspecting `render.ts`"));
+		assert.ok(!joined.includes("- Verify that **refreshes** can be triggered safely."));
+		assert.ok(!joined.includes("**"));
+		assert.ok(!joined.includes("`"));
+	});
+
+	it("collapsed active rendering animates without using italics", () => {
+		const first = renderThinkingStepsLines(theme, 120, {
+			mode: "collapsed",
+			steps,
+			activeStepId: steps[2]?.id,
+			isActive: true,
+			nowMs: 0,
+		});
+		const second = renderThinkingStepsLines(theme, 120, {
+			mode: "collapsed",
+			steps,
+			activeStepId: steps[2]?.id,
+			isActive: true,
+			nowMs: 360,
+		});
+		assert.equal(first.length, 1);
+		assert.equal(second.length, 1);
+		assert.notEqual(first[0], second[0]);
+		assert.ok(!/\x1b\[3m|\x1b\[23m/.test(first[0] ?? ""));
+		assert.ok(!/\x1b\[3m|\x1b\[23m/.test(second[0] ?? ""));
+	});
+});
+
+describe("integration patch", () => {
+	it("patches AssistantMessageComponent so mode switching changes live thinking rendering", async () => {
+		const release = await retainThinkingStepsPatch();
+		try {
+			const [{ AssistantMessageComponent }, { initTheme }] = await Promise.all([
+				importPiInternal<{ AssistantMessageComponent: new (message?: unknown, hideThinkingBlock?: boolean) => { render(width: number): string[]; setHiddenThinkingLabel(label: string): void } }>(
+					"dist/modes/interactive/components/assistant-message.js",
+				),
+				importPiInternal<{ initTheme: (name?: string, quiet?: boolean) => void }>(
+					"dist/modes/interactive/theme/theme.js",
+				),
+			]);
+			initTheme("dark", true);
+
+			const message = {
+				role: "assistant",
+				api: "anthropic-messages",
+				provider: "anthropic",
+				model: "claude-sonnet-4-5",
+				timestamp: 123,
+				usage: {
+					input: 0,
+					output: 0,
+					cacheRead: 0,
+					cacheWrite: 0,
+					totalTokens: 0,
+					cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+				},
+				stopReason: "stop",
+				content: [
+					{
+						type: "thinking",
+						thinking:
+							"Inspect the current rendering pipeline.\n\nCompare the public extension hooks against AssistantMessageComponent.\n\nVerify that refreshes can be triggered safely.",
+					},
+					{ type: "text", text: "Final answer." },
+				],
+			} as const;
+
+			setThinkingStepsMode("summary");
+			clearActiveThinkingState();
+			const component = new AssistantMessageComponent(message, false);
+			let lines = component.render(100).map(stripAnsi);
+			assert.ok(lines.some((line) => line.includes("Thinking Steps · Summary")));
+			assert.equal(lines.filter((line) => line.startsWith("├─") || line.startsWith("└─")).length, 3);
+			assert.ok(lines.some((line) => line.includes("Final answer.")));
+
+			setThinkingStepsMode("collapsed");
+			setActiveThinkingState({ active: true, messageTimestamp: 123, contentIndex: 0 });
+			component.setHiddenThinkingLabel("refresh");
+			lines = component.render(100).map(stripAnsi);
+			assert.ok(lines.some((line) => line.includes("Thinking")));
+			assert.equal(lines.filter((line) => line.includes("Thinking")).length, 1);
+			assert.ok(lines.some((line) => line.includes("Verify that refreshes can be triggered safely")));
+			assert.ok(lines.every((line) => !/\x1b\[3m|\x1b\[23m/.test(line)));
+		} finally {
+			clearActiveThinkingState();
+			setThinkingStepsMode("summary");
+			await release();
+		}
+	});
+});
+
+describe("parseThinkingMode", () => {
+	it("accepts exact and shorthand mode names", () => {
+		assert.equal(parseThinkingMode("collapsed"), "collapsed");
+		assert.equal(parseThinkingMode("summary"), "summary");
+		assert.equal(parseThinkingMode("expanded"), "expanded");
+		assert.equal(parseThinkingMode("e"), "expanded");
+		assert.equal(parseThinkingMode("unknown"), undefined);
+	});
+});
+
+describe("thinkingStepsExtension", () => {
+	it("registers the thinking-steps command, completions, and Alt+T shortcut", () => {
+		resetExtensionState();
+		const { pi } = createExtensionHarness();
+
+		const command = pi.commands.get("thinking-steps");
+		assert.ok(command);
+		assert.equal(command.description, "Switch thinking view: collapsed, summary, or expanded");
+		assert.deepEqual(command.getArgumentCompletions?.("s"), [{ value: "summary", label: "summary" }]);
+		assert.equal(command.getArgumentCompletions?.("z") ?? null, null);
+
+		assert.equal(pi.shortcuts.length, 1);
+		assert.deepEqual(pi.shortcuts[0]?.key, Key.alt("t"));
+		assert.equal(pi.shortcuts[0]?.description, "Cycle thinking view (collapsed, summary, expanded)");
+		assert.equal(pi.handlers.get("session_start")?.length, 1);
+		assert.equal(pi.handlers.get("message_start")?.length, 1);
+		assert.equal(pi.handlers.get("message_update")?.length, 1);
+		assert.equal(pi.handlers.get("message_end")?.length, 1);
+		assert.equal(pi.handlers.get("agent_end")?.length, 1);
+		assert.equal(pi.handlers.get("session_shutdown")?.length, 1);
+	});
+
+	it("restores the saved mode and persists explicit mode changes", async () => {
+		resetExtensionState();
+		const { pi, ctx } = createExtensionHarness([{ type: "custom", customType: "thinking-steps.mode", data: { mode: "collapsed" } }]);
+		const sessionStart = getSingleHandler(pi, "session_start");
+		const sessionShutdown = getSingleHandler(pi, "session_shutdown");
+		const command = pi.commands.get("thinking-steps");
+		const shortcut = pi.shortcuts[0];
+		assert.ok(command);
+		assert.ok(shortcut);
+
+		try {
+			assert.equal(getPatchRefCount(), 0);
+			await sessionStart({}, ctx);
+			assert.equal(getPatchRefCount(), 1);
+			assert.deepEqual(getActiveThinkingState(), { active: false });
+			assert.deepEqual(pi.appendedEntries, []);
+			assert.equal(ctx.ui.hiddenThinkingLabels.at(-1), "Thinking...");
+			assert.deepEqual(ctx.ui.statuses.at(-1), { key: "thinking-steps", value: "thinking: collapsed" });
+
+			await command.handler("expanded", ctx);
+			assert.equal(ctx.ui.selectCalls.length, 0);
+			assert.deepEqual(pi.appendedEntries.at(-1), {
+				type: "custom",
+				customType: "thinking-steps.mode",
+				data: { mode: "expanded" },
+			});
+			assert.deepEqual(ctx.ui.statuses.at(-1), { key: "thinking-steps", value: "thinking: expanded" });
+			assert.deepEqual(ctx.ui.notifications.at(-1), { message: "Thinking view: expanded", level: "info" });
+
+			await shortcut.handler(ctx);
+			assert.deepEqual(pi.appendedEntries.at(-1), {
+				type: "custom",
+				customType: "thinking-steps.mode",
+				data: { mode: "collapsed" },
+			});
+			assert.deepEqual(ctx.ui.statuses.at(-1), { key: "thinking-steps", value: "thinking: collapsed" });
+			assert.deepEqual(ctx.ui.notifications.at(-1), { message: "Thinking view: collapsed", level: "info" });
+		} finally {
+			await sessionShutdown({}, ctx);
+			assert.equal(getPatchRefCount(), 0);
+			resetExtensionState();
+		}
+	});
+
+	it("uses interactive selection when no mode argument is provided", async () => {
+		resetExtensionState();
+		const { pi, ctx } = createExtensionHarness();
+		const command = pi.commands.get("thinking-steps");
+		assert.ok(command);
+
+		ctx.ui.selectionQueue.push("expanded");
+		await command.handler("", ctx);
+
+		assert.deepEqual(ctx.ui.selectCalls, [{ title: "Thinking view", options: ["collapsed", "summary", "expanded"] }]);
+		assert.deepEqual(pi.appendedEntries, [{
+			type: "custom",
+			customType: "thinking-steps.mode",
+			data: { mode: "expanded" },
+		}]);
+		assert.deepEqual(ctx.ui.statuses.at(-1), { key: "thinking-steps", value: "thinking: expanded" });
+		assert.deepEqual(ctx.ui.notifications.at(-1), { message: "Thinking view: expanded", level: "info" });
+	});
+
+	it("tracks and clears active thinking state across assistant lifecycle events", async () => {
+		resetExtensionState();
+		const { pi, ctx } = createExtensionHarness();
+		const sessionStart = getSingleHandler(pi, "session_start");
+		const messageStart = getSingleHandler(pi, "message_start");
+		const messageUpdate = getSingleHandler(pi, "message_update");
+		const messageEnd = getSingleHandler(pi, "message_end");
+		const agentEnd = getSingleHandler(pi, "agent_end");
+		const sessionShutdown = getSingleHandler(pi, "session_shutdown");
+
+		try {
+			setActiveThinkingState({ active: true, messageTimestamp: 7, contentIndex: 3 });
+			await sessionStart({}, ctx);
+			assert.deepEqual(getActiveThinkingState(), { active: false });
+			assert.equal(getPatchRefCount(), 1);
+
+			await messageUpdate({
+				message: { role: "assistant", timestamp: 321 },
+				assistantMessageEvent: { type: "thinking_start", contentIndex: 4 },
+			});
+			assert.deepEqual(getActiveThinkingState(), { active: true, messageTimestamp: 321, contentIndex: 4 });
+
+			await messageUpdate({
+				message: { role: "assistant", timestamp: 321 },
+				assistantMessageEvent: { type: "thinking_delta", contentIndex: 5 },
+			});
+			assert.deepEqual(getActiveThinkingState(), { active: true, messageTimestamp: 321, contentIndex: 5 });
+
+			await messageStart({ message: { role: "assistant" } });
+			assert.deepEqual(getActiveThinkingState(), { active: false });
+
+			await messageUpdate({
+				message: { role: "assistant", timestamp: 654 },
+				assistantMessageEvent: { type: "thinking_start", contentIndex: 1 },
+			});
+			assert.deepEqual(getActiveThinkingState(), { active: true, messageTimestamp: 654, contentIndex: 1 });
+
+			await messageUpdate({
+				message: { role: "assistant", timestamp: 654 },
+				assistantMessageEvent: { type: "text_start" },
+			});
+			assert.deepEqual(getActiveThinkingState(), { active: false });
+
+			setActiveThinkingState({ active: true, messageTimestamp: 700, contentIndex: 2 });
+			await messageEnd({ message: { role: "assistant" } });
+			assert.deepEqual(getActiveThinkingState(), { active: false });
+
+			setActiveThinkingState({ active: true, messageTimestamp: 701, contentIndex: 3 });
+			await agentEnd();
+			assert.deepEqual(getActiveThinkingState(), { active: false });
+
+			setActiveThinkingState({ active: true, messageTimestamp: 702, contentIndex: 4 });
+			await sessionShutdown({}, ctx);
+			assert.deepEqual(getActiveThinkingState(), { active: false });
+			assert.deepEqual(ctx.ui.statuses.at(-1), { key: "thinking-steps", value: undefined });
+			assert.equal(getPatchRefCount(), 0);
+		} finally {
+			if (getPatchRefCount() > 0) {
+				await sessionShutdown({}, ctx);
+			}
+			resetExtensionState();
+		}
+	});
+});
+
+describe("patch lifecycle", () => {
+	async function loadAssistantMessageComponent() {
+		const [{ AssistantMessageComponent }, { initTheme }] = await Promise.all([
+			importPiInternal<{ AssistantMessageComponent: new (message?: unknown, hideThinkingBlock?: boolean) => { render(width: number): string[]; setHiddenThinkingLabel(label: string): void; setHideThinkingBlock(hide: boolean): void } }>(
+				"dist/modes/interactive/components/assistant-message.js",
+			),
+			importPiInternal<{ initTheme: (name?: string, quiet?: boolean) => void }>(
+				"dist/modes/interactive/theme/theme.js",
+			),
+		]);
+		initTheme("dark", true);
+		return AssistantMessageComponent;
+	}
+
+	it("serializes concurrent retains and restores originals on the final release", async () => {
+		const AssistantMessageComponent = await loadAssistantMessageComponent();
+		const prototype = AssistantMessageComponent.prototype as {
+			updateContent(message: unknown): void;
+			setHideThinkingBlock(hide: boolean): void;
+			setHiddenThinkingLabel(label: string): void;
+		};
+		const originalUpdateContent = prototype.updateContent;
+		const originalSetHideThinkingBlock = prototype.setHideThinkingBlock;
+		const originalSetHiddenThinkingLabel = prototype.setHiddenThinkingLabel;
+		let releaseA: (() => Promise<void>) | undefined;
+		let releaseB: (() => Promise<void>) | undefined;
+
+		try {
+			assert.equal(getPatchRefCount(), 0);
+			assert.equal(getPatchCleanup(), undefined);
+			assert.equal(getPatchInstallPromise(), undefined);
+
+			[releaseA, releaseB] = await Promise.all([retainThinkingStepsPatch(), retainThinkingStepsPatch()]);
+
+			assert.equal(getPatchRefCount(), 2);
+			assert.ok(getPatchCleanup());
+			assert.equal(getPatchInstallPromise(), undefined);
+			assert.notEqual(prototype.updateContent, originalUpdateContent);
+			assert.notEqual(prototype.setHideThinkingBlock, originalSetHideThinkingBlock);
+			assert.notEqual(prototype.setHiddenThinkingLabel, originalSetHiddenThinkingLabel);
+
+			await releaseA();
+			releaseA = undefined;
+			assert.equal(getPatchRefCount(), 1);
+			assert.notEqual(prototype.updateContent, originalUpdateContent);
+			assert.notEqual(prototype.setHideThinkingBlock, originalSetHideThinkingBlock);
+			assert.notEqual(prototype.setHiddenThinkingLabel, originalSetHiddenThinkingLabel);
+
+			await releaseB();
+			releaseB = undefined;
+			assert.equal(getPatchRefCount(), 0);
+			assert.equal(getPatchCleanup(), undefined);
+			assert.equal(getPatchInstallPromise(), undefined);
+			assert.equal(prototype.updateContent, originalUpdateContent);
+			assert.equal(prototype.setHideThinkingBlock, originalSetHideThinkingBlock);
+			assert.equal(prototype.setHiddenThinkingLabel, originalSetHiddenThinkingLabel);
+		} finally {
+			if (releaseA) {
+				await releaseA();
+			}
+			if (releaseB) {
+				await releaseB();
+			}
+			const cleanup = getPatchCleanup();
+			setPatchCleanup(undefined);
+			setPatchInstallPromise(undefined);
+			await cleanup?.();
+		}
+	});
+
+	it("rolls back refcount when a pending install promise rejects", async () => {
+		const failure = new Error("install failed");
+		const rejectedInstall: Promise<() => void | Promise<void>> = Promise.reject(failure);
+		rejectedInstall.catch(() => {});
+
+		assert.equal(getPatchRefCount(), 0);
+		assert.equal(getPatchCleanup(), undefined);
+		setPatchInstallPromise(rejectedInstall);
+
+		await assert.rejects(() => retainThinkingStepsPatch(), /install failed/);
+		assert.equal(getPatchRefCount(), 0);
+		assert.equal(getPatchCleanup(), undefined);
+		assert.equal(getPatchInstallPromise(), undefined);
+	});
+});
+
+describe("integration patch edge cases", () => {
+	async function createPatchedComponent(message: unknown) {
+		const release = await retainThinkingStepsPatch();
+		const [{ AssistantMessageComponent }, { initTheme }] = await Promise.all([
+			importPiInternal<{ AssistantMessageComponent: new (message?: unknown, hideThinkingBlock?: boolean) => { render(width: number): string[]; setHiddenThinkingLabel(label: string): void; setHideThinkingBlock(hide: boolean): void; hideThinkingBlock?: boolean } }>(
+				"dist/modes/interactive/components/assistant-message.js",
+			),
+			importPiInternal<{ initTheme: (name?: string, quiet?: boolean) => void }>(
+				"dist/modes/interactive/theme/theme.js",
+			),
+		]);
+		initTheme("dark", true);
+		const component = new AssistantMessageComponent(message, false);
+		return { component, release };
+	}
+
+	it("renders abort and error messages when no tool calls are present", async () => {
+		setThinkingStepsMode("summary");
+		clearActiveThinkingState();
+
+		const abortedMessage = {
+			role: "assistant",
+			api: "anthropic-messages",
+			provider: "anthropic",
+			model: "claude-sonnet-4-5",
+			timestamp: 200,
+			usage: {
+				input: 0,
+				output: 0,
+				cacheRead: 0,
+				cacheWrite: 0,
+				totalTokens: 0,
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+			},
+			stopReason: "aborted",
+			errorMessage: "Network canceled",
+			content: [{ type: "thinking", thinking: "Inspect the current renderer implementation." }],
+		} as const;
+
+		const errorMessage = {
+			...abortedMessage,
+			timestamp: 201,
+			stopReason: "error",
+			errorMessage: undefined,
+		} as const;
+
+		const { component: abortedComponent, release: releaseAborted } = await createPatchedComponent(abortedMessage);
+		try {
+			const abortedLines = abortedComponent.render(100).map(stripAnsi).join("\n");
+			assert.ok(abortedLines.includes("Network canceled"));
+		} finally {
+			await releaseAborted();
+		}
+
+		const { component: errorComponent, release: releaseError } = await createPatchedComponent(errorMessage);
+		try {
+			const errorLines = errorComponent.render(100).map(stripAnsi).join("\n");
+			assert.ok(errorLines.includes("Error: Unknown error"));
+		} finally {
+			await releaseError();
+		}
+	});
+
+	it("suppresses abort and error text when tool calls are present", async () => {
+		setThinkingStepsMode("summary");
+		clearActiveThinkingState();
+		const message = {
+			role: "assistant",
+			api: "anthropic-messages",
+			provider: "anthropic",
+			model: "claude-sonnet-4-5",
+			timestamp: 202,
+			usage: {
+				input: 0,
+				output: 0,
+				cacheRead: 0,
+				cacheWrite: 0,
+				totalTokens: 0,
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+			},
+			stopReason: "error",
+			errorMessage: "tool failed",
+			content: [
+				{ type: "thinking", thinking: "Inspect the current renderer implementation." },
+				{ type: "toolCall" },
+			],
+		} as const;
+
+		const { component, release } = await createPatchedComponent(message);
+		try {
+			const lines = component.render(100).map(stripAnsi).join("\n");
+			assert.ok(lines.includes("Inspect the current renderer implementation."));
+			assert.ok(!lines.includes("Error: tool failed"));
+			assert.ok(!lines.includes("Operation aborted"));
+		} finally {
+			await release();
+		}
+	});
+
+	it("renders multiple thinking blocks and rerenders through patched setters", async () => {
+		setThinkingStepsMode("collapsed");
+		setActiveThinkingState({ active: true, messageTimestamp: 203, contentIndex: 0 });
+		const message = {
+			role: "assistant",
+			api: "anthropic-messages",
+			provider: "anthropic",
+			model: "claude-sonnet-4-5",
+			timestamp: 203,
+			usage: {
+				input: 0,
+				output: 0,
+				cacheRead: 0,
+				cacheWrite: 0,
+				totalTokens: 0,
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+			},
+			stopReason: "stop",
+			content: [
+				{ type: "thinking", thinking: "Inspect the current renderer implementation." },
+				{ type: "text", text: "Intermediate response." },
+				{ type: "thinking", thinking: "Verify the refresh path after mode changes." },
+				{ type: "text", text: "Final answer." },
+			],
+		} as const;
+
+		const { component, release } = await createPatchedComponent(message);
+		try {
+			let lines = component.render(100).map(stripAnsi).join("\n");
+			assert.ok(lines.includes("Inspect the current renderer implementation."));
+			assert.ok(lines.includes("Intermediate response."));
+			assert.ok(lines.includes("Final answer."));
+
+			component.setHideThinkingBlock(true);
+			assert.equal((component as { hideThinkingBlock?: boolean }).hideThinkingBlock, false);
+			component.setHiddenThinkingLabel("rerender");
+			lines = component.render(100).map(stripAnsi).join("\n");
+			assert.ok(lines.includes("Inspect the current renderer implementation."));
+			assert.ok(lines.includes("Thinking"));
+		} finally {
+			clearActiveThinkingState();
+			setThinkingStepsMode("summary");
+			await release();
+		}
+	});
+
+	it("uses the default abort label when the provider reports the generic abort message", async () => {
+		setThinkingStepsMode("summary");
+		clearActiveThinkingState();
+		const message = {
+			role: "assistant",
+			api: "anthropic-messages",
+			provider: "anthropic",
+			model: "claude-sonnet-4-5",
+			timestamp: 204,
+			usage: {
+				input: 0,
+				output: 0,
+				cacheRead: 0,
+				cacheWrite: 0,
+				totalTokens: 0,
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+			},
+			stopReason: "aborted",
+			errorMessage: "Request was aborted",
+			content: [{ type: "thinking", thinking: "Inspect the current renderer implementation." }],
+		} as const;
+
+		const { component, release } = await createPatchedComponent(message);
+		try {
+			const lines = component.render(100).map(stripAnsi).join("\n");
+			assert.ok(lines.includes("Operation aborted"));
+			assert.ok(!lines.includes("Request was aborted"));
+		} finally {
+			await release();
+		}
+	});
+
+	it("selects the later active thinking block in collapsed mode when contentIndex points to it", async () => {
+		setThinkingStepsMode("collapsed");
+		setActiveThinkingState({ active: true, messageTimestamp: 205, contentIndex: 2 });
+		const message = {
+			role: "assistant",
+			api: "anthropic-messages",
+			provider: "anthropic",
+			model: "claude-sonnet-4-5",
+			timestamp: 205,
+			usage: {
+				input: 0,
+				output: 0,
+				cacheRead: 0,
+				cacheWrite: 0,
+				totalTokens: 0,
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+			},
+			stopReason: "stop",
+			content: [
+				{ type: "thinking", thinking: "Inspect the current renderer implementation." },
+				{ type: "text", text: "Intermediate response." },
+				{ type: "thinking", thinking: "Verify the refresh path after mode changes." },
+			],
+		} as const;
+
+		const { component, release } = await createPatchedComponent(message);
+		try {
+			const lines = component.render(100).map(stripAnsi).join("\n");
+			assert.ok(lines.includes("Verify the refresh path after mode changes."));
+			assert.ok(!lines.includes("Inspect the current renderer implementation."));
+		} finally {
+			clearActiveThinkingState();
+			setThinkingStepsMode("summary");
+			await release();
+		}
+	});
+});
+
+
+describe("deriveThinkingSteps list continuations", () => {
+	it("keeps blank-line continuation paragraphs attached to the correct list item", () => {
+		const steps = deriveThinkingSteps([
+			{
+				contentIndex: 0,
+				text: "1. Inspect the current renderer implementation.\n\nVerify that refreshes can be triggered safely.\n\n2. Compare the extension hooks.",
+			},
+		]);
+
+		assert.equal(steps.length, 2);
+		assert.equal(
+			steps[0]?.body,
+			"1. Inspect the current renderer implementation.\n\nVerify that refreshes can be triggered safely.",
+		);
+		assert.equal(steps[1]?.body, "2. Compare the extension hooks.");
+	});
+});
+
+
+describe("renderThinkingStepsLines control-sequence sanitization", () => {
+	const plainTheme = createPlainTheme();
+
+	it("strips literal ANSI sequences from collapsed summaries", () => {
+		const steps = deriveThinkingSteps([{
+			contentIndex: 0,
+			text: "Inspect \u001b[31mrender.ts\u001b[0m carefully.",
+		}]);
+		const lines = renderThinkingStepsLines(plainTheme, 120, {
+			mode: "collapsed",
+			steps,
+			activeStepId: steps[0]?.id,
+			isActive: false,
+			nowMs: 0,
+		});
+		const joined = lines.join("\n");
+		assert.ok(!joined.includes("\u001b[31m"));
+		assert.ok(!joined.includes("\u001b[0m"));
+		assert.ok(joined.includes("Inspect render.ts carefully."));
+	});
+
+	it("strips control bytes from summary and expanded rendering", () => {
+		const steps = deriveThinkingSteps([{
+			contentIndex: 0,
+			text: "Inspect render.ts carefully.\n\nVerify\u0007 that refreshes can be triggered safely.",
+		}]);
+		const summaryLines = renderThinkingStepsLines(plainTheme, 120, {
+			mode: "summary",
+			steps,
+			isActive: false,
+		});
+		const expandedLines = renderThinkingStepsLines(plainTheme, 120, {
+			mode: "expanded",
+			steps,
+			isActive: false,
+		});
+		const summaryJoined = summaryLines.join("\n");
+		const expandedJoined = expandedLines.join("\n");
+		assert.ok(!summaryJoined.includes("\u0007"));
+		assert.ok(!expandedJoined.includes("\u0007"));
+		assert.ok(summaryJoined.includes("Verify that refreshes can be triggered safely."));
+		assert.ok(expandedJoined.includes("Verify that refreshes can be triggered safely."));
+	});
+
+	it("preserves theme-generated ANSI while stripping model-provided sequences", () => {
+		const ansiTheme = createAnsiTheme();
+		const steps = deriveThinkingSteps([{
+			contentIndex: 0,
+			text: "Inspect \u001b[31m`render.ts`\u001b[0m carefully.",
+		}]);
+		const lines = renderThinkingStepsLines(ansiTheme, 120, {
+			mode: "collapsed",
+			steps,
+			activeStepId: steps[0]?.id,
+			isActive: false,
+			nowMs: 0,
+		});
+		const joined = lines.join("\n");
+		assert.ok(joined.includes("\u001b[1m"));
+		assert.ok(!joined.includes("\u001b[31m"));
+		assert.ok(!joined.includes("\u001b[0m"));
+		assert.ok(stripAnsi(joined).includes("Inspect render.ts carefully."));
+	});
+});
+
+
+describe("renderThinkingStepsLines single-emphasis consistency", () => {
+	const plainTheme = createPlainTheme();
+
+	it("normalizes single-emphasis markers in collapsed and summary modes", () => {
+		const steps = deriveThinkingSteps([
+			{
+				contentIndex: 0,
+				text: "Inspect *render.ts* carefully.\n\n_Verify_ that refreshes can be triggered safely.",
+			},
+		]);
+
+		const collapsedLines = renderThinkingStepsLines(plainTheme, 120, {
+			mode: "collapsed",
+			steps,
+			activeStepId: steps[0]?.id,
+			isActive: false,
+			nowMs: 0,
+		});
+		const summaryLines = renderThinkingStepsLines(plainTheme, 120, {
+			mode: "summary",
+			steps,
+			isActive: false,
+		});
+
+		const collapsedJoined = collapsedLines.join("\n");
+		const summaryJoined = summaryLines.join("\n");
+		assert.ok(collapsedJoined.includes("Inspect render.ts carefully."));
+		assert.ok(summaryJoined.includes("Inspect render.ts carefully."));
+		assert.ok(summaryJoined.includes("Verify that refreshes can be triggered safely."));
+		assert.ok(!collapsedJoined.includes("*render.ts*"));
+		assert.ok(!summaryJoined.includes("_Verify_"));
+	});
+
+	it("normalizes single-emphasis markers in expanded headings, bodies, and list items", () => {
+		const steps = deriveThinkingSteps([
+			{
+				contentIndex: 0,
+				text: "## _Inspecting_ `render.ts`\n\n- *Verify* that refreshes can be triggered safely.",
+			},
+		]);
+
+		const lines = renderThinkingStepsLines(plainTheme, 120, {
+			mode: "expanded",
+			steps,
+			isActive: false,
+		});
+		const joined = lines.join("\n");
+		assert.ok(joined.includes("Inspecting render.ts"));
+		assert.ok(joined.includes("• Verify that refreshes can be triggered safely."));
+		assert.ok(!joined.includes("_Inspecting_"));
+		assert.ok(!joined.includes("*Verify*"));
+	});
+});
