@@ -1,0 +1,54 @@
+{
+  "techPreferences": [
+    "搜索结果项直接显示操作按钮（打开/编辑/删除），而非隐藏式菜单",
+    "使用 savepoint 而非完整事务来优化 SQLite 写入性能",
+    "使用 npx skills add 命令来管理技能包",
+    "可爱轻松语气，适当使用 emoji/颜文字",
+    "结构化学习循环：明确验收标准→逐项完成→验证→输出速查笔记沉淀",
+    "使用fd/rg/ast-grep进行文件和代码搜索，分工明确：fd文件、rg文本、ast-grep结构",
+    "以金句/签名风格结尾（如引用名言+角色语气），增强回应的记忆点和个性",
+    "使用 `trash` 命令替代 `rm` 删除文件以确保安全",
+    "2月10日版记忆导出的文件夹树形导航极客风格界面",
+    " Chinese Excel headers and professional charts in reports",
+    "命令面板采用左右分栏布局，左侧搜索结果列表，右侧富文本预览 pane",
+    "并行开发：前后端同时开始实现，完成后再测试验证",
+    "描述性编程任务的结构化方法",
+    "通过竞品/外部项目对比分析识别系统差距和改进方向",
+    "使用 dispatching-parallel-agents 或 subagent-driven-development 实现子代理机制",
+    "使用 npx playwright install 命令安装浏览器依赖",
+    "能力实现进度用表格展示，带状态标识(✅/❌/⚠️)和代码位置引用",
+    "玻璃卡片与深浅主题一致的视觉体系",
+    "使用 2 个 space 作为缩进",
+    "通过读取文件和工具输出来确认"
+  ],
+  "projects": [
+    "使用驱动的价值验证",
+    "「随时间成长」——每次对话都可能产生新技能，每个技能都会被复用和改进。这是目前最先进的 Agent 自我学习实现。"
+  ],
+  "decisions": [],
+  "opinions": [],
+  "techStack": {
+    "memory": 12,
+    "pi": 7,
+    "extension": 4,
+    "npm": 3,
+    "agent": 3,
+    "typescript": 2,
+    "rust": 2,
+    "api": 2,
+    "cli": 2,
+    "git": 2,
+    "skill": 2,
+    "gateway": 2,
+    "go": 1,
+    "docker": 1
+  },
+  "tools": {
+    "npm": 3,
+    "git": 2,
+    "docker": 1,
+    "vite": 1,
+    "eslint": 1,
+    "prettier": 1
+  }
+}
