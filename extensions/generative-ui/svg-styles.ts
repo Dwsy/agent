@@ -3,8 +3,9 @@
 // design guidelines extracted in guidelines.ts. These classes are what the
 // guidelines mean by "already loaded in SVG widget".
 
-export const SVG_STYLES = `
-:root {
+export function cssVariables(darkMode: boolean): string {
+  if (darkMode) {
+    return `:root {
   --p: #e0e0e0;
   --s: #a0a0a0;
   --t: #707070;
@@ -37,8 +38,45 @@ export const SVG_STYLES = `
   --border-radius-md: 8px;
   --border-radius-lg: 12px;
   --border-radius-xl: 16px;
+}`;
+  }
+  return `:root {
+  --p: #1a1a1a;
+  --s: #5f5e5a;
+  --t: #888780;
+  --bg2: #f1efe8;
+  --b: #d3d1c7;
+  --color-text-primary: #1a1a1a;
+  --color-text-secondary: #5f5e5a;
+  --color-text-tertiary: #888780;
+  --color-text-info: #185FA5;
+  --color-text-danger: #A32D2D;
+  --color-text-success: #3B6D11;
+  --color-text-warning: #854F0B;
+  --color-background-primary: #ffffff;
+  --color-background-secondary: #f1efe8;
+  --color-background-tertiary: #e8e6de;
+  --color-background-info: #E6F1FB;
+  --color-background-danger: #FCEBEB;
+  --color-background-success: #EAF3DE;
+  --color-background-warning: #FAEEDA;
+  --color-border-primary: rgba(0,0,0,0.4);
+  --color-border-secondary: rgba(0,0,0,0.3);
+  --color-border-tertiary: rgba(0,0,0,0.15);
+  --color-border-info: #378ADD;
+  --color-border-danger: #E24B4A;
+  --color-border-success: #639922;
+  --color-border-warning: #BA7517;
+  --font-sans: system-ui, -apple-system, sans-serif;
+  --font-serif: Georgia, serif;
+  --font-mono: ui-monospace, monospace;
+  --border-radius-md: 8px;
+  --border-radius-lg: 12px;
+  --border-radius-xl: 16px;
+}`;
 }
 
+export const SVG_STYLES = `
 /* Text classes */
 svg .t  { font-family: var(--font-sans); font-size: 14px; fill: var(--p); }
 svg .ts { font-family: var(--font-sans); font-size: 12px; fill: var(--s); }

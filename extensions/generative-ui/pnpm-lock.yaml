@@ -1,0 +1,25 @@
+lockfileVersion: '9.0'
+
+settings:
+  autoInstallPeers: true
+  excludeLinksFromLockfile: false
+
+importers:
+
+  .:
+    dependencies:
+      glimpseui:
+        specifier: '*'
+        version: 0.8.0
+
+packages:
+
+  glimpseui@0.8.0:
+    resolution: {integrity: sha512-trpEKiULW9sGjsLqtSH/+hMPcohvq3tkN6yM55t0WIgTsHt53+HXVTMf5ipy/w+kXbkbC/XP7DSRvzZC+E8xig==}
+    engines: {node: '>=18'}
+    os: [darwin, linux, win32]
+    hasBin: true
+
+snapshots:
+
+  glimpseui@0.8.0: {}
