@@ -1,0 +1,50 @@
+{
+  "name": "pi-messenger",
+  "version": "0.14.1",
+  "description": "Inter-agent messaging and file reservation system for pi coding agent",
+  "type": "module",
+  "author": "Nico Bailon",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nicobailon/pi-messenger.git"
+  },
+  "homepage": "https://github.com/nicobailon/pi-messenger#readme",
+  "bugs": {
+    "url": "https://github.com/nicobailon/pi-messenger/issues"
+  },
+  "keywords": [
+    "pi-package",
+    "pi",
+    "pi-coding-agent",
+    "extension",
+    "messaging",
+    "multi-agent",
+    "coordination",
+    "ai",
+    "agents",
+    "cli"
+  ],
+  "bin": {
+    "pi-messenger": "install.mjs"
+  },
+  "files": [
+    "*.ts",
+    "*.mjs",
+    "crew/**",
+    "skills/**",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "vitest": "^2.1.8"
+  },
+  "pi": {
+    "extensions": ["./index.ts"],
+    "skills": ["./skills"]
+  }
+}
