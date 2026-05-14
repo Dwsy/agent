@@ -277,6 +277,7 @@ export interface WechatQrStartResult {
   qrcodeUrl?: string;
   message: string;
   sessionKey: string;
+  abortSignal?: AbortSignal;
 }
 
 export interface WechatQrWaitResult {
@@ -308,10 +309,26 @@ interface ActiveLogin {
   startedAt: number;
   botToken?: string;
   status?: "wait" | "scaned" | "confirmed" | "expired";
+  abortController?: AbortController;
 }
 
 const ACTIVE_LOGIN_TTL_MS = 5 * 60_000; // 5 minutes
 const activeLogins = new Map<string, ActiveLogin>();
+
+// Track successfully activated account IDs to cancel concurrent login attempts
+const activatedAccounts = new Set<string>();
+
+export function markAccountActivated(accountId: string): void {
+  activatedAccounts.add(normalizeAccountId(accountId));
+}
+
+export function isAccountActivated(accountId: string): boolean {
+  return activatedAccounts.has(normalizeAccountId(accountId));
+}
+
+export function clearAccountActivated(accountId: string): void {
+  activatedAccounts.delete(normalizeAccountId(accountId));
+}
 
 function isLoginFresh(login: ActiveLogin): boolean {
   return Date.now() - login.startedAt < ACTIVE_LOGIN_TTL_MS;
@@ -394,11 +411,13 @@ export async function startWechatLoginWithQr(opts: {
 
     logger.info(`[wechat:login] QR code received`);
 
+    const abortController = new AbortController();
     const login: ActiveLogin = {
       sessionKey,
       qrcode: qrResponse.qrcode,
       qrcodeUrl: qrResponse.qrcode_img_content,
       startedAt: Date.now(),
+      abortController,
     };
 
     activeLogins.set(sessionKey, login);
@@ -407,6 +426,7 @@ export async function startWechatLoginWithQr(opts: {
       qrcodeUrl: qrResponse.qrcode_img_content,
       message: "Please scan the QR code with WeChat to connect.",
       sessionKey,
+      abortSignal: abortController.signal,
     };
   } catch (err) {
     logger.error(`[wechat:login] failed to start: ${String(err)}`);
@@ -423,6 +443,8 @@ export async function waitForWechatLogin(opts: {
   botType?: string;
   timeoutMs?: number;
   verbose?: boolean;
+  abortSignal?: AbortSignal;
+  targetAccountId?: string;
 }): Promise<WechatQrWaitResult> {
   let activeLogin = activeLogins.get(opts.sessionKey);
 
@@ -449,6 +471,23 @@ export async function waitForWechatLogin(opts: {
   logger.info(`[wechat:login] polling QR status...`);
 
   while (Date.now() < deadline) {
+    // Check if aborted externally
+    if (opts.abortSignal?.aborted) {
+      activeLogins.delete(opts.sessionKey);
+      return {
+        connected: false,
+        message: "Login cancelled: another login attempt succeeded.",
+      };
+    }
+
+    // Check if target account was already activated by a concurrent login
+    if (opts.targetAccountId && isAccountActivated(opts.targetAccountId)) {
+      activeLogins.delete(opts.sessionKey);
+      return {
+        connected: false,
+        message: "Login cancelled: account already activated.",
+      };
+    }
     try {
       const status = await pollQRStatus(opts.apiBaseUrl, activeLogin.qrcode);
       activeLogin.status = status.status;
@@ -508,10 +547,21 @@ export async function waitForWechatLogin(opts: {
           }
 
           activeLogin.botToken = status.bot_token;
+
+          // Mark account as activated to cancel concurrent login attempts
+          const normalizedId = normalizeAccountId(status.ilink_bot_id);
+          markAccountActivated(normalizedId);
+
+          // Abort any other active login sessions
+          for (const [key, login] of activeLogins) {
+            if (key !== opts.sessionKey && login.abortController) {
+              login.abortController.abort();
+            }
+          }
+
           activeLogins.delete(opts.sessionKey);
 
           // Save account
-          const normalizedId = normalizeAccountId(status.ilink_bot_id);
           saveWechatAccount(normalizedId, {
             token: status.bot_token,
             baseUrl: status.baseurl,

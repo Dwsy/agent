@@ -12,7 +12,7 @@ import type {
 } from "../../types.ts";
 import type { WechatChannelConfig, WechatAccountRuntime, WechatResolvedAccount } from "./types.ts";
 import { resolveWechatConfig } from "./config.ts";
-import { normalizeAccountId, resolveWechatAccounts, resolveDefaultAccountId, startWechatLoginWithQr, waitForWechatLogin } from "./accounts.ts";
+import { normalizeAccountId, resolveWechatAccounts, resolveDefaultAccountId, startWechatLoginWithQr, waitForWechatLogin, clearAccountActivated } from "./accounts.ts";
 import { sendWechatText, sendWechatMedia, sendWechatKeyboard } from "./outbound.ts";
 import { startWechatGateway, stopWechatGateway } from "./gateway.ts";
 import { flushWechatKnownUsers } from "./known-users.ts";
@@ -93,6 +93,9 @@ async function handleExpiredWechatAccount(rt: WechatPluginRuntimeMulti, accountI
   console.log("🔄 正在重新输出扫码二维码...");
   console.log("");
 
+  // Clear activation status to allow re-login
+  clearAccountActivated(accountId);
+
   logger.warn(`[wechat:auto-login] account expired, requesting QR re-login for accountId=${accountId}`);
   await startAutoLogin(rt, accountId);
 }
@@ -147,12 +150,14 @@ async function startAutoLogin(rt: WechatPluginRuntimeMulti, preferredAccountId?:
     console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     console.log("");
 
-    // Step 3: Poll for scan result
+    // Step 3: Poll for scan result (with abort signal for concurrent login cancellation)
     const loginResult = await waitForWechatLogin({
       sessionKey: result.sessionKey,
       apiBaseUrl: baseUrl,
       timeoutMs: 300000, // 5 minutes
       verbose: true,
+      abortSignal: result.abortSignal,
+      targetAccountId: accountId,
     });
 
     if (loginResult.connected && loginResult.botToken) {
