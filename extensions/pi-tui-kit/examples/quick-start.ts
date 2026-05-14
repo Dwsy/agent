@@ -2,9 +2,9 @@
  * Quick Start Example for pi-tui-kit
  * Demonstrates basic usage of core components
  */
-import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
-import type { TUI, Theme, KeybindingsManager } from "@mariozechner/pi-tui";
-import { matchesKey } from "@mariozechner/pi-tui";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { TUI, Theme, KeybindingsManager } from "@earendil-works/pi-tui";
+import { matchesKey } from "@earendil-works/pi-tui";
 
 import {
   // Core

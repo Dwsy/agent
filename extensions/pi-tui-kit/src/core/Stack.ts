@@ -1,9 +1,9 @@
 /**
  * Stack - Z-index layered container for overlays
  */
-import type { Component } from "@mariozechner/pi-tui";
-import { Container } from "@mariozechner/pi-tui";
-import { visibleWidth } from "@mariozechner/pi-tui";
+import type { Component } from "@earendil-works/pi-tui";
+import { Container } from "@earendil-works/pi-tui";
+import { visibleWidth } from "@earendil-works/pi-tui";
 import { safeLine } from "../utils/text.js";
 
 interface StackedItem {

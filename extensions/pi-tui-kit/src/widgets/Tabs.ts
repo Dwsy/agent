@@ -1,8 +1,8 @@
 /**
  * Tabs - Tab navigation component
  */
-import type { Component, Focusable } from "@mariozechner/pi-tui";
-import { visibleWidth } from "@mariozechner/pi-tui";
+import type { Component, Focusable } from "@earendil-works/pi-tui";
+import { visibleWidth } from "@earendil-works/pi-tui";
 import { safeLine, leftAlign, center } from "../utils/text.js";
 import type { Theme, ColorFunction } from "../utils/style.js";
 import { DefaultTheme } from "../utils/style.js";
@@ -193,7 +193,7 @@ export class Tabs implements Component, Focusable {
 			const label = tab.label;
 			const separator = " │ ";
 
-			if (tabLine.length + label.length + separator.length > width - 3) {
+			if (visibleWidth(tabLine) + visibleWidth(label) + visibleWidth(separator) > width - 3) {
 				break;
 			}
 
@@ -233,7 +233,7 @@ export class Tabs implements Component, Focusable {
 			const label = tab.label;
 			const pill = isActive ? `[ ${A(this.theme.bold(label))} ]` : tab.disabled ? `[ ${M(label)} ]` : `[ ${label} ]`;
 
-			if (tabLine.length + pill.length + spacing.length > width) {
+			if (visibleWidth(tabLine) + visibleWidth(pill) + visibleWidth(spacing) > width) {
 				break;
 			}
 

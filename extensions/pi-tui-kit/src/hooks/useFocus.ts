@@ -1,7 +1,7 @@
 /**
  * useFocus - Manage focus across multiple focusable components
  */
-import type { Focusable } from "@mariozechner/pi-tui";
+import type { Focusable } from "@earendil-works/pi-tui";
 
 export interface FocusableItem {
 	component: Focusable;

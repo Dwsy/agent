@@ -1,7 +1,7 @@
 /**
  * Spacer - Empty space that expands or has fixed size
  */
-import type { Component } from "@mariozechner/pi-tui";
+import type { Component } from "@earendil-works/pi-tui";
 
 export interface SpacerOptions {
 	fixed?: number;

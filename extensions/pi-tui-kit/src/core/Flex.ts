@@ -2,9 +2,9 @@
  * Flex - Flexbox-like layout container
  * Supports row and column directions with alignment
  */
-import type { Component, Container } from "@mariozechner/pi-tui";
-import { Container as TuiContainer } from "@mariozechner/pi-tui";
-import { visibleWidth, truncateToWidth } from "@mariozechner/pi-tui";
+import type { Component, Container } from "@earendil-works/pi-tui";
+import { Container as TuiContainer } from "@earendil-works/pi-tui";
+import { visibleWidth, truncateToWidth } from "@earendil-works/pi-tui";
 import { safeLine } from "../utils/text.js";
 
 export type FlexDirection = "row" | "column";

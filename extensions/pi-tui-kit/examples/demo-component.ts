@@ -2,8 +2,8 @@
  * pi-tui-kit 演示组件（纯组件，不依赖扩展API）
  * 可以在任何扩展中使用
  */
-import type { Component, Focusable, TUI, Key } from "@mariozechner/pi-tui";
-import { matchesKey } from "@mariozechner/pi-tui";
+import type { Component, Focusable, TUI, Key } from "@earendil-works/pi-tui";
+import { matchesKey } from "@earendil-works/pi-tui";
 import {
   Box, Text, Spacer, Flex, Stack, Segment, Powerline,
   Panel, Button, List, Input, Dialog, Tabs, Tree, Table,

@@ -2,8 +2,8 @@
  * Segment - Powerline-style status bar segment
  * Inspired by pi-powerline-footer
  */
-import type { Component } from "@mariozechner/pi-tui";
-import { visibleWidth } from "@mariozechner/pi-tui";
+import type { Component } from "@earendil-works/pi-tui";
+import { visibleWidth } from "@earendil-works/pi-tui";
 import { safeLine, leftAlign } from "../utils/text.js";
 import type { Theme, ColorFunction } from "../utils/style.js";
 import { DefaultTheme } from "../utils/style.js";

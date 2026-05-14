@@ -1,9 +1,9 @@
 /**
  * Dialog - Modal dialog with title, content, and action buttons
  */
-import type { Component, Focusable } from "@mariozechner/pi-tui";
-import { Container } from "@mariozechner/pi-tui";
-import { visibleWidth, truncateToWidth } from "@mariozechner/pi-tui";
+import type { Component, Focusable } from "@earendil-works/pi-tui";
+import { Container } from "@earendil-works/pi-tui";
+import { visibleWidth, truncateToWidth } from "@earendil-works/pi-tui";
 import { Borders, BorderStyle } from "../utils/border.js";
 import { safeLine, center, leftAlign } from "../utils/text.js";
 import type { Theme, ColorFunction } from "../utils/style.js";

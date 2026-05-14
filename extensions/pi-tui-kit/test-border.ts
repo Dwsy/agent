@@ -1,8 +1,8 @@
 /**
  * 简单测试边框显示
  */
-import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
-import type { Component } from "@mariozechner/pi-tui";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { Component } from "@earendil-works/pi-tui";
 
 class SimpleBorderTest implements Component {
   render(width: number): string[] {

@@ -2,13 +2,13 @@
  * Panel - Bordered container with optional title
  * Simplified API for common use cases
  */
-import type { Component } from "@mariozechner/pi-tui";
-import { Container } from "@mariozechner/pi-tui";
+import type { Component } from "@earendil-works/pi-tui";
+import { Container } from "@earendil-works/pi-tui";
 import { Borders, BorderStyle } from "../utils/border.js";
 import { safeLine, buildLine } from "../utils/text.js";
 import type { Theme, ColorFunction } from "../utils/style.js";
 import { DefaultTheme } from "../utils/style.js";
-import { visibleWidth, truncateToWidth } from "@mariozechner/pi-tui";
+import { visibleWidth, truncateToWidth } from "@earendil-works/pi-tui";
 
 export interface PanelOptions {
 	title?: string;

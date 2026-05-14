@@ -1,8 +1,8 @@
 /**
  * Text - Simple text display with wrapping and alignment
  */
-import type { Component } from "@mariozechner/pi-tui";
-import { wrapTextWithAnsi, visibleWidth } from "@mariozechner/pi-tui";
+import type { Component } from "@earendil-works/pi-tui";
+import { wrapTextWithAnsi, visibleWidth, truncateToWidth } from "@earendil-works/pi-tui";
 import { safeLine, leftAlign, rightAlign, center } from "../utils/text.js";
 import type { Theme, ColorFunction } from "../utils/style.js";
 
@@ -38,7 +38,7 @@ export class Text implements Component {
 			// Split by newlines but don't wrap
 			lines = this.content.split("\n").map((line) => {
 				if (visibleWidth(line) > width) {
-					return line.slice(0, width);
+					return truncateToWidth(line, width);
 				}
 				return line;
 			});

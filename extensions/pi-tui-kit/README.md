@@ -2,7 +2,7 @@
 
 A high-level TUI component library for [Pi](https://github.com/badlogic/pi-mono/), inspired by Ratatui, Blessed, and modern UI frameworks.
 
-Built on top of `@mariozechner/pi-tui` with **strict width safety** — no more `Rendered line X exceeds terminal width` crashes!
+Built on top of `@earendil-works/pi-tui` with **strict width safety** — no more `Rendered line X exceeds terminal width` crashes!
 
 ## ✨ Features
 
@@ -358,7 +358,7 @@ const panel = new Panel({ theme: NoColorTheme });
 ### Focus Management
 
 ```typescript
-import { useFocus, matchesKey } from "@mariozechner/pi-tui";
+import { useFocus, matchesKey } from "@earendil-works/pi-tui";
 import { List, Button, Input } from "pi-tui-kit";
 
 const list = new List({ items: [...] });
@@ -456,8 +456,8 @@ npm run typecheck
 ### Complete Extension Example
 
 ```typescript
-import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
-import type { TUI, Theme, KeybindingsManager } from "@mariozechner/pi-tui";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { TUI, Theme, KeybindingsManager } from "@earendil-works/pi-tui";
 import { 
   Panel, List, Button, 
   DefaultTheme, Borders 

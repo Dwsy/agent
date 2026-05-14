@@ -2,8 +2,8 @@
  * Tree - Hierarchical tree view component
  * For file browsers, JSON explorers, etc.
  */
-import type { Component, Focusable } from "@mariozechner/pi-tui";
-import { visibleWidth } from "@mariozechner/pi-tui";
+import type { Component, Focusable } from "@earendil-works/pi-tui";
+import { visibleWidth, truncateToWidth } from "@earendil-works/pi-tui";
 import { safeLine, leftAlign } from "../utils/text.js";
 import type { Theme, ColorFunction } from "../utils/style.js";
 import { DefaultTheme } from "../utils/style.js";
@@ -265,8 +265,9 @@ export class Tree implements Component, Focusable {
 			const color = node.children ? this.folderColor : this.fileColor;
 
 			let label = node.label;
-			if (visibleWidth(label) > availableWidth - visibleWidth(indent) - 2) {
-				label = label.slice(0, availableWidth - visibleWidth(indent) - 5) + "...";
+			const maxLabelWidth = availableWidth - visibleWidth(indent) - 2;
+			if (visibleWidth(label) > maxLabelWidth) {
+				label = truncateToWidth(label, maxLabelWidth - 3) + "...";
 			}
 
 			let line = indent + icon + " " + color(label);
@@ -281,7 +282,7 @@ export class Tree implements Component, Focusable {
 			if (node.details) {
 				const remaining = availableWidth - visibleWidth(line);
 				if (remaining > 5) {
-					const detailText = node.details.slice(0, remaining - 3);
+					const detailText = truncateToWidth(node.details, remaining - 3);
 					line += this.mutedColor(" " + detailText);
 				}
 			}

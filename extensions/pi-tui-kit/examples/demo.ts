@@ -2,9 +2,9 @@
  * pi-tui-kit 完整功能演示
  * 展示所有组件的用法和效果
  */
-import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
-import type { Component, Focusable, TUI, KeybindingsManager } from "@mariozechner/pi-tui";
-import { matchesKey, CURSOR_MARKER } from "@mariozechner/pi-tui";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { Component, Focusable, TUI, KeybindingsManager } from "@earendil-works/pi-tui";
+import { matchesKey, CURSOR_MARKER } from "@earendil-works/pi-tui";
 import {
   // Core
   Box, Text, Spacer, Flex, Stack, Segment, Powerline,

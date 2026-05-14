@@ -2,8 +2,8 @@
  * List - Scrollable list with selection
  * Similar to SelectList but with simpler API
  */
-import type { Component, Focusable } from "@mariozechner/pi-tui";
-import { visibleWidth, truncateToWidth } from "@mariozechner/pi-tui";
+import type { Component, Focusable } from "@earendil-works/pi-tui";
+import { visibleWidth, truncateToWidth } from "@earendil-works/pi-tui";
 import { safeLine, leftAlign } from "../utils/text.js";
 import type { Theme, ColorFunction } from "../utils/style.js";
 import { DefaultTheme } from "../utils/style.js";

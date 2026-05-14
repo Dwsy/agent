@@ -1,8 +1,8 @@
 /**
  * Table - Data table with column alignment
  */
-import type { Component } from "@mariozechner/pi-tui";
-import { visibleWidth, truncateToWidth } from "@mariozechner/pi-tui";
+import type { Component } from "@earendil-works/pi-tui";
+import { visibleWidth, truncateToWidth } from "@earendil-works/pi-tui";
 import { safeLine, leftAlign, center, rightAlign } from "../utils/text.js";
 import type { Theme, ColorFunction } from "../utils/style.js";
 import { DefaultTheme } from "../utils/style.js";

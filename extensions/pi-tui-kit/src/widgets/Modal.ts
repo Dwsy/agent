@@ -2,8 +2,8 @@
  * Modal - Overlay modal with backdrop
  * Inspired by pi-btw's overlay system
  */
-import type { Component } from "@mariozechner/pi-tui";
-import { visibleWidth } from "@mariozechner/pi-tui";
+import type { Component } from "@earendil-works/pi-tui";
+import { visibleWidth } from "@earendil-works/pi-tui";
 import { safeLine, center } from "../utils/text.js";
 import type { Theme, ColorFunction } from "../utils/style.js";
 import { DefaultTheme } from "../utils/style.js";
@@ -79,9 +79,9 @@ export class Modal implements Component {
 			const centered = leftPad + line;
 			const padded = safeLine(centered, availableWidth);
 			
-			if (this.backdrop && padded.length < availableWidth) {
+			if (this.backdrop && visibleWidth(padded) < availableWidth) {
 				// Fill remaining with backdrop
-				const remaining = availableWidth - padded.length;
+				const remaining = availableWidth - visibleWidth(padded);
 				lines.push(padded + this.theme.dim(this.backdropChar.repeat(remaining)));
 			} else {
 				lines.push(padded);

@@ -2,8 +2,8 @@
  * pi-tui-kit Extension Entry Point
  * 标准 Pi 扩展格式
  */
-import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
-import type { Component } from "@mariozechner/pi-tui";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { Component } from "@earendil-works/pi-tui";
 import { SimpleDemo } from "./examples/demo-simple.js";
 
 export default function piTuiKitExtension(pi: ExtensionAPI): void {

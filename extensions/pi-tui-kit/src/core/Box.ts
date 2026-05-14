@@ -1,9 +1,9 @@
 /**
  * Box - Container with padding and optional border
  */
-import type { Component, Container } from "@mariozechner/pi-tui";
-import { Container as TuiContainer } from "@mariozechner/pi-tui";
-import { visibleWidth, truncateToWidth } from "@mariozechner/pi-tui";
+import type { Component, Container } from "@earendil-works/pi-tui";
+import { Container as TuiContainer } from "@earendil-works/pi-tui";
+import { visibleWidth, truncateToWidth } from "@earendil-works/pi-tui";
 import { Borders, BorderStyle, renderBox } from "../utils/border.js";
 import { safeLine } from "../utils/text.js";
 import type { Theme } from "../utils/style.js";

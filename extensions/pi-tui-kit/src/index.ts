@@ -2,7 +2,7 @@
  * pi-tui-kit - A high-level TUI component library for Pi
  *
  * Inspired by Ratatui, Blessed, and modern UI libraries
- * Built on top of @mariozechner/pi-tui
+ * Built on top of @earendil-works/pi-tui
  *
  * Features:
  * - ✓ Safe width calculations (ANSI-aware)
@@ -172,7 +172,7 @@ export { useInput } from "./hooks/useInput.js";
 export { SettingsPanelComponent, showSettingsPanel } from "./examples/settings-panel.js";
 
 // Re-export useful types from pi-tui
-export type { Component, Container, Focusable } from "@mariozechner/pi-tui";
+export type { Component, Container, Focusable } from "@earendil-works/pi-tui";
 
 /**
  * Quick start:

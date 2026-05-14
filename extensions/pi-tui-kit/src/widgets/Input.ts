@@ -2,8 +2,8 @@
  * Input - Single line text input with cursor
  * Wrapper around pi-tui Input with simplified API
  */
-import type { Component, Focusable } from "@mariozechner/pi-tui";
-import { Input as TuiInput, CURSOR_MARKER, visibleWidth, truncateToWidth } from "@mariozechner/pi-tui";
+import type { Component, Focusable } from "@earendil-works/pi-tui";
+import { Input as TuiInput, CURSOR_MARKER, visibleWidth, truncateToWidth } from "@earendil-works/pi-tui";
 import type { Theme } from "../utils/style.js";
 import { DefaultTheme } from "../utils/style.js";
 

@@ -2,7 +2,7 @@
  * Text utilities for safe width calculations
  * Handles ANSI escape codes correctly
  */
-import { visibleWidth, truncateToWidth } from "@mariozechner/pi-tui";
+import { visibleWidth, truncateToWidth } from "@earendil-works/pi-tui";
 
 export { visibleWidth, truncateToWidth };
 

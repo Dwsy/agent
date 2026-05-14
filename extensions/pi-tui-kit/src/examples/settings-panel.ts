@@ -2,9 +2,9 @@
  * Example: Settings Panel using pi-tui-kit
  * Demonstrates Panel, List, Tabs, Input, Button components
  */
-import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
-import type { Component, Focusable, KeybindingsManager, TUI } from "@mariozechner/pi-tui";
-import { matchesKey, CURSOR_MARKER } from "@mariozechner/pi-tui";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { Component, Focusable, KeybindingsManager, TUI } from "@earendil-works/pi-tui";
+import { matchesKey, CURSOR_MARKER, visibleWidth, truncateToWidth } from "@earendil-works/pi-tui";
 import {
 	Panel,
 	List,
@@ -249,7 +249,10 @@ class SettingsPanelComponent implements Component, Focusable {
 		const footerLines = this.renderFooter(width);
 		lines.push(...footerLines);
 
-		return lines.map((line) => line.slice(0, width).padEnd(width));
+		return lines.map((line) => {
+			const truncated = truncateToWidth(line, width);
+			return truncated + " ".repeat(Math.max(0, width - visibleWidth(truncated)));
+		});
 	}
 
 	private renderFooter(width: number): string[] {

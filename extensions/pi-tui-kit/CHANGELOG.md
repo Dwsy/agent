@@ -24,7 +24,7 @@
 - **index.ts**: Reorganized exports for cleaner structure
   - Separated type-only exports from value exports
   - Added explicit export paths for utilities
-  - Re-exported useful types from `@mariozechner/pi-tui`
+  - Re-exported useful types from `@earendil-works/pi-tui`
 
 ### Added
 - **test/component.test.ts**: Comprehensive test suite covering:

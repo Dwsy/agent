@@ -80,8 +80,8 @@ git checkout -b feature/your-feature-name
  * 
  * 详细描述组件功能和使用场景
  */
-import type { Component } from "@mariozechner/pi-tui";
-import { visibleWidth } from "@mariozechner/pi-tui";
+import type { Component } from "@earendil-works/pi-tui";
+import { visibleWidth } from "@earendil-works/pi-tui";
 import { safeLine } from "../utils/text.js";
 
 export interface ComponentOptions {
@@ -117,7 +117,7 @@ export class ComponentName implements Component {
 如果组件需要支持键盘交互，实现 `Focusable` 接口：
 
 ```typescript
-import type { Component, Focusable } from "@mariozechner/pi-tui";
+import type { Component, Focusable } from "@earendil-works/pi-tui";
 
 export class InteractiveComponent implements Component, Focusable {
   private _focused = false;
@@ -249,8 +249,8 @@ const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸"];
 3. 相关组件
 
 ```typescript
-import type { Component, Focusable } from "@mariozechner/pi-tui";
-import { visibleWidth } from "@mariozechner/pi-tui";
+import type { Component, Focusable } from "@earendil-works/pi-tui";
+import { visibleWidth } from "@earendil-works/pi-tui";
 
 import { safeLine, center } from "../utils/text.js";
 import type { Theme, ColorFunction } from "../utils/style.js";

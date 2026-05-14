@@ -6,6 +6,7 @@ import { useState, useCallback } from "./useState.js";
 export interface UseSelectOptions<T> {
 	items: T[];
 	initialIndex?: number;
+	maxVisible?: number;
 	getId?: (item: T) => string;
 	getLabel?: (item: T) => string;
 }

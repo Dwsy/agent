@@ -2,9 +2,9 @@
  * Example: File Browser using pi-tui-kit
  * Demonstrates Tree, Modal, Toast, Panel components
  */
-import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
-import type { Component, Focusable, KeybindingsManager, TUI } from "@mariozechner/pi-tui";
-import { matchesKey, CURSOR_MARKER } from "@mariozechner/pi-tui";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { Component, Focusable, KeybindingsManager, TUI } from "@earendil-works/pi-tui";
+import { matchesKey, CURSOR_MARKER } from "@earendil-works/pi-tui";
 import {
 	Panel,
 	Tree,
@@ -26,7 +26,7 @@ import {
 	useSelect,
 	useInput,
 } from "../index.js";
-import { bash } from "@mariozechner/pi-coding-agent";
+import { bash } from "@earendil-works/pi-coding-agent";
 
 interface FileEntry {
 	name: string;

@@ -1,7 +1,7 @@
 /**
  * useInput - Manage keyboard input with history and validation
  */
-import type { Focusable } from "@mariozechner/pi-tui";
+import type { Focusable } from "@earendil-works/pi-tui";
 
 export interface UseInputOptions {
 	initialValue?: string;

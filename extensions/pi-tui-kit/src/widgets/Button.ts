@@ -2,8 +2,8 @@
  * Button - Interactive button component
  * Supports focus state and click handling
  */
-import type { Component, Focusable } from "@mariozechner/pi-tui";
-import { visibleWidth } from "@mariozechner/pi-tui";
+import type { Component, Focusable } from "@earendil-works/pi-tui";
+import { visibleWidth } from "@earendil-works/pi-tui";
 import { safeLine, center } from "../utils/text.js";
 import type { Theme, ColorFunction } from "../utils/style.js";
 import { DefaultTheme } from "../utils/style.js";
@@ -44,7 +44,7 @@ export class Button implements Component, Focusable {
 	}
 
 	render(width: number): string[] {
-		const w = this.fixedWidth ?? Math.max(10, this.label.length + 4);
+		const w = this.fixedWidth ?? Math.max(10, visibleWidth(this.label) + 4);
 		const labelWidth = visibleWidth(this.label);
 
 		let content: string;

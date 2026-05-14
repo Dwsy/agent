@@ -2,8 +2,8 @@
  * pi-tui-kit 简化版完整演示
  * 纯文本版本，确保宽度计算正确
  */
-import type { Component, Focusable, TUI } from "@mariozechner/pi-tui";
-import { matchesKey } from "@mariozechner/pi-tui";
+import type { Component, Focusable, TUI } from "@earendil-works/pi-tui";
+import { matchesKey } from "@earendil-works/pi-tui";
 
 // 边框字符
 const B = {
