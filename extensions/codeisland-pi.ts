@@ -40,8 +40,8 @@ import { execFileSync, execFile } from "child_process";
 import { existsSync } from "fs";
 import { homedir } from "os";
 import { getuid } from "process";
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import type { AssistantMessage } from "@mariozechner/pi-ai";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { AssistantMessage } from "@earendil-works/pi-ai";
 
 // ── Socket / bridge constants ─────────────────────────────────────────────────
 

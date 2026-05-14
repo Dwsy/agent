@@ -5,7 +5,7 @@
  * Simplified version - uses static limits (no session token tracking).
  */
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 // Tools that benefit from truncation
 const TRUNCATABLE_TOOLS = ["grep", "find", "ls"];

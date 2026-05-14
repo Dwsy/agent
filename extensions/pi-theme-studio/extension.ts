@@ -1,5 +1,5 @@
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { initTheme } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { initTheme } from "@earendil-works/pi-coding-agent";
 import { readFile, writeFile, readdir } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import { homedir } from "node:os";

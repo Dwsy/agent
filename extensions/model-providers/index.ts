@@ -5,7 +5,7 @@
  * Each provider is a separate plugin in the providers/ directory.
  */
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { getBuiltinAdapters, type ProviderAdapter } from "./providers.ts";
 import { loginQwen } from "./providers/qwen-oauth/index.ts";
 

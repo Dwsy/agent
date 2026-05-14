@@ -18,8 +18,8 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
-import type { ExtensionAPI, ExtensionContext, SessionEntry } from "@mariozechner/pi-coding-agent";
-import { Key, Text } from "@mariozechner/pi-tui";
+import type { ExtensionAPI, ExtensionContext, SessionEntry } from "@earendil-works/pi-coding-agent";
+import { Key, Text } from "@earendil-works/pi-tui";
 
 // State file structure (YAML frontmatter in markdown)
 interface RalphState {

@@ -7,10 +7,10 @@
  * - Key info: name, description, parameters
  */
 
-import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
-import type { ToolInfo } from "@mariozechner/pi-coding-agent";
-import { Container, Text, Input, matchesKey } from "@mariozechner/pi-tui";
-import type { Focusable, KeybindingsManager, TUI } from "@mariozechner/pi-tui";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ToolInfo } from "@earendil-works/pi-coding-agent";
+import { Container, Text, Input, matchesKey } from "@earendil-works/pi-tui";
+import type { Focusable, KeybindingsManager, TUI } from "@earendil-works/pi-tui";
 
 // =============================================================================
 // Types

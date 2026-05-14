@@ -1,9 +1,9 @@
 // Pi Insights Plugin - Main Entry Point
 // Usage: /insights [week|month|all]
 
-import type { ExtensionAPI, ExtensionCommandContext } from '@mariozechner/pi-coding-agent'
+import type { ExtensionAPI, ExtensionCommandContext } from '@earendil-works/pi-coding-agent'
 import { Type } from '@sinclair/typebox'
-import { complete, type Api, type Model, type UserMessage } from '@mariozechner/pi-ai'
+import { complete, type Api, type Model, type UserMessage } from '@earendil-works/pi-ai'
 import { getSessionsInRange } from './collector/lite-scan'
 import { extractSessionMeta } from './collector/session-meta'
 import { aggregateData } from './analyzer/aggregator'

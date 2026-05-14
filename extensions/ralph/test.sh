@@ -116,7 +116,7 @@ echo ""
 
 # Test 10: Correct imports
 echo "Test 10: Extension imports correct types"
-if grep -q '@mariozechner/pi-coding-agent' "$EXT_PATH" 2>/dev/null; then
+if grep -q '@earendil-works/pi-coding-agent' "$EXT_PATH" 2>/dev/null; then
   echo "  ✅ PASSED: Correct package imports"
 else
   echo "  ❌ FAILED: Missing pi-coding-agent imports"

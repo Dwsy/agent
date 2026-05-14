@@ -6,8 +6,8 @@
  * @module extensions/shared/llm-utils
  */
 
-import { complete, type Model, type Api, type UserMessage } from "@mariozechner/pi-ai";
-import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
+import { complete, type Model, type Api, type UserMessage } from "@earendil-works/pi-ai";
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 const HAIKU_MODEL_ID = "claude-haiku-4-5";
 

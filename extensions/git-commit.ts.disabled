@@ -4,7 +4,7 @@
  * 将 git 提交任务交给 LLM 处理，提供专业的提交规范提示词
  */
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 const COMMIT_PROMPT = `请作为专业的软件开发助手，遵循以下步骤完成git原子化提交：
 

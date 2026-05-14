@@ -99,7 +99,7 @@ pi 的自动完成由 `CombinedAutocompleteProvider` 实现，该类：
 1. **修改 pi 源码**（推荐）
    - 直接修改 `CombinedAutocompleteProvider.getSuggestions` 方法
    - 添加对 `#` 前缀的支持
-   - 文件位置：`~/.local/share/nvm/v23.11.1/lib/node_modules/@mariozechner/pi-coding-agent/dist/modes/interactive/interactive-mode.js`
+   - 文件位置：`~/.local/share/nvm/v23.11.1/lib/node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/interactive-mode.js`
    - 优点：完美的自动完成体验
    - 缺点：需要修改 pi 核心代码，更新后需重新修改
 
@@ -116,7 +116,7 @@ pi 的自动完成由 `CombinedAutocompleteProvider` 实现，该类：
 1. **找到 CombinedAutocompleteProvider**
    ```bash
    # 文件位置
-   ~/.local/share/nvm/v23.11.1/lib/node_modules/@mariozechner/pi-coding-agent/dist/modes/interactive/interactive-mode.js
+   ~/.local/share/nvm/v23.11.1/lib/node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/interactive-mode.js
    ```
 
 2. **在 getSuggestions 方法中添加 # 支持**
@@ -219,7 +219,7 @@ extensions/hash-trigger/
 ## 参考资料
 
 ### pi 相关
-- pi 文档：`~/.local/share/nvm/v23.11.1/lib/node_modules/@mariozechner/pi-coding-agent/README.md`
+- pi 文档：`~/.local/share/nvm/v23.11.1/lib/node_modules/@earendil-works/pi-coding-agent/README.md`
 - 扩展文档：`docs/extensions.md`
 - TUI 文档：`docs/tui.md`
 

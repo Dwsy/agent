@@ -1,4 +1,4 @@
-import type { ExtensionAPI, ExtensionContext, SessionEntry } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext, SessionEntry } from "@earendil-works/pi-coding-agent";
 import { resolve, dirname, basename } from "node:path";
 import { writeFileSync, readFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";

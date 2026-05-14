@@ -2,14 +2,14 @@
   "registerToolOverrides": {
     "read": false,
     "grep": false,
-    "find": true,
-    "ls": true,
+    "find": false,
+    "ls": false,
     "bash": true,
     "edit": true,
     "write": true
   },
-  "enableNativeUserMessageBox": false,
-  "readOutputMode": "preview",
+  "enableNativeUserMessageBox": true,
+  "readOutputMode": "summary",
   "searchOutputMode": "preview",
   "mcpOutputMode": "preview",
   "previewLines": 4,

@@ -1,7 +1,6 @@
 {
   "enabledFeatures": [
     "autocomplete",
-    "statusUI",
-    "builtInToolEnhancements"
+    "statusUI"
   ]
 }

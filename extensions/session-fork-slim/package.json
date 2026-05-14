@@ -24,8 +24,8 @@
   "author": "",
   "license": "MIT",
   "peerDependencies": {
-    "@mariozechner/pi-coding-agent": ">=0.67.0",
-    "@mariozechner/pi-tui": ">=0.67.0"
+    "@earendil-works/pi-coding-agent": "^0.74.0",
+    "@earendil-works/pi-tui": "^0.74.0"
   },
   "devDependencies": {
     "typescript": "^5.3.0"

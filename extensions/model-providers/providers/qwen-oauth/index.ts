@@ -7,8 +7,8 @@
  * 3. ~/.cli-proxy-api/qwen-*.json (CLIProxyAPI) - LOWEST
  */
 
-import type { ProviderConfig, ModelConfig } from "@mariozechner/pi-coding-agent";
-import type { OAuthLoginCallbacks, OAuthCredentials } from "@mariozechner/pi-ai";
+import type { ProviderConfig, ModelConfig } from "@earendil-works/pi-coding-agent";
+import type { OAuthLoginCallbacks, OAuthCredentials } from "@earendil-works/pi-ai";
 import { homedir } from "node:os";
 import { join } from "node:path";
 

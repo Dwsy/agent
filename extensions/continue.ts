@@ -1,5 +1,5 @@
-import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
-import { Key } from "@mariozechner/pi-tui";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { Key } from "@earendil-works/pi-tui";
 
 export default function (pi: ExtensionAPI) {
 	if (process.argv.includes("--mode") && process.argv.includes("rpc")) return;

@@ -5,7 +5,7 @@
  * Each provider is a separate plugin in the providers/ directory.
  */
 
-import type { ProviderAdapter } from "@mariozechner/pi-coding-agent";
+import type { ProviderAdapter } from "@earendil-works/pi-coding-agent";
 
 // Import provider plugins
 import { qwenOAuthAdapter } from "./providers/qwen-oauth/index.ts";

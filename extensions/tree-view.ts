@@ -15,10 +15,10 @@
  * @module tree-view
  */
 
-import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { execSync } from "child_process";
 import { writeFileSync, unlinkSync, existsSync } from "fs";
-import { tmpdir } from "os";
+import { tmpdir, homedir } from "os";
 import { join } from "path";
 
 const MAX_SECOND_LEVEL_ITEMS = parseInt(process.env.TREE_VIEW_MAX_SECOND_LEVEL_ITEMS || "50", 10);
@@ -116,14 +116,16 @@ for path in sorted(root.keys()):
 }
 
 const TREE_DEPTH = parseInt(process.env.TREE_DEPTH || "2", 10);
-const treeOutput = getTreeOutput(TREE_DEPTH);
+const isHomeDir = process.cwd() === homedir();
+const treeOutput = isHomeDir ? "" : getTreeOutput(TREE_DEPTH);
 
-const TREE_VIEW_INJECTION = `\ncwd:\n${treeOutput}\n`;
+const TREE_VIEW_INJECTION = treeOutput ? `\ncwd:\n${treeOutput}\n` : "";
 
 export default function (pi: ExtensionAPI) {
 	pi.on("before_agent_start", async (event, ctx: ExtensionContext) => {
-		return {
-			systemPrompt: `${event.systemPrompt}\n\n${TREE_VIEW_INJECTION}`,
-		};
+		const systemPrompt = TREE_VIEW_INJECTION 
+			? `${event.systemPrompt}\n\n${TREE_VIEW_INJECTION}`
+			: event.systemPrompt;
+		return { systemPrompt };
 	});
 }

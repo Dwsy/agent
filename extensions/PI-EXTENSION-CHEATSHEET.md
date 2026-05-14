@@ -92,7 +92,7 @@ const choice = await ctx.ui.select("Pick:", ["A", "B", "C"]);
 
 ### 自定义 TUI（复杂交互）
 ```typescript
-import { Container, SelectList, Text } from "@mariozechner/pi-tui";
+import { Container, SelectList, Text } from "@earendil-works/pi-tui";
 
 const result = await ctx.ui.custom<string>((tui, theme, kb, done) => {
   const container = new Container();
@@ -215,8 +215,8 @@ console.log(JSON.stringify(ctx.sessionManager.getEntries(), null, 2));
 
 ```typescript
 import { Type } from "@sinclair/typebox";
-import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
-import { Container, SelectList, Text } from "@mariozechner/pi-tui";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { Container, SelectList, Text } from "@earendil-works/pi-tui";
 ```
 
 ---
