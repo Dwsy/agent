@@ -1,4 +1,4 @@
-declare module "@mariozechner/pi-tui" {
+declare module "@earendil-works/pi-tui" {
 	export interface SettingItem {
 		id: string;
 		label: string;
@@ -43,7 +43,7 @@ declare module "@mariozechner/pi-tui" {
 	export function visibleWidth(text: string): number;
 }
 
-declare module "@mariozechner/pi-coding-agent" {
+declare module "@earendil-works/pi-coding-agent" {
 	interface UiLike {
 		notify(message: string, level: "info" | "warning" | "error"): void;
 		custom<T>(

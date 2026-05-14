@@ -260,7 +260,7 @@ Automatic fixes applied on Windows:
 
 ### Dependencies
 
-- **Peer dependencies:** `@mariozechner/pi-coding-agent`, `@mariozechner/pi-tui`
+- **Peer dependencies:** `@earendil-works/pi-coding-agent`, `@earendil-works/pi-tui`
 - **Runtime:** Node.js ≥20, optional `rtk` binary for command rewriting
 
 ## Development

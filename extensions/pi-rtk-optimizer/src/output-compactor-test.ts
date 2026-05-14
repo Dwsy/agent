@@ -385,7 +385,7 @@ runTest("rtk grep-style output sanitizes emoji file markers", () => {
 runTest("rtk git diff verbose summary sanitizes file markers", () => {
 	const compacted = compactBashOutput(
 		"rtk git diff -- agent/extensions/pi-mcp-adapter/package.json",
-		"agent/extensions/pi-mcp-adapter/package.json | 2 +-\n\n--- Changes ---\n\n📄 agent/extensions/pi-mcp-adapter/package.json\n  @@ -38,7 +38,7 @@\n  -    \"@mariozechner/pi-coding-agent\": \"^0.58.1\",\n",
+		"agent/extensions/pi-mcp-adapter/package.json | 2 +-\n\n--- Changes ---\n\n📄 agent/extensions/pi-mcp-adapter/package.json\n  @@ -38,7 +38,7 @@\n  -    \"@earendil-works/pi-coding-agent\": \"^0.58.1\",\n",
 	);
 
 	assert.ok(compacted.includes("--- Changes ---"));
@@ -396,7 +396,7 @@ runTest("rtk git diff verbose summary sanitizes file markers", () => {
 runTest("git diff compaction skips already-compacted RTK-shaped output", () => {
 	const compacted = compactBashOutput(
 		"git diff -- agent/extensions/pi-mcp-adapter/package.json",
-		"agent/extensions/pi-mcp-adapter/package.json | 2 +-\n\n--- Changes ---\n\n📄 agent/extensions/pi-mcp-adapter/package.json\n  @@ -38,7 +38,7 @@\n  -    \"@mariozechner/pi-coding-agent\": \"^0.58.1\",\n",
+		"agent/extensions/pi-mcp-adapter/package.json | 2 +-\n\n--- Changes ---\n\n📄 agent/extensions/pi-mcp-adapter/package.json\n  @@ -38,7 +38,7 @@\n  -    \"@earendil-works/pi-coding-agent\": \"^0.58.1\",\n",
 	);
 
 	assert.ok(compacted.includes("--- Changes ---"));

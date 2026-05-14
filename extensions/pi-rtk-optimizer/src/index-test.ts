@@ -3,12 +3,12 @@ import { mock } from "bun:test";
 
 import { runTest } from "./test-helpers.ts";
 
-mock.module("@mariozechner/pi-coding-agent", () => ({
+mock.module("@earendil-works/pi-coding-agent", () => ({
 	getSettingsListTheme: () => ({}),
 	isToolCallEventType: (toolName: string, event: Record<string, unknown>) => event.toolName === toolName,
 }));
 
-mock.module("@mariozechner/pi-tui", () => ({
+mock.module("@earendil-works/pi-tui", () => ({
 	Box: class {},
 	Container: class {
 		addChild(): void {}

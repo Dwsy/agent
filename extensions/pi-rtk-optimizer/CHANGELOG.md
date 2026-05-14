@@ -17,7 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.5.2] - 2026-04-01
 
 ### Changed
-- Updated `@mariozechner/pi-coding-agent` and `@mariozechner/pi-tui` peer dependencies to ^0.64.0
+- Updated `@earendil-works/pi-coding-agent` and `@earendil-works/pi-tui` peer dependencies to ^0.64.0
 - Improved RTK note message to guide users through '/rtk' toggle in Pi TUI
 
 ## [0.5.1] - 2026-03-24
@@ -47,7 +47,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `rtk-command-environment.ts` module for platform-specific temp directory resolution and shell-safe quoting
 
 ### Changed
-- Updated `@mariozechner/pi-coding-agent` and `@mariozechner/pi-tui` peer dependencies to ^0.62.0
+- Updated `@earendil-works/pi-coding-agent` and `@earendil-works/pi-tui` peer dependencies to ^0.62.0
 - Simplified RTK hook warning detection — removed unused command-specific patterns and consolidated detection logic
 - Focus on canonical hook warning messages that RTK emits
 - Updated tests to verify simplified behavior and ensure non-hook RTK output is preserved verbatim

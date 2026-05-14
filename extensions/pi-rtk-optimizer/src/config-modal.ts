@@ -1,5 +1,5 @@
-import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
-import type { SettingItem } from "@mariozechner/pi-tui";
+import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import type { SettingItem } from "@earendil-works/pi-tui";
 import { toOnOff } from "./boolean-format.js";
 import { ZellijModal, ZellijSettingsModal } from "./zellij-modal.js";
 import { getRtkArgumentCompletions } from "./command-completions.js";
