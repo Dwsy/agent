@@ -2,7 +2,7 @@ import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { constants } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { Type } from "@sinclair/typebox";
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { buildCodeMapHtml } from "../../html.ts";
 import type { CodeMapDocument, CodeMapIndexDocument, CodeMapIndexEntry } from "../../types.ts";
 

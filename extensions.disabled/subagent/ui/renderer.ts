@@ -2,8 +2,8 @@
  * UI rendering for subagent results
  */
 
-import { Container, Markdown, Spacer, Text } from "@mariozechner/pi-tui";
-import { getMarkdownTheme } from "@mariozechner/pi-coding-agent";
+import { Container, Markdown, Spacer, Text } from "@earendil-works/pi-tui";
+import { getMarkdownTheme } from "@earendil-works/pi-coding-agent";
 import type { SubagentDetails, SingleResult } from "../types.js";
 import { getDisplayItems, formatToolCall, aggregateUsage, renderDisplayItems, formatJson, formatToolResult } from "./formatter.js";
 import { formatUsageStats, getFinalOutput, formatDuration } from "../utils/formatter.js";

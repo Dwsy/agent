@@ -22,7 +22,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { log } from "./logger.ts";
 import { config } from "./config.ts";
-import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import {
   readRoleMemory,
   searchRoleMemory,

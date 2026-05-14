@@ -10,7 +10,7 @@ import type {
 	BashSpawnContext,
 	ExtensionAPI,
 	ToolDefinition,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 import {
 	createBashTool,
 	createEditTool,
@@ -19,7 +19,7 @@ import {
 	createLsTool,
 	createReadTool,
 	createWriteTool,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 import {
 	expandPath,
 	isWithinRoot,

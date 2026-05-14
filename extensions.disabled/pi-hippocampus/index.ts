@@ -1,5 +1,5 @@
 import { Type } from "@sinclair/typebox";
-import { Text } from "@mariozechner/pi-tui";
+import { Text } from "@earendil-works/pi-tui";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";

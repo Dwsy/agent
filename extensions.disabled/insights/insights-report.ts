@@ -1,4 +1,4 @@
-import type { ExtensionAPI, ExtensionContext, Message, ToolCall } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext, Message, ToolCall } from "@earendil-works/pi-coding-agent";
 import { writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { homedir } from "node:os";

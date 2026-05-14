@@ -2,7 +2,7 @@
  * Type definitions for subagent extension
  */
 
-import type { Message } from "@mariozechner/pi-ai";
+import type { Message } from "@earendil-works/pi-ai";
 import type { AgentConfig, AgentScope, AgentSource as BaseAgentSource } from "./agents.js";
 
 export type AgentSource = BaseAgentSource | "unknown";

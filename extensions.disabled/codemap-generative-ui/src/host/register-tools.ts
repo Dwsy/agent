@@ -1,4 +1,4 @@
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { ExtensionPluginModule, PluginSharedContext } from "../shared/module.ts";
 
 export function registerPluginModules(pi: ExtensionAPI, plugins: ExtensionPluginModule[], shared: PluginSharedContext) {

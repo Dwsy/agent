@@ -1,4 +1,4 @@
-import type { ExtensionAPI, ExtensionContext, Message, ToolCall, ToolResult } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext, Message, ToolCall, ToolResult } from "@earendil-works/pi-coding-agent";
 
 /**
  * Advanced Insights Extension with LLM Analysis

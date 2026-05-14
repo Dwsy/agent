@@ -9,6 +9,6 @@
     "onnxruntime-node": "^1.24.3"
   },
   "peerDependencies": {
-    "@mariozechner/pi-coding-agent": "*"
+    "@earendil-works/pi-coding-agent": "*"
   }
 }

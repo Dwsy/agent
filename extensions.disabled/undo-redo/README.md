@@ -16,8 +16,8 @@ https://github.com/user-attachments/assets/d9335a48-1c14-4329-8948-1794e85b1456
 
 - pi with extension support.
 - Peer dependencies available at runtime:
-  - `@mariozechner/pi-coding-agent`
-  - `@mariozechner/pi-tui`
+  - `@earendil-works/pi-coding-agent`
+  - `@earendil-works/pi-tui`
 - Node dependencies installed for this extension when developing or testing.
 
 ## Install

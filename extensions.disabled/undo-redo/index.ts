@@ -1,6 +1,6 @@
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { StringEnum } from "@mariozechner/pi-ai";
+import { StringEnum } from "@earendil-works/pi-ai";
 import {
 	createBashTool,
 	createEditTool,
@@ -24,8 +24,8 @@ import {
 	type ToolDefinition,
 	type TurnEndEvent,
 	truncateHead,
-} from "@mariozechner/pi-coding-agent";
-import type { EditorTheme, TUI } from "@mariozechner/pi-tui";
+} from "@earendil-works/pi-coding-agent";
+import type { EditorTheme, TUI } from "@earendil-works/pi-tui";
 import { Type } from "@sinclair/typebox";
 import { createCache } from "./cache.js";
 import { formatDiffText, listDiffItems, showDiffStack } from "./diff-stack.js";

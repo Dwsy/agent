@@ -5,12 +5,12 @@
  * Based on techniques from RTK.md - 60-90% token reduction while preserving essential information.
  */
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import {
 	isBashToolResult,
 	isReadToolResult,
 	isGrepToolResult,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 import { loadConfig, DEFAULT_CONFIG, type RtkConfig } from "./config";
 import { trackSavings, getMetricsSummary, clearMetrics } from "./metrics";
 import {

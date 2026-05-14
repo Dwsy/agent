@@ -6,7 +6,7 @@
  * search tools for the LLM, and commands for the user.
  */
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { EpisodicMemoryDB } from "./database.js";
 import { DB_PATH } from "./indexer.js";

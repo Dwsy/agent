@@ -1,5 +1,5 @@
-import { getMarkdownTheme } from "@mariozechner/pi-coding-agent";
-import { Key, Markdown, matchesKey, truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
+import { getMarkdownTheme } from "@earendil-works/pi-coding-agent";
+import { Key, Markdown, matchesKey, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import * as http from "node:http";
 import { exec } from "node:child_process";
 import { readdirSync, readFileSync } from "node:fs";

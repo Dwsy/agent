@@ -11,8 +11,8 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
-import { completeSimple } from "@mariozechner/pi-ai";
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { completeSimple } from "@earendil-works/pi-ai";
 import { log } from "./logger.ts";
 import { config, type ModelSpec } from "./config.ts";
 

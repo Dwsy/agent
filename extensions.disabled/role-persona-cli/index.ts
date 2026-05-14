@@ -28,15 +28,15 @@
  *   └── ...
  */
 
-import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
-import { compact as piCompact } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { compact as piCompact } from "@earendil-works/pi-coding-agent";
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { StringEnum } from "@mariozechner/pi-ai";
+import { StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "@sinclair/typebox";
 import { log, logStart, logEnd, logWarn, logError, setCurrentRole, setSessionId } from "./logger.ts";
-import { SelectList, Text, Container } from "@mariozechner/pi-tui";
+import { SelectList, Text, Container } from "@earendil-works/pi-tui";
 import { config, reloadConfig } from "./config.ts";
 
 import {
@@ -1777,7 +1777,7 @@ Rules:
       }
 
       // Build TUI tag browser
-      const { SelectList, Text, Container } = await import("@mariozechner/pi-tui");
+      const { SelectList, Text, Container } = await import("@earendil-works/pi-tui");
 
       await ctx.ui.custom<void>((tui, theme, _kb, done) => {
         const container = new Container();

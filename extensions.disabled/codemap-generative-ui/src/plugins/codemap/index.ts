@@ -1,5 +1,5 @@
 import { Type } from "@sinclair/typebox";
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { listNearestCodeMaps, resolveCodeMapInput } from "../../codemap.ts";
 import { buildLocationAnalyzePrompt, buildTraceRefinePrompt, buildWebGeneratePrompt } from "../../shared/prompting.ts";
 import type { ExtensionPluginModule, PluginSharedContext } from "../../shared/module.ts";

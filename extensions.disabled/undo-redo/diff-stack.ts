@@ -1,7 +1,7 @@
 import type {
 	ExtensionAPI,
 	ExtensionCommandContext,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 import * as Diff from "diff";
 import type { Cache } from "./cache.js";
 import type { SnapshotTracker } from "./tracker.js";

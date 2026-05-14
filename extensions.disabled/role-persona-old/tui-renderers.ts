@@ -1,6 +1,6 @@
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { getLanguageFromPath, getMarkdownTheme, highlightCode } from "@mariozechner/pi-coding-agent";
-import { Box, Markdown, Spacer, Text } from "@mariozechner/pi-tui";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { getLanguageFromPath, getMarkdownTheme, highlightCode } from "@earendil-works/pi-coding-agent";
+import { Box, Markdown, Spacer, Text } from "@earendil-works/pi-tui";
 import { homedir } from "node:os";
 
 type ThemeLike = {

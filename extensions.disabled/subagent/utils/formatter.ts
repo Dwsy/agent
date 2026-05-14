@@ -54,7 +54,7 @@ export function shortenPath(p: string): string {
 	return p.startsWith(home) ? `~${p.slice(home.length)}` : p;
 }
 
-export function getFinalOutput(messages: import("@mariozechner/pi-ai").Message[]): string {
+export function getFinalOutput(messages: import("@earendil-works/pi-ai").Message[]): string {
 	for (let i = messages.length - 1; i >= 0; i--) {
 		const msg = messages[i];
 		if (msg.role === "assistant") {

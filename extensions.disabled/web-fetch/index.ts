@@ -5,9 +5,9 @@
  * Supports: Qwen, cli-proxy-api
  */
 
-import { Text, Container, Markdown } from "@mariozechner/pi-tui";
-import { getMarkdownTheme } from "@mariozechner/pi-coding-agent";
-import type { ExtensionAPI, ToolRenderResultOptions } from "@mariozechner/pi-coding-agent";
+import { Text, Container, Markdown } from "@earendil-works/pi-tui";
+import { getMarkdownTheme } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ToolRenderResultOptions } from "@earendil-works/pi-coding-agent";
 
 import { getQwenAccessToken, getAllProviders } from "./providers.js";
 import { webFetch, webSearch } from "./api.js";

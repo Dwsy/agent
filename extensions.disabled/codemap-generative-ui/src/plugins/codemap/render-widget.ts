@@ -1,5 +1,5 @@
 import { Type } from "@sinclair/typebox";
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { buildResolvedCodeMap } from "../../codemap.ts";
 import { buildCodeMapHtml, buildCodeMapWidgetCode } from "../../html.ts";
 import type { CodeMapDocument } from "../../types.ts";

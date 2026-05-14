@@ -4,7 +4,7 @@
  * 整合 analyze, brainstorm, research, scout 四个工作流命令
  */
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 const COMMANDS = {
 	analyze: {

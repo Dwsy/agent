@@ -2,7 +2,7 @@
  * JSON event parser for subagent output
  */
 
-import type { Message } from "@mariozechner/pi-ai";
+import type { Message } from "@earendil-works/pi-ai";
 import type { UsageStats, PiProcessEvent } from "../types.js";
 
 export function parseEventLine(line: string): PiProcessEvent | null {

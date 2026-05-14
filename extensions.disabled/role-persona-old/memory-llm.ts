@@ -1,6 +1,6 @@
-import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
-import { convertToLlm, serializeConversation } from "@mariozechner/pi-coding-agent";
-import { complete, completeSimple } from "@mariozechner/pi-ai";
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { convertToLlm, serializeConversation } from "@earendil-works/pi-coding-agent";
+import { complete, completeSimple } from "@earendil-works/pi-ai";
 import { config, type ModelSpec } from "./config.ts";
 
 import {

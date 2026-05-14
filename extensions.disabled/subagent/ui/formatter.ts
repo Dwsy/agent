@@ -68,7 +68,7 @@ export function formatToolCall(
 	}
 }
 
-export function getDisplayItems(messages: import("@mariozechner/pi-ai").Message[]): DisplayItem[] {
+export function getDisplayItems(messages: import("@earendil-works/pi-ai").Message[]): DisplayItem[] {
 	const items: DisplayItem[] = [];
 	for (const msg of messages) {
 		if (msg.role === "assistant") {

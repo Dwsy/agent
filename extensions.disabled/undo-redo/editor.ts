@@ -1,5 +1,5 @@
-import { CustomEditor } from "@mariozechner/pi-coding-agent";
-import { type KeyId, matchesKey } from "@mariozechner/pi-tui";
+import { CustomEditor } from "@earendil-works/pi-coding-agent";
+import { type KeyId, matchesKey } from "@earendil-works/pi-tui";
 
 const DEFAULT_UNDO_KEYS: KeyId[] = ["ctrl+shift+z"];
 const DEFAULT_REDO_KEYS: KeyId[] = ["ctrl+shift+y"];

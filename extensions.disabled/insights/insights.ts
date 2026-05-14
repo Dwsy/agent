@@ -1,4 +1,4 @@
-import type { ExtensionAPI, ExtensionContext, Message } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext, Message } from "@earendil-works/pi-coding-agent";
 
 /**
  * Insights Extension for pi
