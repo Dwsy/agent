@@ -227,3 +227,6 @@ auth.json.lock
 models.json.backup-*
 session-slim-*.jsonl
 usage-data/
+
+# ACE Tool environment
+.ace-env
