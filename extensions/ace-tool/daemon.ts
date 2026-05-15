@@ -14,7 +14,7 @@ function resolvePath(p: string): string {
 }
 
 // 加载 .env
-const envPath = join(import.meta.dir, ".ace-env");
+const envPath = join(import.meta.dir, ".env");
 if (existsSync(envPath)) {
   const envContent = readFileSync(envPath, "utf-8");
   envContent.split("\n").forEach(line => {
