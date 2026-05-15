@@ -98,6 +98,9 @@ function abbreviatePath(fullPath: string, projectRoot?: string): string {
 }
 
 export default function (pi: ExtensionAPI) {
+  // 自动启动守护进程
+  ensureDaemon().catch(() => {});
+
   pi.registerTool({
     name: "ace-tool",
     description: `Semantic code search - retrieves conceptually related code using natural language queries. Use this tool when file names, symbols, or locations are unknown.
