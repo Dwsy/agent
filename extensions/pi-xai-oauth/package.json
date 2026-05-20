@@ -1,0 +1,41 @@
+{
+  "name": "pi-grok-oauth",
+  "version": "0.1.0",
+  "description": "Pi extension that adds xAI Grok OAuth provider and xAI utility tools.",
+  "type": "module",
+  "main": "./index.ts",
+  "files": [
+    "index.ts",
+    "README.md"
+  ],
+  "keywords": [
+    "pi-package",
+    "pi",
+    "pi-extension",
+    "xai",
+    "grok",
+    "oauth"
+  ],
+  "author": "Dwsy",
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0"
+  }
+}

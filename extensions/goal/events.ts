@@ -52,12 +52,25 @@ export function registerAgentEndHandler(
   pi: ExtensionAPI,
   goalStateRef: { current: GoalData | null }
 ): void {
-  pi.on("agent_end", async (_event, ctx) => {
+  pi.on("agent_end", async (event, ctx) => {
     const goal = getGoalState(ctx);
     goalStateRef.current = goal;
 
     // 仅处理活动目标
     if (!goal || goal.status !== "pursuing") return;
+
+    // 用户按 Escape 中止时，自动暂停目标
+    if (wasLastAssistantAborted(event.messages)) {
+      const paused: GoalData = {
+        ...goal,
+        status: "paused",
+        updatedAt: Date.now(),
+      };
+      persistGoal(pi, paused);
+      goalStateRef.current = paused;
+      updateGoalWidget(ctx, paused);
+      return;
+    }
 
     // 更新 token 使用
     const tokensUsed = calculateTokensUsed(ctx, goal.createdAt);
@@ -250,6 +263,19 @@ export function registerSessionBeforeCompactHandler(
 // ============================================================================
 // 辅助函数
 // ============================================================================
+
+/**
+ * 检查最后一条 assistant 消息是否被中止（用户按了 Escape）
+ */
+function wasLastAssistantAborted(messages: Array<{ role?: string; stopReason?: string }>): boolean {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i];
+    if (message?.role === "assistant") {
+      return message.stopReason === "aborted";
+    }
+  }
+  return false;
+}
 
 /**
  * 触发下一轮循环

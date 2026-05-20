@@ -1,9 +1,9 @@
 ---
 name: vision
-description: 视觉分析代理，使用 Qwen3-VL 模型进行图像、视频分析
+description: 视觉分析代理，使用 Mimo V2.5 模型进行图像、视频分析
 tools: read, bash, write, edit
-model: Qwen/Qwen3-VL-235B-A22B-Instruct
-provider: modelscope
+model: mimo-v2.5
+provider: fufu
 showInTool: true
 ---
 

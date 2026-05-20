@@ -116,6 +116,11 @@ plugin/
 # Local skills (not committed)
 skills/surge-manager/
 
+# Tool-exported skills and inspection snapshots (local/private)
+inspect/
+.*/skills/
+.*/agent/skills/
+
 # User settings (personal configuration)
 settings.json
 

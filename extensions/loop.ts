@@ -426,11 +426,16 @@ export default function loopExtension(pi: ExtensionAPI): void {
 			),
 		}),
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+			// 如果没有正在运行的 plan 模式循环，自动启动一个
 			if (!loopState.active || loopState.mode !== "plan") {
-				return {
-					content: [{ type: "text", text: "没有正在运行的 plan 模式循环。" }],
-					details: { active: false },
+				const autoStartedState: LoopStateData = {
+					active: true,
+					mode: "plan",
+					summary: undefined,
+					loopCount: 0,
 				};
+				setLoopState(autoStartedState, ctx);
+				notify(ctx, "没有运行中的 plan 循环，已自动启动 plan 模式", "info");
 			}
 
 			const tasks: LoopTask[] = params.tasks.map((t, i) => ({

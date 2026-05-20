@@ -157,58 +157,26 @@ Iteration:
         return new Text("", 0, 0);
       }
 
-      // 提取文件路径和行数
       const lines = textContent.text.trim().split("\n");
       const pathLines: string[] = [];
-      const contentLines: string[] = [];
-      let inContent = false;
-
       for (const line of lines) {
         if (line.startsWith("Path:")) {
           pathLines.push(line.slice(5).trim());
-          inContent = false;
-        } else if (line.startsWith("Lines:") || line.startsWith("Similarity:")) {
-          inContent = false;
-        } else if (line.trim()) {
-          inContent = true;
-          contentLines.push(line);
         }
       }
 
-      // 折叠状态：显示文件数摘要
+      // 折叠状态：显示完整路径，多行列出，不省略
       if (!expanded) {
-        if (pathLines.length > 0) {
-          return new Text(theme.fg("muted", ` → ${pathLines.length} files`), 0, 0);
+        if (pathLines.length === 0) {
+          return new Text("", 0, 0);
         }
-        return new Text("", 0, 0);
+        // 每路径一行，显示完整路径
+        const lines = pathLines.map((p: string) => ` → ${p}`);
+        return new Text(theme.fg("muted", lines.join("\n")), 0, 0);
       }
 
-      // 展开状态：省略显示文件路径
-      if (pathLines.length > 0) {
-        const projectPath = _context?.cwd;
-        const abbreviated = pathLines.map(p => abbreviatePath(p, projectPath));
-        const maxShow = Math.min(abbreviated.length, 5); // 最多显示 5 个
-        const shown = abbreviated.slice(0, maxShow);
-        const remaining = pathLines.length - maxShow;
-
-        let pathSummary = shown
-          .map(p => theme.fg("toolOutput", `  ${p}`))
-          .join("\n");
-
-        if (remaining > 0) {
-          pathSummary += "\n" + theme.fg("dim", `  ... and ${remaining} more`);
-        }
-
-        // 内容摘要（前 30 行）
-        const contentPreview = contentLines.slice(0, 30)
-          .map(l => theme.fg("toolOutput", l))
-          .join("\n");
-
-        return new Text(`\n${pathSummary}\n\n${contentPreview}`, 0, 0);
-      }
-
-      // 无路径时回退到原始显示
-      const output = lines.slice(0, 100)
+      // 展开状态：显示完整内容，不省略
+      const output = lines
         .map((line: string) => theme.fg("toolOutput", line))
         .join("\n");
       return new Text(`\n${output}`, 0, 0);

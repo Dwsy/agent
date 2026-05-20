@@ -228,7 +228,14 @@ export default function piMessengerExtension(pi: ExtensionAPI) {
   // ===========================================================================
 
   function updateStatus(ctx: ExtensionContext): void {
-    if (!ctx.hasUI || !state.registered) return;
+    try {
+      if (!ctx.hasUI || !state.registered) return;
+    } catch {
+      // ctx is stale after session replacement — stop heartbeat
+      stopStatusHeartbeat();
+      latestCtx = null;
+      return;
+    }
 
     checkStuckAgents(ctx);
 
