@@ -246,6 +246,7 @@ pi-gateway/src/_web-assets.ts
 
 # Digital twin style profile (large)
 skills/digital-twin/data/style-profile.json
+skills/digital-twin/
 
 # Large binary packages
 memex-compare/vscode-extension/*.vsix
