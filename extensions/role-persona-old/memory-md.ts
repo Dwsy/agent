@@ -107,6 +107,96 @@ function dailyMemoryPath(rolePath: string, date = today()): string {
   return join(dailyMemoryDir(rolePath), `${date}.md`);
 }
 
+function dailySummaryDir(rolePath: string): string {
+  return join(dailyMemoryDir(rolePath), "Summary");
+}
+
+export function dailySummaryPath(rolePath: string, date: string): string {
+  return join(dailySummaryDir(rolePath), `${date}.md`);
+}
+
+export function ensureDailySummaryDir(rolePath: string): void {
+  const dir = dailySummaryDir(rolePath);
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+}
+
+export function readDailySummary(rolePath: string, date: string): string | null {
+  const path = dailySummaryPath(rolePath, date);
+  if (!existsSync(path)) return null;
+  return readFileSync(path, "utf-8");
+}
+
+export function writeDailySummary(rolePath: string, date: string, content: string): void {
+  ensureDailySummaryDir(rolePath);
+  writeFileSync(dailySummaryPath(rolePath, date), content, "utf-8");
+}
+
+export function readDailyMemoryRaw(rolePath: string, date: string): string | null {
+  const path = dailyMemoryPath(rolePath, date);
+  if (!existsSync(path)) return null;
+  return readFileSync(path, "utf-8");
+}
+
+/**
+ * Returns dates within the configured window (yesterday, day-before...) that have
+ * a daily file but no summary yet. Fixed-date based (not "most recent files"),
+ * so stale old files outside the window are ignored.
+ */
+export function listDailySummariesToGenerate(rolePath: string, recentDays: number): string[] {
+  const pastSlots = Math.max(0, recentDays - 1);
+  if (pastSlots === 0) return [];
+
+  // Fixed date window: yesterday, 2 days ago...
+  const targetDates: string[] = [];
+  const now = new Date();
+  for (let i = 1; i <= pastSlots; i++) {
+    const d = new Date(now);
+    d.setDate(d.getDate() - i);
+    targetDates.push(d.toISOString().slice(0, 10));
+  }
+
+  // Only check these fixed dates: needs daily file AND missing summary
+  const result: string[] = [];
+  for (const date of targetDates) {
+    const daily = dailyMemoryPath(rolePath, date);
+    const summary = dailySummaryPath(rolePath, date);
+    if (existsSync(daily) && !existsSync(summary)) {
+      result.push(date);
+    }
+  }
+  return result;
+}
+
+/**
+ * List all generated daily summaries (most recent first).
+ * Used by the memory web viewer.
+ */
+export function listAllDailySummaries(
+  rolePath: string
+): Array<{ date: string; content: string; chars: number }> {
+  const dir = dailySummaryDir(rolePath);
+  if (!existsSync(dir)) return [];
+  const out: Array<{ date: string; content: string; chars: number }> = [];
+  let names: string[] = [];
+  try {
+    names = readdirSync(dir);
+  } catch {
+    return [];
+  }
+  for (const filename of names) {
+    const match = filename.match(/^(\d{4}-\d{2}-\d{2})\.md$/);
+    if (!match) continue;
+    try {
+      const content = readFileSync(join(dir, filename), "utf-8");
+      out.push({ date: match[1], content, chars: content.length });
+    } catch {
+      // ignore unreadable
+    }
+  }
+  out.sort((a, b) => b.date.localeCompare(a.date));
+  return out;
+}
+
 function pendingMemoryPath(rolePath: string): string {
   return join(memoryRootDir(rolePath), "pending.md");
 }
@@ -1675,17 +1765,68 @@ function getRecentDailyMemoryFiles(rolePath: string, count: number = 2): Array<{
     .map((item) => ({ date: item.date, path: item.path }));
 }
 
-export function readMemoryPromptBlocks(rolePath: string): string[] {
+export function readMemoryPromptBlocks(
+  rolePath: string,
+  options?: { summaryEnabled?: boolean; recentDays?: number }
+): string[] {
   const blocks: string[] = [];
+  const longTerm = readLongTermMemoryBlock(rolePath);
+  if (longTerm) blocks.push(longTerm);
+  blocks.push(...readDailyMemoryBlocks(rolePath, options));
+  return blocks;
+}
+
+/**
+ * Read the long-term consolidated memory as a single prompt block, or null if empty.
+ */
+export function readLongTermMemoryBlock(rolePath: string): string | null {
   const memoryFile = memoryFilePath(rolePath);
-  if (existsSync(memoryFile)) {
-    blocks.push(`### Long-Term Memory\n\n${readFileSync(memoryFile, "utf-8")}`);
+  if (!existsSync(memoryFile)) return null;
+  return `### Long-Term Memory\n\n${readFileSync(memoryFile, "utf-8")}`;
+}
+
+/**
+ * Read daily memory blocks (today full + past summaries / past full fallback).
+ * Same logic as readMemoryPromptBlocks but excludes the long-term block.
+ */
+export function readDailyMemoryBlocks(
+  rolePath: string,
+  options?: { summaryEnabled?: boolean; recentDays?: number }
+): string[] {
+  const blocks: string[] = [];
+  const cfg = config.memory.dailySummary;
+  const summaryEnabled = options?.summaryEnabled ?? cfg.enabled;
+  const recentDays = Math.max(1, options?.recentDays ?? cfg.recentDays);
+
+  if (!summaryEnabled) {
+    const recentDailyFiles = getRecentDailyMemoryFiles(rolePath, recentDays);
+    for (const { date, path } of recentDailyFiles) {
+      blocks.push(`### Daily Memory: ${date}\n\n${readFileSync(path, "utf-8")}`);
+    }
+    return blocks;
   }
 
-  // Load most recent 2 existing daily memory files (not fixed today/yesterday)
-  const recentDailyFiles = getRecentDailyMemoryFiles(rolePath, 2);
-  for (const { date, path } of recentDailyFiles) {
-    blocks.push(`### Daily Memory: ${date}\n\n${readFileSync(path, "utf-8")}`);
+  const todayStr = today();
+  const todayFullPath = dailyMemoryPath(rolePath, todayStr);
+  if (existsSync(todayFullPath)) {
+    blocks.push(`### Daily Memory: ${todayStr}\n\n${readFileSync(todayFullPath, "utf-8")}`);
+  }
+
+  const pastSlots = recentDays - 1;
+  if (pastSlots > 0) {
+    const all = listDailyMemoryFilesByDate(rolePath);
+    let used = 0;
+    for (const { date, path } of all) {
+      if (date === todayStr) continue;
+      if (used >= pastSlots) break;
+      const summary = readDailySummary(rolePath, date);
+      if (summary) {
+        blocks.push(`### Daily Memory Summary: ${date}\n\n${summary}`);
+      } else {
+        blocks.push(`### Daily Memory: ${date}\n\n${readFileSync(path, "utf-8")}`);
+      }
+      used += 1;
+    }
   }
 
   return blocks;
@@ -2130,7 +2271,10 @@ export function readDailyMemories(rolePath: string): Array<{ text: string; date:
   const memories: Array<{ text: string; date: string; time?: string }> = [];
 
   try {
-    const files = readdirSync(dailyDir).filter(f => f.endsWith('.md')).sort().reverse();
+    const files = readdirSync(dailyDir)
+      .filter(f => /^\d{4}-\d{2}-\d{2}\.md$/.test(f))
+      .sort()
+      .reverse();
     for (const file of files.slice(0, 30)) { // Latest 30 days
       const date = file.replace('.md', '');
       const content = readFileSync(join(dailyDir, file), 'utf-8');

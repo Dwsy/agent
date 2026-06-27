@@ -52,10 +52,13 @@ import {
   getConflictReport,
   getPendingMemories,
   getPendingStats,
+  listDailySummariesToGenerate,
   listRoleMemory,
   loadHighPriorityMemories,
   loadMemoryOnDemand,
   promotePendingLearning,
+  readDailyMemoryBlocks,
+  readLongTermMemoryBlock,
   readMemoryPromptBlocks,
   readRoleMemory,
   reinforceRoleLearning,
@@ -63,7 +66,7 @@ import {
   searchRoleMemory,
 } from "./memory-md.ts";
 import { RoleMemoryViewerComponent, buildRoleMemoryViewerMarkdown, openMemoryServer } from "./memory-viewer.ts";
-import { runAutoMemoryExtraction, runLlmMemoryTidy } from "./memory-llm.ts";
+import { runAutoMemoryExtraction, runLlmMemoryTidy, ensureDailySummaries } from "./memory-llm.ts";
 import { getAllTags, buildTagCloudHTML } from "./memory-tags.ts";
 import {
   initVectorMemory,
@@ -139,6 +142,22 @@ const EXTERNAL_READONLY_MIN_CONFIDENCE = config.externalReadonly.minConfidence;
 // ============================================================================
 
 export default function rolePersonaExtension(pi: ExtensionAPI) {
+  // ── CLI flag: --nr = no role-persona (completely disable this extension) ──
+  // MUST register first so applyExtensionFlagValues recognises it.
+  pi.registerFlag("nr", {
+    description: "Disable role-persona-old extension entirely",
+    type: "boolean",
+    default: false,
+  });
+
+  // Fast exit: check process.argv directly.
+  // getFlag() values are populated AFTER all extensions load (applyExtensionFlagValues
+  // runs post-load), so pi.getFlag("nr") at this point always returns the default.
+  // We check argv synchronously so the extension body never executes.
+  if (process.argv.some(a => a === "--nr" || a.startsWith("--nr="))) return;
+  // Belt-and-suspenders for SDK / programmatic usage where getFlag may already be set
+  if (pi.getFlag("nr") !== false) return;
+
   registerRoleMessageRenderers(pi);
 
   // Skills directory — exposed via resources_discover for agent-driven memory management
@@ -156,6 +175,7 @@ export default function rolePersonaExtension(pi: ExtensionAPI) {
   let memoryCheckpointSpinner: ReturnType<typeof setInterval> | null = null;
   let memoryCheckpointFrame = 0;
   let isFirstUserMessage = true;  // 标记是否是第一条用户消息
+  let dailySummaryEnsuredFor: string | null = null; // 会话级缓存：该 rolePath 的 missing summary 已生成过
   let memoryDistillMode: { active: boolean; requestedModel?: string } | null = null;
 
   // ── Memory operation log (in-session only, not persisted) ──
@@ -662,27 +682,66 @@ const { badge, reasonLabel } = getBadgeAndLabel(reason);
     autoRepairRoleMemory(rolePath, roleName, ctx, "activateRole");
 
     // Pending layer: do NOT randomly promote items.
-    // Promotion must remain usage-driven (search/relevance/manual action), otherwise
-    // pending loses its meaning as a verification buffer.
-    const pending = getPendingMemories(rolePath);
-    if (pending.length > 0) {
-      log("pending", `session start: ${pending.length} pending memories waiting for verification`);
-    }
-
-    // Expire old pending memories (> 7 days without promotion)
-    const expireResult = expirePendingMemories(rolePath, 7);
-    if (expireResult.expired > 0) {
-      log("pending", `session start: expired ${expireResult.expired} old pending memories`);
-    }
-
-    // Initialize vector memory (async, non-blocking)
-    initVectorMemory(rolePath, ctx).then((ok) => {
-      if (ok && isTuiAvailable(ctx)) {
-        log("vector", `vector memory active for role=${roleName}`);
+      // Promotion must remain usage-driven (search/relevance/manual action), otherwise
+      // pending loses its meaning as a verification buffer.
+      const pending = getPendingMemories(rolePath);
+      if (pending.length > 0) {
+        log("pending", `session start: ${pending.length} pending memories waiting for verification`);
       }
-    }).catch((err) => {
-      log("vector", `vector memory init failed: ${err}`);
-    });
+
+      // Expire old pending memories (> 7 days without promotion)
+      const expireResult = expirePendingMemories(rolePath, 7);
+      if (expireResult.expired > 0) {
+        log("pending", `session start: expired ${expireResult.expired} old pending memories`);
+      }
+
+      // Initialize vector memory (async, non-blocking)
+      initVectorMemory(rolePath, ctx).then((ok) => {
+        if (ok && isTuiAvailable(ctx)) {
+          log("vector", `vector memory active for role=${roleName}`);
+        }
+      }).catch((err) => {
+        log("vector", `vector memory init failed: ${err}`);
+      });
+
+      // Daily summary generation: only run when there are actually missing
+      // summaries for the configured window.
+      if (
+        config.memory.dailySummary.enabled &&
+        config.memory.dailySummary.autoGenerate &&
+        dailySummaryEnsuredFor !== rolePath
+      ) {
+        const missing = listDailySummariesToGenerate(rolePath, config.memory.dailySummary.recentDays);
+        if (missing.length === 0) {
+          log("daily-summary", `activateRole: all summaries cached (window=${config.memory.dailySummary.recentDays})`);
+          dailySummaryEnsuredFor = rolePath;
+        } else {
+          try {
+            if (isTuiAvailable(ctx)) {
+              ctx.ui.setStatus("daily-summary", `generating ${missing.length}\u2026`);
+            }
+            const result = await ensureDailySummaries(ctx, rolePath);
+            if (result.generated > 0 || result.failed > 0) {
+              log(
+                "daily-summary",
+                `activateRole: generated=${result.generated} failed=${result.failed}`
+              );
+              if (isTuiAvailable(ctx) && result.generated > 0) {
+                notify(ctx, `Daily summaries: +${result.generated}`, "info");
+              }
+            }
+            dailySummaryEnsuredFor = rolePath;
+          } catch (err) {
+            logError("daily-summary", "activateRole generation failed", {
+              error: err instanceof Error ? err.message : String(err),
+            });
+          } finally {
+            if (isTuiAvailable(ctx)) {
+              ctx.ui.setStatus("daily-summary", undefined);
+            }
+          }
+        }
+    }
 
     if (isTuiAvailable(ctx)) {
       const identity = getRoleIdentity(rolePath);
@@ -692,10 +751,13 @@ const { badge, reasonLabel } = getBadgeAndLabel(reason);
       ctx.ui.setStatus("memory-checkpoint", undefined);
 
       if (isFirstRun(rolePath)) {
-        notify(ctx, `${displayName} - [FIRST RUN]`, "info");
-        notify(ctx, '发送 "hello" 开始人格设定对话', "info");
+        //notify(ctx, `${displayName} - [FIRST RUN]`, "info");
+        //notify(ctx, '发送 "hello" 开始人格设定对话', "info");
       }
     }
+
+    // Daily summary generation: only run when there are actually missing
+    // summaries for the configured window. The file system IS the cache
   }
 
   // ============ EVENT HANDLERS ============
@@ -727,6 +789,7 @@ const { badge, reasonLabel } = getBadgeAndLabel(reason);
 
     // Reset first message flag for on-demand memory search
     isFirstUserMessage = true;
+    dailySummaryEnsuredFor = null;
 
     // Discover project-level knowledge base (docs/knowledge/)
     setProjectCwd(ctx.cwd);
@@ -816,54 +879,59 @@ ${buildMemoryEditInstruction(currentRolePath)}`;
     // Normal operation: inject role prompts
     const rolePrompt = await loadRolePrompts(currentRolePath);
 
-    // Memory loading strategy: on-demand search for first message, full load otherwise
+    // Memory injection strategy:
+    // - On first message: on-demand/high-priority hits + long-term memory + recent daily memory
+    // - Subsequent messages: long-term memory + recent daily memory
+    // Daily memory stays in the system prompt path. If summary generation is enabled,
+    // startup may block while missing summaries are generated, and the user sees the
+    // daily-summary status line during that warmup.
     let memoryPrompt = "";
-    
+
     if (ON_DEMAND_SEARCH_ENABLED && isFirstUserMessage) {
-      // First message: use on-demand search based on user query + recent daily memories
-      // Extract query from the last user message in the conversation
       const messages = (event as any).messages || [];
       const lastUserMessage = [...messages].reverse().find((m: any) => m.role === "user");
       const userQuery = lastUserMessage?.content?.[0]?.text || "";
-      
+
       const memoryBlocks: string[] = [];
-      
-      // 1. Load on-demand searched memories
+
       if (userQuery) {
         const onDemand = loadMemoryOnDemand(currentRolePath, currentRole, userQuery, {
           maxResults: ON_DEMAND_SEARCH_MAX_RESULTS,
           minScore: ON_DEMAND_SEARCH_MIN_SCORE,
           includeHighPriority: ON_DEMAND_LOAD_HIGH_PRIORITY,
         });
-        
         if (onDemand.content) {
           memoryBlocks.push(onDemand.content);
           log("memory-on-demand", `First message: loaded ${onDemand.matchCount} relevant memories + high priority`);
         }
       } else {
-        // Fallback: load high priority only
         const highPriority = loadHighPriorityMemories(currentRolePath, currentRole);
-        if (highPriority) {
-          memoryBlocks.push(highPriority);
-        }
+        if (highPriority) memoryBlocks.push(highPriority);
       }
-      
-      // 2. Always load recent daily memories (default behavior)
-      const dailyMemories = await loadMemoryFiles(currentRolePath);
-      if (dailyMemories.length > 0) {
-        memoryBlocks.push(...dailyMemories);
+
+      const longTerm = readLongTermMemoryBlock(currentRolePath);
+      if (longTerm) memoryBlocks.push(longTerm);
+
+      if (config.memory.dailyInjection.enabled) {
+        const dailyBlocks = readDailyMemoryBlocks(currentRolePath);
+        if (dailyBlocks.length > 0) memoryBlocks.push(...dailyBlocks);
       }
-      
+
       if (memoryBlocks.length > 0) {
         memoryPrompt = `\n\n## Your Memory\n\n${memoryBlocks.join("\n\n---\n\n")}`;
       }
-      
-      isFirstUserMessage = false; // Mark as processed
+
+      isFirstUserMessage = false;
     } else {
-      // Subsequent messages or on-demand disabled: load recent daily memories only
-      const memories = await loadMemoryFiles(currentRolePath);
-      if (memories.length > 0) {
-        memoryPrompt = `\n\n## Your Memory\n\n${memories.join("\n\n---\n\n")}`;
+      const memoryBlocks: string[] = [];
+      const longTerm = readLongTermMemoryBlock(currentRolePath);
+      if (longTerm) memoryBlocks.push(longTerm);
+      if (config.memory.dailyInjection.enabled) {
+        const dailyBlocks = readDailyMemoryBlocks(currentRolePath);
+        if (dailyBlocks.length > 0) memoryBlocks.push(...dailyBlocks);
+      }
+      if (memoryBlocks.length > 0) {
+        memoryPrompt = `\n\n## Your Memory\n\n${memoryBlocks.join("\n\n---\n\n")}`;
       }
     }
 

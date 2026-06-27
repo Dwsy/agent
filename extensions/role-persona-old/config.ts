@@ -49,10 +49,16 @@ export interface LoggingConfig {
   retentionDays: number;
 }
 
+export interface DailyInjectionConfig {
+  /** Inject daily memory blocks into system prompt (default: true) */
+  enabled: boolean;
+}
+
 export interface MemoryConfig {
   defaultCategories: string[];
   dailyPathTemplate: string;
   dedupeThreshold: number;
+  dailyInjection: DailyInjectionConfig;
   onDemandSearch: {
     enabled: boolean;
     maxResults: number;
@@ -64,6 +70,24 @@ export interface MemoryConfig {
     minScore: number;
     includeDailyMemory: boolean;
   };
+  /**
+   * Daily memory injection with summaries.
+   * Injects today's full daily + condensed summaries for recentDays-1 previous days,
+   * instead of injecting full daily files for all days.
+   */
+  dailySummary: DailySummaryConfig;
+}
+
+export interface DailySummaryConfig {
+  /** Enable summary-based daily injection (default: false) */
+  enabled: boolean;
+  /** Number of recent days to inject (includes today as full daily).
+   *  N=1: only today's full daily memory
+   *  N=2: today's full daily + 1 day summary
+   *  N=3: today's full daily + 2 days summaries */
+  recentDays: number;
+  /** Auto-generate summaries at startup for days that lack them (default: false) */
+  autoGenerate: boolean;
 }
 
 export interface UIConfig {
@@ -187,6 +211,9 @@ const DEFAULT_CONFIG: RolePersonaConfig = {
     defaultCategories: ["Communication", "Code", "Tools", "Workflow", "General"],
     dailyPathTemplate: "{rolePath}/memory/daily/{date}.md",
     dedupeThreshold: 0.9,
+    dailyInjection: {
+      enabled: false,
+    },
     onDemandSearch: {
       enabled: true,
       maxResults: 5,
@@ -197,6 +224,11 @@ const DEFAULT_CONFIG: RolePersonaConfig = {
       maxResults: 20,
       minScore: 0.1,
       includeDailyMemory: true,
+    },
+    dailySummary: {
+      enabled: false,
+      recentDays: 2,
+      autoGenerate: false,
     },
   },
   ui: {
@@ -507,6 +539,28 @@ function applyEnvOverrides(config: RolePersonaConfig): RolePersonaConfig {
     if (!isNaN(val) && val >= 0 && val <= 1) {
       result.externalReadonly.minConfidence = val;
     }
+  }
+
+  // dailySummary overrides
+  if (process.env.ROLE_DAILY_SUMMARY !== undefined) {
+    result.memory.dailySummary.enabled =
+      process.env.ROLE_DAILY_SUMMARY !== "0" && process.env.ROLE_DAILY_SUMMARY !== "false";
+  }
+  if (process.env.ROLE_DAILY_SUMMARY_DAYS) {
+    const val = parseInt(process.env.ROLE_DAILY_SUMMARY_DAYS, 10);
+    if (!isNaN(val) && val >= 1 && val <= 30) {
+      result.memory.dailySummary.recentDays = val;
+    }
+  }
+  if (process.env.ROLE_DAILY_SUMMARY_AUTOGEN !== undefined) {
+    result.memory.dailySummary.autoGenerate =
+      process.env.ROLE_DAILY_SUMMARY_AUTOGEN !== "0" && process.env.ROLE_DAILY_SUMMARY_AUTOGEN !== "false";
+  }
+
+  // dailyInjection override
+  if (process.env.ROLE_DAILY_INJECTION !== undefined) {
+    result.memory.dailyInjection.enabled =
+      process.env.ROLE_DAILY_INJECTION !== "0" && process.env.ROLE_DAILY_INJECTION !== "false";
   }
 
   return result;

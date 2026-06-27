@@ -300,6 +300,87 @@
       margin-bottom: 16px;
       opacity: 0.3;
     }
+
+    .core-panel {
+      padding: 0;
+      border-top: 0;
+    }
+
+    .core-file-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-panel);
+      position: sticky;
+      top: 0;
+    }
+
+    .core-file-path {
+      color: var(--text);
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 12px;
+      word-break: break-all;
+      white-space: normal;
+    }
+
+    .core-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .core-btn {
+      border: 1px solid var(--border);
+      background: var(--bg-active);
+      color: var(--text);
+      border-radius: 4px;
+      padding: 4px 10px;
+      font-size: 11px;
+      cursor: pointer;
+      transition: border-color 0.2s;
+    }
+
+    .core-btn:hover {
+      border-color: var(--accent);
+    }
+
+    .core-editor {
+      width: 100%;
+      min-height: calc(100vh - 220px);
+      margin: 0;
+      border: 0;
+      resize: vertical;
+      outline: none;
+      background: transparent;
+      color: var(--text);
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 12px;
+      line-height: 1.5;
+      padding: 14px;
+      display: block;
+      box-sizing: border-box;
+      background: var(--bg);
+      white-space: pre;
+    }
+
+    .core-save-hint {
+      padding: 8px 12px;
+      color: var(--text-muted);
+      font-size: 11px;
+      min-height: 20px;
+    }
+
+    .core-save-hint.ok {
+      color: var(--new);
+    }
+
+    .core-save-hint.err {
+      color: var(--high);
+    }
     
     /* Toast */
     .toast {
@@ -346,7 +427,7 @@
           <input type="text" id="searchInput" placeholder="Filter... (regex: /pattern/)" autocomplete="off">
         </div>
         <div class="search-hint">
-          <kbd>/</kbd> search <kbd>j/k</kbd> nav <kbd>c</kbd> copy <kbd>esc</kbd> clear
+          <kbd>/</kbd> search <kbd>j/k</kbd> nav <kbd>c</kbd> copy <kbd>esc</kbd> clear <kbd>Ctrl+S</kbd> save file
         </div>
       </div>
       
@@ -432,10 +513,28 @@
       TREE.children.push(node);
     }
     
+    // Role Definition (core/context/knowledge files)
+    const coreFiles = DATA.coreFiles || [];
+    if (coreFiles.length) {
+      const coreNode = { name: '🗂️ Role Definition', path: '/core', count: coreFiles.length, children: [], type: 'folder' };
+      const byDir = {};
+      coreFiles.forEach(f => { byDir[f.dir] = byDir[f.dir] || []; byDir[f.dir].push(f); });
+      const dirLabels = { core: '👤 Core', context: '📎 Context', knowledge: '📖 Knowledge' };
+      Object.entries(byDir).forEach(([dir, files]) => {
+        const dirNode = { name: dirLabels[dir] || dir, path: `/core/${dir}`, count: files.length, children: [], type: 'folder' };
+        files.forEach(f => {
+          dirNode.children.push({ name: f.name, path: `/core/${f.path}`, count: '', items: [], type: 'file' });
+        });
+        coreNode.children.push(dirNode);
+      });
+      TREE.children.unshift(coreNode);
+    }
+    
     let currentPath = '/';
     let searchQuery = '';
     let selectedIndex = 0;
     let filteredItems = [];
+    let activeCoreFilePath = '';
     
     function renderTree(node, container, level = 0) {
       const div = document.createElement('div');
@@ -445,6 +544,7 @@
       item.style.paddingLeft = (8 + level * 12) + 'px';
       item.dataset.path = node.path;
       
+      const hasChildren = node.children && node.children.length;
       const icon = node.type === 'folder' ? '📁' : '📄';
       
       item.innerHTML = `
@@ -463,7 +563,7 @@
       
       div.appendChild(item);
       
-      if (node.children && node.children.length) {
+      if (hasChildren) {
         const children = document.createElement('div');
         children.className = 'tree-children';
         node.children.forEach(child => renderTree(child, children, level + 1));
@@ -479,10 +579,125 @@
       parts.forEach((p, i) => html += ' / ' + (i === parts.length - 1 ? `<span>${p}</span>` : p));
       document.getElementById('breadcrumb').innerHTML = html;
     }
-    
+
+    function setCoreSaveHint(msg, isError = false) {
+      const el = document.getElementById('coreSaveHint');
+      if (!el) return;
+      el.textContent = msg;
+      el.className = isError ? 'core-save-hint err' : 'core-save-hint ok';
+      if (!msg) {
+        el.className = 'core-save-hint';
+      }
+    }
+
+    function saveCoreFile(filePath, editor, hintEl) {
+      if (!editor) return;
+      setCoreSaveHint('Saving...', false);
+      if (hintEl) {
+        hintEl.textContent = 'Saving...';
+        hintEl.className = 'core-save-hint';
+      }
+      fetch('/api/core', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ file: filePath, content: editor.value })
+      }).then(async (res) => {
+        if (!res.ok) {
+          const err = await res.text();
+          throw new Error(err || ('HTTP ' + res.status));
+        }
+        return res.json().catch(() => ({}));
+      }).then(() => {
+        const h = hintEl || document.getElementById('coreSaveHint');
+        if (h) {
+          h.textContent = '保存成功';
+          h.className = 'core-save-hint ok';
+        }
+        if (DATA.coreFiles && DATA.coreFiles.length) {
+          const meta = DATA.coreFiles.find((f) => f.path === filePath);
+          if (meta) meta.size = editor.value.length;
+        }
+        showToast('💾 已保存');
+      }).catch(err => {
+        const h = hintEl || document.getElementById('coreSaveHint');
+        if (h) {
+          h.textContent = '保存失败: ' + String(err.message || err);
+          h.className = 'core-save-hint err';
+        }
+        showToast('⚠️ 保存失败');
+      });
+    }
+
+    function renderCoreFile(filePath) {
+      activeCoreFilePath = filePath;
+      const tbody = document.getElementById('tableBody');
+      tbody.innerHTML = '<tr><td colspan="2" style="padding:24px;color:var(--text-dim);text-align:center">Loading...</td></tr>';
+      fetch('/api/core?file=' + encodeURIComponent(filePath))
+        .then((r) => r.ok ? r.text() : Promise.reject(r.statusText))
+        .then(md => {
+          tbody.innerHTML = `<tr><td colspan="2" class="core-panel"><div class="core-file-head"><div class="core-file-path">${escapeHtml(filePath)}</div><div class="core-actions"><button class="core-btn" id="coreReloadBtn">重读</button><button class="core-btn" id="coreSaveBtn">保存</button></div></div><textarea id="coreEditor" class="core-editor" spellcheck="false" autofocus>${escapeHtml(md)}</textarea><div id="coreSaveHint" class="core-save-hint"></div></td></tr>`;
+          const editor = document.getElementById('coreEditor');
+          const saveBtn = document.getElementById('coreSaveBtn');
+          const reloadBtn = document.getElementById('coreReloadBtn');
+          const hint = document.getElementById('coreSaveHint');
+          if (reloadBtn) {
+            reloadBtn.onclick = () => {
+              renderCoreFile(filePath);
+            };
+          }
+          if (saveBtn) {
+            saveBtn.onclick = () => {
+              saveCoreFile(filePath, editor, hint);
+            };
+          }
+          if (editor) {
+            editor.addEventListener('input', () => {
+              if (hint) {
+                hint.textContent = '';
+                hint.className = 'core-save-hint';
+              }
+            });
+          }
+        })
+        .catch(err => {
+          tbody.innerHTML = '<tr><td colspan="2" style="padding:24px;color:var(--high);text-align:center">Error: ' + escapeHtml(String(err)) + '</td></tr>';
+          setCoreSaveHint('');
+        });
+    }
+
     function renderTable() {
       const tbody = document.getElementById('tableBody');
       tbody.innerHTML = '';
+      
+      // Core files view: fetch and render markdown
+      if (currentPath === '/core' || currentPath.startsWith('/core/')) {
+        const th = document.querySelector('thead tr');
+        if (th) { th.innerHTML = '<th>File</th><th>Content</th>'; th.dataset.core = '1'; }
+        if (currentPath.startsWith('/core/') && currentPath.endsWith('.md')) {
+          const filePath = currentPath.slice('/core/'.length);
+          renderCoreFile(filePath);
+          return;
+        }
+        // Directory listing
+        const coreFiles = DATA.coreFiles || [];
+        const list = currentPath === '/core' ? coreFiles : coreFiles.filter(f => currentPath === '/core/' + f.dir);
+        if (!list.length) {
+          tbody.innerHTML = '<tr><td colspan="2" style="padding:24px;color:var(--text-dim);text-align:center">No files found</td></tr>';
+        } else {
+          list.forEach(f => {
+            const tr = document.createElement('tr');
+            tr.style.cursor = 'pointer';
+            tr.innerHTML = '<td style="padding:10px 14px;color:var(--accent);font-family:monospace">' + escapeHtml(f.name) + '<div style="font-size:10px;color:var(--text-muted);margin-top:2px">' + f.dir + '/' + f.name + '.md · ' + f.size + ' bytes</div></td>' +
+              '<td style="padding:10px 14px;color:var(--text-dim)">Click to view</td>';
+            tr.onclick = () => { currentPath = '/core/' + f.path; renderTable(); updateBreadcrumb(currentPath); document.querySelectorAll('.tree-item').forEach(el => { el.classList.toggle('active', el.dataset.path === currentPath); }); };
+            tbody.appendChild(tr);
+          });
+        }
+        return;
+      }
+      // Reset thead if coming from core/logs view
+      var th2 = document.querySelector('thead tr');
+      if (th2 && th2.dataset.core === '1') { th2.innerHTML = '<th class="col-badge"></th><th class="col-content">Content</th><th class="col-category">Category</th><th class="col-tags">Tags</th><th class="col-date">Date</th><th class="col-meta">Meta</th>'; delete th2.dataset.core; }
       
       filteredItems = ITEMS.filter(i => {
         if (currentPath !== '/') {
@@ -606,6 +821,17 @@
     document.addEventListener('keydown', e => {
       if (e.target.tagName === 'INPUT') {
         if (e.key === 'Escape') { e.target.value = ''; e.target.blur(); searchQuery = ''; renderTable(); }
+        return;
+      }
+      if (e.target.tagName === 'TEXTAREA') {
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+          e.preventDefault();
+          const editor = document.getElementById('coreEditor');
+          const hint = document.getElementById('coreSaveHint');
+          if (editor && activeCoreFilePath) {
+            saveCoreFile(activeCoreFilePath, editor, hint);
+          }
+        }
         return;
       }
       switch(e.key) {

@@ -2,8 +2,8 @@ import { getMarkdownTheme } from "@earendil-works/pi-coding-agent";
 import { Key, Markdown, matchesKey, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import * as http from "node:http";
 import { exec } from "node:child_process";
-import { readdirSync, readFileSync } from "node:fs";
-import { join as pathJoin, dirname } from "node:path";
+import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { join as pathJoin, dirname, isAbsolute, resolve as resolvePath, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
@@ -242,6 +242,34 @@ function findPort(start: number): number {
   return 8080;
 }
 
+const ALLOWED_CORE_PREFIXES = ["core/", "context/", "knowledge/"];
+
+function resolveCoreFile(rolePath: string, file: string): string | null {
+  if (!file) return null;
+  const candidate = file.trim();
+  if (!candidate.endsWith(".md") || isAbsolute(candidate) || candidate.includes("..") || candidate.includes("\\")) {
+    return null;
+  }
+
+  if (!ALLOWED_CORE_PREFIXES.some((dir) => candidate.startsWith(dir))) return null;
+
+  const roleAbs = resolvePath(rolePath);
+  const fileAbs = resolvePath(pathJoin(rolePath, candidate));
+  const base = `${roleAbs}${roleAbs.endsWith(sep) ? "" : sep}`;
+  if (!fileAbs.startsWith(base)) return null;
+
+  return fileAbs;
+}
+
+function readRequestBody(req: http.IncomingMessage): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const chunks: string[] = [];
+    req.on("data", (chunk) => chunks.push(chunk.toString()));
+    req.on("end", () => resolve(chunks.join("")));
+    req.on("error", reject);
+  });
+}
+
 // ─── JSONL Log Parsing ───────────────────────────────────────────────────────
 
 interface LogEntry {
@@ -302,6 +330,25 @@ function aggregateLogs(entries: LogEntry[]) {
 
 // ─── Export Data Builder ─────────────────────────────────────────────────────
 
+function scanCoreFiles(rolePath: string) {
+  const dirs = ["core", "context", "knowledge"];
+  const result: Array<{ dir: string; name: string; path: string; size: number }> = [];
+  for (const dir of dirs) {
+    const fullDir = pathJoin(rolePath, dir);
+    try {
+      for (const entry of readdirSync(fullDir)) {
+        if (!entry.endsWith(".md")) continue;
+        const fp = pathJoin(fullDir, entry);
+        try {
+          const stat = statSync(fp);
+          result.push({ dir, name: entry.replace(/\.md$/, ""), path: `${dir}/${entry}`, size: stat.size });
+        } catch { /* skip */ }
+      }
+    } catch { /* dir not found */ }
+  }
+  return result;
+}
+
 function buildExportData(rolePath: string, roleName: string) {
   const data = readRoleMemory(rolePath, roleName);
   const dailyMemories = readDailyMemories(rolePath);
@@ -316,6 +363,7 @@ function buildExportData(rolePath: string, roleName: string) {
   const tags = Array.from(tagCounts.entries()).map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count);
   const byCategory: Record<string, number> = {};
   for (const p of data.preferences) byCategory[p.category] = (byCategory[p.category] || 0) + 1;
+  const coreFiles = scanCoreFiles(rolePath);
   return {
     title: `Memory - ${roleName}`, roleName,
     updatedAt: data.metadata?.updated || new Date().toISOString().split("T")[0],
@@ -323,7 +371,7 @@ function buildExportData(rolePath: string, roleName: string) {
     learnings: data.learnings.map(l => ({ id: l.id, text: l.text, used: l.used, source: l.source, tags: l.tags, date: l.lastAccessed })),
     preferences: data.preferences.map(p => ({ id: p.id, text: p.text, category: p.category, tags: p.tags })),
     events: data.events.map(e => ({ text: e })),
-    daily: dailyMemories, pending: pendingMemories, tags,
+    daily: dailyMemories, pending: pendingMemories, tags, coreFiles,
     stats: {
       total: data.learnings.length + data.preferences.length + data.events.length + dailyMemories.length,
       highPriority: data.learnings.filter(l => l.used >= 3).length,
@@ -394,6 +442,7 @@ const INJECT_SCRIPT = `
 
   // Logs tree node
   TREE.children.unshift({name:"📊 Logs",path:"/logs",count:0,children:[],type:"folder"});
+
   var tc=document.querySelector('.tree');if(tc){tc.innerHTML='';renderTree(TREE,tc);}
 
   var _origRT=renderTable;
@@ -402,6 +451,7 @@ const INJECT_SCRIPT = `
     var th=document.querySelector('thead tr');if(th&&th.dataset.logs==='1'){th.innerHTML='<th class="col-badge"></th><th class="col-content">Content</th><th class="col-category">Category</th><th class="col-tags">Tags</th><th class="col-date">Date</th><th class="col-meta">Meta</th>';delete th.dataset.logs;}
     _origRT();
   };
+
 
   var logsCache=null;
   async function renderLogsView(){
@@ -476,13 +526,103 @@ export function startMemoryServer(rolePath: string, roleName: string): MemorySer
     .replace("</style>", THEME_CSS + "\n</style>")
     .replace("</script>", INJECT_SCRIPT + "\n</script>");
 
-  const server = http.createServer((req, res) => {
+  const server = http.createServer(async (req, res) => {
     const url = req.url?.split("?")[0] || "/";
     if (url === "/api/logs") {
       const entries = readRoleLogs(logDir, 1000);
       const agg = aggregateLogs(entries);
       res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-cache" });
       res.end(JSON.stringify({ entries, agg }));
+      return;
+    }
+    if (url === "/api/core") {
+      let searchParams: URLSearchParams;
+      try {
+        searchParams = new URL(req.url || "/", `http://localhost:${port}`).searchParams;
+      } catch {
+        res.writeHead(400, { "Content-Type": "text/plain" });
+        res.end("Invalid URL");
+        return;
+      }
+      if (req.method === "GET") {
+        const file = searchParams.get("file");
+        if (!file) {
+          res.writeHead(400, { "Content-Type": "text/plain" });
+          res.end("Missing file param");
+          return;
+        }
+
+        const filePath = resolveCoreFile(rolePath, file);
+        if (!filePath) {
+          res.writeHead(403, { "Content-Type": "text/plain" });
+          res.end("Forbidden");
+          return;
+        }
+
+        try {
+          const content = readFileSync(filePath, "utf-8");
+          res.writeHead(200, { "Content-Type": "text/markdown; charset=utf-8", "Cache-Control": "no-cache" });
+          res.end(content);
+        } catch {
+          res.writeHead(404, { "Content-Type": "text/plain" });
+          res.end("Not found");
+        }
+        return;
+      }
+
+      if (req.method === "PUT" || req.method === "POST") {
+        let bodyText: string;
+        try {
+          bodyText = await readRequestBody(req);
+        } catch {
+          res.writeHead(400, { "Content-Type": "text/plain" });
+          res.end("Invalid request body");
+          return;
+        }
+
+        let body: { file?: unknown; content?: unknown };
+        try {
+          body = bodyText ? JSON.parse(bodyText) : {};
+        } catch {
+          res.writeHead(400, { "Content-Type": "text/plain" });
+          res.end("Invalid JSON");
+          return;
+        }
+
+        const file = typeof body.file === "string" ? body.file : "";
+        if (!file) {
+          res.writeHead(400, { "Content-Type": "text/plain" });
+          res.end("Missing file");
+          return;
+        }
+
+        if (typeof body.content !== "string") {
+          res.writeHead(400, { "Content-Type": "text/plain" });
+          res.end("Missing or invalid content");
+          return;
+        }
+
+        const filePath = resolveCoreFile(rolePath, file);
+        if (!filePath) {
+          res.writeHead(403, { "Content-Type": "text/plain" });
+          res.end("Forbidden");
+          return;
+        }
+
+        try {
+          writeFileSync(filePath, body.content, "utf-8");
+          res.writeHead(200, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-cache" });
+          res.end(JSON.stringify({ ok: true, file }));
+        } catch (err) {
+          const message = err instanceof Error ? err.message : "Failed to save";
+          res.writeHead(500, { "Content-Type": "text/plain" });
+          res.end(message);
+        }
+        return;
+      }
+
+      res.writeHead(405, { "Content-Type": "text/plain" });
+      res.end("Method not allowed");
       return;
     }
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-cache" });

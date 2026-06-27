@@ -9,6 +9,9 @@ import {
   applyLlmTidyPlan,
   extractMemoryFacts,
   readRoleMemory,
+  readDailyMemoryRaw,
+  writeDailySummary,
+  listDailySummariesToGenerate,
   type LlmTidyPlan,
 } from "./memory-md.ts";
 import {
@@ -723,4 +726,176 @@ export async function runAutoMemoryExtraction(
   logError("auto-extract", `all models failed`, { lastError: lastError?.slice(0, 300) });
   logEnd(totalScope, "failed: all models exhausted");
   return null;
+}
+
+// ============================================================================
+// Daily Memory Summary Generation
+// ============================================================================
+
+const DAILY_SUMMARY_SYSTEM_PROMPT = [
+  "You compress a single day's role memory log into a structured, dense markdown summary.",
+  "Goal: preserve durable signal (decisions, learnings, preferences, key events) while dropping noise.",
+  "",
+  "Rules:",
+  "1) Output markdown only. No prose preamble, no JSON, no code fences.",
+  "2) Use the exact section headings below. Omit a section entirely if empty.",
+  "3) Each bullet must be a single concise line (<140 chars). Merge near-duplicates.",
+  "4) Drop ephemeral task chatter, transient errors, and timestamps.",
+  "5) Keep concrete facts: file paths, commands, decisions, user preferences, broken assumptions.",
+  "6) Preserve the user's voice for preferences/constraints.",
+  "7) Target total length: 10-40 bullets across all sections.",
+  "",
+  "Output format:",
+  "# Summary: {DATE}",
+  "",
+  "## Learnings",
+  "- ...",
+  "",
+  "## Preferences",
+  "- [Category] ...",
+  "",
+  "## Events",
+  "- ...",
+  "",
+  "## Decisions",
+  "- ...",
+].join("\n");
+
+function buildDailySummaryPrompt(date: string, dailyContent: string): string {
+  return [
+    `Date: ${date}`,
+    "",
+    "Raw daily memory log:",
+    "<<<",
+    dailyContent.trim(),
+    ">>>",
+    "",
+    `Produce the structured summary now. Replace {DATE} in the heading with ${date}.`,
+  ].join("\n");
+}
+
+function cleanSummaryOutput(text: string, date: string): string {
+  let out = text.trim();
+  const fenced = out.match(/^```(?:markdown|md)?\s*([\s\S]*?)```\s*$/i);
+  if (fenced) out = fenced[1].trim();
+  out = out.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+  if (!/^#\s+Summary:/i.test(out)) {
+    out = `# Summary: ${date}\n\n${out}`;
+  }
+  return out;
+}
+
+/**
+ * Generate summary for a single day's daily memory via LLM.
+ * Returns true if summary was written, false otherwise.
+ */
+export async function generateDailySummaryForDate(
+  ctx: ExtensionContext,
+  rolePath: string,
+  date: string,
+): Promise<boolean> {
+  const raw = readDailyMemoryRaw(rolePath, date);
+  if (!raw || !raw.trim()) {
+    log("daily-summary", `skip ${date}: empty daily file`);
+    return false;
+  }
+
+  const resolvedModels = await resolveModelsWithFallback(ctx, config.autoMemory.model);
+  if (resolvedModels.length === 0) {
+    logWarn("daily-summary", `no available model for ${date}`);
+    return false;
+  }
+
+  const prompt = buildDailySummaryPrompt(date, raw);
+
+  let lastError: string | null = null;
+  for (let i = 0; i < resolvedModels.length; i++) {
+    const resolved = resolvedModels[i];
+    const isLast = i === resolvedModels.length - 1;
+    const scope = logStart("daily-summary", `${date} via ${resolved.label}`);
+
+    let result;
+    try {
+      result = await completeSimple(
+        resolved.model,
+        {
+          systemPrompt: DAILY_SUMMARY_SYSTEM_PROMPT,
+          messages: [
+            {
+              role: "user" as const,
+              content: [{ type: "text" as const, text: prompt }],
+              timestamp: Date.now(),
+            },
+          ],
+        },
+        { apiKey: resolved.apiKey, maxTokens: Math.min(1024, resolved.model.maxTokens || 1024) },
+      );
+    } catch (err) {
+      lastError = err instanceof Error ? err.message : String(err);
+      logEnd(scope, `call error`, { error: lastError?.slice(0, 200) });
+      if (!isLast) continue;
+      return false;
+    }
+
+    if (!result || result.stopReason === "error") {
+      lastError = (result as any)?.errorMessage || "unknown error";
+      logEnd(scope, `returned error`, { error: lastError?.slice(0, 200) });
+      if (!isLast) continue;
+      return false;
+    }
+
+    const responseText = extractResponseText(result);
+    const cleaned = cleanSummaryOutput(responseText, date);
+    if (!cleaned || cleaned.length < 20) {
+      logEnd(scope, `summary too short`, { len: cleaned.length });
+      if (!isLast) continue;
+      return false;
+    }
+
+    try {
+      writeDailySummary(rolePath, date, cleaned);
+      logEnd(scope, `wrote summary`, { chars: cleaned.length });
+      return true;
+    } catch (err) {
+      logError("daily-summary", `write failed for ${date}`, {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return false;
+    }
+  }
+
+  logError("daily-summary", `all models failed for ${date}`, { lastError: lastError?.slice(0, 300) });
+  return false;
+}
+
+/**
+ * Generate any missing daily summaries within the configured injection window.
+ * Awaits each generation sequentially so the caller can block startup if desired.
+ */
+export async function ensureDailySummaries(
+  ctx: ExtensionContext,
+  rolePath: string,
+): Promise<{ generated: number; failed: number; skipped: boolean }> {
+  const cfg = config.memory.dailySummary;
+  if (!cfg.enabled || !cfg.autoGenerate) {
+    return { generated: 0, failed: 0, skipped: true };
+  }
+
+  const dates = listDailySummariesToGenerate(rolePath, cfg.recentDays);
+  if (dates.length === 0) {
+    return { generated: 0, failed: 0, skipped: false };
+  }
+
+  log("daily-summary", `generating ${dates.length} missing summaries`, { dates });
+
+  let generated = 0;
+  let failed = 0;
+  for (const date of dates) {
+    const ok = await generateDailySummaryForDate(ctx, rolePath, date);
+    if (ok) generated += 1;
+    else failed += 1;
+  }
+
+  log("daily-summary", `done`, { generated, failed });
+  return { generated, failed, skipped: false };
 }
