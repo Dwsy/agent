@@ -655,24 +655,10 @@ export function resolveConfigPath(): string {
 }
 
 /**
- * Load and merge configuration from file with defaults.
- *
- * Env override:
- * - PI_GATEWAY_PORT: force gateway port (1-65535)
- */
-export function loadConfig(configPath?: string): Config;
-/**
- * Load config with validation.
- *
- * @param configPath - Path to config file
- * @param validateOptions - Validation options
- * @returns Object with config and validation result
- */
-/**
  * Strip JSON5 comments while preserving strings.
  * Handles single-line and multi-line comments outside string literals.
  */
-function stripJsonComments(raw: string): string {
+export function stripJsonComments(raw: string): string {
   const result: string[] = [];
   let i = 0;
   let inString = false;
@@ -743,24 +729,14 @@ function stripJsonComments(raw: string): string {
   return result.join("");
 }
 
-export function loadConfig(configPath: string | undefined, validateOptions: ValidationOptions & { validate: true }): Promise<{ config: Config; validation: ValidationResult }>;
-export function loadConfig(configPath?: string, validateOptions?: ValidationOptions & { validate?: boolean }): Config | Promise<{ config: Config; validation: ValidationResult }> {
-  const path = configPath ?? resolveConfigPath();
+export function parseConfigText(raw: string): Partial<Config> {
+  const cleaned = stripJsonComments(raw)
+    // Allow trailing commas
+    .replace(/,\s*([\]}])/g, "$1");
+  return JSON.parse(cleaned) as Partial<Config>;
+}
 
-  let fileConfig: Partial<Config> = {};
-  if (existsSync(path)) {
-    try {
-      const raw = readFileSync(path, "utf-8");
-      // Strip JSON5 comments (preserving strings with // in URLs)
-      const cleaned = stripJsonComments(raw)
-        // Allow trailing commas
-        .replace(/,\s*([\]}])/g, "$1");
-      fileConfig = JSON.parse(cleaned);
-    } catch (err) {
-      console.error(`Failed to parse config at ${path}:`, err);
-    }
-  }
-
+export function mergeConfigWithDefaults(fileConfig: Partial<Config>): Config {
   const migrated = applyConfigMigrations(fileConfig as Record<string, unknown>);
   const merged = deepMerge(
     DEFAULT_CONFIG as unknown as Record<string, unknown>,
@@ -783,6 +759,42 @@ export function loadConfig(configPath?: string, validateOptions?: ValidationOpti
   }
 
   validateTelegramConfig(merged);
+  return merged;
+}
+
+export function loadConfigFromText(raw: string): Config {
+  return mergeConfigWithDefaults(parseConfigText(raw));
+}
+
+/**
+ * Load and merge configuration from file with defaults.
+ *
+ * Env override:
+ * - PI_GATEWAY_PORT: force gateway port (1-65535)
+ */
+export function loadConfig(configPath?: string): Config;
+/**
+ * Load config with validation.
+ *
+ * @param configPath - Path to config file
+ * @param validateOptions - Validation options
+ * @returns Object with config and validation result
+ */
+export function loadConfig(configPath: string | undefined, validateOptions: ValidationOptions & { validate: true }): Promise<{ config: Config; validation: ValidationResult }>;
+export function loadConfig(configPath?: string, validateOptions?: ValidationOptions & { validate?: boolean }): Config | Promise<{ config: Config; validation: ValidationResult }> {
+  const path = configPath ?? resolveConfigPath();
+
+  let fileConfig: Partial<Config> = {};
+  if (existsSync(path)) {
+    try {
+      const raw = readFileSync(path, "utf-8");
+      fileConfig = parseConfigText(raw);
+    } catch (err) {
+      console.error(`Failed to parse config at ${path}:`, err);
+    }
+  }
+
+  const merged = mergeConfigWithDefaults(fileConfig);
 
   // Handle validation if requested
   if (validateOptions?.validate) {

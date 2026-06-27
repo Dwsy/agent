@@ -3,7 +3,7 @@ import { handleMessageSendRequest } from "../message-send.ts";
 
 describe("message-send logging", () => {
   test("includes channel plugin account and rpc context in delivery log", async () => {
-    const info = mock(() => {});
+    const info = mock((..._args: unknown[]) => {});
     const sendText = mock(async () => ({ ok: true, messageId: "mid-1" }));
 
     const channelPlugin = {

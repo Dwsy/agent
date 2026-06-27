@@ -1,0 +1,1 @@
+import{j as e,G as n,n as t,p as i,T as l}from"./vendor-mantine-BOowBpGt.js";function p({title:r,description:s,action:a}){return e.jsxs(n,{justify:"space-between",align:"flex-start",wrap:"nowrap",children:[e.jsxs(t,{gap:4,children:[e.jsx(i,{order:2,children:r}),s?e.jsx(l,{c:"dimmed",size:"sm",children:s}):null]}),a]})}export{p as P};

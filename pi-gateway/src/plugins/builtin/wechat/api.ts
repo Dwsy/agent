@@ -29,6 +29,8 @@ const LONG_POLL_TIMEOUT_MS = 60_000;
  * Config request timeout.
  */
 const DEFAULT_CONFIG_TIMEOUT_MS = 10_000;
+const DEFAULT_RETRY_ATTEMPTS = 2;
+const DEFAULT_RETRY_BASE_DELAY_MS = 50;
 
 const CHANNEL_VERSION = (() => {
   try {
@@ -63,13 +65,21 @@ async function ilinkRequest<T>(
     body?: unknown;
     timeoutMs?: number;
     label?: string;
+    retryAttempts?: number;
   } = {}
 ): Promise<T> {
-  const { method = "GET", body, timeoutMs = DEFAULT_TIMEOUT_MS, label = path } = opts;
+  const {
+    method = "GET",
+    body,
+    timeoutMs = DEFAULT_TIMEOUT_MS,
+    label = path,
+    retryAttempts = DEFAULT_RETRY_ATTEMPTS,
+  } = opts;
   const baseUrl = runtime.baseUrl;
   const token = runtime.token;
 
   const url = `${baseUrl}${path}`;
+  const bodyText = body ? JSON.stringify(body) : undefined;
 
   if ("accountId" in runtime && !checkSessionActive(runtime)) {
     const status = getSessionStatus(runtime.accountId);
@@ -94,47 +104,61 @@ async function ilinkRequest<T>(
     headers["SKRouteTag"] = routeTag;
   }
 
-  logger.debug(`[wechat:api] ${method} ${redactUrl(url)} body=${body ? redactBody(JSON.stringify(body)) : "(none)"}`);
+  logger.debug(`[wechat:api] ${method} ${redactUrl(url)} body=${bodyText ? redactBody(bodyText) : "(none)"}`);
 
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  let lastError: unknown;
+  const maxAttempts = Math.max(1, retryAttempts + 1);
 
-  try {
-    const res = await fetch(url, {
-      method,
-      headers,
-      body: body ? JSON.stringify(body) : undefined,
-      signal: controller.signal,
-    });
-
-    const text = await res.text();
-    let data: any = null;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
-      data = text ? JSON.parse(text) : null;
-    } catch {
-      data = text;
-    }
+      const res = await fetch(url, {
+        method,
+        headers,
+        body: bodyText,
+        signal: controller.signal,
+      });
 
-    logger.debug(`[wechat:api] ${label} status=${res.status} response=${redactBody(text.slice(0, 200))}`);
+      const text = await res.text();
+      const data = parseResponseBody(text);
 
-    if (!res.ok) {
-      throw new Error(
-        `Weixin API error ${method} ${path}: ${res.status} ${
-          typeof data === "string" ? data.slice(0, 300) : JSON.stringify(data).slice(0, 300)
-        }`
-      );
-    }
+      logger.debug(`[wechat:api] ${label} status=${res.status} response=${redactBody(text.slice(0, 200))}`);
 
-    return data as T;
-  } catch (err) {
-    if (err instanceof Error && err.name === "AbortError") {
-      logger.debug(`[wechat:api] ${label} timeout after ${timeoutMs}ms`);
+      if (!res.ok) {
+        const error = buildWechatHttpError(method, path, res.status, data);
+        if (attempt < maxAttempts && isRetryableHttpStatus(res.status)) {
+          lastError = error;
+          logger.warn(`[wechat:api] ${label} transient HTTP ${res.status}, retry ${attempt}/${maxAttempts - 1}`);
+          await sleep(retryDelayMs(attempt));
+          continue;
+        }
+        throw error;
+      }
+
+      return data as T;
+    } catch (err) {
+      if (err instanceof Error && err.name === "AbortError") {
+        logger.debug(`[wechat:api] ${label} timeout after ${timeoutMs}ms`);
+      }
+
+      if (attempt < maxAttempts && isRetryableRequestError(err)) {
+        lastError = err;
+        logger.warn(
+          `[wechat:api] ${label} request failed, retry ${attempt}/${maxAttempts - 1}: ${err instanceof Error ? err.message : String(err)}`
+        );
+        await sleep(retryDelayMs(attempt));
+        continue;
+      }
+
+      throw err;
+    } finally {
+      clearTimeout(timeoutId);
     }
-    throw err;
-  } finally {
-    clearTimeout(timeoutId);
   }
+
+  throw lastError instanceof Error ? lastError : new Error(String(lastError ?? "Weixin API request failed"));
 }
 
 /**
@@ -153,14 +177,66 @@ export class WechatApiError extends Error {
   ret?: number;
   errcode?: number;
   errmsg?: string;
+  status?: number;
+  method?: string;
+  path?: string;
 
-  constructor(message: string, details?: { ret?: number; errcode?: number; errmsg?: string }) {
+  constructor(message: string, details?: { ret?: number; errcode?: number; errmsg?: string; status?: number; method?: string; path?: string }) {
     super(message);
     this.name = "WechatApiError";
     this.ret = details?.ret;
     this.errcode = details?.errcode;
     this.errmsg = details?.errmsg;
+    this.status = details?.status;
+    this.method = details?.method;
+    this.path = details?.path;
   }
+}
+
+function parseResponseBody(text: string): unknown {
+  try {
+    return text ? JSON.parse(text) : null;
+  } catch {
+    return text;
+  }
+}
+
+function errorDetailsFromResponse(data: unknown): { ret?: number; errcode?: number; errmsg?: string } {
+  if (!data || typeof data !== "object") return {};
+  const record = data as Record<string, unknown>;
+  return {
+    ret: typeof record.ret === "number" ? record.ret : undefined,
+    errcode: typeof record.errcode === "number" ? record.errcode : undefined,
+    errmsg: typeof record.errmsg === "string" ? record.errmsg : undefined,
+  };
+}
+
+function responseSnippet(data: unknown): string {
+  return typeof data === "string" ? data.slice(0, 300) : JSON.stringify(data).slice(0, 300);
+}
+
+function buildWechatHttpError(method: string, path: string, status: number, data: unknown): WechatApiError {
+  const details = errorDetailsFromResponse(data);
+  return new WechatApiError(
+    `Weixin API error ${method} ${path}: ${status} ${responseSnippet(data)}`,
+    { ...details, status, method, path },
+  );
+}
+
+function isRetryableHttpStatus(status: number): boolean {
+  return status === 408 || status === 425 || status === 429 || status >= 500;
+}
+
+function isRetryableRequestError(err: unknown): boolean {
+  return !(err instanceof WechatApiError);
+}
+
+function retryDelayMs(attempt: number): number {
+  return Math.min(1_000, DEFAULT_RETRY_BASE_DELAY_MS * Math.pow(2, attempt - 1));
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function assertWechatApiOk(
@@ -250,6 +326,7 @@ export async function fetchWechatUpdates(
     body: { get_updates_buf: runtime.syncBuf ?? "", base_info: buildBaseInfo() },
     timeoutMs: LONG_POLL_TIMEOUT_MS + 10_000,
     label: "getUpdates",
+    retryAttempts: 0,
   });
 
   assertWechatApiOk("getUpdates", response);

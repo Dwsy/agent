@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { getWechatConfig, getWechatUploadUrl, sendWechatTyping } from "../api.ts";
+import { fetchWechatUpdates, getWechatConfig, getWechatUploadUrl, sendWechatTyping, WechatApiError } from "../api.ts";
 import type { WechatAccountRuntime } from "../types.ts";
 
 const originalFetch = globalThis.fetch;
@@ -90,5 +90,45 @@ describe("wechat api request payloads", () => {
     expect(body.typing_ticket).toBe("ticket-1");
     expect(body.status).toBe(1);
     expect(body.base_info?.channel_version).toBeString();
+  });
+
+  test("sendTyping retries transient server errors", async () => {
+    let calls = 0;
+    globalThis.fetch = ((async () => {
+      calls += 1;
+      if (calls === 1) {
+        return new Response(JSON.stringify({ errcode: 500, errmsg: "busy" }), { status: 500, headers: { "Content-Type": "application/json" } });
+      }
+      return new Response(JSON.stringify({ ret: 0 }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }) as unknown) as typeof fetch;
+
+    const runtime = createRuntime();
+    await sendWechatTyping(runtime, {
+      ilink_user_id: "user@im.wechat",
+      typing_ticket: "ticket-1",
+      status: 1,
+    });
+
+    expect(calls).toBe(2);
+  });
+
+  test("getUpdates preserves WeChat errcode without retrying long-poll", async () => {
+    let calls = 0;
+    globalThis.fetch = ((async () => {
+      calls += 1;
+      return new Response(JSON.stringify({ errcode: -14, errmsg: "session timeout" }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }) as unknown) as typeof fetch;
+
+    const runtime = createRuntime();
+    let error: unknown;
+    try {
+      await fetchWechatUpdates(runtime);
+    } catch (err) {
+      error = err;
+    }
+
+    expect(calls).toBe(1);
+    expect(error).toBeInstanceOf(WechatApiError);
+    expect((error as WechatApiError).errcode).toBe(-14);
   });
 });

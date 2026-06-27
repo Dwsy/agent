@@ -227,6 +227,8 @@ export interface WechatAccountRuntime {
   dedup: Map<string, number>;
   /** Streaming placeholders */
   streamPlaceholders: Map<string, { target: string; messageId: string }>;
+  /** Cached typing tickets keyed by user/context token */
+  typingTickets?: Map<string, string>;
   /** Sync buffer for get_updates_buf */
   syncBuf: string;
   /** Path to sync buffer file */
@@ -241,6 +243,8 @@ export interface WechatAccountRuntime {
   lastError?: string;
   /** Typing ticket for sendTyping */
   typingTicket?: string;
+  /** Monotonic gateway run identifier used to ignore stale poll loops */
+  gatewayRunId?: number;
   /** Account name */
   name?: string;
   /** User ID from QR login */

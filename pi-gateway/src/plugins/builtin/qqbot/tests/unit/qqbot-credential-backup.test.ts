@@ -1,16 +1,29 @@
 import { describe, expect, test, beforeEach, afterEach } from "bun:test";
 import { saveCredentialBackup, loadCredentialBackup, clearCredentialBackup } from "../../credential-backup.ts";
-import { existsSync, readFileSync, unlinkSync } from "node:fs";
-import { homedir } from "node:os";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
-const backupPath = `${homedir()}/.pi/gateway/qqbot-credentials/credentials.json`;
+let previousBackupDir: string | undefined;
+let backupDir: string;
+let backupPath: string;
 
 describe("credential backup", () => {
   beforeEach(() => {
+    previousBackupDir = process.env.PI_QQBOT_CREDENTIAL_BACKUP_DIR;
+    backupDir = mkdtempSync(join(tmpdir(), "qqbot-credentials-"));
+    backupPath = join(backupDir, "credentials.json");
+    process.env.PI_QQBOT_CREDENTIAL_BACKUP_DIR = backupDir;
     clearCredentialBackup();
   });
   afterEach(() => {
     clearCredentialBackup();
+    if (previousBackupDir === undefined) {
+      delete process.env.PI_QQBOT_CREDENTIAL_BACKUP_DIR;
+    } else {
+      process.env.PI_QQBOT_CREDENTIAL_BACKUP_DIR = previousBackupDir;
+    }
+    rmSync(backupDir, { recursive: true, force: true });
   });
 
   test("save and load credentials", () => {

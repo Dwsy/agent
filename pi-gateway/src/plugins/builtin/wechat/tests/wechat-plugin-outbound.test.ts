@@ -12,13 +12,13 @@ describe("wechat plugin outbound target encoding", () => {
     let registeredChannel: any;
     let capturedBody: any = null;
 
-    globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+    globalThis.fetch = ((async (_input: string | URL | Request, init?: RequestInit) => {
       capturedBody = init?.body ? JSON.parse(String(init.body)) : null;
       return new Response(JSON.stringify({ ret: 0, data: { msg_id: "mid-1" } }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });
-    }) as typeof fetch;
+    }) as unknown) as typeof fetch;
 
     const api = {
       config: {

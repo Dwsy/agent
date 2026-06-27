@@ -1,6 +1,5 @@
 import type { WechatInboundMessage, WechatAccountRuntime } from "./types.ts";
 import { fetchWechatUpdates } from "./api.ts";
-import { handleWechatMessage } from "./handlers.ts";
 import {
   initSyncBuf,
   updateSyncBuf,
@@ -17,6 +16,8 @@ import { logger } from "./logger.ts";
  * Default long-poll interval for getUpdates (milliseconds).
  */
 const DEFAULT_POLL_INTERVAL_MS = 1000;
+const MIN_POLL_INTERVAL_MS = 250;
+const MAX_POLL_INTERVAL_MS = 5000;
 
 /**
  * Default reconnect delay on error (milliseconds).
@@ -56,6 +57,19 @@ export async function startWechatGateway(
   options: StartWechatGatewayOptions = {},
 ): Promise<void> {
   logger.info(`[wechat:gateway] starting for accountId=${runtime.accountId}`);
+  runtime.disposed = false;
+  runtime.gatewayRunId = (runtime.gatewayRunId ?? 0) + 1;
+  const runId = runtime.gatewayRunId;
+
+  if (runtime.pollTimer) {
+    clearTimeout(runtime.pollTimer);
+    runtime.pollTimer = null;
+  }
+  if (runtime.reconnectTimer) {
+    clearTimeout(runtime.reconnectTimer);
+    runtime.reconnectTimer = null;
+  }
+
   resetSessionState(runtime.accountId);
 
   // Initialize sync buffer
@@ -63,9 +77,33 @@ export async function startWechatGateway(
 
   let consecutiveFailures = 0;
   let nextPollInterval = DEFAULT_POLL_INTERVAL_MS;
+  const isCurrentRun = (): boolean => !runtime.disposed && runtime.gatewayRunId === runId;
+
+  const resolvePollInterval = (serverIntervalMs?: number): number => {
+    if (!serverIntervalMs || serverIntervalMs <= 0) return DEFAULT_POLL_INTERVAL_MS;
+    return Math.min(MAX_POLL_INTERVAL_MS, Math.max(MIN_POLL_INTERVAL_MS, serverIntervalMs));
+  };
+
+  const schedulePoll = (delayMs: number): void => {
+    if (!isCurrentRun()) return;
+    if (runtime.pollTimer) clearTimeout(runtime.pollTimer);
+    runtime.pollTimer = setTimeout(() => {
+      runtime.pollTimer = null;
+      return poll();
+    }, delayMs);
+  };
+
+  const scheduleReconnect = (delayMs: number): void => {
+    if (!isCurrentRun()) return;
+    if (runtime.reconnectTimer) clearTimeout(runtime.reconnectTimer);
+    runtime.reconnectTimer = setTimeout(() => {
+      runtime.reconnectTimer = null;
+      return poll();
+    }, delayMs);
+  };
 
   const poll = async (): Promise<void> => {
-    if (runtime.disposed) {
+    if (!isCurrentRun()) {
       logger.info(`[wechat:gateway] stopped (disposed) for accountId=${runtime.accountId}`);
       return;
     }
@@ -80,12 +118,13 @@ export async function startWechatGateway(
       logger.info(
         `[wechat:gateway] session paused for accountId=${runtime.accountId}, waiting ${Math.ceil(remainingMs / 1000)}s`
       );
-      runtime.reconnectTimer = setTimeout(poll, Math.min(remainingMs, 60000));
+      scheduleReconnect(Math.min(remainingMs, 60000));
       return;
     }
 
     try {
       const { messages, getUpdatesBuf, longpollingTimeoutMs } = await fetchWechatUpdates(runtime);
+      if (!isCurrentRun()) return;
 
       // Update sync buffer
       if (getUpdatesBuf) {
@@ -94,7 +133,7 @@ export async function startWechatGateway(
 
       // Update poll interval from server suggestion
       if (longpollingTimeoutMs && longpollingTimeoutMs > 0) {
-        nextPollInterval = Math.max(1000, longpollingTimeoutMs - 30000);
+        nextPollInterval = resolvePollInterval(longpollingTimeoutMs);
       }
 
       // Reset consecutive failures on success
@@ -107,6 +146,7 @@ export async function startWechatGateway(
 
       // Process messages
       for (const msg of messages) {
+        if (!isCurrentRun()) return;
         const msgId = String(msg.message_id ?? msg.msg_id ?? `${msg.from_user_id}-${msg.create_time_ms}`);
 
         // Deduplication
@@ -125,8 +165,9 @@ export async function startWechatGateway(
       }
 
       // Schedule next poll
-      runtime.pollTimer = setTimeout(poll, nextPollInterval);
+      schedulePoll(nextPollInterval);
     } catch (err) {
+      if (!isCurrentRun()) return;
       const errorMessage = err instanceof Error ? err.message : String(err);
       runtime.lastError = errorMessage;
       logger.warn(`[wechat:gateway] poll error for accountId=${runtime.accountId}: ${errorMessage}`);
@@ -140,7 +181,7 @@ export async function startWechatGateway(
           logger.warn(
             `[wechat:gateway] session timeout for accountId=${runtime.accountId}, backing off ${Math.ceil(expiry.delayMs / 1000)}s (attempt ${expiry.attempts})`
           );
-          runtime.reconnectTimer = setTimeout(poll, expiry.delayMs);
+          scheduleReconnect(expiry.delayMs);
           return;
         }
 
@@ -172,7 +213,7 @@ export async function startWechatGateway(
         delay = Math.min(DEFAULT_RECONNECT_DELAY_MS * Math.pow(2, consecutiveFailures - 1), MAX_RECONNECT_DELAY_MS);
       }
 
-      runtime.reconnectTimer = setTimeout(poll, delay);
+      scheduleReconnect(delay);
     }
   };
 
@@ -190,6 +231,7 @@ export async function startWechatGateway(
 export async function stopWechatGateway(runtime: WechatAccountRuntime): Promise<void> {
   logger.info(`[wechat:gateway] stopping for accountId=${runtime.accountId}`);
   runtime.disposed = true;
+  runtime.gatewayRunId = (runtime.gatewayRunId ?? 0) + 1;
 
   if (runtime.pollTimer) {
     clearTimeout(runtime.pollTimer);
@@ -205,6 +247,7 @@ export async function stopWechatGateway(runtime: WechatAccountRuntime): Promise<
   runtime.contextTokens.clear();
   runtime.dedup.clear();
   runtime.streamPlaceholders.clear();
+  runtime.typingTickets?.clear();
 
   logger.info(`[wechat:gateway] stopped for accountId=${runtime.accountId}`);
 }

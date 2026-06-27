@@ -84,6 +84,38 @@ describe("wechat session timeout handling", () => {
     await startPromise;
   });
 
+  test("stopWechatGateway prevents an in-flight poll from scheduling the next timer", async () => {
+    const { stopWechatGateway } = await import("../gateway.ts");
+    const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), "wechat-session-stop-"));
+    process.env.PI_STATE_DIR = stateDir;
+
+    let resolveFetch!: (response: Response) => void;
+    globalThis.fetch = ((() => new Promise<Response>((resolve) => {
+      resolveFetch = resolve;
+    })) as unknown) as typeof fetch;
+
+    const scheduledDelays: number[] = [];
+    globalThis.setTimeout = ((fn: (...args: any[]) => void, ms?: number) => {
+      if (Number(ms ?? 0) !== 70_000) scheduledDelays.push(Number(ms ?? 0));
+      return { fn, ms } as any;
+    }) as typeof setTimeout;
+    globalThis.clearTimeout = (() => {}) as typeof clearTimeout;
+
+    const runtime = createRuntime();
+    await startWechatGateway(runtime, async () => {});
+    await Promise.resolve();
+    await stopWechatGateway(runtime);
+
+    resolveFetch(new Response(JSON.stringify({ msgs: [], get_updates_buf: "next" }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    }));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(scheduledDelays).toEqual([]);
+  });
+
   test("startWechatGateway backs off 30s on first errcode -14", async () => {
     const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), "wechat-session-"));
     process.env.PI_STATE_DIR = stateDir;

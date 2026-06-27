@@ -9,6 +9,8 @@ import type { WechatAccountRuntime, WechatUploadedFile } from "./types.ts";
  */
 const CDN_UPLOAD_PATH = "/upload";
 const CDN_DOWNLOAD_PATH = "/download";
+const CDN_MAX_ATTEMPTS = 3;
+const CDN_RETRY_BASE_DELAY_MS = 100;
 
 /**
  * Upload media type constants (from ilink API).
@@ -132,25 +134,68 @@ async function uploadBufferToCdn(
     `${label}: uploading ${encrypted.length} encrypted bytes to CDN`
   );
 
-  const res = await fetch(uploadUrl, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/octet-stream",
-    },
-    body: new Uint8Array(encrypted),
-  });
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= CDN_MAX_ATTEMPTS; attempt += 1) {
+    try {
+      const res = await fetch(uploadUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/octet-stream",
+        },
+        body: new Uint8Array(encrypted),
+      });
 
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`${label}: CDN upload failed: ${res.status} ${text.slice(0, 200)}`);
+      if (!res.ok) {
+        const text = await res.text();
+        const error = new Error(`${label}: CDN upload failed: ${res.status} ${text.slice(0, 200)}`);
+        (error as Error & { retryable?: boolean }).retryable = isRetryableCdnStatus(res.status);
+        if (attempt < CDN_MAX_ATTEMPTS && (error as Error & { retryable?: boolean }).retryable) {
+          lastError = error;
+          runtime.api.logger.warn(`${label}: CDN upload transient status=${res.status}, retry ${attempt}/${CDN_MAX_ATTEMPTS - 1}`);
+          await sleep(retryDelayMs(attempt));
+          continue;
+        }
+        throw error;
+      }
+
+      const downloadParam = res.headers.get("x-encrypted-param") ?? undefined;
+      if (!downloadParam) {
+        const error = new Error(`${label}: CDN upload response missing x-encrypted-param header`);
+        (error as Error & { retryable?: boolean }).retryable = false;
+        throw error;
+      }
+
+      return { downloadParam };
+    } catch (err) {
+      if (attempt < CDN_MAX_ATTEMPTS && isRetryableCdnError(err)) {
+        lastError = err;
+        runtime.api.logger.warn(`${label}: CDN upload request failed, retry ${attempt}/${CDN_MAX_ATTEMPTS - 1}: ${err instanceof Error ? err.message : String(err)}`);
+        await sleep(retryDelayMs(attempt));
+        continue;
+      }
+      throw err;
+    }
   }
 
-  const downloadParam = res.headers.get("x-encrypted-param") ?? undefined;
-  if (!downloadParam) {
-    throw new Error(`${label}: CDN upload response missing x-encrypted-param header`);
-  }
+  throw lastError instanceof Error ? lastError : new Error(`${label}: CDN upload failed`);
+}
 
-  return { downloadParam };
+function isRetryableCdnStatus(status: number): boolean {
+  return status === 408 || status === 425 || status === 429 || status >= 500;
+}
+
+function isRetryableCdnError(err: unknown): boolean {
+  if (!(err instanceof Error)) return true;
+  if ("retryable" in err) return Boolean((err as Error & { retryable?: boolean }).retryable);
+  return true;
+}
+
+function retryDelayMs(attempt: number): number {
+  return Math.min(1_000, CDN_RETRY_BASE_DELAY_MS * Math.pow(2, attempt - 1));
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /**

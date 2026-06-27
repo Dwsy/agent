@@ -12,11 +12,13 @@ import type {
 } from "./types.ts";
 import { getWechatConfig, sendWechatTyping } from "./api.ts";
 import { sendWechatText } from "./outbound.ts";
-import { handleSlashCommand, buildSlashCommandContext } from "./commands.ts";
+import { handleSlashCommand, buildSlashCommandContext, normalizeWechatCommandText } from "./commands.ts";
 import { logger } from "./logger.ts";
 import { recordWechatUser } from "./known-users.ts";
 import { isWechatDebugMode } from "./debug-mode.ts";
 import { sendWechatErrorNotice } from "./error-notice.ts";
+
+const WECHAT_TYPING_KEEPALIVE_MS = 5000;
 
 /**
  * Store context token for a user (userId -> token).
@@ -198,10 +200,17 @@ async function ensureTypingTicket(
   userId: string,
   contextToken?: string,
 ): Promise<string | undefined> {
-  if (runtime.typingTicket) return runtime.typingTicket;
+  const cacheKey = `${userId}:${contextToken ?? ""}`;
+  runtime.typingTickets ??= new Map();
+  const cached = runtime.typingTickets.get(cacheKey) ?? runtime.typingTicket;
+  if (cached) return cached;
+
   const config = await getWechatConfig(runtime, userId, contextToken);
-  runtime.typingTicket = config.typingTicket;
-  return runtime.typingTicket;
+  if (config.typingTicket) {
+    runtime.typingTickets.set(cacheKey, config.typingTicket);
+    runtime.typingTicket = config.typingTicket;
+  }
+  return config.typingTicket;
 }
 
 /**
@@ -233,15 +242,17 @@ export async function handleWechatMessage(
     return;
   }
 
+  const commandText = normalizeWechatCommandText(ctx.text);
+
   // Slash command handling
-  if (ctx.text.trim().startsWith("/")) {
+  if (commandText.trim().startsWith("/")) {
     const slashCtx = buildSlashCommandContext(runtime, ctx.senderId, ctx.contextToken, async (text) => {
       await sendWechatText(runtime, `c2c|${ctx.senderId}`, text);
     }, receivedAt);
     
-    const { handled } = await handleSlashCommand(ctx.text, slashCtx);
+    const { handled } = await handleSlashCommand(commandText, slashCtx);
     if (handled) {
-      logger.info(`[wechat:handlers] slash command handled: ${ctx.text.split(/\s+/)[0]}`);
+      logger.info(`[wechat:handlers] slash command handled: ${commandText.split(/\s+/)[0]}`);
       return;
     }
   }
@@ -286,7 +297,7 @@ export async function handleWechatMessage(
     timestamp: ctx.timestamp,
   };
 
-  const route = resolveAgentRoute(source, ctx.text, runtime.api.config);
+  const route = resolveAgentRoute(source, commandText, runtime.api.config);
   logger.info(
     `[wechat:handlers] route resolved: agent=${route.agentId} text=${JSON.stringify(
       (route.text || "").slice(0, 120)
@@ -310,40 +321,74 @@ export async function handleWechatMessage(
   const debug = isWechatDebugMode(runtime.accountId);
   const inboundAt = receivedAt;
 
-  await runtime.api.dispatch({
-    source: routedSource,
-    sessionKey,
-    text: route.text,
-    respond: async (reply: string) => {
-      logger.info(`[wechat:handlers] respond called: len=${reply.length}`);
-      if (!reply.trim()) {
-        logger.info("[wechat:handlers] respond skipped: empty reply");
-        return;
-      }
-      
-      runtime.lastOutboundAt = Date.now();
-      runtime.lastEventAt = runtime.lastOutboundAt;
+  let typingInterval: ReturnType<typeof setInterval> | null = null;
+  let typingActive = false;
 
-      let output = reply;
-      if (debug) {
-        const ms = Date.now() - inboundAt;
-        output = `${reply}\n\n⏱ AI处理耗时: ${ms}ms`;
-      }
-      
-      await sendWechatText(runtime, `c2c|${target.id}`, output);
-    },
-    setTyping: async (typing: boolean) => {
-      try {
-        const ticket = await ensureTypingTicket(runtime, target.id, ctx.contextToken);
-        if (!ticket) return;
-        await sendWechatTyping(runtime, {
-          ilink_user_id: target.id,
-          typing_ticket: ticket,
-          status: typing ? 1 : 2,
-        });
-      } catch (err) {
-        logger.warn(`[wechat:handlers] sendTyping failed: ${err instanceof Error ? err.message : String(err)}`);
-      }
-    },
-  });
+  const sendTypingState = async (typing: boolean): Promise<boolean> => {
+    try {
+      const ticket = await ensureTypingTicket(runtime, target.id, ctx.contextToken);
+      if (!ticket) return false;
+      await sendWechatTyping(runtime, {
+        ilink_user_id: target.id,
+        typing_ticket: ticket,
+        status: typing ? 1 : 2,
+      });
+      return true;
+    } catch (err) {
+      logger.warn(`[wechat:handlers] sendTyping failed: ${err instanceof Error ? err.message : String(err)}`);
+      return false;
+    }
+  };
+
+  const startTypingKeepalive = async (): Promise<void> => {
+    if (typingInterval) return;
+    const started = await sendTypingState(true);
+    if (!started) return;
+    typingActive = true;
+    typingInterval = setInterval(() => {
+      void sendTypingState(true);
+    }, WECHAT_TYPING_KEEPALIVE_MS);
+  };
+
+  const stopTypingKeepalive = async (): Promise<void> => {
+    if (typingInterval) {
+      clearInterval(typingInterval);
+      typingInterval = null;
+    }
+    if (!typingActive) return;
+    typingActive = false;
+    await sendTypingState(false);
+  };
+
+  try {
+    await runtime.api.dispatch({
+      source: routedSource,
+      sessionKey,
+      text: route.text,
+      respond: async (reply: string) => {
+        logger.info(`[wechat:handlers] respond called: len=${reply.length}`);
+        if (!reply.trim()) {
+          logger.info("[wechat:handlers] respond skipped: empty reply");
+          return;
+        }
+
+        runtime.lastOutboundAt = Date.now();
+        runtime.lastEventAt = runtime.lastOutboundAt;
+
+        let output = reply;
+        if (debug) {
+          const ms = Date.now() - inboundAt;
+          output = `${reply}\n\n⏱ AI处理耗时: ${ms}ms`;
+        }
+
+        await sendWechatText(runtime, `c2c|${target.id}`, output);
+      },
+      setTyping: async (typing: boolean) => {
+        if (typing) await startTypingKeepalive();
+        else await stopTypingKeepalive();
+      },
+    });
+  } finally {
+    await stopTypingKeepalive();
+  }
 }

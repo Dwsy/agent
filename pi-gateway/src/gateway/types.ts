@@ -45,6 +45,7 @@ export interface WsClientData {
 export interface GatewayContext {
   // Core config
   config: Config;
+  configPath: string;
   resolvedGatewayToken?: string;
 
   // RPC process management

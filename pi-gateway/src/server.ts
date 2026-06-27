@@ -77,6 +77,7 @@ function normalizeModelFailover(config: Config): Required<ModelFailoverConfig> {
 
 export class Gateway {
   private config: Config;
+  private configPath: string;
   private pool: RpcPool;
   private queue: MessageQueueManager;
   private registry: PluginRegistryState;
@@ -107,7 +108,8 @@ export class Gateway {
   private observability: GatewayObservability;
 
   constructor(options: GatewayOptions = {}) {
-    this.config = loadConfig(options.configPath);
+    this.configPath = options.configPath ?? resolveConfigPath();
+    this.config = loadConfig(this.configPath);
     if (options.port) this.config.gateway.port = options.port;
     if (this.config.gateway.logLevel) setLogLevel(this.config.gateway.logLevel);
     this.noGui = options.noGui ?? false;
@@ -286,7 +288,7 @@ export class Gateway {
     }, 30_000);
 
     // Config file watcher (hot reload)
-    this.configWatcher = watchConfig(resolveConfigPath(), (newConfig) => {
+    this.configWatcher = watchConfig(this.configPath, (newConfig) => {
       this.log.info("Config file changed, reloading...");
       this.applyReloadedConfig(newConfig, "Gateway config hot-reloaded (pool + auth cache refreshed)");
     });
@@ -415,7 +417,7 @@ export class Gateway {
   }
 
   private reloadConfig(): void {
-    const reloaded = loadConfig();
+    const reloaded = loadConfig(this.configPath);
     this.applyReloadedConfig(reloaded, "Gateway config reloaded (pool + auth cache refreshed)");
   }
 
@@ -720,6 +722,7 @@ export class Gateway {
   private get ctx(): GatewayContext {
     return {
       config: this.config,
+      configPath: this.configPath,
       resolvedGatewayToken: this.resolvedToken,
       pool: this.pool,
       queue: this.queue,

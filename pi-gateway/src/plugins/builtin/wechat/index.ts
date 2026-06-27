@@ -12,8 +12,8 @@ import type {
 } from "../../types.ts";
 import type { WechatChannelConfig, WechatAccountRuntime, WechatResolvedAccount } from "./types.ts";
 import { resolveWechatConfig } from "./config.ts";
-import { normalizeAccountId, resolveWechatAccounts, resolveDefaultAccountId, startWechatLoginWithQr, waitForWechatLogin, clearAccountActivated } from "./accounts.ts";
-import { sendWechatText, sendWechatMedia, sendWechatKeyboard } from "./outbound.ts";
+import { deriveRawAccountId, normalizeAccountId, resolveWechatAccounts, resolveDefaultAccountId, startWechatLoginWithQr, waitForWechatLogin, clearAccountActivated } from "./accounts.ts";
+import { parseWechatTarget, sendWechatText, sendWechatMedia, sendWechatKeyboard } from "./outbound.ts";
 import { startWechatGateway, stopWechatGateway } from "./gateway.ts";
 import { flushWechatKnownUsers } from "./known-users.ts";
 import { handleWechatMessage } from "./handlers.ts";
@@ -201,21 +201,30 @@ async function startAutoLogin(rt: WechatPluginRuntimeMulti, preferredAccountId?:
  * Target format: "accountId:userId" or just "userId" (uses default account).
  */
 function parseAccountFromTarget(target: string): { accountId: string; userId: string } {
+  if (target.includes("|")) {
+    const parsed = parseWechatTarget(target);
+    return { accountId: runtime?.defaultAccountId ?? "default", userId: parsed.id };
+  }
+
   const parts = target.split(":");
   if (parts.length >= 2) {
-    return { accountId: parts[0], userId: parts.slice(1).join(":") };
+    const userPart = parts.slice(1).join(":");
+    const userId = userPart.includes("|") ? parseWechatTarget(userPart).id : userPart;
+    return { accountId: parts[0] || "default", userId };
   }
   return { accountId: runtime?.defaultAccountId ?? "default", userId: target };
 }
 
 /**
- * Get context token for a user from the appropriate account runtime.
+ * Resolve an account runtime by target account ID, accepting both raw and normalized IDs.
  */
-function getContextTokenForUser(accountId: string, userId: string): string | undefined {
+function getAccountRuntime(accountId: string): WechatAccountRuntime | undefined {
   if (!runtime) return undefined;
-  const account = runtime.accounts.get(accountId);
-  if (!account) return undefined;
-  return account.contextTokens.get(userId);
+  const normalized = normalizeAccountId(accountId);
+  const raw = deriveRawAccountId(normalized);
+  return runtime.accounts.get(accountId)
+    ?? runtime.accounts.get(normalized)
+    ?? (raw ? runtime.accounts.get(raw) : undefined);
 }
 
 /**
@@ -303,7 +312,7 @@ const wechatPlugin: ChannelPlugin = {
     async sendText(target: string, text: string, opts): Promise<MessageSendResult> {
       if (!runtime) return { ok: false, error: "WeChat not initialized" };
       const { accountId, userId } = parseAccountFromTarget(target);
-      const account = runtime.accounts.get(accountId);
+      const account = getAccountRuntime(accountId);
       if (!account) return { ok: false, error: `Account ${accountId} not found` };
       
       // Create a minimal runtime for the outbound functions
@@ -317,7 +326,7 @@ const wechatPlugin: ChannelPlugin = {
     ): Promise<MediaSendResult> {
       if (!runtime) return { ok: false, error: "WeChat not initialized" };
       const { accountId, userId } = parseAccountFromTarget(target);
-      const account = runtime.accounts.get(accountId);
+      const account = getAccountRuntime(accountId);
       if (!account) return { ok: false, error: `Account ${accountId} not found` };
       
       const accountRuntime = { ...account, channelCfg: runtime.channelCfg };
@@ -339,7 +348,7 @@ const wechatPlugin: ChannelPlugin = {
     ): Promise<MessageSendResult> {
       if (!runtime) return { ok: false, error: "WeChat not initialized" };
       const { accountId, userId } = parseAccountFromTarget(target);
-      const account = runtime.accounts.get(accountId);
+      const account = getAccountRuntime(accountId);
       if (!account) return { ok: false, error: `Account ${accountId} not found` };
       
       const accountRuntime = { ...account, channelCfg: runtime.channelCfg };
@@ -477,6 +486,7 @@ const wechatPlugin: ChannelPlugin = {
         contextTokens: new Map(),
         dedup: new Map(),
         streamPlaceholders: new Map(),
+        typingTickets: new Map(),
         syncBuf: "",
         syncBufPath: "",
         lastEventAt: undefined,

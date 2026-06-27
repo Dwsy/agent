@@ -19,8 +19,10 @@ import { handleMessageEditRequest } from "./message-edit.ts";
 import { handleMessageAction } from "./message-action.ts";
 import { handleApiChat, handleApiChatStream } from "./chat-api.ts";
 import { handleApiSend } from "./send-api.ts";
+import { collectChannelCapabilityMatrix } from "./channel-capability-matrix.ts";
 import { redactConfig } from "../core/auth.ts";
 import { loadConfig } from "../core/config.ts";
+import { handleGatewayConfigRaw } from "./config-raw.ts";
 import { handleKeyboardRequest } from "./keyboard-interact.ts";
 import { parseObservabilityWindow, type ObservabilityLevel, type ObservabilityCategory } from "../core/gateway-observability.ts";
 
@@ -138,8 +140,12 @@ export async function routeHttp(req: Request, url: URL, ctx: GatewayContext): Pr
       services: ctx.registry.services.map(s => s.name),
     });
   }
+  if (pathname === "/api/channels/capability-matrix" && method === "GET") {
+    return Response.json({ channels: collectChannelCapabilityMatrix(ctx.registry) });
+  }
 
   // --- Gateway management ---
+  if (pathname.startsWith("/api/gateway/config/raw")) return handleGatewayConfigRaw(req, url, ctx);
   if (pathname === "/api/gateway/config" && method === "GET") {
     return Response.json(redactConfig(ctx.config as unknown as Record<string, any>));
   }

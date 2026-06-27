@@ -24,6 +24,7 @@ describe("wechat logger", () => {
     logger.debug("[wechat:gateway] dropping duplicate message m-1");
 
     expect(debugSpy).toHaveBeenCalledTimes(1);
-    expect(String(debugSpy.mock.calls[0]?.[0] ?? "")).toContain("[wechat:gateway]");
+    const calls = debugSpy.mock.calls as unknown as Array<[unknown]>;
+    expect(String(calls[0]?.[0] ?? "")).toContain("[wechat:gateway]");
   });
 });

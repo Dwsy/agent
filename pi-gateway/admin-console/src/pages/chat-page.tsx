@@ -26,6 +26,7 @@ import { marked } from 'marked';
 import { useGatewayWs } from '../hooks/use-gateway-ws';
 import { PageHeader } from '../components/atoms/page-header';
 import { SurfaceCard } from '../components/atoms/surface-card';
+import { fetchModels, fetchSessionStatus, updateSessionModel, updateSessionThinking, type ModelItem } from '../lib/api';
 
 type SessionItem = {
   sessionKey: string;
@@ -310,6 +311,13 @@ function formatLastActivity(ts?: number) {
   return new Date(ts).toLocaleDateString();
 }
 
+function formatModel(model: ModelItem) {
+  const id = model.model ?? model.id ?? '';
+  return model.provider && id ? `${model.provider}/${id}` : id;
+}
+
+const THINKING_LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh'].map((level) => ({ value: level, label: level }));
+
 export function ChatPage() {
   const { connected, request, on } = useGatewayWs();
   const viewportRef = useRef<HTMLDivElement | null>(null);
@@ -324,6 +332,9 @@ export function ChatPage() {
   const [isTyping, setIsTyping] = useState(false);
   const [roles, setRoles] = useState<string[]>([]);
   const [currentRole, setCurrentRole] = useState<string>('');
+  const [models, setModels] = useState<ModelItem[]>([]);
+  const [currentModel, setCurrentModel] = useState<string>('');
+  const [currentThinking, setCurrentThinking] = useState<string>('');
 
   const [pendingUi, setPendingUi] = useState<ExtensionUiRequest | null>(null);
   const [uiTextValue, setUiTextValue] = useState('');
@@ -341,6 +352,15 @@ export function ChatPage() {
   );
 
   const extensionOptions = useMemo(() => normalizeExtensionOptions(pendingUi?.options), [pendingUi]);
+  const modelOptions = useMemo(() => {
+    return models
+      .map((model) => {
+        const value = formatModel(model);
+        if (!value) return null;
+        return { value, label: model.name ? `${model.name} · ${value}` : value };
+      })
+      .filter((item): item is { value: string; label: string } => Boolean(item));
+  }, [models]);
 
   const buildMessageHtml = useCallback(
     (text: string) => renderMessageHtml(text, highlightClient),
@@ -633,6 +653,14 @@ export function ChatPage() {
 
       const state = await request<{ role?: string }>('sessions.get', { sessionKey: key });
       setCurrentRole(state?.role ?? '');
+
+      const [status, availableModels] = await Promise.all([
+        fetchSessionStatus(key).catch(() => null),
+        fetchModels(key).catch(() => []),
+      ]);
+      setCurrentModel(status?.resolvedModel ?? '');
+      setCurrentThinking(status?.resolvedThinkingLevel ?? '');
+      setModels(availableModels);
     } catch (error) {
       notifications.show({
         color: 'red',
@@ -648,6 +676,9 @@ export function ChatPage() {
     sessionKeyRef.current = newSession;
     setMessages([]);
     setCurrentRole('');
+    setCurrentModel('');
+    setCurrentThinking('');
+    setModels([]);
     resetPendingUi();
     void refreshSessions();
   };
@@ -681,6 +712,36 @@ export function ChatPage() {
       notifications.show({
         color: 'red',
         title: '切换角色失败',
+        message: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  };
+
+  const handleModelChange = async (model: string | null) => {
+    if (!model || !sessionKey) return;
+    try {
+      await updateSessionModel(sessionKey, model);
+      setCurrentModel(model);
+      notifications.show({ color: 'green', title: '模型已切换', message: model });
+    } catch (error) {
+      notifications.show({
+        color: 'red',
+        title: '切换模型失败',
+        message: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  };
+
+  const handleThinkingChange = async (level: string | null) => {
+    if (!level || !sessionKey) return;
+    try {
+      await updateSessionThinking(sessionKey, level);
+      setCurrentThinking(level);
+      notifications.show({ color: 'green', title: '思考级别已切换', message: level });
+    } catch (error) {
+      notifications.show({
+        color: 'red',
+        title: '切换思考级别失败',
         message: error instanceof Error ? error.message : 'Unknown error',
       });
     }
@@ -884,7 +945,7 @@ export function ChatPage() {
     <Stack gap="md">
       <PageHeader
         title="Unified Chat"
-        description="Merged web chat inside modern admin console (Mantine)"
+        description="WebChat sessions, model controls and gateway interaction history"
         action={<Badge color={connected ? 'green' : 'red'}>{connected ? 'WS Online' : 'WS Offline'}</Badge>}
       />
 
@@ -949,6 +1010,23 @@ export function ChatPage() {
               </Stack>
 
               <Group>
+                <Select
+                  placeholder="Model"
+                  searchable
+                  data={modelOptions}
+                  value={currentModel || null}
+                  onChange={handleModelChange}
+                  w={220}
+                  disabled={!sessionKey || !modelOptions.length}
+                />
+                <Select
+                  placeholder="Thinking"
+                  data={THINKING_LEVELS}
+                  value={currentThinking || null}
+                  onChange={handleThinkingChange}
+                  w={130}
+                  disabled={!sessionKey}
+                />
                 <Select
                   placeholder="Role"
                   data={roles.map((role) => ({ value: role, label: role }))}

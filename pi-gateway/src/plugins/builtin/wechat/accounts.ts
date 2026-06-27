@@ -623,9 +623,64 @@ function resolveGatewayConfigPath(): string | undefined {
 }
 
 function stripJsonComments(raw: string): string {
-  return raw
-    .replace(/^\s*\/\/.*$/gm, "")
-    .replace(/\/\*[\s\S]*?\*\//g, "");
+  let result = "";
+  let inString = false;
+  let stringQuote = "";
+  let escaped = false;
+
+  for (let i = 0; i < raw.length; i += 1) {
+    const ch = raw[i]!;
+    const next = raw[i + 1];
+
+    if (inString) {
+      result += ch;
+      if (escaped) {
+        escaped = false;
+      } else if (ch === "\\") {
+        escaped = true;
+      } else if (ch === stringQuote) {
+        inString = false;
+        stringQuote = "";
+      }
+      continue;
+    }
+
+    if (ch === "\"" || ch === "'") {
+      inString = true;
+      stringQuote = ch;
+      result += ch;
+      continue;
+    }
+
+    if (ch === "/" && next === "/") {
+      while (i < raw.length && raw[i] !== "\n") i += 1;
+      result += "\n";
+      continue;
+    }
+
+    if (ch === "/" && next === "*") {
+      i += 2;
+      while (i < raw.length && !(raw[i] === "*" && raw[i + 1] === "/")) i += 1;
+      i += 1;
+      continue;
+    }
+
+    result += ch;
+  }
+
+  return result;
+}
+
+function readRouteTag(raw: unknown): string | undefined {
+  if (typeof raw === "number") return String(raw);
+  if (typeof raw === "string" && raw.trim()) return raw.trim();
+  return undefined;
+}
+
+function accountIdCandidates(accountId: string): string[] {
+  const normalized = normalizeAccountId(accountId);
+  const raw = deriveRawAccountId(normalized);
+  return Array.from(new Set([accountId, normalized, raw].filter((id): id is string => Boolean(id))));
 }
 
 export function loadConfigRouteTag(accountId?: string): string | undefined {
@@ -642,15 +697,13 @@ export function loadConfigRouteTag(accountId?: string): string | undefined {
 
     if (accountId) {
       const accounts = section.accounts as Record<string, Record<string, unknown>> | undefined;
-      const tag = accounts?.[accountId]?.routeTag;
-      if (typeof tag === "number") return String(tag);
-      if (typeof tag === "string" && tag.trim()) return tag.trim();
+      for (const candidate of accountIdCandidates(accountId)) {
+        const tag = readRouteTag(accounts?.[candidate]?.routeTag);
+        if (tag) return tag;
+      }
     }
 
-    if (typeof section.routeTag === "number") return String(section.routeTag);
-    return typeof section.routeTag === "string" && section.routeTag.trim()
-      ? section.routeTag.trim()
-      : undefined;
+    return readRouteTag(section.routeTag);
   } catch {
     return undefined;
   }

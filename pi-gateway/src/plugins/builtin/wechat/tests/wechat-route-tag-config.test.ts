@@ -5,21 +5,15 @@ import path from "node:path";
 import { loadConfigRouteTag } from "../accounts.ts";
 
 const originalConfigEnv = process.env.PI_GATEWAY_CONFIG;
-const originalHome = process.env.HOME;
 
 afterEach(() => {
   if (originalConfigEnv === undefined) delete process.env.PI_GATEWAY_CONFIG;
   else process.env.PI_GATEWAY_CONFIG = originalConfigEnv;
-
-  if (originalHome === undefined) delete process.env.HOME;
-  else process.env.HOME = originalHome;
 });
 
 describe("wechat routeTag config loading", () => {
-  test("loadConfigRouteTag reads account routeTag from ~/.pi/gateway/pi-gateway.jsonc style config", () => {
-    const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), "wechat-config-home-"));
-    const configDir = path.join(homeDir, ".pi", "gateway");
-    fs.mkdirSync(configDir, { recursive: true });
+  test("loadConfigRouteTag reads account routeTag from JSONC config", () => {
+    const configDir = fs.mkdtempSync(path.join(os.tmpdir(), "wechat-config-jsonc-"));
     const configPath = path.join(configDir, "pi-gateway.jsonc");
     fs.writeFileSync(
       configPath,
@@ -39,8 +33,7 @@ describe("wechat routeTag config loading", () => {
       "utf-8",
     );
 
-    process.env.HOME = homeDir;
-    delete process.env.PI_GATEWAY_CONFIG;
+    process.env.PI_GATEWAY_CONFIG = configPath;
 
     expect(loadConfigRouteTag("wx-bot")).toBe("account-tag");
     expect(loadConfigRouteTag("other-bot")).toBe("global-tag");

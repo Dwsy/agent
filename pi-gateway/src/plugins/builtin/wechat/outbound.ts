@@ -20,7 +20,7 @@ export function encodeWechatMediaAesKey(aeskey: Buffer): string {
 export function encodeWechatTarget(target: WechatTarget): string {
   const parts = [target.peerType, target.id];
   if (target.msgId) parts.push(`msg=${target.msgId}`);
-  if (target.contextToken) parts.push(`ctx=${target.contextToken.slice(0, 16)}`);
+  if (target.contextToken) parts.push(`ctx=${encodeURIComponent(target.contextToken)}`);
   return parts.join("|");
 }
 
@@ -28,16 +28,20 @@ export function encodeWechatTarget(target: WechatTarget): string {
  * Parse a WechatTarget from an encoded string.
  */
 export function parseWechatTarget(raw: string): WechatTarget {
+  if (!raw.includes("|")) {
+    return { peerType: "c2c", id: raw };
+  }
+
   const [peerType, id, ...rest] = raw.split("|");
   const target: WechatTarget = {
     peerType: (peerType as WechatTarget["peerType"]) || "c2c",
-    id,
+    id: id || "",
   };
   for (const token of rest) {
     const [key, value] = token.split("=");
     if (!value) continue;
     if (key === "msg") target.msgId = value;
-    // contextToken is stored in runtime.contextTokens, not in target string
+    if (key === "ctx") target.contextToken = decodeURIComponent(value);
   }
   return target;
 }
@@ -109,7 +113,7 @@ export async function sendWechatText(
 ): Promise<{ ok: boolean; messageId?: string; error?: string }> {
   try {
     const target = parseWechatTarget(rawTarget);
-    const contextToken = getWechatContextToken(runtime, target.id);
+    const contextToken = target.contextToken ?? getWechatContextToken(runtime, target.id);
 
     if (!contextToken) {
       runtime.api.logger.warn(
@@ -145,9 +149,13 @@ export async function sendWechatText(
 
     return { ok: true, messageId };
   } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    runtime.api.logger.error(
+      `sendWechatText: failed to send to ${rawTarget}: ${err instanceof Error && err.stack ? err.stack : message}`
+    );
     return {
       ok: false,
-      error: err instanceof Error ? err.message : String(err),
+      error: message,
     };
   }
 }
@@ -164,7 +172,7 @@ export async function sendWechatMedia(
 ): Promise<{ ok: boolean; messageId?: string; error?: string }> {
   try {
     const target = parseWechatTarget(rawTarget);
-    const contextToken = getWechatContextToken(runtime, target.id);
+    const contextToken = target.contextToken ?? getWechatContextToken(runtime, target.id);
 
     if (!contextToken) {
       runtime.api.logger.error(

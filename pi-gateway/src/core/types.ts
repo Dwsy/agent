@@ -363,6 +363,9 @@ export function setLogLevel(level: string) {
 let pc: {
   gray: (s: string) => string;
   cyan: (s: string) => string;
+  green: (s: string) => string;
+  magenta: (s: string) => string;
+  blue: (s: string) => string;
   yellow: (s: string) => string;
   red: (s: string) => string;
   dim: (s: string) => string;

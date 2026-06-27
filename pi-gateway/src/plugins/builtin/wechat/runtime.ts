@@ -46,6 +46,7 @@ function buildWechatAccountRuntime(
     contextTokens: new Map(),
     dedup: new Map(),
     streamPlaceholders: new Map(),
+    typingTickets: new Map(),
     syncBuf: "",
     syncBufPath: "",
     lastEventAt: undefined,

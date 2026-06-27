@@ -5,6 +5,7 @@
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, unlinkSync } from "node:fs";
 import { homedir } from "node:os";
+import { join } from "node:path";
 import type { QqbotChannelConfig } from "./types.ts";
 
 const BACKUP_DIR = "qqbot-credentials";
@@ -18,10 +19,12 @@ interface CredentialBackup {
 }
 
 function getBackupPath(): string {
-  return `${homedir()}/.pi/gateway/${BACKUP_DIR}/${BACKUP_FILE}`;
+  return join(getBackupDir(), BACKUP_FILE);
 }
 
 function getBackupDir(): string {
+  const override = process.env.PI_QQBOT_CREDENTIAL_BACKUP_DIR?.trim();
+  if (override) return override;
   return `${homedir()}/.pi/gateway/${BACKUP_DIR}`;
 }
 

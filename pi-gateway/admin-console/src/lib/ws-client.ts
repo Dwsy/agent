@@ -61,7 +61,8 @@ class GatewayWsClient {
 
     this.manualClose = false;
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}`;
+    const tokenParam = this.token ? `?token=${encodeURIComponent(this.token)}` : '';
+    const wsUrl = `${protocol}//${window.location.host}${tokenParam}`;
 
     this.ws = new WebSocket(wsUrl);
 

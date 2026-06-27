@@ -96,25 +96,25 @@ describe("resetSession", () => {
   });
 
   test("clears system events", async () => {
-    const consume = mock(() => ["event1", "event2"]);
+    const consume = mock((_sessionKey: SessionKey) => ["event1", "event2"]);
     const ctx = createMockCtx({
       systemEvents: { consume } as any,
     });
 
     const result = await resetSession(ctx, SK);
     expect(result.eventsCleared).toBe(2);
-    expect(consume).toHaveBeenCalledWith(SK);
+    expect(consume.mock.calls).toEqual([[SK]]);
   });
 
   test("clears message queue collect buffer", async () => {
-    const clearCollectBuffer = mock(() => 3);
+    const clearCollectBuffer = mock((_sessionKey: SessionKey) => 3);
     const ctx = createMockCtx({
       queue: { clearCollectBuffer } as any,
     });
 
     const result = await resetSession(ctx, SK);
     expect(result.queueCleared).toBe(3);
-    expect(clearCollectBuffer).toHaveBeenCalledWith(SK);
+    expect(clearCollectBuffer.mock.calls).toEqual([[SK]]);
   });
 
   test("fires session_reset hook", async () => {
@@ -134,7 +134,7 @@ describe("resetSession", () => {
     const ctx = createMockCtx();
     await resetSession(ctx, SK);
 
-    expect(ctx.broadcastToWs).toHaveBeenCalledWith("session_reset", { sessionKey: SK });
+    expect((ctx as any)._wsBroadcasts).toEqual([{ event: "session_reset", payload: { sessionKey: SK } }]);
   });
 
   test("logs transcript meta", async () => {
