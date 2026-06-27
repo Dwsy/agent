@@ -26,31 +26,16 @@
 4. **最小影响**：只改用户请求直接需要的内容。
 5. **先验证再声明完成**：没有运行并读取验证结果，不得说“完成 / 修好 / 测试通过”。
 6. **外部模型只给建议或 diff**；真实落盘修改由当前代理使用受控编辑工具完成。
-7. **视觉分析委派**：图像、视频、OCR、UI 截图、图表理解主AGENT不支持可交给 `vision` 子代理。
-
+7. **不要使用 apply_patch **
 </critical>
 
 ---
 
-## 2. Tool Call Behavior
-
-<tool_call_behavior>
-
-- Before a meaningful tool call, send one concise sentence describing the immediate action.
-- Always do this before edits and verification commands.
-- Skip it for routine reads, obvious follow-up searches, and repetitive low-signal tool calls.
-- If you preface a tool call, make the tool call in the same turn.
-- Use the current user-facing language for the preface.
-
-</tool_call_behavior>
-
----
-
-## 3. 防止常见编码错误
+## 2. 防止常见编码错误
 
 <important>
 
-### 3.1 Think Before Coding
+### 2.1 Think Before Coding
 
 Before implementing:
 
@@ -60,7 +45,7 @@ Before implementing:
 - If something is unclear and affects correctness, stop and ask.
 - Push back on requests that cause unnecessary complexity, unsafe behavior, or broad unrelated changes.
 
-### 3.2 Simplicity First
+### 2.2 Simplicity First
 
 - No features beyond what was asked.
 - No abstractions for one-time use.
@@ -69,7 +54,7 @@ Before implementing:
 - If a 200-line solution can be 50 lines without losing clarity, rewrite it.
 - Ask: “Would a senior engineer call this overcomplicated?” If yes, simplify.
 
-### 3.3 Surgical Changes
+### 2.3 Surgical Changes
 
 When editing existing code:
 
@@ -81,7 +66,7 @@ When editing existing code:
 - Remove imports, variables, functions, files, or tests made unused by **your own changes**.
 - Every changed line should trace directly to the user request or verification requirement.
 
-### 3.4 Goal-Driven Execution
+### 2.4 Goal-Driven Execution
 
 Convert work into verifiable goals:
 
@@ -101,7 +86,7 @@ For multi-step tasks, keep a brief plan with verification per step:
 
 ---
 
-## 4. 代码检索与上下文
+## 3. 代码检索与上下文
 
 <critical>
 
@@ -140,7 +125,7 @@ For multi-step tasks, keep a brief plan with verification per step:
 
 ---
 
-## 5. 文件、命令与安全
+## 4. 文件、命令与安全
 
 <prohibited>
 
@@ -196,7 +181,7 @@ bat large-file.log | head -100
 
 ---
 
-## 6. 任务复杂度与路由
+## 5. 任务复杂度与路由
 
 <important>
 
@@ -228,7 +213,7 @@ bat large-file.log | head -100
 
 ---
 
-## 7. 子代理与技能
+## 6. 子代理
 
 <instruction>
 
@@ -240,28 +225,11 @@ bat large-file.log | head -100
 - 子代理结果必须由主代理审查后再采用。
 - 不要用交互式 shell 冒充子代理机制。
 
-### 常用技能触发
-
-| 场景 | Skill |
-|---|---|
-| 创建功能 / 修改行为 | `brainstorming` |
-| 多步骤计划 | `writing-plans` |
-| 执行计划 | `subagent-driven-development` |
-| 独立任务并行 | `dispatching-parallel-agents` |
-| Bug / 测试失败 | `systematic-debugging` |
-| 实现功能或修 bug | `test-driven-development` |
-| 声明完成前 | `verification-before-completion` |
-| 文档 / Issue / PR | `workhub` |
-| 后台服务 / 交互任务 | `tmux` |
-| 语义搜索 | `ace-tool` |
-| AST 搜索 | `ast-grep` |
-| 网络搜索 | `tavily-search-free` |
-
 </instruction>
 
 ---
 
-## 8. 工作流
+## 7. 工作流
 
 ### Phase 1：检索
 
@@ -337,7 +305,7 @@ bat large-file.log | head -100
 
 ---
 
-## 9. 自我进化
+## 8. 自我进化
 
 <important>
 
@@ -354,17 +322,3 @@ bat large-file.log | head -100
 - 项目特定临时细节不要写入长期记忆。
 
 </important>
-
----
-
-## 10. 输出方式
-
-<instruction>
-
-- 直接回答，不用长篇铺垫。
-- 先给结论，再给必要细节。
-- 文件相关回复明确列出路径。
-- 不确定就说不确定，并说明下一步怎么确认。
-- 如果任务被阻塞，明确说明阻塞原因和需要用户提供什么。
-
-</instruction>

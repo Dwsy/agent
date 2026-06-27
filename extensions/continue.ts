@@ -3,15 +3,26 @@ import { Key } from "@earendil-works/pi-tui";
 
 export default function (pi: ExtensionAPI) {
 	if (process.argv.includes("--mode") && process.argv.includes("rpc")) return;
-	const continueHandler = async (ctx: ExtensionContext) => {
-		if (!ctx.hasUI) {
-			ctx.ui.notify("continue requires interactive mode", "error");
-			return;
-		}
 
+	const notify = (ctx: ExtensionContext, message: string, level: string) => {
 		try {
-			ctx.ui.setEditorText("继续");
-			ctx.ui.notify("Sending '继续'...", "info");
+			if (ctx.hasUI && ctx.ui?.notify) {
+				ctx.ui.notify(message, level as any);
+				return;
+			}
+		} catch {}
+		pi.sendMessage(
+			{ customType: "continue-notify", content: message, display: true },
+			{ triggerTurn: false },
+		);
+	};
+
+	const continueHandler = async (ctx: ExtensionContext) => {
+		try {
+			if (ctx.hasUI && ctx.ui?.setEditorText) {
+				ctx.ui.setEditorText("继续");
+			}
+			notify(ctx, "Sending '继续'...", "info");
 			setTimeout(() => {
 				pi.sendMessage(
 					{ content: "继续", display: false },
@@ -19,7 +30,7 @@ export default function (pi: ExtensionAPI) {
 				);
 			}, 100);
 		} catch (error) {
-			ctx.ui.notify(`Failed to continue: ${error}`, "error");
+			notify(ctx, `Failed to continue: ${error}`, "error");
 		}
 	};
 

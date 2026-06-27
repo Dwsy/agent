@@ -12,7 +12,7 @@ import { compact } from "@earendil-works/pi-coding-agent";
 import { Container, type SelectItem, SelectList, Text } from "@earendil-works/pi-tui";
 import { DynamicBorder } from "@earendil-works/pi-coding-agent";
 
-type LoopMode = "tests" | "custom" | "self" | "plan";
+type LoopMode = "tests" | "custom" | "self" | "plan" | "debug" | "tdd" | "review" | "verify";
 
 type LoopTask = {
 	id: number;
@@ -33,11 +33,15 @@ type LoopStateData = {
 };
 
 const LOOP_PRESETS = [
-	{ value: "self", label: "自主模式 (Agent 自行决定)", description: "" },
-	{ value: "tests", label: "直到测试通过", description: "" },
-	{ value: "plan", label: "计划模式 (拆解为子任务)", description: "" },
-	{ value: "custom", label: "直到满足自定义条件", description: "" },
-	{ value: "stop", label: "停止当前循环", description: "" },
+	{ value: "self", label: "自主模式 (Agent 自行决定)", description: "自主拆解并完成任务" },
+	{ value: "debug", label: "系统调试 (先找根因)", description: "复现、追踪、假设、验证" },
+	{ value: "tdd", label: "TDD 修复 (红绿重构)", description: "先写失败测试，再最小实现" },
+	{ value: "review", label: "代码审查 (找风险)", description: "按严重度列问题并修到无阻塞" },
+	{ value: "verify", label: "验证收尾 (跑检查)", description: "运行验证命令，确认输出再结束" },
+	{ value: "tests", label: "直到测试通过", description: "持续修复直到测试绿" },
+	{ value: "plan", label: "计划模式 (拆解为子任务)", description: "先提交子任务计划再逐项执行" },
+	{ value: "custom", label: "直到满足自定义条件", description: "按自定义跳出条件循环" },
+	{ value: "stop", label: "停止当前循环", description: "结束当前循环" },
 ] as const;
 
 const LOOP_STATE_ENTRY = "loop-state";
@@ -76,6 +80,46 @@ function buildPrompt(mode: LoopMode, condition?: string, tasks?: LoopTask[], cur
 				"判断完成的标准：所有子任务已完成、文件已创建/修改、预期结果已达成。\n" +
 				"如果任务复杂，主动拆解为可验证的里程碑。"
 			);
+		case "debug":
+			return (
+				"按系统调试流程继续执行，直到问题根因已定位、修复已完成并验证。\n\n" +
+				"必须遵循：\n" +
+				"1. 先复现或用证据确认故障，不要猜测\n" +
+				"2. 沿调用链和数据流追踪根因\n" +
+				"3. 提出单一假设，用最小改动验证\n" +
+				"4. 运行相关测试或检查确认问题消失\n\n" +
+				"根因清楚、修复落地、验证通过后调用 signal_loop_success 工具。"
+			);
+		case "tdd":
+			return (
+				"按 TDD 红绿重构流程继续执行，直到目标行为有测试保护且实现通过。\n\n" +
+				"必须遵循：\n" +
+				"1. 先写一个能证明目标行为或 bug 的失败测试\n" +
+				"2. 确认测试因预期原因失败\n" +
+				"3. 做最小实现让测试通过\n" +
+				"4. 必要时清理代码，并保持测试通过\n\n" +
+				"测试与实现均完成后调用 signal_loop_success 工具。"
+			);
+		case "review":
+			return (
+				"按代码审查流程继续执行，直到没有阻塞性问题。\n\n" +
+				"必须遵循：\n" +
+				"1. 先审查当前 diff 和相关上下文\n" +
+				"2. 优先寻找 bug、回归风险、安全问题、缺失测试\n" +
+				"3. 对发现的问题做最小修复\n" +
+				"4. 运行相关验证命令\n\n" +
+				"无阻塞问题且验证完成后调用 signal_loop_success 工具。"
+			);
+		case "verify":
+			return (
+				"按验证收尾流程继续执行，直到结果被证据支持。\n\n" +
+				"必须遵循：\n" +
+				"1. 明确哪些命令或检查能证明任务完成\n" +
+				"2. 运行相关测试、类型检查、构建或 lint\n" +
+				"3. 阅读完整输出与退出码\n" +
+				"4. 审查 diff，确认只包含必要改动\n\n" +
+				"验证输出支持完成结论后调用 signal_loop_success 工具。"
+			);
 		case "plan": {
 			if (!tasks || tasks.length === 0 || currentTaskIndex === undefined) {
 				const goal = condition?.trim() || "完成目标";
@@ -111,6 +155,14 @@ function summarizeCondition(mode: LoopMode, condition?: string): string {
 		}
 		case "self":
 			return "完成";
+		case "debug":
+			return "根因修复";
+		case "tdd":
+			return "TDD通过";
+		case "review":
+			return "审查通过";
+		case "verify":
+			return "验证完成";
 		case "plan": {
 			const summary = condition?.trim() || "计划执行";
 			return summary.length > 48 ? `${summary.slice(0, 45)}...` : summary;
@@ -126,6 +178,14 @@ function getConditionText(mode: LoopMode, condition?: string): string {
 			return condition?.trim() || "自定义条件";
 		case "self":
 			return "完成";
+		case "debug":
+			return "根因定位、修复完成且验证通过";
+		case "tdd":
+			return "失败测试已补充，实现已通过测试";
+		case "review":
+			return "无阻塞审查问题";
+		case "verify":
+			return "验证命令输出支持完成结论";
 		case "plan":
 			return condition?.trim() || "计划执行完成";
 	}
@@ -290,18 +350,14 @@ export default function loopExtension(pi: ExtensionAPI): void {
 		persistState(loopState);
 		updateStatus(ctx, loopState);
 
-		pi.sendMessage({
-			customType: "loop",
-			content: loopState.prompt,
-			display: true
-		}, {
-			deliverAs: "followUp",
-			triggerTurn: true
-		});
+		pi.sendUserMessage(loopState.prompt, { deliverAs: "followUp" });
 	}
 
 	async function showLoopSelector(ctx: ExtensionContext): Promise<LoopStateData | "stop" | null> {
-		const items: SelectItem[] = LOOP_PRESETS.map((preset) => ({
+		const presets = loopState.active
+			? [...LOOP_PRESETS].sort((a, b) => (a.value === "stop" ? -1 : b.value === "stop" ? 1 : 0))
+			: LOOP_PRESETS;
+		const items: SelectItem[] = presets.map((preset) => ({
 			value: preset.value,
 			label: preset.label,
 			description: preset.description,
@@ -350,6 +406,14 @@ export default function loopExtension(pi: ExtensionAPI): void {
 				return { active: true, mode: "tests", prompt: buildPrompt("tests") };
 			case "self":
 				return { active: true, mode: "self", prompt: buildPrompt("self") };
+			case "debug":
+				return { active: true, mode: "debug", prompt: buildPrompt("debug") };
+			case "tdd":
+				return { active: true, mode: "tdd", prompt: buildPrompt("tdd") };
+			case "review":
+				return { active: true, mode: "review", prompt: buildPrompt("review") };
+			case "verify":
+				return { active: true, mode: "verify", prompt: buildPrompt("verify") };
 			case "custom": {
 				const condition = await ctx.ui.editor("输入循环跳出条件:", "");
 				if (!condition?.trim()) return null;
@@ -387,6 +451,14 @@ export default function loopExtension(pi: ExtensionAPI): void {
 				return { active: true, mode: "tests", prompt: buildPrompt("tests") };
 			case "self":
 				return { active: true, mode: "self", prompt: buildPrompt("self") };
+			case "debug":
+				return { active: true, mode: "debug", prompt: buildPrompt("debug") };
+			case "tdd":
+				return { active: true, mode: "tdd", prompt: buildPrompt("tdd") };
+			case "review":
+				return { active: true, mode: "review", prompt: buildPrompt("review") };
+			case "verify":
+				return { active: true, mode: "verify", prompt: buildPrompt("verify") };
 			case "custom": {
 				const condition = parts.slice(1).join(" ").trim();
 				if (!condition) return null;
@@ -462,6 +534,7 @@ export default function loopExtension(pi: ExtensionAPI): void {
 
 			setLoopState(newState, ctx);
 			notify(ctx, `计划已提交，共 ${tasks.length} 个任务`, "info");
+			triggerLoopPrompt(ctx);
 
 			return {
 				content: [{ type: "text", text: `计划已提交，共 ${tasks.length} 个任务。开始执行第一个任务。` }],
@@ -504,6 +577,7 @@ export default function loopExtension(pi: ExtensionAPI): void {
 					loopCount: 0,
 				};
 				setLoopState(newState, ctx);
+				triggerLoopPrompt(ctx);
 
 				return {
 					content: [{ type: "text", text: `任务 ${loopState.currentTaskIndex + 1}/${tasks.length} 已完成，准备执行下一个任务。` }],
@@ -526,7 +600,7 @@ export default function loopExtension(pi: ExtensionAPI): void {
 			let nextState = parseArgs(args);
 			if (!nextState) {
 				if (!ctx.hasUI) {
-					ctx.ui.notify("用法: /loop tests | /loop plan <目标> | /loop custom <条件> | /loop self | /loop stop", "warning");
+					ctx.ui.notify("用法: /loop self | /loop debug | /loop tdd | /loop review | /loop verify | /loop tests | /loop plan <目标> | /loop custom <条件> | /loop stop", "warning");
 					return;
 				}
 				nextState = await showLoopSelector(ctx);
