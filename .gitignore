@@ -244,5 +244,8 @@ trust.json
 # Large generated assets
 pi-gateway/src/_web-assets.ts
 
+# Digital twin style profile (large)
+skills/digital-twin/data/style-profile.json
+
 # Large binary packages
 memex-compare/vscode-extension/*.vsix
