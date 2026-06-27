@@ -235,3 +235,14 @@ usage-data/
 
 # ACE Tool environment
 .ace-env
+
+# Sensitive auth files
+auth_副本.json
+settings.json.muxy-backup
+trust.json
+
+# Large generated assets
+pi-gateway/src/_web-assets.ts
+
+# Large binary packages
+memex-compare/vscode-extension/*.vsix
