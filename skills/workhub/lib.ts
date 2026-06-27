@@ -1,3 +1,5 @@
+#!/usr/bin/env bun
+
 import { join } from "path";
 import { init } from "./commands/init";
 import { tree } from "./commands/tree";

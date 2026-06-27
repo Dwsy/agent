@@ -28,6 +28,9 @@ interface ModelCost {
   cacheWrite: number;
 }
 
+type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
+type ThinkingLevelMap = Partial<Record<ThinkingLevel, string | null>>;
+
 interface Model {
   id: string;
   name?: string;
@@ -40,6 +43,8 @@ interface Model {
   contextWindow?: number;
   maxTokens?: number;
   headers?: Record<string, string>;
+  thinkingLevel?: Exclude<ThinkingLevel, "off">;
+  thinkingLevelMap?: ThinkingLevelMap;
 }
 
 interface ProviderConfig {
@@ -137,6 +142,109 @@ function formatCost(cost: ModelCost): string {
   return `[in:${formatPrice(cost.input)} out:${formatPrice(cost.output)}]`;
 }
 
+const THINKING_LEVELS: ThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh"];
+
+const THINKING_PRESETS: Record<string, ThinkingLevelMap> = {
+  "openai-xhigh": {
+    xhigh: "xhigh",
+  },
+  "deepseek-v4": {
+    minimal: null,
+    low: null,
+    medium: null,
+    high: "high",
+    xhigh: "max",
+  },
+};
+
+function normalizeThinkingLevelMap(map: ThinkingLevelMap): ThinkingLevelMap {
+  const normalized: ThinkingLevelMap = {};
+  for (const level of THINKING_LEVELS) {
+    if (Object.prototype.hasOwnProperty.call(map, level)) {
+      normalized[level] = map[level] ?? null;
+    }
+  }
+  return normalized;
+}
+
+function parseThinkingLevelMap(raw?: string): ThinkingLevelMap | undefined {
+  if (!raw) return undefined;
+
+  const entries = raw
+    .split(",")
+    .map(part => part.trim())
+    .filter(Boolean);
+
+  if (entries.length === 0) {
+    console.error(color.red("Invalid thinking map: expected key=value pairs"));
+    process.exit(1);
+  }
+
+  const map: ThinkingLevelMap = {};
+  for (const entry of entries) {
+    const [key, ...rest] = entry.split("=");
+    const level = key?.trim() as ThinkingLevel | undefined;
+    const value = rest.join("=").trim();
+
+    if (!level || !THINKING_LEVELS.includes(level)) {
+      console.error(color.red(`Invalid thinking level in map: ${key}`));
+      process.exit(1);
+    }
+    if (rest.length === 0) {
+      console.error(color.red(`Invalid thinking map entry: ${entry}`));
+      process.exit(1);
+    }
+
+    map[level] = value === "null" ? null : value;
+  }
+
+  return normalizeThinkingLevelMap(map);
+}
+
+function getThinkingPreset(name?: string): ThinkingLevelMap | undefined {
+  if (!name) return undefined;
+  const preset = THINKING_PRESETS[name];
+  if (!preset) {
+    console.error(color.red(`Unknown thinking preset: ${name}`));
+    console.log(color.dim(`Available presets: ${Object.keys(THINKING_PRESETS).join(", ")}`));
+    process.exit(1);
+  }
+  return normalizeThinkingLevelMap(preset);
+}
+
+function resolveThinkingLevelMap(args: { preset?: string; map?: string }): ThinkingLevelMap | undefined {
+  const preset = getThinkingPreset(args.preset);
+  const overrides = parseThinkingLevelMap(args.map);
+  if (!preset && !overrides) return undefined;
+  return normalizeThinkingLevelMap({ ...(preset ?? {}), ...(overrides ?? {}) });
+}
+
+function getHostName(baseUrl?: string): string {
+  if (!baseUrl) return "";
+  try {
+    return new URL(baseUrl).hostname.toLowerCase();
+  } catch {
+    return "";
+  }
+}
+
+function inferKnownThinkingPreset(provider: ProviderConfig, model: Model): keyof typeof THINKING_PRESETS | undefined {
+  const api = model.api ?? provider.api ?? "";
+  const host = getHostName(model.baseUrl ?? provider.baseUrl);
+
+  if ((api === "openai-responses" || api === "openai-completions") && /^gpt-5\.(4|5)(-mini)?$/i.test(model.id)) {
+    return "openai-xhigh";
+  }
+
+  if ((api === "openai-responses" || api === "openai-completions")
+    && /^deepseek-v4-(flash|pro)$/i.test(model.id)
+    && host === "api.deepseek.com") {
+    return "deepseek-v4";
+  }
+
+  return undefined;
+}
+
 // ============== 命令实现 ==============
 
 async function cmdList(args: { provider?: string; json?: boolean }) {
@@ -225,6 +333,7 @@ async function cmdAddModel(args: {
   maxTokens?: number;
   costInput?: number;
   costOutput?: number;
+  thinkingLevelMap?: ThinkingLevelMap;
 }) {
   const config = loadConfig();
   
@@ -258,6 +367,10 @@ async function cmdAddModel(args: {
     maxTokens: args.maxTokens ?? 16384,
   };
 
+  if (args.thinkingLevelMap) {
+    model.thinkingLevelMap = normalizeThinkingLevelMap(args.thinkingLevelMap);
+  }
+
   provider.models.push(model);
   saveConfig(config);
   console.log(color.green(`✓ Model '${args.id}' added to '${args.provider}'`));
@@ -290,6 +403,37 @@ async function cmdRemove(args: {
     saveConfig(config);
     console.log(color.green(`✓ Model '${args.modelId}' removed from '${args.provider}'`));
   }
+}
+
+async function cmdSyncKnownThinkingMaps() {
+  const config = loadConfig();
+  let updated = 0;
+
+  for (const [providerName, provider] of Object.entries(config.providers)) {
+    if (!provider.models) continue;
+
+    for (const model of provider.models) {
+      const presetName = inferKnownThinkingPreset(provider, model);
+      if (!presetName) continue;
+
+      const nextMap = normalizeThinkingLevelMap(THINKING_PRESETS[presetName]);
+      const currentMap = model.thinkingLevelMap ? normalizeThinkingLevelMap(model.thinkingLevelMap) : undefined;
+      if (JSON.stringify(currentMap) === JSON.stringify(nextMap)) {
+        continue;
+      }
+
+      model.thinkingLevelMap = nextMap;
+      updated += 1;
+      console.log(color.green(`✓ ${providerName}/${model.id} -> ${presetName}`));
+    }
+  }
+
+  saveConfig(config);
+  if (updated === 0) {
+    console.log(color.yellow("No known thinking presets needed updating."));
+    return;
+  }
+  console.log(color.green(`\n✓ Updated ${updated} model thinking maps`));
 }
 
 interface TestOptions {
@@ -1031,6 +1175,8 @@ ${color.bold("Commands:")}
     --max-tokens <n>          最大输出 tokens
     --cost-input <n>          输入价格 ($/M)
     --cost-output <n>         输出价格 ($/M)
+    --preset <name>           thinkingLevelMap 预设 (${Object.keys(THINKING_PRESETS).join(", ")})
+    --map <pairs>             thinkingLevelMap 覆盖，如 xhigh=xhigh,low=null
 
   ${color.cyan("rm")} <provider> [modelId]
     删除 provider 或模型
@@ -1048,8 +1194,8 @@ ${color.bold("Commands:")}
     --stream              测试流式响应
     --reasoning           启用推理
 
-  ${color.cyan("update")}
-    从 models.dev 更新价格
+  ${color.cyan("thinking sync-known")}
+    为已知安全模型批量补全 thinkingLevelMap
 
   ${color.cyan("template")} [name]
     显示配置模板
@@ -1071,6 +1217,12 @@ ${color.bold("Examples:")}
 
   ${color.dim("# Add a model")}
   bun models.ts add model myai gpt-5 --name "GPT-5" --reasoning --context-window 200000
+
+  ${color.dim("# Add a model with xhigh preset")}
+  bun models.ts add model myai gpt-5.4 --reasoning --preset openai-xhigh
+
+  ${color.dim("# Sync known thinking presets into models.json")}
+  bun models.ts thinking sync-known
 
   ${color.dim("# Test a model (basic)")}
   bun models.ts test myai gpt-5 --message "Say hello"
@@ -1145,6 +1297,10 @@ async function main() {
           maxTokens: flags["max-tokens"] ? parseInt(flags["max-tokens"] as string) : undefined,
           costInput: flags["cost-input"] ? parseFloat(flags["cost-input"] as string) : undefined,
           costOutput: flags["cost-output"] ? parseFloat(flags["cost-output"] as string) : undefined,
+          thinkingLevelMap: resolveThinkingLevelMap({
+            preset: flags.preset as string | undefined,
+            map: flags.map as string | undefined,
+          }),
         });
       } else {
         console.error(color.red(`Unknown add type: ${type}`));
@@ -1207,6 +1363,17 @@ async function main() {
       await cmdUpdate({ provider: flags.provider });
       break;
 
+    case "thinking": {
+      const action = flags._.shift();
+      if (action === "sync-known") {
+        await cmdSyncKnownThinkingMaps();
+      } else {
+        console.error(color.red("Usage: thinking sync-known"));
+        process.exit(1);
+      }
+      break;
+    }
+
     case "export":
       cmdExport();
       break;
@@ -1253,6 +1420,8 @@ const args = parseArgs({
     "cost-output": { type: "string" },
     "message": { type: "string" },
     "thinking": { type: "string" },
+    "preset": { type: "string" },
+    "map": { type: "string" },
     "stream": { type: "boolean" },
     "all": { type: "boolean" },
     "json": { type: "boolean" },
