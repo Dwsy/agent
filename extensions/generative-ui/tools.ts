@@ -6,7 +6,7 @@ import { StringEnum } from "@earendil-works/pi-ai";
 import { Text } from "@earendil-works/pi-tui";
 import { join } from "node:path";
 import { getGuidelines, AVAILABLE_MODULES } from "./guidelines.js";
-import { type WidgetRecord, WIDGETS_DIR, saveWidget, loadWidgetIndex, loadWidgetHtml } from "./storage.js";
+import { type WidgetRecord, WIDGETS_DIR, saveWidget, loadActiveWidgetIndex, loadWidgetIndex, loadWidgetHtml } from "./storage.js";
 import { detectDarkMode, shellHTML, wrapHTML, escapeJS, timestamp, openWindow } from "./html-helpers.js";
 
 export interface ToolContext {
@@ -127,6 +127,7 @@ export function registerTools(pi: ExtensionAPI, ctx: ToolContext) {
       const ts = timestamp();
       const safeTitle = params.title.replace(/[^a-zA-Z0-9_-]/g, "_");
       const filename = ts + "_" + safeTitle + ".html";
+      const fullPath = join(WIDGETS_DIR, filename);
 
       const dark = detectDarkMode();
       const fullHTML = wrapHTML(code, isSVG, dark);
@@ -189,7 +190,7 @@ export function registerTools(pi: ExtensionAPI, ctx: ToolContext) {
                   ? "Widget \"" + title + "\" interaction data: " + JSON.stringify(messageData)
                   : "Widget \"" + title + "\" closed (" + reason + ").",
               }],
-              details: { title: params.title, width, height, isSVG, savedFile: filename, messageData, closedReason: reason },
+              details: { title: params.title, width, height, isSVG, savedFile: filename, fullPath, messageData, closedReason: reason },
             });
           };
 
@@ -216,9 +217,9 @@ export function registerTools(pi: ExtensionAPI, ctx: ToolContext) {
       return {
         content: [{
           type: "text" as const,
-          text: "Widget \"" + title + "\" rendered (" + width + "\u00d7" + height + "). Saved to " + join(WIDGETS_DIR, filename) + ".",
+          text: "Widget \"" + title + "\" rendered (" + width + "\u00d7" + height + "). Saved to " + fullPath + ".",
         }],
-        details: { title: params.title, width, height, isSVG, savedFile: filename, fullPath: join(WIDGETS_DIR, filename) },
+        details: { title: params.title, width, height, isSVG, savedFile: filename, fullPath },
       };
     },
 
@@ -276,7 +277,7 @@ export function registerTools(pi: ExtensionAPI, ctx: ToolContext) {
       const limit = params.limit ?? 20;
 
       if (params.action === "list") {
-        const index = await loadWidgetIndex();
+        const index = await loadActiveWidgetIndex();
         const recent = index.slice(0, limit);
         if (recent.length === 0) {
           return {

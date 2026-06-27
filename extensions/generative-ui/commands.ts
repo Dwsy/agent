@@ -3,7 +3,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Key, matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
 import { join } from "node:path";
-import { type WidgetRecord, WIDGETS_DIR, loadWidgetIndex, loadWidgetHtml } from "./storage.js";
+import { type WidgetRecord, WIDGETS_DIR, loadActiveWidgetIndex, loadWidgetIndex, loadWidgetHtml } from "./storage.js";
 import { openWindow, openInBrowser } from "./html-helpers.js";
 import { launchGallery, stopGallery } from "./gallery.js";
 
@@ -30,7 +30,7 @@ export function registerWidgetsCommand(pi: ExtensionAPI, activeWindows: any[]) {
 
       // ── list ───────────────────────────────────────────────────────────
       if (cmd === "list") {
-        const index = await loadWidgetIndex();
+        const index = await loadActiveWidgetIndex();
         if (index.length === 0) { ctx.ui.notify("No saved widgets found.", "info"); return; }
         const cwd = process.cwd();
         const lines = index.slice(0, 30).map((w, i) => {
@@ -63,15 +63,16 @@ export function registerWidgetsCommand(pi: ExtensionAPI, activeWindows: any[]) {
       }
 
       const allWidgets = await loadWidgetIndex();
-      if (allWidgets.length === 0) { ctx.ui.notify("No saved widgets found.", "info"); return; }
+      const visibleWidgets = allWidgets.filter((w) => !w.archivedAt);
+      if (visibleWidgets.length === 0) { ctx.ui.notify("No active widgets found. Use /widgets server to manage archived widgets.", "info"); return; }
 
       const currentCwd = process.cwd();
-      let scope: "project" | "global" = allWidgets.some((w) => w.cwd === currentCwd) ? "project" : "global";
+      let scope: "project" | "global" = visibleWidgets.some((w) => w.cwd === currentCwd) ? "project" : "global";
 
       function getFiltered(): WidgetRecord[] {
         return scope === "project"
-          ? allWidgets.filter((w) => w.cwd === currentCwd)
-          : allWidgets;
+          ? visibleWidgets.filter((w) => w.cwd === currentCwd)
+          : visibleWidgets;
       }
 
       // Step 1: Select widget (pi-fzf pattern: string[] render, no Container)
@@ -97,7 +98,7 @@ export function registerWidgetsCommand(pi: ExtensionAPI, activeWindows: any[]) {
             const scopeLabel = scope === "project"
               ? theme.fg("success", " \u25cf project ") + theme.fg("dim", " | \u25cb global ")
               : theme.fg("dim", " \u25cb project | ") + theme.fg("accent", " \u25cf global ");
-            add(scopeLabel + theme.fg("muted", "  " + getFiltered().length + "/" + allWidgets.length));
+            add(scopeLabel + theme.fg("muted", "  " + getFiltered().length + "/" + visibleWidgets.length));
             add(theme.fg("border", "\u2500".repeat(width)));
             add("");
 
@@ -168,7 +169,7 @@ export function registerWidgetsCommand(pi: ExtensionAPI, activeWindows: any[]) {
         return;
       }
 
-      const widget = allWidgets.find((w) => w.file === selectedFile);
+      const widget = visibleWidgets.find((w) => w.file === selectedFile);
       if (!widget) return;
 
       // Step 2: Select action
