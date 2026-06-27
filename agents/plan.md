@@ -2,7 +2,6 @@
 name: planner
 description: Five-phase planning agent with parallel exploration and multi-agent design
 version: "1.0.0"
-tools: read, grep, find, ls, bash, subagent, interview
 mode: planning
 category: planning
 requires_context: true

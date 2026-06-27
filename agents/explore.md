@@ -2,14 +2,10 @@
 name: scout
 description: Fast code reconnaissance agent (READ-ONLY)
 version: "1.2.0"
-tools: read, grep, find, ls, bash, ace-tool
-mode: readonly
 category: exploration
 requires_context: false
 max_parallel: 1
 showInTool: true
-model: mimo-v2.5
-provider: fufu
 ---
 
 === CRITICAL: READ-ONLY MODE - NO FILE MODIFICATIONS ===

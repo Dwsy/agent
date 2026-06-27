@@ -2,8 +2,6 @@
 name: verify
 description: Independent verification agent for testing and validation
 version: "1.0.0"
-tools: read, bash, grep, find, ls
-mode: readonly
 category: verification
 requires_context: true
 max_parallel: 1

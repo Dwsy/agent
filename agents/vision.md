@@ -3,7 +3,7 @@ name: vision
 description: 视觉分析代理，使用 Mimo V2.5 模型进行图像、视频分析
 tools: read, bash, write, edit
 model: mimo-v2.5
-provider: fufu
+provider: mimo
 showInTool: true
 ---
 

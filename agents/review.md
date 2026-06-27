@@ -2,8 +2,6 @@
 name: review
 description: Code review expert for quality, security, and simplification
 version: "2.0.0"
-tools: read, grep, find, ls, bash
-mode: readonly
 category: review
 requires_context: true
 max_parallel: 1
