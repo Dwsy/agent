@@ -37,3 +37,6 @@
 [submodule "role-persona"]
 	path = role-persona
 	url = https://github.com/Dwsy/role-persona.git
+[submodule "extensions/pi-provider-trace"]
+	path = extensions/pi-provider-trace
+	url = https://github.com/Dwsy/pi-provider-trace.git
