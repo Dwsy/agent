@@ -40,3 +40,12 @@
 [submodule "extensions/pi-provider-trace"]
 	path = extensions/pi-provider-trace
 	url = https://github.com/Dwsy/pi-provider-trace.git
+[submodule "extensions/fast-context-mcp"]
+	path = extensions/fast-context-mcp
+	url = https://github.com/SammySnake-d/fast-context-mcp.git
+[submodule "extensions/kilo-pi-provider"]
+	path = extensions/kilo-pi-provider
+	url = https://github.com/mrexodia/kilo-pi-provider.git
+[submodule "extensions/show-skills"]
+	path = extensions/show-skills
+	url = https://github.com/Dwsy/pi-skills-explorer.git
