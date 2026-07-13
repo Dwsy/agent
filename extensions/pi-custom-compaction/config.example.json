@@ -1,0 +1,10 @@
+{
+  "enabled": true,
+  "model": {
+    "provider": "google",
+    "id": "gemini-2.5-flash"
+  },
+  "algorithm": "structured",
+  "maxSummaryTokens": 8192,
+  "showStatusWidget": false
+}

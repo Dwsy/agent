@@ -1,0 +1,10 @@
+{
+  "enabled": true,
+  "model": {
+    "provider": "mimo",
+    "id": "mimo-v2.5-pro"
+  },
+  "algorithm": "structured",
+  "maxSummaryTokens": 12000,
+  "showStatusWidget": false
+}

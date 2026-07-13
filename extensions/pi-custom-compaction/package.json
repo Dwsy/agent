@@ -1,0 +1,25 @@
+{
+  "name": "pi-custom-compaction",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Configurable Pi context compaction model and algorithm extension.",
+  "type": "module",
+  "main": "./index.ts",
+  "exports": {
+    ".": "./index.ts"
+  },
+  "scripts": {
+    "typecheck": "npx --yes -p typescript@5.7.3 tsc -p tsconfig.json",
+    "test": "bun ./tests/config.test.ts && bun ./tests/algorithms.test.ts",
+    "check": "npm run typecheck && npm run test"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "^0.80.0",
+    "@earendil-works/pi-tui": "^0.80.0"
+  }
+}

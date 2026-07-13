@@ -764,6 +764,7 @@ const { badge, reasonLabel } = getBadgeAndLabel(reason);
 
   // 1. Session start - auto-load role based on cwd mapping
   pi.on("session_start", async (_event, ctx) => {
+    publishCompactionMemoryHandoff();
     ensureRolesDir();
 
     const migration = migrateAllRolesToStructuredLayout();
@@ -1022,34 +1023,13 @@ ${buildMemoryEditInstruction(currentRolePath)}`;
     scheduleAutoMemoryFlush(event.messages, ctx, decision.reason);
   });
 
-  // 4.5 Intercept compaction to extract memories before context is lost.
-  // Piggybacks on the default compaction LLM call by injecting a <memory> extraction
-  // instruction into customInstructions. Parses the JSON output and writes to memory/consolidated.md
-  // + daily memory, then strips the <memory> block from the summary.
-  pi.on("session_before_compact", async (event, ctx) => {
-    if (!AUTO_MEMORY_ENABLED || !currentRole || !currentRolePath) return;
-
-    const { preparation, signal } = event;
-    const rolePath = currentRolePath;
-    const roleName = currentRole;
-    setCurrentRole(roleName);
-    const model = ctx.model;
-    if (!model) return;
-
-    const registry = ctx.modelRegistry as any;
-    if (!registry || typeof registry.getApiKeyAndHeaders !== "function") {
-      log("compact-memory", "modelRegistry.getApiKeyAndHeaders not available");
-      return;
-    }
-    const auth = await registry.getApiKeyAndHeaders(model);
-    if (!auth.ok || !auth.apiKey) {
-      log("compact-memory", `no apiKey available: ${auth.error || "unknown"}`);
-      return;
-    }
-
-    log("compact-memory", `intercepting compaction: ${preparation.messagesToSummarize.length} messages to summarize`);
-
-    const memoryInstruction = `
+  // 4.5 Compaction-time memory extraction is a shared handoff: custom compaction
+  // supplies the summary, while role-persona supplies the extraction instruction and persistence.
+  const COMPACTION_MEMORY_HANDOFF_SYMBOL = Symbol.for("role-persona-old.compaction-memory-handoff");
+  const compactionMemoryHandoff = {
+    createInstructions(_ctx: ExtensionContext): string | undefined {
+      if (!AUTO_MEMORY_ENABLED || !currentRole || !currentRolePath) return;
+      return `
 
 IMPORTANT: Write the session summary in CHINESE (中文). The summary should capture the main discussion points and outcomes in Chinese.
 
@@ -1065,7 +1045,7 @@ Format:
   {"type": "preference", "content": "user preference or habit", "category": "Communication|Code|Tools|Workflow|General"},
   {"type": "event", "content": "significant event or milestone"},
   {"type": "knowledge", "title": "Knowledge Title", "description": "One-line summary", "content": "Reusable artifact: pattern, decision, rule, checklist, or architectural convention", "category": "Code|Design|Architecture|Workflow|Tools|General", "tags": ["tag1"]}
-]
+ ]
 </memory>
 
 Rules:
@@ -1081,95 +1061,140 @@ Rules:
 - Max ${AUTO_MEMORY_MAX_ITEMS} memory items total (knowledge and event items do not count toward this limit).
 - Skip the <memory> block entirely if nothing worth remembering.
 - The <memory> block must contain valid JSON inside the tags.`;
+    },
 
+    async consumeSummary(summary: string, ctx: ExtensionContext): Promise<string> {
+      if (!currentRole || !currentRolePath) return summary;
+
+      const memoryMatch = summary.match(/<memory>\s*([\s\S]*?)\s*<\/memory>/);
+      if (!memoryMatch) {
+        log("compact-memory", "no <memory> block in compaction output");
+        return summary;
+      }
+
+      const cleanedSummary = summary.replace(/<memory>[\s\S]*?<\/memory>/, "").trimEnd();
+      const rolePath = currentRolePath;
+      const roleName = currentRole;
+      setCurrentRole(roleName);
+
+      try {
+        const items = JSON.parse(memoryMatch[1]) as Array<{
+          type: string;
+          content?: string;
+          category?: string;
+          tags?: string[];
+          title?: string;
+          description?: string;
+        }> ;
+
+        let storedL = 0, storedP = 0;
+        for (const item of items) {
+          if (item.type === "learning") {
+            if (!item.content?.trim()) continue;
+            const { addRoleLearningWithTags } = await import("./memory-md.ts");
+            const result = await addRoleLearningWithTags(ctx, rolePath, roleName, item.content, {
+              source: "compaction",
+              appendDaily: true,
+            });
+            memLogPush({ source: "compaction", op: "learning", content: item.content, stored: result.stored, detail: result.reason });
+            if (result.stored) storedL++;
+            continue;
+          }
+          if (item.type === "preference") {
+            if (!item.content?.trim()) continue;
+            const result = addRolePreference(rolePath, roleName, item.category || "General", item.content, {
+              appendDaily: true,
+            });
+            memLogPush({ source: "compaction", op: "preference", content: item.content, stored: result.stored, detail: item.category });
+            if (result.stored) storedP++;
+            continue;
+          }
+          if (item.type === "event") {
+            if (!item.content?.trim()) continue;
+            appendDailyRoleMemory(rolePath, "event", item.content);
+            memLogPush({ source: "compaction", op: "event", content: item.content, stored: true });
+            continue;
+          }
+          if (item.type === "knowledge") {
+            if (!item.title?.trim() || !item.content?.trim()) continue;
+            const result = writeKnowledge(rolePath, {
+              title: item.title,
+              description: item.description || "",
+              content: item.content,
+              category: item.category || "General",
+              tags: item.tags || [],
+            });
+            memLogPush({
+              source: "compaction",
+              op: "knowledge",
+              content: `${result.category}/${basename(result.written)}`,
+              stored: true,
+              detail: `v${result.version}`,
+            });
+            log("compact-memory", `+knowledge: ${result.category}/${basename(result.written)} v${result.version}`);
+          }
+        }
+
+        log("compact-memory", `extracted ${storedL}L ${storedP}P from compaction`);
+        setMemoryCheckpointResult(ctx, "compaction", storedL, storedP);
+      } catch (error) {
+        log("compact-memory", `failed to parse or persist <memory> JSON: ${error}`);
+      }
+
+      return cleanedSummary;
+    },
+  };
+
+  const publishCompactionMemoryHandoff = (): void => {
+    (globalThis as Record<symbol, unknown>)[COMPACTION_MEMORY_HANDOFF_SYMBOL] = compactionMemoryHandoff;
+  };
+  publishCompactionMemoryHandoff();
+
+  pi.on("session_before_compact", async (event, ctx) => {
+    const customCompactionOwner = (globalThis as any)[Symbol.for("pi-custom-compaction.owner")];
+    if (customCompactionOwner?.shouldOwn?.(ctx)) {
+      log("compact-memory", "custom compaction owns the checkpoint; handing memory extraction to it");
+      return;
+    }
+
+    const memoryInstructions = compactionMemoryHandoff.createInstructions(ctx);
+    if (!memoryInstructions) return;
+
+    const { preparation, signal } = event;
+    const model = ctx.model;
+    if (!model) return;
+
+    const registry = ctx.modelRegistry as any;
+    if (!registry || typeof registry.getApiKeyAndHeaders !== "function") {
+      log("compact-memory", "modelRegistry.getApiKeyAndHeaders not available");
+      return;
+    }
+    const auth = await registry.getApiKeyAndHeaders(model);
+    if (!auth.ok || !auth.apiKey) {
+      log("compact-memory", `no apiKey available: ${auth.error || "unknown"}`);
+      return;
+    }
+
+    log("compact-memory", `intercepting compaction: ${preparation.messagesToSummarize.length} messages to summarize`);
     try {
       const result = await piCompact(
         preparation,
         model,
         auth.apiKey,
         auth.headers,
-        memoryInstruction,
+        memoryInstructions,
         signal,
       );
-
-      // Parse and strip <memory> block from summary
-      const memoryMatch = result.summary.match(/<memory>\s*([\s\S]*?)\s*<\/memory>/);
-      if (memoryMatch) {
-        result.summary = result.summary.replace(/<memory>[\s\S]*?<\/memory>/, "").trimEnd();
-
-        try {
-          const items = JSON.parse(memoryMatch[1]) as Array<{
-            type: string;
-            content?: string;
-            category?: string;
-            date?: string;
-            tags?: string[];
-            title?: string;
-            description?: string;
-          }>;
-
-          let storedL = 0, storedP = 0;
-          for (const item of items) {
-            if (item.type === "learning") {
-              if (!item.content?.trim()) continue;
-              const { addRoleLearningWithTags } = await import("./memory-md.ts");
-              const r = await addRoleLearningWithTags(ctx, rolePath, roleName, item.content, {
-                source: "compaction",
-                appendDaily: true,
-              });
-              memLogPush({ source: "compaction", op: "learning", content: item.content, stored: r.stored, detail: r.reason });
-              if (r.stored) storedL++;
-            } else if (item.type === "preference") {
-              if (!item.content?.trim()) continue;
-              const r = addRolePreference(rolePath, roleName, item.category || "General", item.content, {
-                appendDaily: true,
-              });
-              memLogPush({ source: "compaction", op: "preference", content: item.content, stored: r.stored, detail: item.category });
-              if (r.stored) storedP++;
-            } else if (item.type === "event") {
-              if (!item.content?.trim()) continue;
-              appendDailyRoleMemory(rolePath, "event", item.content);
-              memLogPush({ source: "compaction", op: "event", content: item.content, stored: true });
-            } else if (item.type === "knowledge") {
-              if (!item.title?.trim() || !item.content?.trim()) continue;
-              const kwResult = writeKnowledge(rolePath, {
-                title: item.title,
-                description: item.description || "",
-                content: item.content,
-                category: item.category || "General",
-                tags: item.tags || [],
-              });
-              memLogPush({
-                source: "compaction",
-                op: "knowledge",
-                content: `${kwResult.category}/${basename(kwResult.written)}`,
-                stored: true,
-                detail: `v${kwResult.version}`,
-              });
-              log("compact-memory", `+knowledge: ${kwResult.category}/${basename(kwResult.written)} v${kwResult.version}`);
-            }
-          }
-
-          log("compact-memory", `extracted ${storedL}L ${storedP}P from compaction`);
-          setMemoryCheckpointResult(ctx, "compaction", storedL, storedP);
-        } catch (parseErr) {
-          log("compact-memory", `failed to parse <memory> JSON: ${parseErr}`);
-        }
-      } else {
-        log("compact-memory", "no <memory> block in compaction output");
-      }
-
       return {
         compaction: {
-          summary: result.summary,
+          summary: await compactionMemoryHandoff.consumeSummary(result.summary, ctx),
           firstKeptEntryId: result.firstKeptEntryId,
           tokensBefore: result.tokensBefore,
           details: result.details,
         },
       };
-    } catch (err) {
-      log("compact-memory", `compaction failed, falling back to default: ${err}`);
-      // Return nothing — pi will run its own default compaction
+    } catch (error) {
+      log("compact-memory", `compaction failed, falling back to default: ${error}`);
       return;
     }
   });
@@ -1192,6 +1217,11 @@ Rules:
     if (isTuiAvailable(ctx)) {
       ctx.ui.setStatus("role", undefined);
       ctx.ui.setStatus("memory-checkpoint", undefined);
+    }
+
+    const globals = globalThis as Record<symbol, unknown>;
+    if (globals[COMPACTION_MEMORY_HANDOFF_SYMBOL] === compactionMemoryHandoff) {
+      delete globals[COMPACTION_MEMORY_HANDOFF_SYMBOL];
     }
   });
 
