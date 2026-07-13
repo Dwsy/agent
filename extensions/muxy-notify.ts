@@ -5,7 +5,30 @@ export default function (pi: ExtensionAPI) {
   const paneID = process.env.MUXY_PANE_ID;
   if (!socketPath || !paneID) return;
 
+  async function send(payload: string) {
+    try {
+      const { createConnection } = await import("node:net");
+      const conn = createConnection({ path: socketPath });
+      conn.on("error", (err: any) => {
+        process.stderr.write(`[muxy-pi] socket error: ${err?.message ?? err}\n`);
+      });
+      conn.write(`${payload}\n`, () => conn.end());
+      await new Promise((resolve) => {
+        conn.on("close", resolve);
+        setTimeout(resolve, 3000);
+      });
+    } catch (err: any) {
+      process.stderr.write(`[muxy-pi] connection error: ${err?.message ?? err}\n`);
+    }
+  }
+
+  const sendStatus = (status: string) => send(`agent_status|pi|${paneID}|${status}`);
+
+  pi.on("agent_start", () => sendStatus("working"));
+
   pi.on("agent_end", async (event, _ctx) => {
+    await sendStatus("idle");
+
     let body = "Session completed";
 
     try {
@@ -30,21 +53,6 @@ export default function (pi: ExtensionAPI) {
       }
     } catch {}
 
-    const payload = `pi|${paneID}|Pi|${body}\n`;
-
-    try {
-      const { createConnection } = await import("node:net");
-      const conn = createConnection({ path: socketPath });
-      conn.on("error", (err: any) => {
-        process.stderr.write(`[muxy-pi] socket error: ${err?.message ?? err}\n`);
-      });
-      conn.write(payload, () => conn.end());
-      await new Promise((resolve) => {
-        conn.on("close", resolve);
-        setTimeout(resolve, 3000);
-      });
-    } catch (err: any) {
-      process.stderr.write(`[muxy-pi] connection error: ${err?.message ?? err}\n`);
-    }
+    await send(`pi|${paneID}|Pi|${body}`);
   });
 }
