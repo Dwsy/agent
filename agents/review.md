@@ -1,4 +1,5 @@
 ---
+enabled: false
 name: review
 description: Code review expert for quality, security, and simplification
 version: "2.0.0"

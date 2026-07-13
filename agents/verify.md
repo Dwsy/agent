@@ -1,4 +1,5 @@
 ---
+enabled: false
 name: verify
 description: Independent verification agent for testing and validation
 version: "1.0.0"
