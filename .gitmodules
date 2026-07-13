@@ -49,3 +49,9 @@
 [submodule "extensions/show-skills"]
 	path = extensions/show-skills
 	url = https://github.com/Dwsy/pi-skills-explorer.git
+[submodule "memex-compare"]
+	path = memex-compare
+	url = https://github.com/iamtouchskyer/memex.git
+[submodule "pi-model-selector-x"]
+	path = pi-model-selector-x
+	url = https://github.com/Dwsy/pi-model-selector-x.git
