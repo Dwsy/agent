@@ -5,6 +5,8 @@ import { open } from "glimpseui";
 import { SVG_STYLES, cssVariables } from "./svg-styles.js";
 
 // ── Detect system appearance (cached) ─────────────────────────────────────
+// Legacy helper for window chrome / analytics only.
+// Palette is driven by CSS prefers-color-scheme via cssVariables(), not this flag.
 
 let _cachedDarkMode: boolean | null = null;
 export function detectDarkMode(): boolean {
@@ -21,16 +23,68 @@ export function detectDarkMode(): boolean {
   return _cachedDarkMode;
 }
 
+/** Injected into every widget page so Chart.js/Mermaid can read resolved theme tokens. */
+export const THEME_VARS_SCRIPT = `window._themeVars = function() {
+  var s = getComputedStyle(document.documentElement);
+  var g = function(name) { return s.getPropertyValue(name).trim(); };
+  return {
+    dark: matchMedia('(prefers-color-scheme: dark)').matches,
+    text: g('--color-text-primary'),
+    textSecondary: g('--color-text-secondary'),
+    textTertiary: g('--color-text-tertiary'),
+    textInfo: g('--color-text-info'),
+    textSuccess: g('--color-text-success'),
+    textWarning: g('--color-text-warning'),
+    textDanger: g('--color-text-danger'),
+    bg: g('--color-background-primary'),
+    bgSecondary: g('--color-background-secondary'),
+    bgTertiary: g('--color-background-tertiary'),
+    border: g('--color-border-tertiary'),
+    borderSecondary: g('--color-border-secondary'),
+    chartTick: g('--chart-tick'),
+    chartGrid: g('--chart-grid'),
+    fontSans: g('--font-sans')
+  };
+};`;
+
+/** Typed feedback bridge shared by native windows and gallery iframes. */
+export const WIDGET_EVENTS_SCRIPT = `(function() {
+  var nativeSend = window.glimpse && typeof window.glimpse.send === 'function'
+    ? window.glimpse.send.bind(window.glimpse)
+    : null;
+  var send = function(event) {
+    if (!event || typeof event !== 'object') throw new Error('Widget event must be an object.');
+    if (nativeSend) return nativeSend(event);
+    if (window.parent !== window) {
+      window.parent.postMessage({ __generativeUIWidgetEvent: true, event: event }, '*');
+      return true;
+    }
+    return false;
+  };
+  if (!window.glimpse) window.glimpse = { send: send };
+  window.sendWidgetEvent = send;
+  window.sendAnnotation = function(targetId, comment, stateId) {
+    if (typeof targetId !== 'string' || !targetId.trim()) throw new Error('Annotation targetId is required.');
+    if (typeof comment !== 'string' || !comment.trim()) throw new Error('Annotation comment is required.');
+    if (stateId !== undefined && (typeof stateId !== 'string' || !stateId.trim())) {
+      throw new Error('Annotation stateId must be a non-empty string when provided.');
+    }
+    var event = { type: 'annotation', targetId: targetId.trim(), comment: comment.trim() };
+    if (stateId !== undefined) event.stateId = stateId.trim();
+    return send(event);
+  };
+})();`;
+
 export function shellHTML(darkMode = true): string {
+  // darkMode is legacy metadata only; palette follows prefers-color-scheme.
   const vars = cssVariables(darkMode);
-  const bg = darkMode ? '#1a1a1a' : '#ffffff';
-  const fg = darkMode ? '#e0e0e0' : '#1a1a1a';
   return `<!DOCTYPE html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
+<meta name="color-scheme" content="light dark">
 <style>
 ${vars}
 *{box-sizing:border-box}
-body{margin:0;padding:1rem;font-family:system-ui,-apple-system,sans-serif;background:${bg};color:${fg};}
+body{margin:0;padding:1rem;font-family:var(--font-sans);background:var(--color-background-primary);color:var(--color-text-primary);}
 @keyframes _fadeIn{from{opacity:0;transform:translateY(4px);}to{opacity:1;transform:none;}}
 ${SVG_STYLES}
 </style>
@@ -39,6 +93,8 @@ ${SVG_STYLES}
   window._morphReady = false;
   window._pending = null;
   window._darkMode = ${darkMode};
+  ${THEME_VARS_SCRIPT}
+  ${WIDGET_EVENTS_SCRIPT}
   window._setContent = function(html) {
     if (!window._morphReady) { window._pending = html; return; }
     var root = document.getElementById('root');
@@ -59,9 +115,15 @@ ${SVG_STYLES}
     });
   };
   window._runScripts = function() {
+    // Preserve type/module/onload/async/etc. Dropping type=module breaks Mermaid ESM;
+    // dropping onload breaks Chart.js-style CDN init.
     document.querySelectorAll('#root script').forEach(function(old) {
       var s = document.createElement('script');
-      if (old.src) { s.src = old.src; } else { s.textContent = old.textContent; }
+      for (var i = 0; i < old.attributes.length; i++) {
+        var a = old.attributes[i];
+        s.setAttribute(a.name, a.value);
+      }
+      if (!old.src) s.textContent = old.textContent;
       old.parentNode.replaceChild(s, old);
     });
   };
@@ -72,18 +134,20 @@ ${SVG_STYLES}
 }
 
 export function wrapHTML(code: string, isSVG = false, darkMode = true): string {
+  // darkMode is legacy metadata only; palette follows prefers-color-scheme.
   const vars = cssVariables(darkMode);
-  const bg = darkMode ? '#1a1a1a' : '#ffffff';
-  const fg = darkMode ? '#e0e0e0' : '#1a1a1a';
+  const themeMeta = `<meta name="color-scheme" content="light dark">`;
+  const themeScript = `<script>${THEME_VARS_SCRIPT}\n${WIDGET_EVENTS_SCRIPT}</script>`;
   if (isSVG) {
-    return `<!DOCTYPE html><html><head><meta charset="utf-8"><style>${vars}${SVG_STYLES}</style></head>
-<body style="margin:0;display:flex;align-items:center;justify-content:center;min-height:100vh;background:${bg};color:${fg};">
-${code}</body></html>`;
+    return `<!DOCTYPE html><html><head><meta charset="utf-8">${themeMeta}<style>${vars}${SVG_STYLES}</style></head>
+<body style="margin:0;display:flex;align-items:center;justify-content:center;min-height:100vh;background:var(--color-background-primary);color:var(--color-text-primary);">
+${code}${themeScript}</body></html>`;
   }
   return `<!DOCTYPE html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
-<style>${vars}*{box-sizing:border-box}body{margin:0;padding:1rem;font-family:system-ui,-apple-system,sans-serif;background:${bg};color:${fg};${SVG_STYLES}</style>
-</head><body>${code}</body></html>`;
+${themeMeta}
+<style>${vars}*{box-sizing:border-box}body{margin:0;padding:1rem;font-family:var(--font-sans);background:var(--color-background-primary);color:var(--color-text-primary);}${SVG_STYLES}</style>
+</head><body>${code}${themeScript}</body></html>`;
 }
 
 export function escapeJS(s: string): string {

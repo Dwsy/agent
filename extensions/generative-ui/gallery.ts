@@ -6,11 +6,13 @@ import { readFile, writeFile, unlink, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import type { WidgetRecord } from "./storage.js";
 import {
+  appendWidgetEvent,
   deleteWidgets,
   loadWidgetHtml,
   loadWidgetIndex,
   renameWidgetTitle,
   setWidgetsArchived,
+  WidgetEventValidationError,
   WIDGETS_DIR,
 } from "./storage.js";
 import { detectDarkMode, openInBrowser } from "./html-helpers.js";
@@ -57,7 +59,10 @@ async function readJsonBody(req: IncomingMessage): Promise<any> {
 
 function buildCard(w: WidgetRecord, i: number): string {
   const archived = Boolean(w.archivedAt);
-  const meta = w.width + "\u00d7" + w.height + " \u00b7 " + w.timestamp + (w.cwd ? " \u00b7 " + w.cwd.split("/").pop() : "");
+  const eventCount = w.events?.length ?? (w.interactionData === undefined ? 0 : 1);
+  const meta = w.width + "\u00d7" + w.height + " \u00b7 " + w.timestamp
+    + (w.cwd ? " \u00b7 " + w.cwd.split("/").pop() : "")
+    + (eventCount ? " \u00b7 " + eventCount + " feedback" : "");
   const cwdAttr = w.cwd ? ' data-cwd="' + escapeHtml(w.cwd) + '"' : "";
   const archiveAction = archived
     ? '<button class="card-action" data-action="restore" title="Restore"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-15-6.7L3 13"/></svg></button>'
@@ -165,8 +170,17 @@ button,input,select{font:inherit}
 .modal-tab.active{color:var(--accent);border-bottom-color:var(--accent)}
 .modal-body{flex:1;overflow:hidden;position:relative}
 .modal-body iframe{width:100%;height:100%;border:none;transform:none!important;opacity:1!important;pointer-events:auto!important;position:relative!important;left:auto!important;top:auto!important}
-.modal-body.show-source iframe{display:none}
+.modal-body.show-source iframe,.modal-body.show-feedback iframe{display:none}
 .modal-body pre{width:100%;height:100%;overflow:auto;padding:16px;margin:0;font-size:.8rem;line-height:1.6;font-family:ui-monospace,monospace;background:var(--code-bg);color:var(--text)}
+.feedback-panel{height:100%;overflow:auto;padding:20px;background:var(--bg)}
+.feedback-empty{height:100%;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:.9rem}
+.feedback-item{background:var(--card-bg);border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:10px}
+.feedback-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px}
+.feedback-type{font-size:.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--accent)}
+.feedback-time{font-size:.72rem;color:var(--muted)}
+.feedback-target{font-family:ui-monospace,monospace;font-size:.78rem;color:var(--muted);margin-bottom:8px}
+.feedback-comment{font-size:.9rem;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}
+.feedback-data{font-family:ui-monospace,monospace;font-size:.78rem;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere;color:var(--muted)}
 .modal-nav{position:absolute;top:50%;width:36px;height:36px;border-radius:50%;border:1px solid var(--border);background:var(--card-bg);color:var(--muted);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:.2s;z-index:10;backdrop-filter:blur(8px)}
 .modal-nav:hover{background:var(--accent-bg);color:var(--accent);border-color:var(--accent)}
 .modal-nav.prev{left:-48px;transform:translateY(-50%)}
@@ -227,6 +241,67 @@ function cacheSource(file, html) {
     var old = sourceKeys.shift();
     delete sourceCache[old];
   }
+}
+
+function renderFeedback(w) {
+  var panel = document.getElementById("feedback-panel");
+  var count = document.getElementById("feedback-count");
+  var events = w && Array.isArray(w.events) ? w.events : [];
+  if (!events.length && w && w.interactionData !== undefined) {
+    events = [{ type: "interaction", data: w.interactionData, timestamp: w.timestamp || "" }];
+  }
+  panel.replaceChildren();
+  count.textContent = events.length ? " (" + events.length + ")" : "";
+
+  if (!events.length) {
+    var empty = document.createElement("div");
+    empty.className = "feedback-empty";
+    empty.textContent = "No feedback captured for this widget.";
+    panel.appendChild(empty);
+    return;
+  }
+
+  events.slice().reverse().forEach(function(event) {
+    var item = document.createElement("article");
+    item.className = "feedback-item";
+    var head = document.createElement("div");
+    head.className = "feedback-head";
+    var type = document.createElement("span");
+    type.className = "feedback-type";
+    type.textContent = event.type === "annotation" ? "Annotation" : "Interaction";
+    var time = document.createElement("time");
+    time.className = "feedback-time";
+    time.textContent = event.timestamp || "";
+    head.append(type, time);
+    item.appendChild(head);
+
+    if (event.type === "annotation") {
+      var target = document.createElement("div");
+      target.className = "feedback-target";
+      target.textContent = event.targetId + (event.stateId ? " @ " + event.stateId : "");
+      var comment = document.createElement("div");
+      comment.className = "feedback-comment";
+      comment.textContent = event.comment;
+      item.append(target, comment);
+    } else {
+      var data = document.createElement("div");
+      data.className = "feedback-data";
+      data.textContent = JSON.stringify(event.data, null, 2);
+      item.appendChild(data);
+    }
+    panel.appendChild(item);
+  });
+}
+
+function fileForMessageSource(source) {
+  var frames = document.querySelectorAll("iframe");
+  for (var i = 0; i < frames.length; i++) {
+    if (frames[i].contentWindow !== source) continue;
+    var card = frames[i].closest(".card");
+    if (card) return card.dataset.file;
+    if (frames[i] === teleportedIframe) return teleportedFrom ? teleportedFrom.dataset.file : currentFile;
+  }
+  return "";
 }
 
 function createPreviewIframe(card) {
@@ -460,6 +535,7 @@ function openModal(w) {
       if (window.hljs) hljs.highlightElement(srcEl);
     });
   }
+  renderFeedback(w);
   document.getElementById("modal-overlay").classList.add("open");
   document.body.style.overflow = "hidden";
   setTab("preview");
@@ -494,7 +570,7 @@ function closeModal() {
   document.body.style.overflow = "";
   document.getElementById("modal").style.width = "";
   document.getElementById("modal").style.height = "";
-  document.getElementById("modal-body").classList.remove("show-source");
+  document.getElementById("modal-body").classList.remove("show-source", "show-feedback");
 }
 
 function getVisibleCards() {
@@ -514,10 +590,29 @@ function navigateModal(dir) {
 
 function setTab(name) {
   document.querySelectorAll(".modal-tab").forEach(function(t) { t.classList.toggle("active", t.dataset.tab === name); });
-  document.getElementById("modal-body").classList.toggle("show-source", name === "source");
+  var body = document.getElementById("modal-body");
+  body.classList.toggle("show-source", name === "source");
+  body.classList.toggle("show-feedback", name === "feedback");
   document.getElementById("source-code").style.display = name === "source" ? "" : "none";
+  document.getElementById("feedback-panel").style.display = name === "feedback" ? "" : "none";
   if (name === "source" && window.hljs) hljs.highlightElement(document.getElementById("source-code"));
 }
+
+window.addEventListener("message", function(e) {
+  if (!e.data || e.data.__generativeUIWidgetEvent !== true) return;
+  var file = fileForMessageSource(e.source);
+  if (!file) return;
+  api("/api/widgets/" + encodeURIComponent(file) + "/events", { event: e.data.event })
+    .then(function(result) {
+      var w = getWidgetByFile(file);
+      if (!w) return;
+      if (!Array.isArray(w.events)) w.events = [];
+      w.events.push(result.event);
+      if (currentFile === file) renderFeedback(w);
+      showToast("Feedback saved");
+    })
+    .catch(function(err) { showToast(err.message); });
+});
 
 document.getElementById("search").addEventListener("input", function() { setTimeout(filterCards, 0); });
 document.querySelectorAll("[data-scope]").forEach(function(btn) {
@@ -676,7 +771,7 @@ observeCards();
     + '<div class="col-ctrl"><span class="col-ctrl-label">Cols</span><button class="col-btn" id="col-minus">-</button><span class="col-val" id="col-val">Auto</span><button class="col-btn" id="col-plus">+</button><button class="col-btn" id="theme-toggle" title="Toggle dark/light mode"><svg id="theme-icon-dark" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg><svg id="theme-icon-light" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg></button></div></div>\n'
     + '<div class="bulkbar" id="bulkbar"><strong id="selected-count">0 selected</strong><button class="bulk-btn" id="bulk-select-visible">Select visible</button><button class="bulk-btn" id="bulk-clear">Clear</button><button class="bulk-btn" id="bulk-archive">Archive</button><button class="bulk-btn" id="bulk-restore">Restore</button><button class="bulk-btn danger" id="bulk-delete">Delete</button></div></div>\n'
     + '<div class="grid" id="grid">' + cards + '</div><div class="empty" id="empty-msg" style="' + (activeCount ? "display:none" : "") + '">' + emptyStateSVG + '<p>No widgets in this view.</p></div>\n'
-    + '<div class="modal-overlay" id="modal-overlay"><div class="modal" id="modal"><div class="modal-header"><h2 id="modal-title"></h2><div class="modal-actions"><button id="btn-open"><span class="btn-label">Open</span></button><button id="btn-copy"><span class="btn-label">Copy</span></button><button id="btn-rename"><span class="btn-label">Rename</span></button><button id="btn-archive"><span class="btn-label">Archive</span></button><button class="close-btn" id="btn-close">x</button></div></div><div class="modal-tabs"><div class="modal-tab active" data-tab="preview">Preview</div><div class="modal-tab" data-tab="source">Source</div></div><div class="modal-body" id="modal-body"><pre id="source-code" style="display:none"><code class="language-html"></code></pre></div><button class="modal-nav prev" id="nav-prev" title="Previous">‹</button><button class="modal-nav next" id="nav-next" title="Next">›</button><div class="resize-handle" id="resize-handle"></div></div></div>\n'
+    + '<div class="modal-overlay" id="modal-overlay"><div class="modal" id="modal"><div class="modal-header"><h2 id="modal-title"></h2><div class="modal-actions"><button id="btn-open"><span class="btn-label">Open</span></button><button id="btn-copy"><span class="btn-label">Copy</span></button><button id="btn-rename"><span class="btn-label">Rename</span></button><button id="btn-archive"><span class="btn-label">Archive</span></button><button class="close-btn" id="btn-close">x</button></div></div><div class="modal-tabs"><div class="modal-tab active" data-tab="preview">Preview</div><div class="modal-tab" data-tab="feedback">Feedback<span id="feedback-count"></span></div><div class="modal-tab" data-tab="source">Source</div></div><div class="modal-body" id="modal-body"><pre id="source-code" style="display:none"><code class="language-html"></code></pre><div class="feedback-panel" id="feedback-panel" style="display:none"></div></div><button class="modal-nav prev" id="nav-prev" title="Previous">‹</button><button class="modal-nav next" id="nav-next" title="Next">›</button><div class="resize-handle" id="resize-handle"></div></div></div>\n'
     + '<div class="toast" id="toast"></div>\n<script>\n' + js + '\n</script>\n</body>\n</html>';
 }
 
@@ -691,6 +786,28 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL): P
     const includeArchived = url.searchParams.get("includeArchived") === "1";
     const widgets = await loadWidgetIndex();
     sendJson(res, 200, includeArchived ? widgets : widgets.filter((w) => !w.archivedAt));
+    return true;
+  }
+
+  if (req.method === "POST" && url.pathname.startsWith("/api/widgets/") && url.pathname.endsWith("/events")) {
+    const encodedFile = url.pathname.slice("/api/widgets/".length, -"/events".length);
+    const file = safeFileSegment(encodedFile);
+    if (!file) {
+      sendJson(res, 400, { ok: false, error: "Invalid widget file." });
+      return true;
+    }
+    const body = await readJsonBody(req);
+    try {
+      const event = await appendWidgetEvent(file, body.event);
+      if (!event) sendJson(res, 404, { ok: false, error: "Widget not found." });
+      else sendJson(res, 200, { ok: true, event });
+    } catch (error) {
+      if (error instanceof WidgetEventValidationError) {
+        sendJson(res, 400, { ok: false, error: error.message });
+      } else {
+        throw error;
+      }
+    }
     return true;
   }
 

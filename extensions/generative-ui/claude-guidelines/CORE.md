@@ -2,7 +2,7 @@
 
 ## Modules
 Call read_me again with the modules parameter to load detailed guidance:
-- `diagram` — SVG flowcharts, structural diagrams, illustrative diagrams
+- `diagram` — flowcharts (Mermaid / minimal steps), structural diagrams, illustrative diagrams
 - `mockup` — UI mockups, forms, cards, dashboards
 - `interactive` — interactive explainers with controls
 - `chart` — charts and data analysis (includes Chart.js)
@@ -11,8 +11,9 @@ Pick the closest fit. The module includes all relevant design guidance.
 
 **Complexity budget — hard limits:**
 - Box subtitles: ≤5 words. Detail goes in click-through (`sendPrompt`) or the prose below — not the box.
-- Colors: ≤2 ramps per diagram. If colors encode meaning (states, tiers), add a 1-line legend. Otherwise use one neutral ramp.
+- Colors: flowcharts default to **neutral only** (one accent max). Structural/illustrative: ≤2 ramps, and only when color encodes meaning — otherwise one neutral ramp + legend if needed.
 - Horizontal tier: ≤4 boxes at full width (~140px each). 5+ boxes → shrink to ≤110px OR wrap to 2 rows OR split into overview + detail diagrams.
+- Flowcharts: prefer Mermaid or HTML minimal steps over hand-placed multi-color SVG nodes.
 
 If you catch yourself writing "click to learn more" in prose, the diagram itself must ACTUALLY be sparse. Don't promise brevity then front-load everything.
 
@@ -59,19 +60,36 @@ Output streams token-by-token. Structure code so useful content appears early.
 - Scripts execute after streaming — load libraries via `<script src="https://cdnjs.cloudflare.com/ajax/libs/...">` (UMD globals), then use the global in a plain `<script>` that follows.
 - **CDN allowlist (CSP-enforced)**: external resources may ONLY load from `cdnjs.cloudflare.com`, `esm.sh`, `cdn.jsdelivr.net`, `unpkg.com`. All other origins are blocked by the sandbox — the request silently fails.
 
-### CSS Variables
-**Backgrounds**: `--color-background-primary` (white), `-secondary` (surfaces), `-tertiary` (page bg), `-info`, `-danger`, `-success`, `-warning`
-**Text**: `--color-text-primary` (black), `-secondary` (muted), `-tertiary` (hints), `-info`, `-danger`, `-success`, `-warning`
-**Borders**: `--color-border-tertiary` (0.15α, default), `-secondary` (0.3α, hover), `-primary` (0.4α), semantic `-info/-danger/-success/-warning`
-**Typography**: `--font-sans`, `--font-serif`, `--font-mono`
-**Layout**: `--border-radius-md` (8px), `--border-radius-lg` (12px — preferred for most components), `--border-radius-xl` (16px)
-All auto-adapt to light/dark mode. For custom colors in HTML, use CSS variables.
+### CSS Variables (host-injected, dual theme)
+The host injects a full light + dark palette via `prefers-color-scheme`. **You do not define `:root` colors.** Use the variables below for every non-art surface.
 
-**Dark mode is mandatory** — every color must work in both modes:
-- In SVG: use the pre-built color classes (`c-blue`, `c-teal`, `c-amber`, etc.) for colored nodes — they handle light/dark mode automatically. Never write `<style>` blocks for colors.
-- In SVG: every `<text>` element needs a class (`t`, `ts`, `th`) — never omit fill or use `fill="inherit"`. Inside a `c-{color}` parent, text classes auto-adjust to the ramp.
-- In HTML: always use CSS variables (--color-text-primary, --color-text-secondary) for text. Never hardcode colors like color: #333 — invisible in dark mode.
-- Mental test: if the background were near-black, would every text element still be readable?
+**Backgrounds**: `--color-background-primary`, `-secondary` (surfaces), `-tertiary`, `-info`, `-danger`, `-success`, `-warning`
+**Text**: `--color-text-primary`, `-secondary` (muted), `-tertiary` (hints), `-info`, `-danger`, `-success`, `-warning`
+**Borders**: `--color-border-tertiary` (default), `-secondary` (hover), `-primary`, semantic `-info/-danger/-success/-warning`
+**Typography**: `--font-sans`, `--font-serif`, `--font-mono`
+**Layout**: `--border-radius-md` (8px), `--border-radius-lg` (12px — preferred), `--border-radius-xl` (16px)
+**Chart helpers**: `--chart-tick`, `--chart-grid`, `--focus-ring`
+**SVG short aliases**: `--p` primary text, `--s` secondary, `--t` tertiary/stroke, `--bg2` surface, `--b` border
+
+**Dark mode is mandatory — CSS variables only:**
+1. **HTML**: every color is a `var(--color-*)`. Forbidden: `#333`, `#fff`, `black`, `white`, `rgb(...)` for text/surfaces/borders (art module excepted).
+2. **SVG text**: always class `t` / `ts` / `th` — never raw `fill="#..."` on labels.
+3. **SVG categorical nodes**: use `c-{ramp}` classes (they already switch light/dark). Do not hand-write ramp hex in flowchart defaults.
+4. **Canvas / Chart.js / Mermaid**: cannot read CSS vars directly. Read them at runtime:
+   - Prefer `window._themeVars()` when present (returns `{dark,text,textSecondary,bg,bgSecondary,border,chartTick,chartGrid}`).
+   - Or `getComputedStyle(document.documentElement).getPropertyValue('--color-text-primary').trim()`.
+5. **Do not bake a single theme**: never set only dark hexes or only light hexes. If you must hardcode (canvas), resolve from CSS vars at init.
+6. Mental test: flip to the opposite scheme — every label, border, and fill must still read.
+
+**Good**
+```html
+<div style="color:var(--color-text-secondary);border:.5px solid var(--color-border-tertiary);background:var(--color-background-secondary)">...</div>
+```
+
+**Bad**
+```html
+<div style="color:#666;border:1px solid #ddd;background:#f5f5f5">...</div>
+```
 
 ### sendPrompt(text)
 A global function that sends a message to chat as if the user typed it. Use it when the user's next step benefits from Claude thinking. Handle filtering, sorting, toggling, and calculations in JS instead.
@@ -85,5 +103,4 @@ Pick the closest use case below and adapt. When nothing fits cleanly:
 - Default to card layout if the content is a bounded object
 - All core design system rules still apply
 - Use `sendPrompt()` for any action that benefits from Claude thinking
-
 

@@ -1,12 +1,14 @@
-// Design guidelines extracted verbatim from claude.ai's visualize:read_me tool responses.
-// These are the actual guidelines Anthropic uses for their generative UI system.
-// Verified: exact match against source for all 5 modules (1 char whitespace diff on chart).
+// Design guidelines based on claude.ai visualize:read_me, with local flowchart aesthetic overrides.
+// Flowchart defaults intentionally diverge from Claude's multi-color SVG boxes (too flashcard-like).
+// Borrowed from visual-explainer: representation routing, Mermaid-first flows, anti-slop palette, fragment templates.
+
+import { getTemplatesSection } from "./templates/index.js";
 
 const CORE = `# Imagine — Visual Creation Suite
 
 ## Modules
 Call read_me again with the modules parameter to load detailed guidance:
-- \`diagram\` — SVG flowcharts, structural diagrams, illustrative diagrams
+- \`diagram\` — flowcharts (Mermaid / minimal steps), structural diagrams, illustrative diagrams
 - \`mockup\` — UI mockups, forms, cards, dashboards
 - \`interactive\` — interactive explainers with controls
 - \`chart\` — charts and data analysis (includes Chart.js)
@@ -15,8 +17,9 @@ Pick the closest fit. The module includes all relevant design guidance.
 
 **Complexity budget — hard limits:**
 - Box subtitles: ≤5 words. Detail goes in click-through (\`sendPrompt\`) or the prose below — not the box.
-- Colors: ≤2 ramps per diagram. If colors encode meaning (states, tiers), add a 1-line legend. Otherwise use one neutral ramp.
+- Colors: flowcharts default to **neutral only** (one accent max). Structural/illustrative: ≤2 ramps, and only when color encodes meaning — otherwise one neutral ramp + legend if needed.
 - Horizontal tier: ≤4 boxes at full width (~140px each). 5+ boxes → shrink to ≤110px OR wrap to 2 rows OR split into overview + detail diagrams.
+- Flowcharts: prefer Mermaid or HTML minimal steps over hand-placed multi-color SVG nodes.
 
 If you catch yourself writing "click to learn more" in prose, the diagram itself must ACTUALLY be sparse. Don't promise brevity then front-load everything.
 
@@ -63,19 +66,36 @@ Output streams token-by-token. Structure code so useful content appears early.
 - Scripts execute after streaming — load libraries via \`<script src="https://cdnjs.cloudflare.com/ajax/libs/...">\` (UMD globals), then use the global in a plain \`<script>\` that follows.
 - **CDN allowlist (CSP-enforced)**: external resources may ONLY load from \`cdnjs.cloudflare.com\`, \`esm.sh\`, \`cdn.jsdelivr.net\`, \`unpkg.com\`. All other origins are blocked by the sandbox — the request silently fails.
 
-### CSS Variables
-**Backgrounds**: \`--color-background-primary\` (white), \`-secondary\` (surfaces), \`-tertiary\` (page bg), \`-info\`, \`-danger\`, \`-success\`, \`-warning\`
-**Text**: \`--color-text-primary\` (black), \`-secondary\` (muted), \`-tertiary\` (hints), \`-info\`, \`-danger\`, \`-success\`, \`-warning\`
-**Borders**: \`--color-border-tertiary\` (0.15α, default), \`-secondary\` (0.3α, hover), \`-primary\` (0.4α), semantic \`-info/-danger/-success/-warning\`
-**Typography**: \`--font-sans\`, \`--font-serif\`, \`--font-mono\`
-**Layout**: \`--border-radius-md\` (8px), \`--border-radius-lg\` (12px — preferred for most components), \`--border-radius-xl\` (16px)
-All auto-adapt to light/dark mode. For custom colors in HTML, use CSS variables.
+### CSS Variables (host-injected, dual theme)
+The host injects a full light + dark palette via \`prefers-color-scheme\`. **You do not define \`:root\` colors.** Use the variables below for every non-art surface.
 
-**Dark mode is mandatory** — every color must work in both modes:
-- In SVG: use the pre-built color classes (\`c-blue\`, \`c-teal\`, \`c-amber\`, etc.) for colored nodes — they handle light/dark mode automatically. Never write \`<style>\` blocks for colors.
-- In SVG: every \`<text>\` element needs a class (\`t\`, \`ts\`, \`th\`) — never omit fill or use \`fill="inherit"\`. Inside a \`c-{color}\` parent, text classes auto-adjust to the ramp.
-- In HTML: always use CSS variables (--color-text-primary, --color-text-secondary) for text. Never hardcode colors like color: #333 — invisible in dark mode.
-- Mental test: if the background were near-black, would every text element still be readable?
+**Backgrounds**: \`--color-background-primary\`, \`-secondary\` (surfaces), \`-tertiary\`, \`-info\`, \`-danger\`, \`-success\`, \`-warning\`
+**Text**: \`--color-text-primary\`, \`-secondary\` (muted), \`-tertiary\` (hints), \`-info\`, \`-danger\`, \`-success\`, \`-warning\`
+**Borders**: \`--color-border-tertiary\` (default), \`-secondary\` (hover), \`-primary\`, semantic \`-info/-danger/-success/-warning\`
+**Typography**: \`--font-sans\`, \`--font-serif\`, \`--font-mono\`
+**Layout**: \`--border-radius-md\` (8px), \`--border-radius-lg\` (12px — preferred), \`--border-radius-xl\` (16px)
+**Chart helpers**: \`--chart-tick\`, \`--chart-grid\`, \`--focus-ring\`
+**SVG short aliases**: \`--p\` primary text, \`--s\` secondary, \`--t\` tertiary/stroke, \`--bg2\` surface, \`--b\` border
+
+**Dark mode is mandatory — CSS variables only:**
+1. **HTML**: every color is a \`var(--color-*)\`. Forbidden: \`#333\`, \`#fff\`, \`black\`, \`white\`, \`rgb(...)\` for text/surfaces/borders (art module excepted).
+2. **SVG text**: always class \`t\` / \`ts\` / \`th\` — never raw \`fill="#..."\` on labels.
+3. **SVG categorical nodes**: use \`c-{ramp}\` classes (they already switch light/dark). Do not hand-write ramp hex in flowchart defaults.
+4. **Canvas / Chart.js / Mermaid**: cannot read CSS vars directly. Read them at runtime:
+   - Prefer \`window._themeVars()\` when present (returns \`{dark,text,textSecondary,bg,bgSecondary,border,chartTick,chartGrid}\`).
+   - Or \`getComputedStyle(document.documentElement).getPropertyValue('--color-text-primary').trim()\`.
+5. **Do not bake a single theme**: never set only dark hexes or only light hexes. If you must hardcode (canvas), resolve from CSS vars at init.
+6. Mental test: flip to the opposite scheme — every label, border, and fill must still read.
+
+**Good**
+\`\`\`html
+<div style="color:var(--color-text-secondary);border:.5px solid var(--color-border-tertiary);background:var(--color-background-secondary)">...</div>
+\`\`\`
+
+**Bad**
+\`\`\`html
+<div style="color:#666;border:1px solid #ddd;background:#f5f5f5">...</div>
+\`\`\`
 
 ### sendPrompt(text)
 A global function that sends a message to chat as if the user typed it. Use it when the user's next step benefits from Claude thinking. Handle filtering, sorting, toggling, and calculations in JS instead.
@@ -166,12 +186,14 @@ const COLOR_PALETTE = `## Color palette
 | \`c-amber\` | Amber | #FAEEDA | #FAC775 | #EF9F27 | #BA7517 | #854F0B | #633806 | #412402 |
 | \`c-red\` | Red | #FCEBEB | #F7C1C1 | #F09595 | #E24B4A | #A32D2D | #791F1F | #501313 |
 
-**How to assign colors**: Color should encode meaning, not sequence. Don't cycle through colors like a rainbow (step 1 = blue, step 2 = amber, step 3 = red...). Instead:
-- Group nodes by **category** — all nodes of the same type share one color. E.g. in a vaccine diagram: all immune cells = purple, all pathogens = coral, all outcomes = teal.
+**How to assign colors**: Color should encode meaning, not sequence. Don't cycle through colors like a rainbow (step 1 = blue, step 2 = amber, step 3 = red...).
+- **Flowcharts / pipelines / state machines: neutral by default.** No per-step ramp. At most one accent for the active or exceptional step. Prefer Mermaid/HTML steps so layout doesn't depend on color.
+- Group nodes by **category** only when categories are real — all nodes of the same type share one color. E.g. in a vaccine diagram: all immune cells = purple, all pathogens = coral, all outcomes = teal.
 - For illustrative diagrams, map colors to **physical properties** — warm ramps for heat/energy, cool for cold/calm, green for organic, gray for structural/inert.
 - Use **gray for neutral/structural** nodes (start, end, generic steps).
-- Use **2-3 colors per diagram**, not 6+. More colors = more visual noise. A diagram with gray + purple + teal is cleaner than one using every ramp.
-- **Prefer purple, teal, coral, pink** for general diagram categories. Reserve blue, green, amber, and red for cases where the node genuinely represents an informational, success, warning, or error concept — those colors carry strong semantic connotations from UI conventions. (Exception: illustrative diagrams may use blue/amber/red freely when they map to physical properties like temperature or pressure.)
+- Use **2-3 colors per diagram**, not 6+. More colors = more visual noise. A diagram with gray + one accent is cleaner than one using every ramp.
+- **Prefer purple, teal, coral, pink** only when categorical color is actually needed. Reserve blue, green, amber, and red for informational / success / warning / error meaning. (Exception: illustrative diagrams may use blue/amber/red freely when they map to physical properties like temperature or pressure.)
+- **Anti-slop:** never default to violet/fuchsia Tailwind accents or rainbow sequence coloring to "make it pretty."
 
 **Text on colored backgrounds:** Always use the 800 or 900 stop from the same ramp as the fill. Never use black, gray, or --color-text-primary on colored fills. **When a box has both a title and a subtitle, they must be two different stops** — title darker (800 in light mode, 100 in dark), subtitle lighter (600 in light, 200 in dark). Same stop for both reads flat; the weight difference alone isn't enough. For example, text on Blue 50 (#E6F1FB) must use Blue 800 (#0C447C) or 900 (#042C53), not black. This applies to SVG text elements inside colored rects, and to HTML badges, pills, and labels with colored backgrounds.
 
@@ -196,12 +218,24 @@ Work bottom-up for trees: size leaf tier first, parent width ≥ sum of children
 
 **Diagrams are the hardest use case** — they have the highest failure rate due to precise coordinate math. Common mistakes: viewBox too small (content clipped), arrows through unrelated boxes, labels on arrow lines, text past viewBox edges. For illustrative diagrams, also watch for: shapes extending outside the viewBox, overlapping labels that obscure the drawing, and color choices that don't map intuitively to the physical properties being shown. Double-check coordinates before finalizing.
 
-Use \`imagine_svg\` for diagrams. The widget automatically wraps SVG output in a card.
+**Representation routing (pick medium first, then style):**
+| Content | Default medium | Notes |
+|---|---|---|
+| Linear / branching process, pipeline, state machine | **Mermaid** (\`flowchart TD\` / \`stateDiagram-v2\`) | Auto layout. Default aesthetic is neutral. |
+| 2–5 simple sequential steps, no branches | **HTML minimal steps** | Vertical cards + hairline connectors. Cleanest look. |
+| Things-inside-things / architecture containment | **SVG structural** | Keep nested rects. Neutral fills first. |
+| Mechanism / intuition ("how does X work") | **Illustrative SVG or interactive HTML+SVG** | Spatial metaphor. Color encodes intensity, not rainbow categories. |
+| Database schema / ERD / classDiagram | **Mermaid** (\`erDiagram\` / \`classDiagram\`) | Never hand-place field rows in SVG. |
+| 15+ nodes | Hybrid | Tiny Mermaid overview + HTML detail cards. Never one dense SVG. |
+
+Hand-placed multi-color SVG flowcharts are a **last resort** — only when Mermaid cannot express a custom layout you truly need.
+
+Use \`imagine_html\` for Mermaid and HTML steps. Use raw \`imagine_svg\` for structural/illustrative drawings. The widget wraps output in a card.
 
 **Pick the right diagram type.** The decision is about *intent*, not subject matter. Ask: is the user trying to *document* this, or *understand* it?
 
 **Reference diagrams** — the user wants a map they can point at. Precision matters more than feeling. Boxes, labels, arrows, containment. These are the diagrams you'd find in documentation.
-- **Flowchart** — steps in sequence, decisions branching, data transforming. Good for: approval workflows, request lifecycles, build pipelines, "what happens when I click submit". Trigger phrases: *"walk me through the process"*, *"what are the steps"*, *"what's the flow"*.
+- **Flowchart** — steps in sequence, decisions branching, data transforming. **Default medium: Mermaid or HTML minimal steps — not multi-color SVG boxes.** Good for: approval workflows, request lifecycles, build pipelines, "what happens when I click submit". Trigger phrases: *"walk me through the process"*, *"what are the steps"*, *"what's the flow"*.
 - **Structural diagram** — things inside other things. Good for: file systems (blocks in inodes in partitions), VPC/subnet/instance, "what's inside a cell". Trigger phrases: *"what's the architecture"*, *"how is this organised"*, *"where does X live"*.
 
 **Intuition diagrams** — the user wants to *feel* how something works. The goal isn't a correct map, it's the right mental model. These should look nothing like a flowchart. The subject doesn't need a physical form — it needs a *visual metaphor*.
@@ -215,9 +249,9 @@ Use \`imagine_svg\` for diagrams. The widget automatically wraps SVG output in a
 | "transformer architecture" | Structural | Labelled boxes: embedding, attention heads, FFN, layer norm. |
 | "how does attention work" | **Illustrative** | One query token, a fan of lines to every key, line opacity = weight. |
 | "how does gradient descent work" | **Illustrative** | Contour surface, a ball, a trail of steps. Slider for learning rate. |
-| "what are the training steps" | Flowchart | Forward → loss → backward → update. Boxes and arrows. |
+| "what are the training steps" | **Mermaid / minimal steps** | Forward → loss → backward → update. Neutral nodes. |
 | "how does TCP work" | **Illustrative** | Two endpoints, numbered packets in flight, an ACK returning. |
-| "TCP handshake sequence" | Flowchart | SYN → SYN-ACK → ACK. Three boxes. |
+| "TCP handshake sequence" | **Mermaid / minimal steps** | SYN → SYN-ACK → ACK. Three neutral steps. |
 | "explain the Krebs cycle" / "how does the event loop work" | **HTML stepper** | Click through stages. Never a ring. |
 | "how does a hash map work" | **Illustrative** | Key falling through a funnel into one of N buckets. |
 | "draw the database schema" / "show me the ERD" | **mermaid.js** | \`erDiagram\` syntax. Not SVG. |
@@ -234,59 +268,67 @@ Don't mix families in one diagram. If you need both, draw the intuition version 
 
 #### Flowchart
 
-For sequential processes, cause-and-effect, decision trees.
+For sequential processes, cause-and-effect, decision trees, pipelines, and state machines.
 
-**Planning**: Size boxes to fit their text generously. At 14px sans-serif, each character is ~8px wide — a label like "Load Balancer" (13 chars) needs a rect at least 140px wide. When in doubt, make boxes wider and leave more space between them. Cramped diagrams are the most common failure mode.
+**Aesthetic default — restrained, not flashcards.**
+- Default surface: transparent / primary background, **0.5px neutral border**, no fill ramps.
+- One accent only when a step is active/current/recommended. Never rainbow-cycle \`c-blue → c-amber → c-teal\` per step.
+- Forbidden defaults: multi-color SVG node ramps for pure sequence, violet/fuchsia Tailwind accents (\`#8b5cf6\`, \`#7c3aed\`, \`#a78bfa\`, \`#d946ef\`), neon cyan+magenta dashboards, gradient mesh blobs.
+- Labels: sentence case, ≤5-word subtitles, two weights only (400/500).
+- Prefer typography + spacing hierarchy over color hierarchy.
 
-**Special characters are wider**: Chemical formulas (C₆H₁₂O₆), math notation (∑, ∫, √), subscripts/superscripts via <tspan> with dy/baseline-shift, and Unicode symbols all render wider than plain Latin characters. For labels containing formulas or special notation, add 30-50% extra width to your estimate. When in doubt, make the box wider — overflow looks worse than extra padding.
+**Medium choice (do this before drawing):**
+1. **Branches / decisions / 6+ nodes / sequences / state** → Mermaid (\`flowchart TD\` preferred; \`LR\` only for 3–4 node linear rails).
+2. **2–5 linear steps, no branches** → HTML minimal steps (vertical stack).
+3. **Custom geometry Mermaid cannot do** → hand SVG, still neutral (\`class="box"\` / gray stroke). Colored \`c-*\` ramps only if the user asked for categorical encoding.
 
-**Spacing**: 60px minimum between boxes, 24px padding inside boxes, 12px between text and edges. Leave 10px gap between arrowheads and box edges. Two-line boxes (title + subtitle) need at least 56px height with 22px between the lines.
+##### A. Mermaid flowchart (preferred)
 
-**Vertical text placement**: Every \`<text>\` inside a box needs \`dominant-baseline="central"\`, with y set to the *centre* of the slot it sits in. Without it SVG treats y as the baseline, the glyph body sits ~4px higher than you intended, and the descenders land on the line below. Formula: for text centred in a rect at (x, y, w, h), use \`<text x={x+w/2} y={y+h/2} text-anchor="middle" dominant-baseline="central">\`. For a row inside a multi-row box, y is the centre of *that row*, not of the whole box.
+Use \`imagine_html\`. Auto layout beats hand-placed coordinates. Theme with \`theme: 'base'\` and page-neutral variables — never the stock violet look.
 
-**Layout**: Prefer single-direction flows (all top-down or all left-right). Keep diagrams simple — max 4-5 nodes per diagram. The widget is narrow (~680px) so complex layouts break.
+**Canonical skeleton:** template id \`flow-mermaid\` (load via \`visualize_read_me({ modules: ["diagram"], templates: ["flow-mermaid"] })\`).
+Do not invent a second Mermaid bootstrap — copy that fragment, then swap the flowchart body.
 
-**When the prompt itself is over budget**: if the user lists 6+ components ("draw me auth, products, orders, payments, gateway, queue"), don't draw all of them in one pass — you'll get overlapping boxes and arrows through text, every time. Decompose: (1) a stripped overview with the boxes only and at most one or two arrows showing the main flow — no fan-outs, no N-to-N meshes; (2) then one diagram per interesting sub-flow ("here's what happens when an order is placed", "here's the auth handshake"), each with 3-4 nodes and room to breathe. Count the nouns before you draw. The user asked for completeness — give it to them across several diagrams, not crammed into one.
+**Mermaid rules:**
+- \`flowchart TD\` for almost everything; \`LR\` only for short linear rails.
+- Node labels in quotes when they contain punctuation; use \`<br/>\` for second lines — never escaped \`\\n\`.
+- Do **not** define page-level CSS \`.node\` (Mermaid owns it). Scope overrides under a wrapper class.
+- Do **not** set \`color:\` inside \`classDef\` (breaks dark mode). Style text via CSS overrides on \`.nodeLabel\` / \`.edgeLabel\`.
+- Forbidden theme accents: indigo/violet/fuchsia hexes. Prefer slate/gray borders + one semantic accent if needed.
+- Resolve theme from CSS vars / \`window._themeVars()\` at init (see template) — never bake a single light or dark hex set.
+- **Load Mermaid as UMD** (\`mermaid.min.js\` + \`onload="init...()"\` + \`window.mermaid\`). Do **not** use \`<script type="module">\` / ESM imports in live widgets — shell \`_runScripts\` must preserve attributes, and ESM is flakier under streaming injection.
+- Complex graphs (10+ nodes): consider \`layout: 'elk'\` with \`@mermaid-js/layout-elk\` registered; otherwise split into overview + detail.
+- Click-through: \`click NodeId "javascript:sendPrompt('...')"\` when drill-down helps; otherwise keep the chart static.
 
-**Cycles don't get drawn as rings.** If the last stage feeds back into the first (Krebs cycle, event loop, GC mark-and-sweep, TCP retransmit), your instinct is to place the stages around a circle. Don't. Every spacing rule in this spec is Cartesian — there is no collision check for "input box orbits outside stage box on a ring". You will get satellite boxes overlapping the stages they feed, labels sitting on the dashed circle, and tangential arrows that point nowhere. The ring is decoration; the loop is conveyed by the return arrow.
+##### B. HTML minimal steps (preferred for short linear flows)
 
-Build a stepper in \`imagine_html\`. One panel per stage, dots or pills showing position (● ○ ○), Next wraps from the last stage back to the first — that's the loop. Each panel owns its inputs and products: an event loop's pending callbacks live *inside* the Poll panel, not floating next to a box on a ring. Nothing collides because nothing shares the canvas. Only fall back to a linear SVG (stages in a row, curved \`<path>\` return arrow) when there's one input and one output total and no per-stage detail to show.
+Quiet vertical list. No rainbow. Current step may use secondary surface.
 
-**Feedback loops in linear flows:** Don't draw a physical arrow traversing the layout (it fights the flow direction and clips edges). Instead:
-- Small \`↻\` glyph + text near the cycle point: \`<text>↻ returns to start</text>\`
-- Or restructure the whole diagram as a circle if the cycle IS the point
+**Canonical skeleton:** template id \`flow-steps\` (load via \`templates: ["flow-steps"]\`).
+Keep neutral borders, typography hierarchy, and at most one \`is-active\` accent.
 
-**Arrows:** A line from A to B must not cross any other box or label. If the direct path crosses something, route around with an L-bend: \`<path d="M x1 y1 L x1 ymid L x2 ymid L x2 y2"/>\`. Place arrow labels in clear space, not on the midpoint.
+Horizontal pipelines (3–4 stages): flex row + \`→\` hairline separators, same neutral borders. Do not color each stage differently.
 
-Keep all nodes the same height when they have the same content type (e.g. all single-line boxes = 44px, all two-line boxes = 56px).
+##### C. Hand SVG flowchart (escape hatch only)
 
-**Flowchart components** — use these patterns consistently:
+Use only when Mermaid/HTML steps cannot express the layout. Keep **all nodes neutral**:
 
-*Single-line node* (44px tall): title only. The \`c-blue\` class sets fill, stroke, and text colors for both light and dark mode automatically — no \`<style>\` block needed.
 \`\`\`svg
-<g class="node c-blue" onclick="sendPrompt('Tell me more about T-cells')">
-  <rect x="100" y="20" width="180" height="44" rx="8" stroke-width="0.5"/>
-  <text class="th" x="190" y="42" text-anchor="middle" dominant-baseline="central">T-cells</text>
+<g class="node">
+  <rect class="box" x="250" y="20" width="180" height="44" rx="8" stroke-width="0.5"/>
+  <text class="th" x="340" y="42" text-anchor="middle" dominant-baseline="central">User request</text>
 </g>
 \`\`\`
 
-*Two-line node* (56px tall): bold title + muted subtitle.
-\`\`\`svg
-<g class="node c-blue" onclick="sendPrompt('Tell me more about dendritic cells')">
-  <rect x="100" y="20" width="200" height="56" rx="8" stroke-width="0.5"/>
-  <text class="th" x="200" y="38" text-anchor="middle" dominant-baseline="central">Dendritic cells</text>
-  <text class="ts" x="200" y="56" text-anchor="middle" dominant-baseline="central">Detect foreign antigens</text>
-</g>
-\`\`\`
+- Default: \`class="box"\` + \`th\`/\`ts\` text. **Do not** paint sequence steps with \`c-blue\`/\`c-teal\`/\`c-purple\` just to differentiate order.
+- If categories truly differ (e.g. auth vs data vs error), use at most **one** accent ramp for the exception class and gray for the rest — never a unique color per step.
+- Spacing still applies: 60px between boxes, 24px inner padding, max 4–5 nodes per diagram, L-bend arrows that never cross boxes.
+- Text: always \`dominant-baseline="central"\`; box width from longest label: \`max(title×8, subtitle×7)+24\`.
+- Cycles: do **not** draw rings. Use an HTML stepper (dots/pills + Next wraps) or a linear rail with a \`↻ returns to start\` label.
 
-*Connector* (no label — meaning is clear from source + target):
-\`\`\`svg
-<line x1="200" y1="76" x2="200" y2="120" class="arr" marker-end="url(#arrow)"/>
-\`\`\`
+**When the prompt is over budget (6+ components):** decompose — (1) stripped overview, (2) one diagram per sub-flow with 3–4 nodes. Completeness across several diagrams beats one cramped card.
 
-*Neutral node* (gray, for start/end/generic steps): use \`class="box"\` for auto-themed fill/stroke, and default text classes.
-
-Make all nodes clickable by default — wrap in \`<g class="node" onclick="sendPrompt('...')">\`. The hover effect is built in.
+**Promise only what you deliver** — if prose says three diagrams, emit three tool calls.
 
 #### Structural diagram
 
@@ -363,7 +405,7 @@ erDiagram
   }
 \`\`\`
 
-Use \`imagine_html\` for ERDs. Import and initialize in a \`<script type="module">\`. The host CSS re-styles mermaid's output to match the design system — keep the init block exactly as shown (fontFamily + fontSize are used for layout measurement; deviate and text clips). After rendering, replace sharp-cornered entity \`<path>\` elements with rounded \`<rect rx="8">\` to match the design system, and strip borders from attribute rows (only the outer container and header row keep visible borders — alternating fill colors separate the rows):
+Use \`imagine_html\` for ERDs. Prefer the UMD build (\`mermaid.min.js\` + \`onload\`) — not ESM \`type="module"\` — so shell \`_runScripts\` and streaming still work. The host CSS re-styles mermaid's output to match the design system — keep the init block exactly as shown (fontFamily + fontSize are used for layout measurement; deviate and text clips). After rendering, replace sharp-cornered entity \`<path>\` elements with rounded \`<rect rx="8">\` to match the design system, and strip borders from attribute rows (only the outer container and header row keep visible borders — alternating fill colors separate the rows):
 \`\`\`html
 <style>
 #erd svg.erDiagram .divider path { stroke-opacity: 0.5; }
@@ -373,52 +415,56 @@ Use \`imagine_html\` for ERDs. Import and initialize in a \`<script type="module
 #erd svg.erDiagram .row-rect-even rect { stroke: none !important; }
 </style>
 <div id="erd"></div>
-<script type="module">
-import mermaid from 'https://esm.sh/mermaid@11/dist/mermaid.esm.min.mjs';
-const dark = matchMedia('(prefers-color-scheme: dark)').matches;
-await document.fonts.ready;
-mermaid.initialize({
-  startOnLoad: false,
-  theme: 'base',
-  fontFamily: '"Anthropic Sans", sans-serif',
-  themeVariables: {
-    darkMode: dark,
-    fontSize: '13px',
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js" onload="initErd()"></script>
+<script>
+function initErd(){
+  if (!window.mermaid) return;
+  const dark = matchMedia('(prefers-color-scheme: dark)').matches;
+  window.mermaid.initialize({
+    startOnLoad: false,
+    theme: 'base',
     fontFamily: '"Anthropic Sans", sans-serif',
-    lineColor: dark ? '#9c9a92' : '#73726c',
-    textColor: dark ? '#c2c0b6' : '#3d3d3a',
-  },
-});
-const { svg } = await mermaid.render('erd-svg', \`erDiagram
+    themeVariables: {
+      darkMode: dark,
+      fontSize: '13px',
+      fontFamily: '"Anthropic Sans", sans-serif',
+      lineColor: dark ? '#9c9a92' : '#73726c',
+      textColor: dark ? '#c2c0b6' : '#3d3d3a',
+    },
+  });
+  Promise.resolve(window.mermaid.render('erd-svg', \`erDiagram
   USERS ||--o{ POSTS : writes
-  POSTS ||--o{ COMMENTS : has\`);
-document.getElementById('erd').innerHTML = svg;
+  POSTS ||--o{ COMMENTS : has\`)).then(({ svg }) => {
+    document.getElementById('erd').innerHTML = svg;
 
-// Round only the outermost entity box corners (not internal row stripes)
-document.querySelectorAll('#erd svg.erDiagram .node').forEach(node => {
-  const firstPath = node.querySelector('path[d]');
-  if (!firstPath) return;
-  const d = firstPath.getAttribute('d');
-  const nums = d.match(/-?[\\d.]+/g)?.map(Number);
-  if (!nums || nums.length < 8) return;
-  const xs = [nums[0], nums[2], nums[4], nums[6]];
-  const ys = [nums[1], nums[3], nums[5], nums[7]];
-  const x = Math.min(...xs), y = Math.min(...ys);
-  const w = Math.max(...xs) - x, h = Math.max(...ys) - y;
-  const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-  rect.setAttribute('x', x); rect.setAttribute('y', y);
-  rect.setAttribute('width', w); rect.setAttribute('height', h);
-  rect.setAttribute('rx', '8');
-  for (const a of ['fill', 'stroke', 'stroke-width', 'class', 'style']) {
-    if (firstPath.hasAttribute(a)) rect.setAttribute(a, firstPath.getAttribute(a));
-  }
-  firstPath.replaceWith(rect);
-});
+    // Round only the outermost entity box corners (not internal row stripes)
+    document.querySelectorAll('#erd svg.erDiagram .node').forEach(node => {
+      const firstPath = node.querySelector('path[d]');
+      if (!firstPath) return;
+      const d = firstPath.getAttribute('d');
+      const nums = d.match(/-?[\\d.]+/g)?.map(Number);
+      if (!nums || nums.length < 8) return;
+      const xs = [nums[0], nums[2], nums[4], nums[6]];
+      const ys = [nums[1], nums[3], nums[5], nums[7]];
+      const x = Math.min(...xs), y = Math.min(...ys);
+      const w = Math.max(...xs) - x, h = Math.max(...ys) - y;
+      const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      rect.setAttribute('x', x); rect.setAttribute('y', y);
+      rect.setAttribute('width', w); rect.setAttribute('height', h);
+      rect.setAttribute('rx', '8');
+      for (const a of ['fill', 'stroke', 'stroke-width', 'class', 'style']) {
+        if (firstPath.hasAttribute(a)) rect.setAttribute(a, firstPath.getAttribute(a));
+      }
+      firstPath.replaceWith(rect);
+    });
 
-// Strip borders from attribute rows (mermaid v11: .row-rect-odd / .row-rect-even)
-document.querySelectorAll('#erd svg.erDiagram .row-rect-odd path, #erd svg.erDiagram .row-rect-even path').forEach(p => {
-  p.setAttribute('stroke', 'none');
-});
+    // Strip borders from attribute rows (mermaid v11: .row-rect-odd / .row-rect-even)
+    document.querySelectorAll('#erd svg.erDiagram .row-rect-odd path, #erd svg.erDiagram .row-rect-even path').forEach(p => {
+      p.setAttribute('stroke', 'none');
+    });
+  });
+}
+if (window.mermaid) initErd();
 </script>
 \`\`\`
 
@@ -780,7 +826,10 @@ const MODULE_SECTIONS: Record<string, string[]> = {
   diagram: [COLOR_PALETTE, SVG_SETUP, DIAGRAM_TYPES],
 };
 
-export function getGuidelines(modules: string[]): string {
+export function getGuidelines(
+  modules: string[],
+  options: { templates?: readonly string[] } = {},
+): string {
   let content = CORE;
   const seen = new Set<string>();
   for (const mod of modules) {
@@ -793,6 +842,8 @@ export function getGuidelines(modules: string[]): string {
       }
     }
   }
+  const templates = getTemplatesSection(modules, { includeBodies: options.templates });
+  if (templates) content += "\n\n\n" + templates;
   return content + "\n";
 }
 

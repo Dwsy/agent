@@ -6,7 +6,8 @@ import { StringEnum } from "@earendil-works/pi-ai";
 import { Text } from "@earendil-works/pi-tui";
 import { join } from "node:path";
 import { getGuidelines, AVAILABLE_MODULES } from "./guidelines.js";
-import { type WidgetRecord, WIDGETS_DIR, saveWidget, loadActiveWidgetIndex, loadWidgetIndex, loadWidgetHtml } from "./storage.js";
+import { TEMPLATE_IDS } from "./templates/index.js";
+import { appendWidgetEvent, type WidgetRecord, WIDGETS_DIR, saveWidget, loadActiveWidgetIndex, loadWidgetIndex, loadWidgetHtml } from "./storage.js";
 import { detectDarkMode, shellHTML, wrapHTML, escapeJS, timestamp, openWindow } from "./html-helpers.js";
 
 export interface ToolContext {
@@ -37,29 +38,43 @@ export function registerTools(pi: ExtensionAPI, ctx: ToolContext) {
       "Call visualize_read_me once before your first show_widget call to load design guidelines.",
       "Do NOT mention the read_me call to the user — call it silently, then proceed directly to building the widget.",
       "Pick the modules that match your use case: interactive, chart, mockup, art, diagram.",
+      "Guidelines include a catalog of ready-made HTML fragments (flow-steps, flow-mermaid, architecture-cards, metric-chart, compare-cards, contact-card). Prefer these over multi-color SVG flow boxes.",
+      "Template bodies are on-demand: first call modules only (catalog). When ready to build, re-call with templates: [\"flow-mermaid\"] (or multiple ids / \"all\") to load full HTML skeletons.",
+      "Theme: always use host CSS variables (var(--color-text-*), var(--color-background-*), var(--color-border-*)). Never hardcode light-only hex. Chart.js/Mermaid must read computed CSS vars or window._themeVars() so light/dark both work.",
     ],
     parameters: Type.Object({
       modules: Type.Array(
         StringEnum(AVAILABLE_MODULES as readonly string[]),
         { description: "Which module(s) to load. Pick all that fit." }
       ),
+      templates: Type.Optional(
+        Type.Array(
+          Type.String({ description: "Template id (flow-steps, flow-mermaid, …) or \"all\"." }),
+          {
+            description:
+              "Optional fragment bodies to expand. Omit for catalog-only (token-light). " +
+              "Pass ids like [\"flow-mermaid\"] or [\"all\"] when you need full HTML skeletons. " +
+              "Known ids: " + TEMPLATE_IDS.join(", ") + ".",
+          }
+        )
+      ),
     }),
 
     async execute(_toolCallId, params) {
       ctx.hasSeenReadMe = true;
-      const content = getGuidelines(params.modules);
+      const content = getGuidelines(params.modules, { templates: params.templates });
       return {
         content: [{ type: "text" as const, text: content }],
-        details: { modules: params.modules },
+        details: { modules: params.modules, templates: params.templates ?? [] },
       };
     },
 
     renderCall(args: any, theme: any) {
       const mods = (args.modules ?? []).join(", ");
-      return new Text(
-        theme.fg("toolTitle", theme.bold("read_me ")) + theme.fg("muted", mods),
-        0, 0
-      );
+      const tpls = (args.templates ?? []).join(", ");
+      let text = theme.fg("toolTitle", theme.bold("read_me ")) + theme.fg("muted", mods);
+      if (tpls) text += theme.fg("dim", " templates:" + tpls);
+      return new Text(text, 0, 0);
     },
 
     renderResult(_result: any, { isPartial }: any, theme: any) {
@@ -85,7 +100,9 @@ export function registerTools(pi: ExtensionAPI, ctx: ToolContext) {
       "Always call visualize_read_me first to load design guidelines, then set i_have_seen_read_me: true.",
       "The widget opens in a native macOS window — it has full browser capabilities (Canvas, JS, CDN libraries).",
       "Structure HTML as fragments: no DOCTYPE/<html>/<head>/<body>. Style first, then HTML, then scripts.",
+      "Use CSS variables for all colors so widgets adapt to light/dark. Hardcoded #hex for UI chrome is a bug unless art module.",
       "The page has window.glimpse.send(data) to send data back. Use it for user choices and interactions.",
+      "For feedback-addressable UI, give stable elements data-spec-id attributes and call sendAnnotation(targetId, comment, stateId?) to persist structured feedback.",
       "Keep widgets focused and appropriately sized. Default is 800x600 but adjust to fit content.",
       "For SVG: start code with <svg> tag, it will be auto-detected.",
       "Set interactive=true ONLY when the widget has buttons/forms/inputs that call glimpse.send() and the agent needs the returned data. Default (false) is display-only — agent continues immediately.",
@@ -142,16 +159,14 @@ export function registerTools(pi: ExtensionAPI, ctx: ToolContext) {
         isSVG,
         cwd,
       };
-      saveWidget(record, fullHTML).catch(() => {});
+      await saveWidget(record, fullHTML);
 
       let win: any = null;
+      let windowReady = false;
 
       if (ctx.streaming?.window) {
         win = ctx.streaming.window;
-        if (ctx.streaming.ready) {
-          const escaped = escapeJS(code);
-          win.send("window._setContent('" + escaped + "'); window._runScripts();");
-        }
+        windowReady = ctx.streaming.ready;
         ctx.streaming = null;
       } else {
         const dark = detectDarkMode();
@@ -163,56 +178,75 @@ export function registerTools(pi: ExtensionAPI, ctx: ToolContext) {
           noDock: true,
         });
         ctx.activeWindows.push(win);
-
-        win.on("ready", (_info: any) => {
-          const escaped = escapeJS(code);
-          win.send("window._setContent('" + escaped + "'); window._runScripts();");
-        });
       }
 
+      let activated = false;
+      const activateWidget = () => {
+        if (activated) return;
+        activated = true;
+        const escaped = escapeJS(code);
+        win.send("window._setContent('" + escaped + "'); window._runScripts();");
+      };
+      const scheduleActivation = () => {
+        if (windowReady) activateWidget();
+        else win.on("ready", activateWidget);
+      };
+
       if (params.interactive) {
-        return new Promise<any>((resolve) => {
-          let messageData: any = null;
+        return new Promise<any>((resolve, reject) => {
+          let messageData: unknown;
+          let hasMessage = false;
+          let settling = false;
           let resolved = false;
 
-          const finish = (reason: string) => {
+          const finish = (reason: string, widgetEvent: unknown = null) => {
             if (resolved) return;
             resolved = true;
             ctx.activeWindows = ctx.activeWindows.filter((w) => w !== win);
-            if (messageData) {
-              record.interactionData = messageData;
-              saveWidget(record, fullHTML).catch(() => {});
-            }
             resolve({
               content: [{
                 type: "text" as const,
-                text: messageData
+                text: hasMessage
                   ? "Widget \"" + title + "\" interaction data: " + JSON.stringify(messageData)
                   : "Widget \"" + title + "\" closed (" + reason + ").",
               }],
-              details: { title: params.title, width, height, isSVG, savedFile: filename, fullPath, messageData, closedReason: reason },
+              details: { title: params.title, width, height, isSVG, savedFile: filename, fullPath, messageData, widgetEvent, closedReason: reason },
             });
           };
 
-          win.on("message", (data: any) => { messageData = data; finish("User sent data"); });
-          win.on("closed", () => finish("Window closed"));
-          win.on("error", (err: Error) => finish("Error: " + err.message));
-          setTimeout(() => finish("Timeout"), 120_000);
+          win.on("message", (data: unknown) => {
+            const settlesTool = !resolved && !settling;
+            if (settlesTool) {
+              settling = true;
+              messageData = data;
+              hasMessage = true;
+            }
+            appendWidgetEvent(filename, data).then((event) => {
+              if (settlesTool) finish("User sent data", event);
+            }).catch((error) => {
+              if (!settlesTool) return;
+              resolved = true;
+              ctx.activeWindows = ctx.activeWindows.filter((w) => w !== win);
+              reject(error);
+            });
+          });
+          win.on("closed", () => { if (!settling) finish("Window closed"); });
+          win.on("error", (err: Error) => { if (!settling) finish("Error: " + err.message); });
+          setTimeout(() => { if (!settling) finish("Timeout"); }, 120_000);
+          scheduleActivation();
         });
       }
 
-      let interactionLogged = false;
-      const logInteraction = (data: any) => {
-        if (interactionLogged) return;
-        interactionLogged = true;
-        record.interactionData = data;
-        saveWidget(record, fullHTML).catch(() => {});
+      win.on("message", (data: unknown) => {
+        void appendWidgetEvent(filename, data).catch(() => {});
+      });
+      win.on("closed", () => {
         ctx.activeWindows = ctx.activeWindows.filter((w) => w !== win);
-      };
-
-      win.on("message", (data: any) => logInteraction(data));
-      win.on("closed", () => logInteraction(null));
-      win.on("error", (err: Error) => logInteraction({ error: err.message }));
+      });
+      win.on("error", () => {
+        ctx.activeWindows = ctx.activeWindows.filter((w) => w !== win);
+      });
+      scheduleActivation();
 
       return {
         content: [{
@@ -318,7 +352,13 @@ export function registerTools(pi: ExtensionAPI, ctx: ToolContext) {
 
         const win = openWindow(html, { width, height, title, noDock: true });
         ctx.activeWindows.push(win);
+        win.on("message", (data: unknown) => {
+          void appendWidgetEvent(params.filename!, data).catch(() => {});
+        });
         win.on("closed", () => {
+          ctx.activeWindows = ctx.activeWindows.filter((w) => w !== win);
+        });
+        win.on("error", () => {
           ctx.activeWindows = ctx.activeWindows.filter((w) => w !== win);
         });
 

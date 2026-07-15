@@ -86,7 +86,7 @@ export default function (pi: ExtensionAPI) {
       const toolCall = raw.toolCall;
       if (toolCall?.arguments?.widget_code && toolCtx.streaming.window && toolCtx.streaming.ready) {
         const escaped = escapeJS(toolCall.arguments.widget_code);
-        toolCtx.streaming.window.send("window._setContent('" + escaped + "'); window._runScripts();");
+        toolCtx.streaming.window.send("window._setContent('" + escaped + "');");
       }
       return;
     }
