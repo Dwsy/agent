@@ -429,9 +429,12 @@ export async function runLlmMemoryTidy(
 // AUTO MEMORY EXTRACTION (aligned with pi branch-summarization algorithm)
 // ============================================================================
 
+const AUTO_MEMORY_RESPONSE_SCHEMA = '{"learnings":[{"text":"..."}],"preferences":[{"category":"Communication|Code|Tools|Workflow|General","text":"..."}]}';
+
 const MEMORY_EXTRACTION_SYSTEM_PROMPT = `You are a memory extraction system for a role-based coding assistant. Your task is to read a conversation and extract durable cross-session learnings and stable user preferences.
 
-Do NOT continue the conversation. Do NOT respond to any questions in the conversation. ONLY output the structured JSON extraction.
+Do NOT continue the conversation. Do NOT respond to any questions in the conversation. Return exactly one JSON object matching this schema, with both arrays present. Use empty arrays when there is nothing to extract. Do not include markdown fences or any other text:
+${AUTO_MEMORY_RESPONSE_SCHEMA}
 
 Hard exclusion rule: if an item can be derived from the current repository state, do not store it as memory. That includes code structure, file paths, filenames, config keys, environment variables, logs, error messages, test failures, commit/PR/Issue facts, and anything that can be rediscovered from code, files, config, or git history.`;
 
@@ -501,9 +504,8 @@ Only keep information that is cross-session, non-derivable, and still useful in 
 Keep each item concise (under 120 chars).
 Do not duplicate or restate items from <already-stored>.
 
-Return strict JSON only:
-{"learnings":[{"text":"..."}],"preferences":[{"category":"Communication|Code|Tools|Workflow|General","text":"..."}]}
-If nothing new, return {"learnings":[],"preferences":[]}.`;
+Return exactly one JSON object matching the required schema. Include both arrays; use empty arrays if nothing is new:
+${AUTO_MEMORY_RESPONSE_SCHEMA}`;
 }
 
 export async function runAutoMemoryExtraction(

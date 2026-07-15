@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 // 我们需要直接访问 extractJsonObject 和 parseAutoMemoryResponse 函数
 // 由于它们不是导出的，我们需要在测试文件中重新定义它们（与 memory-llm.ts 保持同步）
@@ -31,6 +32,17 @@ function parseAutoMemoryResponse(text: string): { learnings?: Array<{ text?: str
     return null;
   }
 }
+
+test("memory extraction system prompt defines the JSON response contract", () => {
+  const source = readFileSync(new URL("./memory-llm.ts", import.meta.url), "utf-8");
+  const systemPrompt = source.match(/const MEMORY_EXTRACTION_SYSTEM_PROMPT = `([\s\S]*?)`;/)?.[1];
+
+  assert.ok(systemPrompt, "System prompt should be present");
+  assert.match(systemPrompt, /Return exactly one JSON object matching this schema/);
+  assert.match(systemPrompt, /with both arrays present/);
+  assert.match(systemPrompt, /\$\{AUTO_MEMORY_RESPONSE_SCHEMA\}/);
+  assert.match(source, /const AUTO_MEMORY_RESPONSE_SCHEMA = '\{"learnings"/);
+});
 
 test("parseAutoMemoryResponse handles <think> tags before JSON", () => {
   const input = `<think>Let me analyze this conversation carefully to extract durable learnings...
