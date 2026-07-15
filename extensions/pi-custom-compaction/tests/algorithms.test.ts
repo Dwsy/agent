@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { buildStructuredPrompt, getFileDetails, selectSummaryText } from "../src/structured.js";
+import { appendFileDetails, buildStructuredPrompt, getFileDetails, mergeFileDetails, selectSummaryText } from "../src/structured.js";
 
 const prompt = buildStructuredPrompt("conversation", "previous", "focus here");
 assert.match(prompt, /<conversation>\nconversation\n<\/conversation>/);
@@ -16,6 +16,19 @@ assert.deepEqual(
     edited: new Set(["c.ts"]),
   }),
   { readFiles: ["a.ts"], modifiedFiles: ["b.ts", "c.ts"] },
+);
+
+const cumulativeFiles = mergeFileDetails(
+  { readFiles: ["current-read.ts", "changed.ts"], modifiedFiles: ["current-edit.ts"] },
+  "## Previous\n\n<read-files>\nprevious-read.ts\nchanged.ts\n</read-files>\n\n<modified-files>\nchanged.ts\n</modified-files>",
+);
+assert.deepEqual(cumulativeFiles, {
+  readFiles: ["current-read.ts", "previous-read.ts"],
+  modifiedFiles: ["changed.ts", "current-edit.ts"],
+});
+assert.equal(
+  appendFileDetails("## Checkpoint\n\n<read-files>\nstale.ts\n</read-files>", cumulativeFiles),
+  "## Checkpoint\n\n<read-files>\ncurrent-read.ts\nprevious-read.ts\n</read-files>\n\n<modified-files>\nchanged.ts\ncurrent-edit.ts\n</modified-files>",
 );
 
 console.log("algorithms.test.ts: ok");

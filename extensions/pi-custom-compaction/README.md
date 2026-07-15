@@ -37,7 +37,7 @@ The status widget is **off by default**. The model selector supports fuzzy searc
 | Algorithm | Behavior |
 |---|---|
 | `pi-default` | Uses Pi's exported `compact()` with the selected model. This preserves Pi's cut-point calculation, split-turn summaries, iterative summaries, and file-operation tracking. |
-| `structured` | Produces a coding checkpoint with Goal, Decisions, Changes, Current State, Risks, Next Steps, and Critical Context. |
+| `structured` | Produces a coding checkpoint with Goal, Decisions, Changes, Current State, Risks, Next Steps, and Critical Context; appends Pi-compatible read/modified file tags. |
 
 Both algorithms use Pi's `session_before_compact` hook, so they apply to manual `/compact`, automatic threshold compaction, and overflow recovery.
 

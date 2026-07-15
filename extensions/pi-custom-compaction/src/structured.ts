@@ -4,12 +4,53 @@ export interface FileOperationsLike {
   edited: Set<string>;
 }
 
-export function getFileDetails(fileOps: FileOperationsLike): { readFiles: string[]; modifiedFiles: string[] } {
+export interface FileDetails {
+  readFiles: string[];
+  modifiedFiles: string[];
+}
+
+export function getFileDetails(fileOps: FileOperationsLike): FileDetails {
   const modified = new Set([...fileOps.written, ...fileOps.edited]);
   return {
     readFiles: [...fileOps.read].filter((path) => !modified.has(path)).sort(),
     modifiedFiles: [...modified].sort(),
   };
+}
+
+function pathsFromTag(summary: string | undefined, tag: "read-files" | "modified-files"): string[] {
+  if (!summary) return [];
+  return [...summary.matchAll(new RegExp(`<${tag}>\\s*([\\s\\S]*?)\\s*</${tag}>`, "g"))]
+    .flatMap((match) => match[1].split(/\r?\n/))
+    .map((path) => path.trim())
+    .filter(Boolean);
+}
+
+export function mergeFileDetails(current: FileDetails, previousSummary: string | undefined): FileDetails {
+  const modified = new Set([...pathsFromTag(previousSummary, "modified-files"), ...current.modifiedFiles]);
+  const read = new Set([...pathsFromTag(previousSummary, "read-files"), ...current.readFiles]);
+  return {
+    readFiles: [...read].filter((path) => !modified.has(path)).sort(),
+    modifiedFiles: [...modified].sort(),
+  };
+}
+
+export function formatFileDetails(details: FileDetails): string {
+  const sections: string[] = [];
+  if (details.readFiles.length > 0) {
+    sections.push(`<read-files>\n${details.readFiles.join("\n")}\n</read-files>`);
+  }
+  if (details.modifiedFiles.length > 0) {
+    sections.push(`<modified-files>\n${details.modifiedFiles.join("\n")}\n</modified-files>`);
+  }
+  return sections.length > 0 ? `\n\n${sections.join("\n\n")}` : "";
+}
+
+export function appendFileDetails(summary: string, details: FileDetails): string {
+  const withoutExisting = summary
+    .replace(/\n*<read-files>[\s\S]*?<\/read-files>/g, "")
+    .replace(/\n*<modified-files>[\s\S]*?<\/modified-files>/g, "")
+    .trimEnd();
+  return `${withoutExisting}${formatFileDetails(details)}`;
 }
 
 export function selectSummaryText(content: Array<{ type: string; text?: string }>): string {

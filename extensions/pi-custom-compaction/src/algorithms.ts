@@ -1,7 +1,20 @@
 import { complete } from "@earendil-works/pi-ai/compat";
 import { compact, convertToLlm, serializeConversation, type CompactionResult, type SessionBeforeCompactEvent } from "@earendil-works/pi-coding-agent";
-import { buildStructuredPrompt, getFileDetails, selectSummaryText } from "./structured.js";
+import { appendFileDetails, buildStructuredPrompt, getFileDetails, mergeFileDetails, selectSummaryText } from "./structured.js";
 import type { CustomCompactionConfig } from "./types.js";
+
+function withCumulativeFileDetails(
+  result: CompactionResult,
+  event: SessionBeforeCompactEvent,
+): CompactionResult {
+  const details = mergeFileDetails(getFileDetails(event.preparation.fileOps), event.preparation.previousSummary);
+  const extraDetails = result.details && typeof result.details === "object" ? result.details : {};
+  return {
+    ...result,
+    summary: appendFileDetails(result.summary, details),
+    details: { ...extraDetails, ...details },
+  };
+}
 
 export async function compactWithConfiguredAlgorithm(
   event: SessionBeforeCompactEvent,
@@ -11,7 +24,7 @@ export async function compactWithConfiguredAlgorithm(
   memoryInstructions?: string,
 ): Promise<CompactionResult> {
   if (config.algorithm === "pi-default") {
-    return compact(
+    const result = await compact(
       event.preparation,
       model,
       auth.apiKey,
@@ -22,6 +35,7 @@ export async function compactWithConfiguredAlgorithm(
       undefined,
       auth.env,
     );
+    return withCumulativeFileDetails(result, event);
   }
 
   const messages = [...event.preparation.messagesToSummarize, ...event.preparation.turnPrefixMessages];
@@ -62,15 +76,15 @@ export async function compactWithConfiguredAlgorithm(
     throw new Error("Structured compaction returned an empty summary");
   }
 
-  const details = getFileDetails(event.preparation.fileOps);
-  return {
+  const result: CompactionResult = {
     summary,
     firstKeptEntryId: event.preparation.firstKeptEntryId,
     tokensBefore: event.preparation.tokensBefore,
     details: {
-      ...details,
+      ...getFileDetails(event.preparation.fileOps),
       algorithm: "structured",
       model: `${model.provider}/${model.id}`,
     },
   };
+  return withCumulativeFileDetails(result, event);
 }
