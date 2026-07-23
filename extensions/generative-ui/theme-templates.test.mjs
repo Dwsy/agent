@@ -65,11 +65,48 @@ test("_themeVars contract includes chart fields", async () => {
   assert.doesNotMatch(shell, /background:#1a1a1a/);
 });
 
+test("widget UI kit is injected into native and saved documents", async () => {
+  const rt = await loadRuntime();
+  if (rt) {
+    const shell = rt.html.shellHTML(false);
+    const standalone = rt.html.wrapHTML("<button data-tooltip=\"Help\">Help</button>");
+    for (const document of [shell, standalone]) {
+      assert.match(document, /FloatingUIDOM/);
+      assert.match(document, /lucide@1\.17\.0/);
+      assert.match(document, /widget-tooltip/);
+      assert.match(document, /Content-Security-Policy/);
+      assert.match(document, /fonts\.googleapis\.com/);
+    }
+    return;
+  }
+  const helper = readFileSync(join(root, "html-helpers.ts"), "utf8");
+  const kit = readFileSync(join(root, "widget-ui-kit.ts"), "utf8");
+  assert.match(helper, /WIDGET_UI_KIT_RESOURCES/);
+  assert.match(kit, /FloatingUIDOM/);
+  assert.match(kit, /lucide@1\.17\.0/);
+  assert.match(kit, /data-tooltip/);
+  assert.match(kit, /default-src 'none'/);
+  assert.match(kit, /fonts\.googleapis\.com/);
+});
+
+test("wrapHTML injects bridges before widget code", async () => {
+  const rt = await loadRuntime();
+  if (rt) {
+    const html = rt.html.wrapHTML("<script>window.userWidgetCode = true;</script>");
+    assert.ok(html.indexOf("window._themeVars") < html.indexOf("window.userWidgetCode"));
+    return;
+  }
+  const source = readFileSync(join(root, "html-helpers.ts"), "utf8");
+  assert.match(source, /<body>\$\{themeScript\}\$\{WIDGET_UI_KIT_RESOURCES\}\$\{code\}<\/body>/);
+});
+
 test("widget pages expose a native and gallery feedback bridge", async () => {
   const rt = await loadRuntime();
   const source = readFileSync(join(root, "html-helpers.ts"), "utf8");
   const script = rt ? rt.html.WIDGET_EVENTS_SCRIPT : source;
   assert.match(script, /sendWidgetEvent/);
+  assert.match(script, /sendPrompt/);
+  assert.match(script, /type: 'follow_up'/);
   assert.match(script, /sendAnnotation/);
   assert.match(script, /__generativeUIWidgetEvent/);
   assert.match(script, /postMessage/);
@@ -96,6 +133,33 @@ test("streaming preview defers widget scripts until message handlers exist", () 
   assert.doesNotMatch(index, /window\._setContent\('[^']*'\); window\._runScripts\(\);/);
   assert.ok(tools.indexOf('win.on("message"') < tools.indexOf("scheduleActivation();"));
   assert.match(tools, /window\._setContent\('[^']*'\); window\._runScripts\(\);/);
+});
+
+test("visualization prompts require focused, local, accessible interaction", () => {
+  const tools = readFileSync(join(root, "tools.ts"), "utf8");
+  const guidelines = readFileSync(join(root, "guidelines.ts"), "utf8");
+
+  assert.match(tools, /materially improves understanding or a decision/);
+  assert.match(tools, /never invent filter, search, reset, dashboard, or KPI panels/);
+  assert.match(tools, /semantic HTML and native controls/);
+  assert.match(tools, /validateWidgetCode\(code, params\.interactive \?\? false\)/);
+  assert.match(tools, /MAX_WIDGET_CODE_BYTES/);
+  assert.match(tools, /fetch, XMLHttpRequest, or WebSocket/);
+  assert.match(tools, /ALLOWED_RESOURCE_HOSTS/);
+  assert.match(tools, /fonts\.googleapis\.com/);
+  assert.match(tools, /data-tooltip support backed by Floating UI/);
+  assert.match(tools, /script\|link\|img\|audio\|video\|source/);
+  assert.match(tools, /interactive widgets must send a choice/);
+  assert.match(guidelines, /Use the smallest medium that fits: Mermaid/);
+  assert.match(guidelines, /Interaction budget/);
+  assert.match(guidelines, /support 320px-wide windows/);
+  assert.match(guidelines, /animate only meaningful state transitions/);
+  assert.match(guidelines, /use verified GeoJSON\/TopoJSON/);
+  assert.match(guidelines, /interactive: true/);
+  assert.match(guidelines, /Resolve colors from/);
+  assert.match(guidelines, /built-in tooltip, icon, CDN, and widget-host contract/);
+  assert.match(guidelines, /const WIDGET_RUNTIME/);
+  assert.match(guidelines, /Never load Lucide or Floating UI yourself/);
 });
 
 test("template catalog filters by module", async () => {

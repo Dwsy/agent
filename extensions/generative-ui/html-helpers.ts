@@ -3,6 +3,7 @@
 import { execSync, spawn } from "node:child_process";
 import { open } from "glimpseui";
 import { SVG_STYLES, cssVariables } from "./svg-styles.js";
+import { WIDGET_CSP, WIDGET_UI_KIT_CSS, WIDGET_UI_KIT_RESOURCES } from "./widget-ui-kit.js";
 
 // ── Detect system appearance (cached) ─────────────────────────────────────
 // Legacy helper for window chrome / analytics only.
@@ -63,6 +64,10 @@ export const WIDGET_EVENTS_SCRIPT = `(function() {
   };
   if (!window.glimpse) window.glimpse = { send: send };
   window.sendWidgetEvent = send;
+  window.sendPrompt = function(prompt) {
+    if (typeof prompt !== 'string' || !prompt.trim()) throw new Error('Follow-up prompt is required.');
+    return send({ type: 'follow_up', prompt: prompt.trim() });
+  };
   window.sendAnnotation = function(targetId, comment, stateId) {
     if (typeof targetId !== 'string' || !targetId.trim()) throw new Error('Annotation targetId is required.');
     if (typeof comment !== 'string' || !comment.trim()) throw new Error('Annotation comment is required.');
@@ -81,14 +86,17 @@ export function shellHTML(darkMode = true): string {
   return `<!DOCTYPE html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <meta name="color-scheme" content="light dark">
+<meta http-equiv="Content-Security-Policy" content="${WIDGET_CSP}">
 <style>
 ${vars}
 *{box-sizing:border-box}
 body{margin:0;padding:1rem;font-family:var(--font-sans);background:var(--color-background-primary);color:var(--color-text-primary);}
 @keyframes _fadeIn{from{opacity:0;transform:translateY(4px);}to{opacity:1;transform:none;}}
 ${SVG_STYLES}
+${WIDGET_UI_KIT_CSS}
 </style>
 </head><body><div id="root"></div>
+${WIDGET_UI_KIT_RESOURCES}
 <script>
   window._morphReady = false;
   window._pending = null;
@@ -136,18 +144,18 @@ ${SVG_STYLES}
 export function wrapHTML(code: string, isSVG = false, darkMode = true): string {
   // darkMode is legacy metadata only; palette follows prefers-color-scheme.
   const vars = cssVariables(darkMode);
-  const themeMeta = `<meta name="color-scheme" content="light dark">`;
+  const themeMeta = `<meta name="color-scheme" content="light dark"><meta http-equiv="Content-Security-Policy" content="${WIDGET_CSP}">`;
   const themeScript = `<script>${THEME_VARS_SCRIPT}\n${WIDGET_EVENTS_SCRIPT}</script>`;
   if (isSVG) {
-    return `<!DOCTYPE html><html><head><meta charset="utf-8">${themeMeta}<style>${vars}${SVG_STYLES}</style></head>
+    return `<!DOCTYPE html><html><head><meta charset="utf-8">${themeMeta}<style>${vars}${SVG_STYLES}${WIDGET_UI_KIT_CSS}</style></head>
 <body style="margin:0;display:flex;align-items:center;justify-content:center;min-height:100vh;background:var(--color-background-primary);color:var(--color-text-primary);">
-${code}${themeScript}</body></html>`;
+${themeScript}${WIDGET_UI_KIT_RESOURCES}${code}</body></html>`;
   }
   return `<!DOCTYPE html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 ${themeMeta}
-<style>${vars}*{box-sizing:border-box}body{margin:0;padding:1rem;font-family:var(--font-sans);background:var(--color-background-primary);color:var(--color-text-primary);}${SVG_STYLES}</style>
-</head><body>${code}${themeScript}</body></html>`;
+<style>${vars}*{box-sizing:border-box}body{margin:0;padding:1rem;font-family:var(--font-sans);background:var(--color-background-primary);color:var(--color-text-primary);}${SVG_STYLES}${WIDGET_UI_KIT_CSS}</style>
+</head><body>${themeScript}${WIDGET_UI_KIT_RESOURCES}${code}</body></html>`;
 }
 
 export function escapeJS(s: string): string {

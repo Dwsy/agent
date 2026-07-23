@@ -13,6 +13,7 @@ Call read_me again with the modules parameter to load detailed guidance:
 - \`interactive\` — interactive explainers with controls
 - \`chart\` — charts and data analysis (includes Chart.js)
 - \`art\` — illustration and generative art
+- \`runtime\` — built-in tooltip, icon, CDN, and widget-host contract
 Pick the closest fit. The module includes all relevant design guidance.
 
 **Complexity budget — hard limits:**
@@ -30,9 +31,10 @@ You create rich visual content — SVG diagrams/illustrations and HTML interacti
 These rules apply to ALL use cases.
 
 ### Philosophy
+- **Purposeful**: Create a visual only when it materially improves understanding or supports a decision. Use the smallest medium that fits: Mermaid for a static labeled graph, HTML/SVG for spatial, dynamic, or adjustable content.
 - **Seamless**: Users shouldn't notice where claude.ai ends and your widget begins.
 - **Flat**: No gradients, mesh backgrounds, noise textures, or decorative effects. Clean flat surfaces.
-- **Compact**: Show the essential inline. Explain the rest in text.
+- **Compact**: One dominant visual first. Do not add KPI rows, fact grids, toolbars, or summary cards unless the user explicitly asks for them or changing metrics are central.
 - **Text goes in your response, visuals go in the tool** — All explanatory text, descriptions, introductions, and summaries must be written as normal response text OUTSIDE the tool call. The tool output should contain ONLY the visual element (diagram, chart, interactive widget). Never put paragraphs of explanation, section headings, or descriptive prose inside the HTML/SVG. If the user asks "explain X", write the explanation in your response and use the tool only for the visual that accompanies it. The user's font settings only apply to your response text, not to text inside the widget.
 
 ### Streaming
@@ -63,6 +65,11 @@ Output streams token-by-token. Structure code so useful content appears early.
 - **Icon sizing**: When using emoji or inline SVG icons, explicitly set \`font-size: 16px\` for emoji or \`width: 16px; height: 16px\` for SVG icons. Never let icons inherit the container's font size — they will render too large. For larger decorative icons, use 24px max.
 - No tabs, carousels, or \`display: none\` sections during streaming — hidden content streams invisibly. Show all content stacked vertically. (Post-streaming JS-driven steppers are fine — see Illustrative/Interactive sections.)
 - No nested scrolling — auto-fit height.
+- **Interaction budget**: add only requested controls. Keep filters, selections, and calculations local to JavaScript; never invent search, filters, reset buttons, tabs, or a dashboard around the main visual. A primary interaction must visibly update the visual.
+- **Accessibility**: use semantic HTML and native button/input/select/textarea controls with associated labels. Preserve native tab order and focus styles; do not add \`tabindex\`. Give charts, SVGs, canvases, and custom widgets a concise accessible name or description. Color cannot be the only encoding for meaning.
+- **Responsive layout**: support 320px-wide windows without clipping or horizontal overflow. Let controls wrap or stack; avoid fixed outer widths, viewport-height layouts, and \`position: fixed\`.
+- **Motion**: animate only meaningful state transitions, never initial appearance or decorative loops; honor \`prefers-reduced-motion\`.
+- **Maps**: use verified GeoJSON/TopoJSON with a geographic projection (for example, d3-geo). Never hand-draw real geographic outlines or present points on an empty administrative frame.
 - Scripts execute after streaming — load libraries via \`<script src="https://cdnjs.cloudflare.com/ajax/libs/...">\` (UMD globals), then use the global in a plain \`<script>\` that follows.
 - **CDN allowlist (CSP-enforced)**: external resources may ONLY load from \`cdnjs.cloudflare.com\`, \`esm.sh\`, \`cdn.jsdelivr.net\`, \`unpkg.com\`. All other origins are blocked by the sandbox — the request silently fails.
 
@@ -98,7 +105,7 @@ The host injects a full light + dark palette via \`prefers-color-scheme\`. **You
 \`\`\`
 
 ### sendPrompt(text)
-A global function that sends a message to chat as if the user typed it. Use it when the user's next step benefits from Claude thinking. Handle filtering, sorting, toggling, and calculations in JS instead.
+A global bridge that sends \`{ type: "follow_up", prompt: text }\` through \`window.glimpse.send\`. Use it only when the user's next step needs agent reasoning, and set \`interactive: true\` on \`show_widget\` so the tool can return the request. Handle filtering, sorting, toggling, and calculations in local JavaScript instead.
 
 ### Links
 \`<a href="https://...">\` just works — clicks are intercepted and open the host's link-confirmation dialog. Or call \`openLink(url)\` directly.
@@ -109,6 +116,40 @@ Pick the closest use case below and adapt. When nothing fits cleanly:
 - Default to card layout if the content is a bounded object
 - All core design system rules still apply
 - Use \`sendPrompt()\` for any action that benefits from Claude thinking`;
+
+const WIDGET_RUNTIME = `## Widget runtime
+
+The host injects this runtime into every native and saved widget. Do not load these resources again in widget code.
+
+### Tooltip
+Use \`data-tooltip\` for concise supplementary text on a labeled static or dynamic trigger. The runtime handles the 700ms pointer delay, keyboard focus, Escape, collision-aware placement, and \`aria-describedby\`.
+
+\`\`\`html
+<button type="button" data-tooltip="Reset the simulation" data-tooltip-placement="top">Reset</button>
+\`\`\`
+
+- Supported placement values: \`top\` (default), \`right\`, \`bottom\`, \`left\`.
+- Essential content must remain visible; a tooltip is never the only label or instruction.
+- Do not use the native \`title\` attribute or create custom tooltip markup.
+
+### Icons
+Lucide is available as global \`window.lucide\`. Use a placeholder and let the runtime initialize it:
+
+\`\`\`html
+<i data-lucide="search" aria-hidden="true"></i>
+\`\`\`
+
+- Decorative icons need \`aria-hidden="true"\`.
+- Icon-only controls need an \`aria-label\`.
+- For dynamically inserted icons, call \`window.lucide?.createIcons({ attrs: { width: 16, height: 16 } })\` after insertion.
+- Never load Lucide or Floating UI yourself.
+
+### Resource contract
+- Widget HTML stays below 2 MB. Keep data inline; aggregate or downsample large datasets.
+- Never use \`fetch\`, \`XMLHttpRequest\`, or \`WebSocket\`.
+- Approved hosts: \`cdnjs.cloudflare.com\`, \`cdn.jsdelivr.net\`, \`esm.sh\`, \`unpkg.com\`, \`fonts.googleapis.com\`, \`fonts.gstatic.com\`, and \`fonts.bunny.net\`.
+- Pin versions in external script and stylesheet URLs. The runtime itself pins Floating UI and Lucide from \`unpkg.com\`.
+`;
 
 const ART_AND_ILLUSTRATION = `## Art and illustration
 *"Draw me a sunset" / "Create a geometric pattern"*
@@ -141,7 +182,7 @@ const CHARTS_CHART_JS = `## Charts (Chart.js)
 \`\`\`
 
 **Chart.js rules**:
-- Canvas cannot resolve CSS variables. Use hardcoded hex or Chart.js defaults.
+- Canvas cannot resolve CSS variables directly. Resolve colors from \`window._themeVars()\` or \`getComputedStyle(...)\` at init, then pass those resolved values into Chart.js; never bake a light-only palette.
 - Wrap \`<canvas>\` in \`<div>\` with explicit \`height\` and \`position: relative\`.
 - **Canvas sizing**: set height ONLY on the wrapper div, never on the canvas element itself. Use position: relative on the wrapper and responsive: true, maintainAspectRatio: false in Chart.js options. Never set CSS height directly on canvas — this causes wrong dimensions, especially for horizontal bar charts.
 - For horizontal bar charts: wrapper div height should be at least (number_of_bars * 40) + 80 pixels.
@@ -150,10 +191,12 @@ const CHARTS_CHART_JS = `## Charts (Chart.js)
 - Multiple charts: use unique IDs (\`myChart1\`, \`myChart2\`). Each gets its own canvas+div pair.
 - For bubble and scatter charts: bubble radii extend past their center points, so points near axis boundaries get clipped. Pad the scale range — set \`scales.y.min\` and \`scales.y.max\` ~10% beyond your data range (same for x). Or use \`layout: { padding: 20 }\` as a blunt fallback.
 - Chart.js auto-skips x-axis labels when they'd overlap. If you have ≤12 categories and need all labels visible (waterfall, monthly series), set \`scales.x.ticks: { autoSkip: false, maxRotation: 45 }\` — missing labels make bars unidentifiable.
+- Label axes with units and directly annotate important values. Add a legend only when multiple series cannot be identified directly, and pair color with a line style, mark shape, or text label.
+- Give the chart an accessible name or concise screen-reader description, and expose the selected or hovered value in visible text for keyboard users.
 
 **Number formatting**: negative values are \`-$5M\` not \`$-5M\` — sign before currency symbol. Use a formatter: \`(v) => (v < 0 ? '-' : '') + '$' + Math.abs(v) + 'M'\`.
 
-**Legends** — always disable Chart.js default and build custom HTML. The default uses round dots and no values; custom HTML gives small squares, tight spacing, and percentages:
+**Legends** — add one only when multiple series cannot be labeled directly. When needed, disable Chart.js's default and build compact HTML. The default uses round dots and no values; custom HTML gives small squares, tight spacing, and percentages:
 
 \`\`\`js
 plugins: { legend: { display: false } }
@@ -168,7 +211,7 @@ plugins: { legend: { display: false } }
 
 Include the value/percentage in each label when the data is categorical (pie, donut, single-series bar). Position the legend above the chart (\`margin-bottom\`) or below (\`margin-top\`) — not inside the canvas.
 
-**Dashboard layout** — wrap summary numbers in metric cards (see UI fragment) above the chart. Chart canvas flows below without a card wrapper. Use \`sendPrompt()\` for drill-down: \`sendPrompt('Break down Q4 by region')\`.`;
+**Dashboard layout** — add up to three summary metrics only when changing metrics are central to the request. Otherwise begin with the chart. Chart canvas flows below without a card wrapper. Use \`sendPrompt()\` for agent drill-down only with \`interactive: true\`: \`sendPrompt('Break down Q4 by region')\`.`;
 
 const COLOR_PALETTE = `## Color palette
 
@@ -819,6 +862,7 @@ Use \`imagine_html\`. Wrap the entire thing in a single raised card. All content
 \`\`\``;
 
 const MODULE_SECTIONS: Record<string, string[]> = {
+  runtime: [WIDGET_RUNTIME],
   art: [SVG_SETUP, ART_AND_ILLUSTRATION],
   mockup: [UI_COMPONENTS, COLOR_PALETTE],
   interactive: [UI_COMPONENTS, COLOR_PALETTE],

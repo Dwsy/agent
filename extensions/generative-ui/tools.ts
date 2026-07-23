@@ -10,6 +10,45 @@ import { TEMPLATE_IDS } from "./templates/index.js";
 import { appendWidgetEvent, type WidgetRecord, WIDGETS_DIR, saveWidget, loadActiveWidgetIndex, loadWidgetIndex, loadWidgetHtml } from "./storage.js";
 import { detectDarkMode, shellHTML, wrapHTML, escapeJS, timestamp, openWindow } from "./html-helpers.js";
 
+const MAX_WIDGET_CODE_BYTES = 2 * 1024 * 1024;
+const ALLOWED_RESOURCE_HOSTS = new Set([
+  "cdnjs.cloudflare.com",
+  "cdn.jsdelivr.net",
+  "esm.sh",
+  "fonts.bunny.net",
+  "fonts.googleapis.com",
+  "fonts.gstatic.com",
+  "unpkg.com",
+]);
+
+function validateWidgetCode(code: string, interactive = false): void {
+  if (Buffer.byteLength(code, "utf8") > MAX_WIDGET_CODE_BYTES) {
+    throw new Error("widget_code must be smaller than 2 MB. Aggregate or downsample inline data.");
+  }
+  if (/<!doctype|<\/?(?:html|head|body)\b/i.test(code)) {
+    throw new Error("widget_code must be an HTML fragment without DOCTYPE, html, head, or body tags.");
+  }
+  if (/\b(?:fetch|XMLHttpRequest|WebSocket)\s*(?:\(|=|new\b)/i.test(code)) {
+    throw new Error("widget_code cannot use fetch, XMLHttpRequest, or WebSocket. Keep widget data inline.");
+  }
+  for (const match of code.matchAll(/<(?:script|link|img|audio|video|source)\b[^>]*?\b(?:src|href)\s*=\s*["']([^"']+)["']/gi)) {
+    const source = match[1];
+    if (source.startsWith("data:") || source.startsWith("blob:") || !/^https?:\/\//i.test(source)) continue;
+    let host: string;
+    try {
+      host = new URL(source).hostname;
+    } catch {
+      throw new Error("widget_code contains an invalid external resource URL.");
+    }
+    if (!ALLOWED_RESOURCE_HOSTS.has(host)) {
+      throw new Error("External widget resources must use an approved CDN host.");
+    }
+  }
+  if (interactive && !/(?:window\.glimpse\.send|sendWidgetEvent|sendPrompt|sendAnnotation)\s*\(/.test(code)) {
+    throw new Error("interactive widgets must send a choice or follow-up request through the widget event bridge.");
+  }
+}
+
 export interface ToolContext {
   hasSeenReadMe: boolean;
   streaming: StreamingWidget | null;
@@ -37,7 +76,7 @@ export function registerTools(pi: ExtensionAPI, ctx: ToolContext) {
     promptGuidelines: [
       "Call visualize_read_me once before your first show_widget call to load design guidelines.",
       "Do NOT mention the read_me call to the user — call it silently, then proceed directly to building the widget.",
-      "Pick the modules that match your use case: interactive, chart, mockup, art, diagram.",
+      "Pick the modules that match your use case: interactive, chart, mockup, art, diagram, runtime.",
       "Guidelines include a catalog of ready-made HTML fragments (flow-steps, flow-mermaid, architecture-cards, metric-chart, compare-cards, contact-card). Prefer these over multi-color SVG flow boxes.",
       "Template bodies are on-demand: first call modules only (catalog). When ready to build, re-call with templates: [\"flow-mermaid\"] (or multiple ids / \"all\") to load full HTML skeletons.",
       "Theme: always use host CSS variables (var(--color-text-*), var(--color-background-*), var(--color-border-*)). Never hardcode light-only hex. Chart.js/Mermaid must read computed CSS vars or window._themeVars() so light/dark both work.",
@@ -96,16 +135,22 @@ export function registerTools(pi: ExtensionAPI, ctx: ToolContext) {
       "IMPORTANT: Call visualize_read_me once before your first show_widget call.",
     promptSnippet: "Render interactive HTML/SVG widgets in a native macOS window (WKWebView). Supports full CSS, JS, Canvas, Chart.js.",
     promptGuidelines: [
-      "Use show_widget when the user asks for visual content: charts, diagrams, interactive explainers, UI mockups, art.",
+      "Create a widget only when it materially improves understanding or a decision; keep the visual to one dominant view.",
       "Always call visualize_read_me first to load design guidelines, then set i_have_seen_read_me: true.",
+      "For static labeled-node diagrams, prefer the Mermaid template over hand-positioned SVG; use HTML/SVG for spatial, dynamic, or adjustable visuals.",
       "The widget opens in a native macOS window — it has full browser capabilities (Canvas, JS, CDN libraries).",
       "Structure HTML as fragments: no DOCTYPE/<html>/<head>/<body>. Style first, then HTML, then scripts.",
       "Use CSS variables for all colors so widgets adapt to light/dark. Hardcoded #hex for UI chrome is a bug unless art module.",
-      "The page has window.glimpse.send(data) to send data back. Use it for user choices and interactions.",
+      "Keep controls and selections local in JavaScript. Add only controls the user requested; never invent filter, search, reset, dashboard, or KPI panels.",
+      "Use semantic HTML and native controls with labels. At 320px wide, content must wrap without clipping, horizontal scrolling, fixed positioning, or internal scrolling.",
+      "Give charts, SVGs, canvases, and custom widgets an accessible name or concise screen-reader description; pair color encodings with text, shape, or line style.",
+      "The page has window.glimpse.send(data) to return a choice or follow-up request to the agent. Use it only when the agent needs that result.",
+      "The host already provides data-tooltip support backed by Floating UI and global Lucide icons; use data-tooltip/data-lucide instead of loading either library yourself.",
+      "Keep data inline and widgets below 2 MB. Do not use fetch, XMLHttpRequest, WebSocket, or unapproved external resources.",
       "For feedback-addressable UI, give stable elements data-spec-id attributes and call sendAnnotation(targetId, comment, stateId?) to persist structured feedback.",
       "Keep widgets focused and appropriately sized. Default is 800x600 but adjust to fit content.",
       "For SVG: start code with <svg> tag, it will be auto-detected.",
-      "Set interactive=true ONLY when the widget has buttons/forms/inputs that call glimpse.send() and the agent needs the returned data. Default (false) is display-only — agent continues immediately.",
+      "Set interactive=true ONLY when the widget sends data that the agent needs to continue. Default false keeps display-only and local interactions non-blocking.",
       "Be concise in your responses",
     ],
     parameters: Type.Object({
@@ -125,9 +170,9 @@ export function registerTools(pi: ExtensionAPI, ctx: ToolContext) {
       floating: Type.Optional(Type.Boolean({ description: "Keep window always on top. Default: false." })),
       interactive: Type.Optional(Type.Boolean({
         description:
-          "Whether this widget needs user interaction (buttons, forms, inputs sending data back via glimpse.send). " +
-          "false (default): display-only, agent continues immediately. " +
-          "true: blocking, agent waits for user to interact and send data back.",
+          "Whether this widget must return a choice or follow-up request to the agent via glimpse.send. " +
+          "false (default): display-only and presentation-only interactions stay local; the agent continues immediately. " +
+          "true: blocking, the agent waits for the returned result.",
       })),
     }),
 
@@ -137,6 +182,7 @@ export function registerTools(pi: ExtensionAPI, ctx: ToolContext) {
       }
 
       const code = params.widget_code;
+      validateWidgetCode(code, params.interactive ?? false);
       const isSVG = code.trimStart().startsWith("<svg");
       const title = params.title.replace(/_/g, " ");
       const width = params.width ?? 800;
