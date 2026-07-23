@@ -2,7 +2,14 @@
  * Token Rate Status Extension
  *
  * Shows the average output tokens per second in the footer status line.
- * Uses the interval between streamed token updates; buffered responses show no rate.
+ *
+ * Timing model (robust against buffering proxies):
+ *   - decode window = first streaming delta -> message_end
+ *   - message_end is agent-core's canonical "response complete" signal, so the
+ *     window end is reliable even when a gateway coalesces the SSE stream.
+ *   - a message whose window is below MIN_MEASURABLE_GENERATION_MS is skipped
+ *     (an un-measurable/buffered stream contributes nothing instead of a bogus
+ *     spike), and the footer reports the cumulative session average.
  */
 
 import type { AssistantMessage } from "@earendil-works/pi-ai";
@@ -16,22 +23,27 @@ export function calculateTokenRate(outputTokens: number, generationMs: number): 
   return Number.isFinite(tokensPerSecond) ? tokensPerSecond : undefined;
 }
 
+type StatusContext = {
+  hasUI: boolean;
+  ui: { theme: any; setStatus: (key: string, text?: string) => void };
+};
+
 export default function (pi: ExtensionAPI) {
   const statusKey = "token-rate";
 
-  // Per-message timing (only track last message)
-  let firstTokenMs: number | null = null;
-  let lastTokenMs: number | null = null;
-  let lastOutputTokens = 0;
-  let lastGenerationMs = 0;
-  let lastCost = 0;
+  // Cumulative session totals (drive the footer average and the summary).
+  let sessionOutputTokens = 0;
+  let sessionGenerationMs = 0;
+  let sessionCost = 0;
 
-  // Current message accumulators
-  let currentOutputTokens = 0;
-  let currentInputTokens = 0;
-  let currentCacheRead = 0;
-  let currentCacheWrite = 0;
-  let currentCost = 0;
+  // Last measured turn's context size, for the agent_end breakdown.
+  let lastInputTokens = 0;
+  let lastCacheRead = 0;
+  let lastCacheWrite = 0;
+
+  // Per-message decode timing.
+  let messageStartMs: number | null = null;
+  let firstDeltaMs: number | null = null;
 
   const formatTokens = (n: number): string => {
     if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -39,32 +51,28 @@ export default function (pi: ExtensionAPI) {
     return String(n);
   };
 
-  const reset = (ctx: { hasUI: boolean; ui: { theme: any; setStatus: (key: string, text?: string) => void } }) => {
-    lastOutputTokens = 0;
-    lastGenerationMs = 0;
-    lastCost = 0;
-    currentOutputTokens = 0;
-    currentInputTokens = 0;
-    currentCacheRead = 0;
-    currentCacheWrite = 0;
-    currentCost = 0;
-    firstTokenMs = null;
-    lastTokenMs = null;
+  const reset = (ctx: StatusContext) => {
+    sessionOutputTokens = 0;
+    sessionGenerationMs = 0;
+    sessionCost = 0;
+    lastInputTokens = 0;
+    lastCacheRead = 0;
+    lastCacheWrite = 0;
+    messageStartMs = null;
+    firstDeltaMs = null;
     if (!ctx.hasUI) return;
-    const theme = ctx.ui.theme;
-    ctx.ui.setStatus(statusKey, theme.fg("dim", "-- tok/s"));
+    ctx.ui.setStatus(statusKey, ctx.ui.theme.fg("dim", "-- tok/s"));
   };
 
-  const updateStatus = (ctx: { hasUI: boolean; ui: { theme: any; setStatus: (key: string, text?: string) => void } }) => {
+  const updateStatus = (ctx: StatusContext) => {
     if (!ctx.hasUI) return;
     const theme = ctx.ui.theme;
-    const tps = calculateTokenRate(lastOutputTokens, lastGenerationMs);
+    const tps = calculateTokenRate(sessionOutputTokens, sessionGenerationMs);
     if (tps === undefined) {
       ctx.ui.setStatus(statusKey, theme.fg("dim", "-- tok/s"));
       return;
     }
-    const text = theme.fg("accent", `${tps.toFixed(1)} tok/s`);
-    ctx.ui.setStatus(statusKey, text);
+    ctx.ui.setStatus(statusKey, theme.fg("accent", `${tps.toFixed(1)} tok/s`));
   };
 
   pi.on("session_start", async (_event, ctx) => {
@@ -75,71 +83,64 @@ export default function (pi: ExtensionAPI) {
     reset(ctx);
   });
 
-  // Mark when assistant message streaming starts
+  // Mark the response start; the first delta below refines this to the decode start.
   pi.on("message_start", async (event, ctx) => {
     const message = event.message as AssistantMessage | undefined;
     if (!message || message.role !== "assistant") return;
-    firstTokenMs = null;
-    lastTokenMs = null;
+    messageStartMs = performance.now();
+    firstDeltaMs = null;
     updateStatus(ctx);
   });
 
+  // Decode starts at the first streamed delta (excludes prefill / time-to-first-token).
   pi.on("message_update", async (event) => {
     if (event.message.role !== "assistant") return;
     const eventType = event.assistantMessageEvent.type;
     if (!["text_delta", "thinking_delta", "toolcall_delta"].includes(eventType)) return;
-    const now = performance.now();
-    firstTokenMs ??= now;
-    lastTokenMs = now;
+    firstDeltaMs ??= performance.now();
   });
 
-  // Accumulate stats when assistant message streaming ends
+  // Fold the finished message into the session average when it is measurable.
   pi.on("message_end", async (event, ctx) => {
     const message = event.message as AssistantMessage | undefined;
     if (!message || message.role !== "assistant") {
-      firstTokenMs = null;
-      lastTokenMs = null;
+      messageStartMs = null;
+      firstDeltaMs = null;
       return;
     }
 
-    lastGenerationMs = firstTokenMs !== null && lastTokenMs !== null
-      ? Math.max(0, lastTokenMs - firstTokenMs)
-      : 0;
-    firstTokenMs = null;
-    lastTokenMs = null;
+    const decodeStartMs = firstDeltaMs ?? messageStartMs;
+    const generationMs = decodeStartMs !== null ? Math.max(0, performance.now() - decodeStartMs) : 0;
+    messageStartMs = null;
+    firstDeltaMs = null;
 
     const outputTokens = message.usage?.output ?? 0;
-    const inputTokens = message.usage?.input ?? 0;
-    const cacheRead = message.usage?.cacheRead ?? 0;
-    const cacheWrite = message.usage?.cacheWrite ?? 0;
-
+    if (outputTokens > 0 && generationMs >= MIN_MEASURABLE_GENERATION_MS) {
+      sessionOutputTokens += outputTokens;
+      sessionGenerationMs += generationMs;
+    }
     if (outputTokens > 0) {
-      lastOutputTokens = outputTokens;
-      currentOutputTokens = outputTokens;
-      currentInputTokens = inputTokens;
-      currentCacheRead = cacheRead;
-      currentCacheWrite = cacheWrite;
+      lastInputTokens = message.usage?.input ?? 0;
+      lastCacheRead = message.usage?.cacheRead ?? 0;
+      lastCacheWrite = message.usage?.cacheWrite ?? 0;
     }
 
-    // Extract cost from usage
     const cost = message.usage?.cost?.total ?? 0;
-    if (cost > 0) {
-      lastCost = cost;
-      currentCost = cost;
-    }
+    if (cost > 0) sessionCost += cost;
 
     updateStatus(ctx);
   });
 
-  // Summary notification at agent end
+  // Summary notification at agent end.
   pi.on("agent_end", async (_event, ctx) => {
     if (!ctx.hasUI) return;
-    if (lastGenerationMs <= 0 || lastOutputTokens <= 0) return;
-    const tps = calculateTokenRate(lastOutputTokens, lastGenerationMs);
+    const tps = calculateTokenRate(sessionOutputTokens, sessionGenerationMs);
     if (tps === undefined) return;
     const parts = [`${tps.toFixed(1)} tok/s`];
-    if (lastCost > 0) parts.push(`Cost: $${lastCost.toFixed(4)}`);
-    parts.push(`out ${formatTokens(lastOutputTokens)}, in ${formatTokens(currentInputTokens)}, cache r/w ${formatTokens(currentCacheRead)}/${formatTokens(currentCacheWrite)}`);
+    if (sessionCost > 0) parts.push(`Cost: $${sessionCost.toFixed(4)}`);
+    parts.push(
+      `out ${formatTokens(sessionOutputTokens)}, in ${formatTokens(lastInputTokens)}, cache r/w ${formatTokens(lastCacheRead)}/${formatTokens(lastCacheWrite)}`,
+    );
     ctx.ui.notify(parts.join(" | "), "info");
   });
 }
