@@ -258,3 +258,17 @@ extensions/ponytail-main/
 models-store.json
 tool-stats.jsonl
 work/
+
+# Skills resolved from ~/.agent/skills (local / secret-prone)
+skills/115-server-config
+skills/agents-sdk
+skills/cloudflare
+skills/cloudflare-email-service
+skills/cloudflare-one
+skills/cloudflare-one-migrations
+skills/durable-objects
+skills/sandbox-sdk
+skills/turnstile-spin
+skills/web-perf
+skills/workers-best-practices
+skills/wrangler
