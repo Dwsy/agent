@@ -253,3 +253,8 @@ memex-compare/vscode-extension/*.vsix
 
 # Local vendored / experiment extensions
 extensions/ponytail-main/
+
+# Local state / secrets-prone paths
+models-store.json
+tool-stats.jsonl
+work/
