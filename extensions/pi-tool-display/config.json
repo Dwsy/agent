@@ -1,9 +1,10 @@
 {
+  "enabled": true,
   "registerToolOverrides": {
     "read": true,
-    "grep": false,
-    "find": false,
-    "ls": false,
+    "grep": true,
+    "find": true,
+    "ls": true,
     "bash": true,
     "edit": true,
     "write": true
@@ -13,10 +14,10 @@
   "readOutputMode": "hidden",
   "searchOutputMode": "hidden",
   "mcpOutputMode": "hidden",
-  "previewLines": 8,
+  "previewLines": 4,
   "expandedPreviewMaxLines": 4000,
   "bashOutputMode": "opencode",
-  "bashCollapsedLines": 10,
+  "bashCollapsedLines": 5,
   "diffViewMode": "auto",
   "diffIndicatorMode": "bars",
   "diffSplitMinWidth": 120,
