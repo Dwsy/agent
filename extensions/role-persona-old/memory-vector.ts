@@ -38,7 +38,7 @@ export interface VectorEntry {
   id: string;
   text: string;
   vector: number[];
-  kind: "learning" | "preference";
+  kind: "learning" | "preference" | "event";
   category: string;
   createdAt: number;
 }
@@ -286,7 +286,7 @@ class VectorDB {
 let activeDB: VectorDB | null = null;
 let activeEmbedding: EmbeddingProvider | null = null;
 let activeRolePath: string | null = null;
-let indexQueue: Array<{ id: string; text: string; kind: "learning" | "preference"; category: string }> = [];
+let indexQueue: Array<{ id: string; text: string; kind: "learning" | "preference" | "event"; category: string }> = [];
 let indexFlushTimer: ReturnType<typeof setTimeout> | null = null;
 
 // ============================================================================
@@ -433,7 +433,7 @@ export function isVectorActive(): boolean {
 export function queueVectorIndex(
   id: string,
   text: string,
-  kind: "learning" | "preference",
+  kind: "learning" | "preference" | "event",
   category: string = ""
 ): void {
   if (!isVectorActive()) return;
@@ -679,7 +679,7 @@ export async function rebuildVectorIndex(
   }
 
   const data = readRoleMemory(rolePath, roleName);
-  const items: Array<{ id: string; text: string; kind: "learning" | "preference"; category: string; source: string }> = [];
+  const items: Array<{ id: string; text: string; kind: "learning" | "preference" | "event"; category: string; source: string }> = [];
 
   // Index consolidated.md learnings
   for (const l of data.learnings) {
@@ -688,6 +688,12 @@ export async function rebuildVectorIndex(
   // Index consolidated.md preferences
   for (const p of data.preferences) {
     items.push({ id: p.id, text: p.text, kind: "preference", category: p.category, source: "consolidated" });
+  }
+  // Index consolidated.md events
+  for (const e of data.events) {
+    const text = [e.title, e.body].filter(Boolean).join("\n").trim();
+    if (!text) continue;
+    items.push({ id: e.id, text, kind: "event", category: e.date || "", source: "consolidated" });
   }
 
   // Index daily/*.md entries
@@ -714,7 +720,8 @@ export async function rebuildVectorIndex(
         if (!text) continue;
         
         const id = `daily-${date}-${i}`;
-        const kind = category === "preference" ? "preference" : "learning";
+        const kind =
+          category === "preference" ? "preference" : category === "event" ? "event" : "learning";
         items.push({ id, text, kind, category, source: `daily/${date}` });
       }
     }

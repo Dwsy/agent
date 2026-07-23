@@ -5,19 +5,26 @@ import { readFileSync } from "node:fs";
 // 我们需要直接访问 extractJsonObject 和 parseAutoMemoryResponse 函数
 // 由于它们不是导出的，我们需要在测试文件中重新定义它们（与 memory-llm.ts 保持同步）
 
+function stripThinkingMarkup(text: string): string {
+  return text
+    .replace(/<think>[\s\S]*?<\/think>/gi, "")
+    .replace(/<thinking>[\s\S]*?<\/thinking>/gi, "")
+    .replace(/<reasoning>[\s\S]*?<\/reasoning>/gi, "")
+    .replace(/<redacted_reasoning>[\s\S]*?<\/redacted_reasoning>/gi, "")
+    .trim();
+}
+
 function extractJsonObject(text: string): string | null {
-  let trimmed = text.trim();
+  let trimmed = stripThinkingMarkup(text.trim());
 
-  // 剥离 <think>...</think> 标签（thinking models 的思考过程）
-  trimmed = trimmed.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
-
-  // 剥离 markdown 代码块（```json ... ``` 或 ``` ... ```）
   const codeBlockMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
   if (codeBlockMatch) {
     trimmed = codeBlockMatch[1].trim();
   }
 
-  // 尝试提取 JSON 对象
+  const firstBrace = trimmed.indexOf("{");
+  if (firstBrace > 0) trimmed = trimmed.slice(firstBrace);
+
   if (trimmed.startsWith("{") && trimmed.endsWith("}")) return trimmed;
   const match = trimmed.match(/\{[\s\S]*\}/);
   return match ? match[0] : null;
@@ -38,10 +45,14 @@ test("memory extraction system prompt defines the JSON response contract", () =>
   const systemPrompt = source.match(/const MEMORY_EXTRACTION_SYSTEM_PROMPT = `([\s\S]*?)`;/)?.[1];
 
   assert.ok(systemPrompt, "System prompt should be present");
-  assert.match(systemPrompt, /Return exactly one JSON object matching this schema/);
-  assert.match(systemPrompt, /with both arrays present/);
+  assert.match(systemPrompt, /JSON-only memory extractor/);
+  assert.match(systemPrompt, /OUTPUT CONTRACT/);
+  assert.match(systemPrompt, /Empty arrays are the only valid empty result/);
   assert.match(systemPrompt, /\$\{AUTO_MEMORY_RESPONSE_SCHEMA\}/);
+  assert.match(systemPrompt, /\$\{AUTO_MEMORY_EMPTY_RESPONSE\}/);
   assert.match(source, /const AUTO_MEMORY_RESPONSE_SCHEMA = '\{"learnings"/);
+  assert.match(source, /const AUTO_MEMORY_EMPTY_RESPONSE = '\{"learnings":\[\]/);
+  assert.match(source, /Respond with exactly one JSON object matching the schema/);
 });
 
 test("parseAutoMemoryResponse handles <think> tags before JSON", () => {
@@ -163,4 +174,14 @@ Now I'll extract the learnings and preferences.
   assert.ok(result !== null, "Should parse minimax-style response");
   assert.equal(result?.learnings?.length, 2);
   assert.equal(result?.preferences?.length, 1);
+});
+
+test("parseAutoMemoryResponse strips prose prefix before JSON object", () => {
+  const input = `I will return empty arrays because nothing is durable.
+
+{"learnings": [], "preferences": []}`;
+  const result = parseAutoMemoryResponse(input);
+  assert.ok(result !== null, "Should parse JSON after prose prefix");
+  assert.equal(result?.learnings?.length, 0);
+  assert.equal(result?.preferences?.length, 0);
 });

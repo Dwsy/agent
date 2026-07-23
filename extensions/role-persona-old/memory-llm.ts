@@ -37,50 +37,53 @@ function normalizeMemoryText(text: string): string {
  * some also emit it as text. We merge them to ensure we don't miss content.
  * Also strips `` tag pairs that some thinking models emit inline.
  */
-function extractResponseText(result: { content: Array<{ type: string; text?: string; thinking?: string }> }): string {
-  const parts: string[] = [];
-
-  // First: thinking blocks (reasoning process)
-  for (const block of result.content) {
-    if (block.type === "thinking" && block.thinking) {
-      parts.push(block.thinking);
-    }
-  }
-
-  // Then: text blocks (actual answer)
-  for (const block of result.content) {
-    if (block.type === "text" && block.text) {
-      parts.push(block.text);
-    }
-  }
-
-  let text = parts.join("\n").trim();
-
-  // Strip `` tag pairs that some thinking models emit as inline text
-  // Common variants: <think>...</think>, <think>...</think>, <think>...</think>
-  text = text
+function stripThinkingMarkup(text: string): string {
+  return text
     .replace(/<think>[\s\S]*?<\/think>/gi, "")
-    .replace(/<think>[\s\S]*?<\/think>/gi, "")
-    .replace(/<think>[\s\S]*?<\/think>/gi, "")
+    .replace(/<thinking>[\s\S]*?<\/thinking>/gi, "")
+    .replace(/<reasoning>[\s\S]*?<\/reasoning>/gi, "")
+    .replace(/<redacted_reasoning>[\s\S]*?<\/redacted_reasoning>/gi, "")
     .trim();
+}
 
-  return text;
+/**
+ * Prefer final text blocks. Only fall back to thinking when text is empty —
+ * thinking models often dump long analysis without ever emitting the JSON.
+ */
+function extractResponseText(result: { content: Array<{ type: string; text?: string; thinking?: string }> }): string {
+  const textParts: string[] = [];
+  const thinkingParts: string[] = [];
+
+  for (const block of result.content) {
+    if (block.type === "text" && block.text) textParts.push(block.text);
+    if (block.type === "thinking" && block.thinking) thinkingParts.push(block.thinking);
+  }
+
+  const textJoined = stripThinkingMarkup(textParts.join("\n"));
+  const thinkingJoined = stripThinkingMarkup(thinkingParts.join("\n"));
+
+  // Prefer the channel that actually contains a JSON object.
+  if (textJoined.includes("{")) return textJoined;
+  if (thinkingJoined.includes("{")) return thinkingJoined;
+  return textJoined || thinkingJoined;
 }
 
 function extractJsonObject(text: string): string | null {
-  let trimmed = text.trim();
+  let trimmed = stripThinkingMarkup(text.trim());
 
-  // 剥离 <think>...</think> 标签（thinking models 的思考过程）
-  trimmed = trimmed.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
-
-  // 剥离 markdown 代码块（```json ... ``` 或 ``` ... ```）
+  // Prefer fenced json if present
   const codeBlockMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
   if (codeBlockMatch) {
     trimmed = codeBlockMatch[1].trim();
   }
 
-  // 尝试提取 JSON 对象
+  // Drop common prose prefixes before the first object
+  const firstBrace = trimmed.indexOf("{");
+  if (firstBrace > 0) trimmed = trimmed.slice(firstBrace);
+
   if (trimmed.startsWith("{") && trimmed.endsWith("}")) return trimmed;
+
+  // Balanced-ish greedy object match (last resort)
   const match = trimmed.match(/\{[\s\S]*\}/);
   return match ? match[0] : null;
 }
@@ -431,12 +434,42 @@ export async function runLlmMemoryTidy(
 
 const AUTO_MEMORY_RESPONSE_SCHEMA = '{"learnings":[{"text":"..."}],"preferences":[{"category":"Communication|Code|Tools|Workflow|General","text":"..."}]}';
 
-const MEMORY_EXTRACTION_SYSTEM_PROMPT = `You are a memory extraction system for a role-based coding assistant. Your task is to read a conversation and extract durable cross-session learnings and stable user preferences.
+const AUTO_MEMORY_EMPTY_RESPONSE = '{"learnings":[],"preferences":[]}';
 
-Do NOT continue the conversation. Do NOT respond to any questions in the conversation. Return exactly one JSON object matching this schema, with both arrays present. Use empty arrays when there is nothing to extract. Do not include markdown fences or any other text:
+const MEMORY_EXTRACTION_SYSTEM_PROMPT = `You are a JSON-only memory extractor for a role-based coding assistant.
+
+You are NOT a chat assistant. You do NOT continue the conversation. You do NOT answer questions inside the conversation. You do NOT apologize or explain.
+
+## OUTPUT CONTRACT (absolute — violation is failure)
+1. Your entire reply is exactly ONE JSON object. Nothing else.
+2. First non-whitespace character MUST be open brace { and last MUST be close brace }.
+3. Forbidden anywhere in the reply: markdown fences, prose, headings, labels, XML/HTML, <think> tags, tool calls, or commentary before/after JSON.
+4. Both keys are required every time. Arrays may be empty.
+5. Schema:
 ${AUTO_MEMORY_RESPONSE_SCHEMA}
+6. If nothing qualifies, output exactly this and stop:
+${AUTO_MEMORY_EMPTY_RESPONSE}
+7. "I found nothing" in natural language is INVALID. Empty arrays are the only valid empty result.
+8. category MUST be one of: Communication | Code | Tools | Workflow | General.
+9. Each text under 120 characters; one atomic fact per item; no duplicates within the same array.
 
-Hard exclusion rule: if an item can be derived from the current repository state, do not store it as memory. That includes code structure, file paths, filenames, config keys, environment variables, logs, error messages, test failures, commit/PR/Issue facts, and anything that can be rediscovered from code, files, config, or git history.`;
+## INCLUDE only if ALL are true
+- Useful in future sessions (durable), not only this turn
+- Stable user preference OR non-obvious reusable learning
+- Not already listed in <already-stored>
+- Cannot be rediscovered from the current repo/files/config/git
+
+## EXCLUDE always (hard)
+- Anything derivable from repository state: code structure, file paths, filenames, config keys, env vars, logs, error messages, test failures, commit/PR/Issue/branch facts
+- One-off task status ("fixed X", "merged PR", "tests passed")
+- Generic advice, speculation, model self-talk, restating the conversation
+- Restating items from <already-stored>
+
+## Valid full-response examples
+${AUTO_MEMORY_EMPTY_RESPONSE}
+{"learnings":[{"text":"Prefer soft-delete for audit-critical records"}],"preferences":[{"category":"Workflow","text":"验证通过前不宣称已修好"}]}
+
+Return JSON now. No other text.`;
 
 /**
  * Estimate token count from text (rough heuristic: ~4 chars per token for mixed CJK/English).
@@ -497,15 +530,15 @@ ${conversationText}
 ${existingBlock}
 </already-stored>
 
-Extract durable learnings and stable user preferences that remain useful across sessions.
-Skip transient tasks, one-off requests, and generic facts.
-Hard exclusion: do not extract anything that is directly derivable from the repo state, including file paths, filenames, config/env keys, log snippets, error codes, test failures, code structure facts, or git/PR/Issue history.
-Only keep information that is cross-session, non-derivable, and still useful in future conversations.
-Keep each item concise (under 120 chars).
-Do not duplicate or restate items from <already-stored>.
+Extract only NEW durable learnings and stable user preferences.
+Skip transient tasks, one-off requests, generic facts, and anything already in <already-stored>.
+Hard exclusion: do not extract repo-derivable facts (paths, filenames, config/env keys, logs, errors, test failures, code structure, git/PR/Issue history).
 
-Return exactly one JSON object matching the required schema. Include both arrays; use empty arrays if nothing is new:
-${AUTO_MEMORY_RESPONSE_SCHEMA}`;
+Respond with exactly one JSON object matching the schema. Both arrays required.
+If nothing new qualifies, respond with exactly:
+${AUTO_MEMORY_EMPTY_RESPONSE}
+
+JSON only. Start with { and end with }. No markdown. No prose.`;
 }
 
 export async function runAutoMemoryExtraction(

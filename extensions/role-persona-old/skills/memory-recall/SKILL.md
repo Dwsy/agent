@@ -34,9 +34,9 @@ memory({ action: "search", query: "<user topic or key concept>" })
 ```
 
 The search automatically:
-- Searches consolidated learnings, preferences, events
-- Searches pending memories (auto-promotes score ≥0.5)
-- Searches last 7 days of daily files
+- Searches consolidated learnings, preferences, **events** (block-level milestones)
+- Searches **pending** (all matches ≥ minScore surface as `[pending]`; score ≥0.5 auto-promotes to learning)
+- Searches last 7 days of daily files (EVENT/LESSON/PREFERENCE keep their kind)
 - **Tag boost**: matching tags +0.3 score, related tags +0.15
 - **Auto-reinforce**: matches ≥0.5 get `used` count +1
 

@@ -40,6 +40,7 @@ import { SelectList, Text, Container } from "@earendil-works/pi-tui";
 import { config, reloadConfig } from "./config.ts";
 
 import {
+  addRoleEvent,
   addRoleLearning,
   addRolePreference,
   addPendingLearning,
@@ -64,6 +65,7 @@ import {
   reinforceRoleLearning,
   repairRoleMemory,
   searchRoleMemory,
+  formatSearchMatchLine,
 } from "./memory-md.ts";
 import { RoleMemoryViewerComponent, buildRoleMemoryViewerMarkdown, openMemoryServer } from "./memory-viewer.ts";
 import { runAutoMemoryExtraction, runLlmMemoryTidy, ensureDailySummaries } from "./memory-llm.ts";
@@ -399,12 +401,12 @@ export default function rolePersonaExtension(pi: ExtensionAPI) {
     stopMemoryCheckpointSpinner();
 
     memoryCheckpointFrame = 0;
-    ctx.ui.setStatus("memory-checkpoint", SPINNER_FRAMES[memoryCheckpointFrame]);
+    // ctx.ui.setStatus("memory-checkpoint", SPINNER_FRAMES[memoryCheckpointFrame]);
 
     memoryCheckpointSpinner = setInterval(() => {
       try {
         memoryCheckpointFrame = (memoryCheckpointFrame + 1) % SPINNER_FRAMES.length;
-        ctx.ui.setStatus("memory-checkpoint", SPINNER_FRAMES[memoryCheckpointFrame]);
+        // ctx.ui.setStatus("memory-checkpoint", SPINNER_FRAMES[memoryCheckpointFrame]);
       } catch {
         // ctx is stale after session replacement/reload — stop spinner
         stopMemoryCheckpointSpinner();
@@ -414,26 +416,7 @@ export default function rolePersonaExtension(pi: ExtensionAPI) {
 
   function setMemoryCheckpointResult(ctx: ExtensionContext, reason: string, learnings: number, prefs: number): void {
     if (!isTuiAvailable(ctx)) return;
-
-const reasonConfig = {
-  keyword:         { badge: "✳", label: "KEY" },     // 关键词触发
-  "batch-5-turns": { badge: "✶", label: "B5" },      // 批量5轮
-  "interval-30m":  { badge: "✦", label: "30M" },     // 30分钟定时
-  "session-shutdown": { badge: "✧", label: "EXIT" }, // 会话退出
-};
-
-const getBadgeAndLabel = (reason) => {
-  const config = reasonConfig[reason] || { badge: "✧", label: "CHECK" };
-  return {
-    badge: config.badge,
-    reasonLabel: config.label,
-  };
-};
-
-
-const { badge, reasonLabel } = getBadgeAndLabel(reason);
-
-    ctx.ui.setStatus("memory-checkpoint", `${badge} ${reasonLabel} ${learnings}L ${prefs}P`);
+    // ctx.ui.setStatus("memory-checkpoint", `${badge} ${reasonLabel} ${learnings}L ${prefs}P`);
   }
 
   async function flushAutoMemory(messages: unknown[], ctx: ExtensionContext, reason: string): Promise<void> {
@@ -1111,8 +1094,11 @@ Rules:
           }
           if (item.type === "event") {
             if (!item.content?.trim()) continue;
-            appendDailyRoleMemory(rolePath, "event", item.content);
-            memLogPush({ source: "compaction", op: "event", content: item.content, stored: true });
+            const result = addRoleEvent(rolePath, roleName, item.content, { appendDaily: true });
+            memLogPush({ source: "compaction", op: "event", content: item.content, stored: result.stored, detail: result.reason });
+            if (result.stored && result.id && config.vectorMemory?.autoIndex) {
+              queueVectorIndex(result.id, item.content, "event");
+            }
             continue;
           }
           if (item.type === "knowledge") {
@@ -1412,9 +1398,9 @@ Rules:
     name: "memory",
     label: "Role Memory",
     description:
-      "Manage role memory in memory/consolidated.md (markdown sections). Actions: add_learning, add_preference, update_learning, update_preference, delete_learning, delete_preference, reinforce, search, list, consolidate, repair, llm_tidy, vector_rebuild, vector_stats.",
+      "Manage role memory in memory/consolidated.md (markdown sections). Actions: add_learning, add_preference, add_event, update_learning, update_preference, delete_learning, delete_preference, reinforce, search, list, consolidate, repair, llm_tidy, vector_rebuild, vector_stats. search covers learnings, preferences, events, pending, and recent daily.",
     parameters: Type.Object({
-      action: StringEnum(["add_learning", "add_preference", "update_learning", "update_preference", "delete_learning", "delete_preference", "reinforce", "search", "list", "consolidate", "repair", "llm_tidy", "vector_rebuild", "vector_stats"] as const),
+      action: StringEnum(["add_learning", "add_preference", "add_event", "update_learning", "update_preference", "delete_learning", "delete_preference", "reinforce", "search", "list", "consolidate", "repair", "llm_tidy", "vector_rebuild", "vector_stats"] as const),
       content: Type.Optional(Type.String({ description: "Memory text" })),
       category: Type.Optional(Type.String({ description: "Preference category" })),
       query: Type.Optional(Type.String({ description: "Search query" })),
@@ -1484,6 +1470,31 @@ Rules:
           }
           return {
             content: [{ type: "text", text: `Stored preference [${result.category}]: ${params.content}` }],
+            details: result,
+          };
+        }
+
+        case "add_event": {
+          if (!params.content) {
+            return { content: [{ type: "text", text: "Error: content is required" }], details: { error: true } };
+          }
+          const result = addRoleEvent(currentRolePath, currentRole, params.content, {
+            title: params.category || undefined, // optional title via category field
+            appendDaily: true,
+          });
+          memLogPush({ source: "tool", op: "event", content: params.content, stored: result.stored, detail: result.reason });
+          log("memory-tool", `add_event: ${result.stored ? "stored" : result.reason} id=${result.id || "-"}`, params.content);
+          if (!result.stored) {
+            return {
+              content: [{ type: "text", text: result.duplicate ? "Already stored" : "Not stored" }],
+              details: result,
+            };
+          }
+          if (result.id && config.vectorMemory?.autoIndex) {
+            queueVectorIndex(result.id, params.content, "event");
+          }
+          return {
+            content: [{ type: "text", text: `Stored event: ${params.content}` }],
             details: result,
           };
         }
@@ -1597,13 +1608,7 @@ Rules:
           const searchMode = (isVectorActive() && config.vectorMemory?.hybridSearch) ? "hybrid" : "keyword";
           log("memory-tool", `search(${searchMode}): "${query}" -> ${matches.length} matches`);
           const text = matches.length
-            ? matches
-                .map((m) => {
-                  if (m.kind === "learning") return `[${m.id}] [${(m as any).used ?? "?"}x] ${m.text}`;
-                  if (m.kind === "preference") return `[${m.id}] [${m.category}] ${m.text}`;
-                  return `[event] ${m.text}`;
-                })
-                .join("\n")
+            ? matches.map((m) => formatSearchMatchLine(m)).join("\n")
             : "No matches";
           return {
             content: [{ type: "text", text }],
@@ -1613,10 +1618,16 @@ Rules:
 
         case "list": {
           const result = listRoleMemory(currentRolePath, currentRole);
-          log("memory-tool", `list: ${result.learnings}L ${result.preferences}P ${result.issues} issues`);
+          log("memory-tool", `list: ${result.learnings}L ${result.preferences}P ${result.events}E ${result.pending}Pend ${result.issues} issues`);
           return {
             content: [{ type: "text", text: result.text }],
-            details: { learnings: result.learnings, preferences: result.preferences, issues: result.issues },
+            details: {
+              learnings: result.learnings,
+              preferences: result.preferences,
+              events: result.events,
+              pending: result.pending,
+              issues: result.issues,
+            },
           };
         }
 

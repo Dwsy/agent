@@ -26,6 +26,18 @@ export interface MemoryPreferenceRecord {
   tags?: string[];
 }
 
+/** Durable timeline / milestone entries under # Events */
+export interface MemoryEventRecord {
+  id: string;
+  date: string;
+  title: string;
+  body: string;
+}
+
+export function eventSearchText(event: MemoryEventRecord): string {
+  return [event.title, event.body].filter(Boolean).join("\n").trim();
+}
+
 export interface RoleMemoryMetadata {
   name: string;
   version: string;
@@ -43,16 +55,18 @@ export interface RoleMemoryData {
   lastConsolidated?: string;
   learnings: MemoryLearningRecord[];
   preferences: MemoryPreferenceRecord[];
-  events: string[];
+  events: MemoryEventRecord[];
   issues: string[];
 }
 
 export interface MemorySearchMatch {
-  kind: "learning" | "preference" | "event";
+  kind: "learning" | "preference" | "event" | "pending";
   id?: string;
   text: string;
   category?: string;
   used?: number;
+  date?: string;
+  source?: string;
 }
 
 export interface PendingMemoryRecord {
@@ -490,6 +504,79 @@ function dedupeLearnings(learnings: MemoryLearningRecord[]): MemoryLearningRecor
   return kept;
 }
 
+/**
+ * Group raw # Events lines into structured blocks.
+ * Canonical form: ## [YYYY-MM-DD] Title + body lines.
+ * Free-form / legacy lines become a single orphan block for search + round-trip.
+ */
+export function parseEventBlocks(eventLines: string[]): MemoryEventRecord[] {
+  const blocks: MemoryEventRecord[] = [];
+  let current: { date: string; title: string; body: string[] } | null = null;
+
+  const flush = () => {
+    if (!current) return;
+    const body = current.body.join("\n").replace(/\n+$/, "").trim();
+    const title = normalizeText(current.title);
+    if (!title && !body) {
+      current = null;
+      return;
+    }
+    if (isPlaceholderItem(title || body)) {
+      current = null;
+      return;
+    }
+    const text = [title, body].filter(Boolean).join("\n");
+    blocks.push({
+      id: hashId("event", text, current.date),
+      date: current.date,
+      title: title || body.slice(0, 80),
+      body: title ? body : "",
+    });
+    current = null;
+  };
+
+  for (const raw of eventLines) {
+    const line = raw.replace(/\s+$/, "");
+    const h2 = line.match(/^##\s+(?:\[(\d{4}-\d{2}-\d{2})\]\s*)?(.+)$/);
+    if (h2) {
+      flush();
+      current = { date: h2[1] || "", title: h2[2].trim(), body: [] };
+      continue;
+    }
+    // Top-level # headings that leaked into events (not ##) — start orphan if needed
+    if (/^#\s+/.test(line) && !line.startsWith("##")) {
+      if (!current) {
+        current = { date: "", title: line.replace(/^#+\s+/, "").trim(), body: [] };
+      } else {
+        current.body.push(line);
+      }
+      continue;
+    }
+    if (!current) {
+      if (!line.trim() || isPlaceholderItem(line.replace(/^[-*]\s+/, ""))) continue;
+      current = { date: "", title: "", body: [line] };
+      continue;
+    }
+    current.body.push(line);
+  }
+  flush();
+  return blocks;
+}
+
+function renderEventBlocks(events: MemoryEventRecord[]): string[] {
+  if (events.length === 0) return ["- (none)"];
+  const lines: string[] = [];
+  for (const event of events) {
+    const title = event.title || "Event";
+    lines.push(event.date ? `## [${event.date}] ${title}` : `## ${title}`);
+    if (event.body.trim()) {
+      lines.push(event.body.trimEnd());
+    }
+    lines.push("");
+  }
+  return lines;
+}
+
 function parseRoleMemory(content: string, roleName: string): RoleMemoryData {
   const { metadata: parsedMetadata, body } = parseFrontmatter(content);
   const lines = body.split(/\r?\n/);
@@ -675,7 +762,7 @@ function parseRoleMemory(content: string, roleName: string): RoleMemoryData {
     lastConsolidated,
     learnings: dedupedLearnings,
     preferences: Array.from(prefMap.values()),
-    events,
+    events: parseEventBlocks(events),
     issues,
   };
 }
@@ -748,11 +835,7 @@ function renderRoleMemory(data: RoleMemoryData): string {
   }
 
   lines.push("# Events");
-  if (data.events.length === 0) {
-    lines.push("- (none)");
-  } else {
-    lines.push(...data.events);
-  }
+  lines.push(...renderEventBlocks(data.events));
 
   return lines.join("\n").replace(/\n+$/, "") + "\n";
 }
@@ -1053,6 +1136,49 @@ export function appendDailyRoleMemory(
   log("daily-memory", `[${category}] ${text.slice(0, 120)}`);
 }
 
+/**
+ * Append a durable event to consolidated # Events (+ optional daily log).
+ * content: free text; optional title; date defaults to today.
+ */
+export function addRoleEvent(
+  rolePath: string,
+  roleName: string,
+  content: string,
+  options?: { title?: string; date?: string; appendDaily?: boolean }
+): { stored: boolean; duplicate?: boolean; id?: string; reason?: string } {
+  const body = normalizeText(content);
+  if (!body || body === "(none)") return { stored: false, reason: "empty" };
+
+  const date = options?.date || today();
+  const title = normalizeText(options?.title || "") || body.slice(0, 80);
+  const full = title === body ? title : `${title}\n${body}`;
+  const id = hashId("event", full, date);
+
+  const data = readRoleMemory(rolePath, roleName);
+  const exact = data.events.find((e) => e.id === id || eventSearchText(e).toLowerCase() === full.toLowerCase());
+  if (exact) return { stored: false, duplicate: true, id: exact.id, reason: "duplicate" };
+
+  // Soft dedupe: high token overlap with existing event
+  const tokens = tokenize(full.toLowerCase());
+  const similar = data.events.find((e) => jaccard(tokens, tokenize(eventSearchText(e).toLowerCase())) >= config.memory.dedupeThreshold);
+  if (similar) return { stored: false, duplicate: true, id: similar.id, reason: "duplicate" };
+
+  data.events.unshift({
+    id,
+    date,
+    title,
+    body: title === body ? "" : body,
+  });
+  saveRoleMemory(rolePath, data);
+
+  if (options?.appendDaily !== false) {
+    appendDailyRoleMemory(rolePath, "event", full);
+  }
+
+  log("event", `stored [${id}] ${full.slice(0, 120)}`);
+  return { stored: true, id };
+}
+
 export function addRoleLearning(
   rolePath: string,
   roleName: string,
@@ -1343,10 +1469,25 @@ export interface ScoredMemoryMatch extends MemorySearchMatch {
   score: number;
 }
 
+/** Compact search line — no square brackets (saves prompt tokens). */
+export function formatSearchMatchLine(m: MemorySearchMatch & { score?: number }, maxText = 160): string {
+  const text = normalizeText(m.text).slice(0, maxText);
+  if (m.kind === "learning") return `learning ${(m.used ?? "?")}x ${text}`;
+  if (m.kind === "preference") return `preference ${m.category || "General"} ${text}`;
+  if (m.kind === "pending") return `pending ${text}`;
+  return m.date ? `event ${m.date} ${text}` : `event ${text}`;
+}
+
+// Event/pending need stronger hits (long/noisy text otherwise floods results)
+const EVENT_MIN_SCORE = 0.35;
+const PENDING_MIN_SCORE = 0.28;
+const MAX_EVENTS_IN_RESULTS = 2;
+const MAX_PENDING_IN_RESULTS = 2;
+
 /**
  * Search role memory with scored ranking.
  * Uses substring match + token overlap + individual token hits.
- * Results sorted by score descending. Minimum threshold: 0.1.
+ * Results sorted by score descending; event/pending are stricter + capped.
  */
 export function searchRoleMemory(
   rolePath: string,
@@ -1381,11 +1522,19 @@ export function searchRoleMemory(
     }
   }
 
-  // Search consolidated memory events
+  // Search consolidated memory events (block-level; stricter floor)
+  const eventMin = Math.max(minScore, EVENT_MIN_SCORE);
   for (const event of data.events) {
-    const s = scoreMatch(q, queryTokens, event.toLowerCase());
-    if (s >= minScore) {
-      scored.push({ kind: "event", text: event, score: s });
+    const full = eventSearchText(event);
+    const s = scoreMatch(q, queryTokens, full.toLowerCase());
+    if (s >= eventMin) {
+      scored.push({
+        kind: "event",
+        id: event.id,
+        text: full.slice(0, 200),
+        date: event.date || undefined,
+        score: s,
+      });
     }
   }
 
@@ -1472,25 +1621,38 @@ export function searchRoleMemory(
     }
   }
 
-  // Search pending memories and auto-promote relevant ones (usage-driven promotion)
-  if (options?.autoPromotePending !== false && roleName) {
+  // Pending: surface above PENDING_MIN_SCORE; auto-promote only when score ≥ 0.5
+  {
+    const pendingMin = Math.max(minScore, PENDING_MIN_SCORE);
     const pendingData = readPendingMemory(rolePath);
     for (const item of pendingData.items) {
       if (item.promoted || item.discarded) continue;
+      if (!item.text) continue;
       const s = scoreMatch(q, queryTokens, item.text.toLowerCase());
-      // Higher threshold for auto-promote (must be very relevant)
-      if (s >= 0.5) {
+      if (s < pendingMin) continue;
+
+      let kind: "pending" | "learning" = "pending";
+      let score = s;
+      if (options?.autoPromotePending !== false && roleName && s >= 0.5 && item.id) {
         const result = promotePendingLearning(rolePath, roleName, item.id);
         if (result.promoted) {
           log("search-promote", `auto-promoted from search: ${item.text.slice(0, 50)}`);
-          // Add to results with bonus
-          scored.push({ kind: "learning", id: item.id, text: item.text, used: 0, score: s * 1.1 });
+          kind = "learning";
+          score = s * 1.1;
         }
       }
+      scored.push({
+        kind,
+        id: item.id,
+        text: item.text.slice(0, 200),
+        used: kind === "learning" ? 0 : undefined,
+        source: item.source,
+        score,
+      });
     }
   }
 
-  // Search recent daily memory files (last 7 days)
+  // Search recent daily memory files (last 7 days); preserve ENTRY kind (EVENT/LESSON/PREFERENCE)
   if (options?.includeDailyMemory !== false) {
     const byDate = new Map(listDailyMemoryFilesByDate(rolePath).map((entry) => [entry.date, entry.path]));
     const now = new Date();
@@ -1504,17 +1666,24 @@ export function searchRoleMemory(
 
       try {
         const content = readFileSync(dailyFile, "utf-8");
-        // Split by ## headings (each is a memory entry)
         const sections = content.split(/^## /m).filter(Boolean);
         for (const section of sections) {
-          const text = normalizeText(section).slice(0, 500);
-          if (!text) continue;
-          const s = scoreMatch(q, queryTokens, text.toLowerCase());
-          if (s >= minScore) {
-            const firstLine = section.split("\n")[0]?.trim() ?? "";
+          const firstLine = section.split("\n")[0]?.trim() ?? "";
+          const headerMatch = firstLine.match(/^\[(\d{2}:\d{2})\]\s*(\w+)/);
+          const category = (headerMatch?.[2] || "event").toLowerCase();
+          const kind: MemorySearchMatch["kind"] =
+            category === "preference" ? "preference" : category === "event" ? "event" : "learning";
+          const body = normalizeText(section.replace(firstLine, "")).slice(0, 500);
+          if (!body) continue;
+          const s = scoreMatch(q, queryTokens, body.toLowerCase());
+          // Daily events also need stronger hits
+          const dailyMin = kind === "event" ? Math.max(minScore, EVENT_MIN_SCORE) : minScore;
+          if (s >= dailyMin) {
             scored.push({
-              kind: "event",
-              text: `[${dateStr}] ${firstLine}: ${text.slice(0, 200)}`,
+              kind,
+              text: `${dateStr} ${body.slice(0, 160)}`,
+              date: dateStr,
+              category: kind === "preference" ? "daily" : undefined,
               score: s * 0.9, // Slight penalty for daily (less curated)
             });
           }
@@ -1525,18 +1694,35 @@ export function searchRoleMemory(
     }
   }
 
-  // Sort by score descending, limit results
+  // Sort by score descending; cap noisy kinds so they don't flood the budget
   scored.sort((a, b) => b.score - a.score);
-  return scored.slice(0, maxResults);
+  let eventCount = 0;
+  let pendingCount = 0;
+  const limited: ScoredMemoryMatch[] = [];
+  for (const m of scored) {
+    if (limited.length >= maxResults) break;
+    if (m.kind === "event") {
+      if (eventCount >= MAX_EVENTS_IN_RESULTS) continue;
+      eventCount += 1;
+    } else if (m.kind === "pending") {
+      if (pendingCount >= MAX_PENDING_IN_RESULTS) continue;
+      pendingCount += 1;
+    }
+    limited.push(m);
+  }
+  return limited;
 }
 
 export function listRoleMemory(rolePath: string, roleName: string): {
   text: string;
   learnings: number;
   preferences: number;
+  events: number;
+  pending: number;
   issues: number;
 } {
   const data = readRoleMemory(rolePath, roleName);
+  const pendingItems = getPendingMemories(rolePath);
 
   const learningLines = data.learnings
     .sort((a, b) => b.used - a.used)
@@ -1547,11 +1733,21 @@ export function listRoleMemory(rolePath: string, roleName: string): {
     .slice(0, 20)
     .map((p) => `- [${p.id}] [${p.category}] ${p.text}`);
 
+  const eventLines = data.events
+    .slice(0, 15)
+    .map((e) => `- [${e.id}] [${e.date || "?"}] ${e.title || eventSearchText(e).slice(0, 100)}`);
+
+  const pendingLines = pendingItems
+    .slice(0, 15)
+    .map((p) => `- [${p.id || "?"}] [${p.source}] ${p.text}`);
+
   const text = [
     `## Memory (${roleName})`,
     "",
     `- Learnings: ${data.learnings.length}`,
     `- Preferences: ${data.preferences.length}`,
+    `- Events: ${data.events.length}`,
+    `- Pending: ${pendingItems.length}`,
     `- Parse issues: ${data.issues.length}`,
     "",
     "### Learnings",
@@ -1559,9 +1755,22 @@ export function listRoleMemory(rolePath: string, roleName: string): {
     "",
     "### Preferences",
     ...(prefLines.length > 0 ? prefLines : ["- (none)"]),
+    "",
+    "### Events",
+    ...(eventLines.length > 0 ? eventLines : ["- (none)"]),
+    "",
+    "### Pending",
+    ...(pendingLines.length > 0 ? pendingLines : ["- (none)"]),
   ].join("\n");
 
-  return { text, learnings: data.learnings.length, preferences: data.preferences.length, issues: data.issues.length };
+  return {
+    text,
+    learnings: data.learnings.length,
+    preferences: data.preferences.length,
+    events: data.events.length,
+    pending: pendingItems.length,
+    issues: data.issues.length,
+  };
 }
 
 export function consolidateRoleMemory(rolePath: string, roleName: string): {
@@ -1888,11 +2097,7 @@ export function loadMemoryOnDemand(
     matchCount = matches.length;
 
     if (matches.length > 0) {
-      const relevantLines = matches.map((m) => {
-        if (m.kind === "learning") return `- [${m.used}x] ${m.text}`;
-        if (m.kind === "preference") return `- [${m.category}] ${m.text}`;
-        return `- ${m.text}`;
-      });
+      const relevantLines = matches.map((m) => `- ${formatSearchMatchLine(m)}`);
       blocks.push(`### Relevant Memories (search: "${query.slice(0, 50)}${query.length > 50 ? "..." : ""}")\n\n${relevantLines.join("\n")}`);
     }
   }
@@ -2140,8 +2345,10 @@ export interface MemoryExportData {
     date?: string;
   }>;
   events: Array<{
+    id?: string;
     text: string;
     date?: string;
+    title?: string;
   }>;
   daily: Array<{
     text: string;
@@ -2233,7 +2440,10 @@ export function exportMemoryToHtml(rolePath: string, roleName: string): string {
       tags: p.tags
     })),
     events: data.events.map(e => ({
-      text: e
+      id: e.id,
+      text: eventSearchText(e),
+      date: e.date || undefined,
+      title: e.title,
     })),
     daily: dailyMemories,
     pending: pendingMemories,

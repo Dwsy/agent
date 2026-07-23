@@ -216,13 +216,13 @@ const DEFAULT_CONFIG: RolePersonaConfig = {
     },
     onDemandSearch: {
       enabled: true,
-      maxResults: 5,
-      minScore: 0.2,
+      maxResults: 3,
+      minScore: 0.3,
       alwaysLoadHighPriority: true,
     },
     searchDefaults: {
-      maxResults: 20,
-      minScore: 0.1,
+      maxResults: 8,
+      minScore: 0.25,
       includeDailyMemory: true,
     },
     dailySummary: {
