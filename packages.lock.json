@@ -1,6 +1,21 @@
 {
   "entries": [
     {
+      "digest_sha256": "baaab3b5b039e4b157b1cb36bdf090c5fb199778657e235f957b45ea1eef372c",
+      "identity": "npm:@juanibiapina/pi-extension-settings",
+      "resolved": {
+        "installed_version": "0.9.1",
+        "kind": "npm",
+        "name": "@juanibiapina/pi-extension-settings",
+        "pinned": false,
+        "requested_spec": "@juanibiapina/pi-extension-settings",
+        "requested_version": null
+      },
+      "source": "npm:@juanibiapina/pi-extension-settings",
+      "source_kind": "npm",
+      "trust_state": "trusted"
+    },
+    {
       "digest_sha256": "d95fbf8aa3bbeb323aa8f9d2548895eb7172f5616cf17950b362d85e516dc8c2",
       "identity": "npm:@tintinweb/pi-subagents",
       "resolved": {
