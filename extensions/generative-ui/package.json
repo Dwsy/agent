@@ -2,9 +2,10 @@
   "private": true,
   "scripts": {
     "build": "node psm-renderer/build.mjs",
-    "test": "node --test psm-renderer/index.test.mjs theme-templates.test.mjs storage.test.mjs"
+    "test": "node --test psm-renderer/index.test.mjs theme-templates.test.mjs storage.test.mjs && bun test gapp/storage.test.mjs gapp/host.test.mjs"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "glimpseui": "*"
   },
   "psm": {

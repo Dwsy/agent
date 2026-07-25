@@ -5,6 +5,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { shellHTML, escapeJS, detectDarkMode, openWindow } from "./html-helpers.js";
 import { registerTools, type ToolContext } from "./tools.js";
 import { registerWidgetsCommand } from "./commands.js";
+import { registerGapp } from "./gapp/index.js";
 
 export default function (pi: ExtensionAPI) {
   // ── Shared state ──────────────────────────────────────────────────────
