@@ -104,10 +104,14 @@ export function setLiveWindow(appId: string, win: any | null) {
   if (e) e.win = win;
 }
 
-export function unregisterLiveApp(appId: string, sessionId?: string) {
+export function unregisterLiveApp(appId: string, sessionId?: string, win?: any) {
   const e = apps.get(appId);
   if (!e) return;
   if (sessionId && e.sessionId !== sessionId) return;
+  // A same-session reopen replaces the registry entry before the old window's
+  // asynchronous `closed` event may fire. Old generations must never tear down
+  // the newly registered window, tools, pending calls, or lease.
+  if (win && e.win !== win) return;
   // reject pending calls
   for (const [rid, p] of pendingCalls) {
     if (p.appId === appId) {

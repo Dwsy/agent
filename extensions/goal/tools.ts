@@ -172,8 +172,9 @@ export function registerUpdateGoalTool(
     label: "Update goal status",
     description:
       "Update the existing goal. " +
-      "Use this tool only to mark the goal achieved. " +
+      "Use this tool only to mark the goal complete or genuinely blocked. " +
       'Set status to "complete" only when the objective has actually been achieved and no required work remains. ' +
+      'Set status to "blocked" only after repeated in-scope attempts reach a genuine impasse and meaningful progress requires user input or an external-state change. ' +
       "Do not mark a goal complete merely because its budget is nearly exhausted or because you are stopping work. " +
       "You cannot use this tool to pause, resume, or budget-limit a goal; those status changes are controlled by the user or system. " +
       "When marking a budgeted goal achieved with status \"complete\", report the final token usage from the tool result to the user.",
@@ -184,7 +185,7 @@ export function registerUpdateGoalTool(
             description: "Set to complete only when the objective is achieved and no required work remains.",
           }),
           Type.Literal("blocked", {
-            description: "Set to blocked when encountering an obstacle that prevents progress.",
+            description: "Set to blocked only at a genuine impasse after repeated in-scope attempts, when progress requires user input or an external-state change.",
           }),
         ],
         { description: "Goal status" }
@@ -196,10 +197,11 @@ export function registerUpdateGoalTool(
       ),
     }),
     promptSnippet:
-      "update_goal: Mark goal complete or blocked. Only call after completion audit.",
+      "update_goal: Mark a verified completion, or a genuine repeated-attempt impasse, as final.",
     promptGuidelines: [
-      "Must perform completion audit before calling",
+      "Audit completion before status=complete",
       "Uncertain = not complete",
+      "A hard or slow step is not blocked while meaningful progress remains possible",
       "Do not mark complete just because budget is exhausted",
     ],
     async execute(_id, params, _signal, _onUpdate, ctx) {

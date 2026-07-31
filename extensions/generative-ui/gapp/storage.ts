@@ -27,6 +27,10 @@ export interface GappMeta {
   cwd?: string;
   /** Default single when omitted. */
   instances?: GappInstances;
+  /** Glimpse: clear window background so liquid glass can sample desktop. */
+  transparent?: boolean;
+  /** Glimpse: no title bar; content becomes drag region if needed. */
+  frameless?: boolean;
 }
 
 export interface GappBundle {
@@ -179,6 +183,8 @@ function normalizeMeta(raw: Partial<GappMeta> & { id: string; name: string }, sc
     width: typeof raw.width === "number" ? raw.width : 900,
     height: typeof raw.height === "number" ? raw.height : 700,
     instances: normalizeInstances(raw.instances),
+    ...(raw.transparent === true ? { transparent: true } : {}),
+    ...(raw.frameless === true ? { frameless: true } : {}),
     ...(scope === "project" ? { cwd } : {}),
   };
 }
@@ -457,6 +463,8 @@ export async function upsertGapp(input: {
       width: input.width ?? existing?.width,
       height: input.height ?? existing?.height,
       instances: input.instances ?? existing?.instances ?? "single",
+      transparent: (input as any).transparent ?? (existing as any)?.transparent,
+      frameless: (input as any).frameless ?? (existing as any)?.frameless,
     },
     scope,
     cwd,
@@ -577,6 +585,8 @@ export interface InjectGappRuntimeOptions {
   hostBase?: string;
   mode?: "pi-live" | "isolated";
   sessionId?: string;
+  /** Absolute file URL for the trusted app-owned tools.mjs module. */
+  toolsModuleUrl?: string;
 }
 
 /** Inject GappStore + GappHost bridge + live state into HTML before opening.
@@ -591,6 +601,14 @@ export function injectGappRuntime(
   const hostBase = options?.hostBase || "";
   const mode = options?.mode || "pi-live";
   const sessionId = options?.sessionId || "";
+  const toolsModuleUrl = options?.toolsModuleUrl || "";
+  const nativeBase = `<style id="gapp-native-base">
+:root{color-scheme:light dark;--gapp-system-accent:#007aff;--gapp-font-sans:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;--gapp-focus-ring:color-mix(in srgb,var(--gapp-system-accent) 35%,transparent)}
+html{font-family:var(--gapp-font-sans)}
+button,input,select,textarea{font:inherit}
+:focus-visible{outline:2px solid var(--gapp-system-accent);outline-offset:2px}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
+</style>`;
   const bridge = `<script id="gapp-runtime">
 window.__GAPP_ID__=${JSON.stringify(meta.id)};
 window.__GAPP_META__=${JSON.stringify({
@@ -600,6 +618,7 @@ window.__GAPP_META__=${JSON.stringify({
     instances: meta.instances || "single",
   })};
 window.__GAPP_STATE__=${JSON.stringify(state ?? {})};
+window.__GAPP_TOOLS_MODULE_URL__=${JSON.stringify(toolsModuleUrl)};
 window.__GAPP_HOST__=${JSON.stringify({
     mode,
     protocolVersion: "0.1",
@@ -818,20 +837,23 @@ window.__GAPP_HOST__=${JSON.stringify({
 </script>`;
 
   // Strip any prior runtime so we never double-inject or leave a late copy.
-  let out = html.replace(/<script id=["']gapp-runtime["']>[\s\S]*?<\/script>\s*/gi, "");
+  let out = html
+    .replace(/<script id=["']gapp-runtime["']>[\s\S]*?<\/script>\s*/gi, "")
+    .replace(/<style id=["']gapp-native-base["']>[\s\S]*?<\/style>\s*/gi, "");
 
   // Prefer <head> so GappStore exists before body scripts run loadJson().
   if (/<head\b[^>]*>/i.test(out)) {
-    return out.replace(/<head\b[^>]*>/i, (m) => m + "\n" + bridge + "\n");
+    return out.replace(/<head\b[^>]*>/i, (m) => m + "\n" + nativeBase + "\n" + bridge + "\n");
   }
   if (/<body\b[^>]*>/i.test(out)) {
-    return out.replace(/<body\b[^>]*>/i, (m) => m + "\n" + bridge + "\n");
+    return out.replace(/<body\b[^>]*>/i, (m) => m + "\n" + nativeBase + "\n" + bridge + "\n");
   }
   if (/<!doctype|<html[\s>]/i.test(out)) {
-    return bridge + "\n" + out;
+    return nativeBase + "\n" + bridge + "\n" + out;
   }
   // fragment → minimal shell (bridge first)
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark">
+${nativeBase}
 ${bridge}
 <style>
 :root{color-scheme:light dark;--bg:#f5f5f7;--fg:#1d1d1f;--card:#fff;--border:#d2d2d7;--accent:#0071e3;--muted:#6e6e73}

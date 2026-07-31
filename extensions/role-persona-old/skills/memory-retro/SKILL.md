@@ -1,12 +1,12 @@
 ---
 name: memory-retro
 description: "Save insights from completed tasks to role memory."
-whenToUse: "After completing any task involving code changes, architectural decisions, debugging, or non-trivial problem solving. Distill what you learned into reusable memories so future sessions can benefit. Invoke proactively at task end — do not wait for the user to ask."
+whenToUse: "When the user asks to remember something, or after non-trivial work reveals a durable, non-obvious insight that will materially change future sessions. Skip routine task completion because automatic extraction already handles checkpoints."
 ---
 
 # Memory Retro
 
-You have access to a role-based persistent memory system. After completing this task, reflect on what you learned and save valuable insights.
+You have access to a role-based persistent memory system. Use manual writes selectively; automatic extraction already handles routine task-end checkpoints.
 
 ## Tools Available
 

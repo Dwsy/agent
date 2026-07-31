@@ -1,3 +1,5 @@
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import type { GappBundle, GappMeta } from "./storage.js";
 import {
   setGappState,
@@ -39,6 +41,12 @@ import { dispatchHostRpc, notifyHostRpcWindowClosed } from "./host-rpc.js";
 /** id → last opened Glimpse window (for TUI close). */
 const openWindows = new Map<string, any>();
 
+function applySystemAccent(win: any, info: any) {
+  const accent = info?.appearance?.accentColor;
+  if (typeof accent !== "string" || !/^#[0-9a-f]{6}$/i.test(accent)) return;
+  win.send(`document.documentElement.style.setProperty("--gapp-system-accent", ${JSON.stringify(accent)});`);
+}
+
 /** Debounce notifyAgent events per app. */
 const lastEventAt = new Map<string, number>();
 
@@ -61,11 +69,13 @@ export function closeGappWindow(id: string): boolean {
   const win = openWindows.get(id);
   if (!win) return false;
   try {
+    // Keep the mapping until the window's cleanup runs. If a replacement is
+    // registered first, cleanup can identify that it belongs to an older
+    // generation and leave the replacement untouched.
     win.close();
   } catch {
-    // ignore
+    if (openWindows.get(id) === win) openWindows.delete(id);
   }
-  openWindows.delete(id);
   return true;
 }
 
@@ -311,15 +321,20 @@ export async function openGappBundle(
     hostBase,
     mode: "pi-live",
     sessionId,
+    toolsModuleUrl: pathToFileURL(join(bundle.dir, "tools.mjs")).href,
   });
   const win = openWindow(html, {
     width: bundle.meta.width ?? 900,
     height: bundle.meta.height ?? 700,
     title: bundle.meta.name,
     noDock: true,
+    // Liquid glass / desktop sampling requires a clear window background.
+    transparent: bundle.meta.transparent === true,
+    frameless: bundle.meta.frameless === true,
   });
   openWindows.set(bundle.meta.id, win);
   windows.push(win);
+  win.on("ready", (info: any) => applySystemAccent(win, info));
 
   registerLiveApp({
     appId: bundle.meta.id,
@@ -338,10 +353,12 @@ export async function openGappBundle(
   }
 
   const cleanup = () => {
-    openWindows.delete(bundle.meta.id);
+    const isCurrentGeneration = openWindows.get(bundle.meta.id) === win;
+    if (isCurrentGeneration) openWindows.delete(bundle.meta.id);
     const idx = windows.indexOf(win);
     if (idx >= 0) windows.splice(idx, 1);
-    unregisterLiveApp(bundle.meta.id, sessionId);
+    unregisterLiveApp(bundle.meta.id, sessionId, win);
+    if (!isCurrentGeneration) return;
     void notifyHostRpcWindowClosed({ appId: bundle.meta.id, cwd: appCwd, sessionId }).catch(() => {});
     void (isHub()
       ? releaseLease(bundle.meta.id, { sessionId })

@@ -1,7 +1,7 @@
 ---
 name: memory-recall
-description: "Load prior knowledge from role memory before starting any task."
-whenToUse: "At the START of every new conversation or task, BEFORE doing any work. This skill loads prior knowledge from the role's persistent memory system. Without it, you have no memory of past sessions. Invoke proactively — do not wait for the user to ask."
+description: "Recall prior role memory when cross-session context materially affects the current task."
+whenToUse: "When the user refers to past work/preferences, when a durable prior decision may change the approach, or when the current task cannot be handled reliably from present context alone. Skip greetings and self-contained tasks."
 ---
 
 # Memory Recall
@@ -21,8 +21,7 @@ Knowledge      → docs/knowledge/ (reusable patterns, architecture decisions)
 |------|---------|
 | `memory({ action: "search", query: "<text>" })` | Search all layers. Auto-reinforces high-score matches (≥0.5). Auto-promotes relevant pending memories. |
 | `memory({ action: "list" })` | List all consolidated memories, detect issues |
-| `role_read` | Read role file (default: `memory/consolidated.md`) |
-| `role_search` | Full-text search across role files |
+| `role_info` | List the active role directory structure; does not read file contents |
 | `knowledge({ action: "search", query: "<text>" })` | Search knowledge base |
 
 ## Process
@@ -50,8 +49,8 @@ Focus on `High Priority [3x]+` — these are battle-tested.
 
 ### Step 3: Deep context (if needed)
 
-- `role_search({ query: "<concept>" })` → find related role files
-- `role_read({ path: "core/constraints.md" })` → read full file
+- Narrow the `memory.search` query, or use `knowledge.search` for reusable artifacts.
+- If the current task explicitly requires a core role file, inspect the exact injected path with the standard file-read tool; do not scan role files as a startup ritual.
 
 ### Step 4: Check knowledge base
 
@@ -105,7 +104,7 @@ Each learning has LLM-auto-extracted tags. Search uses them:
 
 ## Important
 
-- Always start with `memory({ action: "search", query: "..." })`
+- Start with targeted `memory({ action: "search", query: "..." })` only when prior context is materially relevant; search may reinforce or promote matches
 - High Priority `[3x]+` are most valuable — read first
 - User references past work → search for related keywords
 - Nothing found → proceed without memory

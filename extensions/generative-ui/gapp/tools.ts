@@ -20,12 +20,10 @@ import {
   getLiveApp,
   getMergedTools,
   listLiveApps,
-  dispatchToolCallToWindow,
 } from "./registry.js";
 import { loadGappToolsFromDir, loadGappToolsFile } from "./storage.js";
-import { applyStateOps } from "./stateops.js";
-import { hostCallTool } from "./host-client.js";
-import { isHub } from "./host-server.js";
+import { invokeGappTool } from "./service.js";
+import { createPiGappRuntimeAdapter } from "./runtime-pi.js";
 
 export interface GappToolContext {
   activeWindows: any[];
@@ -71,12 +69,13 @@ export function registerGappTools(pi: ExtensionAPI, ctx: GappToolContext) {
     name: "gapp_upsert",
     label: "Upsert GAPP",
     description:
-      "Create or update a Glimpse-APP (temporary interactive web app). Writes meta.json + state.json + index.html under .pi/gapp/<id>/ (project) or ~/.pi/gapp/<id>/ (global). Prefer this for kanban/plans/temp UIs.",
-    promptSnippet: "Create/update a Glimpse-APP (html + state.json + meta). Prefer for temp boards/todos over source files.",
+      "Create or update a Glimpse-APP when the user requests a temporary interactive UI or the active task explicitly requires one. Writes meta.json + state.json + index.html under .pi/gapp/<id>/ (project) or ~/.pi/gapp/<id>/ (global).",
+    promptSnippet: "Create/update a requested temporary interactive GAPP (html + state.json + meta).",
     promptGuidelines: [
-      "Temp boards/todos: gapp_upsert (opens by default) — never fake-create with chat HTML only.",
+      "When a temporary board/todo UI is requested, use gapp_upsert instead of chat-only HTML.",
       "state.json is SSOT. After create, domain actions: gapp_list_tools → gapp_call (not bulk set_state).",
       "Default scope=project, instances=single. Prefer tools.json / registerTools for progressive gapp_call.",
+      "GAPP is a native-window WebView: use --gapp-system-accent / --gapp-font-sans, keyboard-first semantics, native scrolling, and no fake title bars, web toasts, or cursor:pointer.",
     ],
     parameters: Type.Object({
       id: Type.Optional(Type.String({ description: "Stable id [a-z0-9_-]. Derived from name if omitted." })),
@@ -211,8 +210,8 @@ export function registerGappTools(pi: ExtensionAPI, ctx: GappToolContext) {
   pi.registerTool({
     name: "gapp_open",
     label: "Open GAPP",
-    description: "Open a Glimpse-APP by id or 1-based list index. single-instance apps refuse if another session already holds the live window.",
-    promptSnippet: "Open GAPP window (needed for live tool handlers / user-visible UI).",
+    description: "Open a Glimpse-APP by id or 1-based list index when the user asks to view/interact with it or a requested live tool requires its handler. Single-instance apps refuse if another session already holds the live window.",
+    promptSnippet: "Open a GAPP for requested user-visible interaction or a required live handler.",
     parameters: Type.Object({
       id: Type.String({ description: "App id or 1-based index from gapp_list" }),
       scope: Type.Optional(Type.Union([Type.Literal("project"), Type.Literal("global")])),
@@ -265,7 +264,7 @@ export function registerGappTools(pi: ExtensionAPI, ctx: GappToolContext) {
     name: "gapp_list_tools",
     label: "List GAPP Tools",
     description:
-      "Progressive catalog: list domain tools (tools.json + live registerTools) for one app or all live. REQUIRED before gapp_call when system only shows app ids.",
+      "Progressive catalog: list domain tools (tools.json schema + optional tools.mjs/live implementation) for one app or all live. REQUIRED before gapp_call when system only shows app ids.",
     promptSnippet: "Progressive: fetch domain tool catalog for an app before gapp_call.",
     promptGuidelines: [
       "System only lists app ids — ALWAYS gapp_list_tools({ id }) before inventing or calling domain tools.",
@@ -337,7 +336,7 @@ export function registerGappTools(pi: ExtensionAPI, ctx: GappToolContext) {
     name: "gapp_call",
     label: "Call GAPP Tool",
     description:
-      "Invoke a GAPP domain tool (live onToolCall or disk stateOps). Preferred over gapp_set_state for structured actions. Use short tool name from gapp_list_tools.",
+      "Invoke a GAPP domain tool (shared tools.mjs, live onToolCall, or legacy disk stateOps). Preferred over gapp_set_state for structured actions. Use short tool name from gapp_list_tools.",
     promptSnippet: "Call domain tool after gapp_list_tools (preferred write path).",
     promptGuidelines: [
       "Only use tool names returned by gapp_list_tools for that app — never invent names.",
@@ -353,83 +352,23 @@ export function registerGappTools(pi: ExtensionAPI, ctx: GappToolContext) {
     }),
     async execute(_id, params, _signal, _onUpdate, ctx) {
       const cwd = ctx.cwd || process.cwd();
-      const ref = await resolveGappRef(params.id, { cwd });
-      if (!ref) throw new Error(`GAPP not found: ${params.id}`);
-      const appId = ref.meta.id;
       const args =
         params.arguments && typeof params.arguments === "object" && !Array.isArray(params.arguments)
           ? (params.arguments as Record<string, unknown>)
           : {};
-
-      let live = getLiveApp(appId);
-      const tools = live ? getMergedTools(appId) : await loadGappToolsFromDir(ref.dir);
-      const tool = tools.find((t) => t.name === params.tool);
-
-      // Try hub HTTP when not local live (another process may hold the window)
-      if (!live?.win && isHub() === false) {
-        try {
-          const remote = await hostCallTool(appId, params.tool, args, cwd);
-          if (remote?.ok) {
-            return okText(JSON.stringify(remote.result ?? remote, null, 2), { appId, tool: params.tool, ...remote });
-          }
-          if (remote?.error?.code && remote.error.code !== "needs_live_handler") {
-            throw new Error(remote.error.message || JSON.stringify(remote.error));
-          }
-        } catch (e) {
-          if (e instanceof Error && e.message && !e.message.includes("fetch")) throw e;
-        }
-      }
-
-      if (!tool && !live) {
-        // refresh tools list for error
-        const disk = await loadGappToolsFromDir(ref.dir);
-        const names = disk.map((t) => t.name).join(", ") || "(none)";
-        throw new Error(`Tool "${params.tool}" not found on ${appId}. Available: ${names}`);
-      }
-
-      if (tool?.stateOps?.length && !live?.win) {
-        const applied = applyStateOps(ref.state, tool.stateOps, args);
-        await setGappState(appId, applied.state, {
-          scope: ref.meta.scope,
-          cwd: ref.meta.cwd || cwd,
-          merge: false,
-        });
-        notifyLiveState(appId, applied.state);
-        return okText(JSON.stringify(applied.result, null, 2), {
-          appId,
+      const result = await invokeGappTool(
+        {
+          ref: params.id,
           tool: params.tool,
-          via: "stateOps",
-          result: applied.result,
-        });
-      }
-
-      if (!live?.win && params.openIfNeeded !== false) {
-        void detectDarkMode();
-        try {
-          await openGappBundle(ref, ctx.activeWindows, cwd);
-        } catch (e) {
-          if (e instanceof GappOpenError) throw new Error(e.message);
-          throw e;
-        }
-        live = getLiveApp(appId);
-      }
-
-      if (!live?.win) {
-        throw new Error(
-          `Tool "${params.tool}" needs a live window handler (GappHost.onToolCall). Open the app first.`,
-        );
-      }
-
-      const result = await dispatchToolCallToWindow(appId, params.tool, args);
-      if (!result.ok) {
-        throw new Error(result.error.message || result.error.code);
-      }
-      return okText(JSON.stringify(result.result, null, 2), {
-        appId,
-        tool: params.tool,
-        via: "live",
-        result: result.result,
-      });
+          arguments: args,
+          openIfNeeded: params.openIfNeeded !== false,
+        },
+        {
+          cwd,
+          adapter: createPiGappRuntimeAdapter({ activeWindows: ctx.activeWindows }),
+        },
+      );
+      return okText(JSON.stringify(result.result, null, 2), result);
     },
     renderCall(args: any, theme: any) {
       return new Text(
@@ -521,8 +460,8 @@ export function registerGappTools(pi: ExtensionAPI, ctx: GappToolContext) {
   pi.registerTool({
     name: "gapp_set_status",
     label: "Set GAPP Status",
-    description: "Enable, disable, or archive a Glimpse-APP. Archive sets enabled=false.",
-    promptSnippet: "Enable/disable/archive a Glimpse-APP.",
+    description: "Enable, disable, or archive a Glimpse-APP. This mutates app lifecycle state; use only when the user explicitly requests that status change. Archive sets enabled=false.",
+    promptSnippet: "Change GAPP lifecycle status only on explicit user request.",
     parameters: Type.Object({
       id: Type.String(),
       enabled: Type.Optional(Type.Boolean()),

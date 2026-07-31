@@ -14,6 +14,7 @@ import {
   type GappMeta,
 } from "./storage.js";
 import { closeGappWindow, getOpenGappWindow, openGappBundle, GappOpenError } from "./open.js";
+import { runPiGappTuiApp } from "./tui-pi.js";
 
 type ScopeFilter = "all" | "project" | "global";
 type AppAction = "open" | "close" | "enable" | "disable" | "archive" | "unarchive";
@@ -467,11 +468,12 @@ async function pickAndAct(
 
 export function registerGappCommand(pi: ExtensionAPI, activeWindows: any[]) {
   pi.registerCommand("gapp", {
-    description: "Glimpse-APP TUI: list|open|enable|disable|archive|state|generate",
+    description: "Glimpse-APP: lifecycle list plus shared gapp-tui control center",
     getArgumentCompletions: (prefix: string) => {
       const items = [
         { value: "list", label: "TUI 列表（Tab scope · Enter 菜单）" },
         { value: "list --text", label: "纯文本列表" },
+        { value: "tui ", label: "渲染 TUI 应用（可选 app id）" },
         { value: "open ", label: "open <序号|id>" },
         { value: "enable ", label: "上线" },
         { value: "disable ", label: "下线" },
@@ -505,6 +507,8 @@ export function registerGappCommand(pi: ExtensionAPI, activeWindows: any[]) {
             "/gapp                  完整 TUI",
             "/gapp list             同上",
             "/gapp list --text      纯文本 + 路径",
+            "/gapp tui [n|id]       用 GAPP 自己的 tui.mjs 渲染应用",
+            "/gapp-tui [n|id]       同一 TUI APP 渲染入口",
             "/gapp open <n|id>",
             "/gapp enable|disable|archive <n|id>",
             "/gapp state <n|id>",
@@ -515,6 +519,11 @@ export function registerGappCommand(pi: ExtensionAPI, activeWindows: any[]) {
           ].join("\n"),
           "info",
         );
+        return;
+      }
+
+      if (cmd === "tui") {
+        await runPiGappTuiApp(ctx, activeWindows, ref || undefined);
         return;
       }
 
@@ -544,7 +553,7 @@ export function registerGappCommand(pi: ExtensionAPI, activeWindows: any[]) {
           return;
         }
         ctx.sendUserMessage(
-          `请创建一个 Glimpse-APP：${desc}\n\n要求：使用 gapp_upsert 写入（index.html + state.json + meta），scope 默认 project，enabled=true，完成后 gapp_open 打开。状态走 GappStore / state.json。`,
+          `请创建一个 Glimpse-APP：${desc}\n\n要求：使用 gapp_upsert 写入（index.html + state.json + meta），scope 默认 project，enabled=true，完成后 gapp_open 打开。状态走 GappStore / state.json。它运行在原生窗口 WebView 中：使用 --gapp-system-accent / --gapp-font-sans、语义 HTML 和键盘操作；不要伪造标题栏或系统控件，不用 web toast / 模态遮罩、cursor:pointer、平滑滚动或装饰性动画。`,
         );
         return;
       }
@@ -588,6 +597,13 @@ export function registerGappCommand(pi: ExtensionAPI, activeWindows: any[]) {
 
       // /gapp 1  or /gapp kanban-08
       await openByRef(raw, ctx, activeWindows);
+    },
+  });
+
+  pi.registerCommand("gapp-tui", {
+    description: "Render a GAPP through its tui.mjs application component",
+    handler: async (args: string, ctx) => {
+      await runPiGappTuiApp(ctx, activeWindows, (args ?? "").trim() || undefined);
     },
   });
 }

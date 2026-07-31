@@ -8,14 +8,21 @@ importers:
 
   .:
     dependencies:
+      '@earendil-works/pi-tui':
+        specifier: 0.82.1
+        version: 0.82.1
       '@modelcontextprotocol/sdk':
         specifier: ^1.29.0
         version: 1.29.0(zod@4.4.3)
       glimpseui:
-        specifier: '*'
-        version: 0.8.0
+        specifier: link:../../../../Dev/AI/glimpse
+        version: link:../../../../Dev/AI/glimpse
 
 packages:
+
+  '@earendil-works/pi-tui@0.82.1':
+    resolution: {integrity: sha512-9yN8hALfKaxZq7n54EMxqhFCWnMi6LHkraMJ/1YjHiATq75XrI6XDMVppn9EDtiK7Fks8hUe1SDXUTrIvwRWfQ==}
+    engines: {node: '>=22.19.0'}
 
   '@hono/node-server@1.19.15':
     resolution: {integrity: sha512-Za2ai6TLdKjUvnur+eenO6nuYYipVAEhyCAdaV8IRvmU9kK8crOZUSYvIXn72E4f8fJqyAbpcJuTsYYmZp9Deg==}
@@ -174,6 +181,10 @@ packages:
   function-bind@1.1.2:
     resolution: {integrity: sha512-7XHNxH7qX9xG5mIwxkhumTox/MIRNcOgDrxWsMt2pAr23WHp6MrRlN7FBSFpCpr+oVO0F744iUgR82nJMfG2SA==}
 
+  get-east-asian-width@1.6.0:
+    resolution: {integrity: sha512-QRbvDIbx6YklUe6RxeTeleMR0yv3cYH6PsPZHcnVn7xv7zO1BHN8r0XETu8n6Ye3Q+ahtSarc3WgtNWmehIBfA==}
+    engines: {node: '>=18'}
+
   get-intrinsic@1.3.0:
     resolution: {integrity: sha512-9fSjSaos/fRIVIp+xSJlE6lfwhES7LNtKaCBIamHsjr2na1BiABJPo0mOjjz8GJDURarmCPGqaiVg5mfjb98CQ==}
     engines: {node: '>= 0.4'}
@@ -231,6 +242,11 @@ packages:
 
   json-schema-typed@8.0.2:
     resolution: {integrity: sha512-fQhoXdcvc3V28x7C7BMs4P5+kNlgUURe2jmUT1T//oBRMDrqy1QPelJimwZGo7Hg9VPV3EQV5Bnq4hbFy2vetA==}
+
+  marked@18.0.5:
+    resolution: {integrity: sha512-S6GcvALHg6K4ohtu4E7x0a1AqhAjp6cV8KhLSyN9qVapnzJkusVBxZRcIU9AeYsbe6P1hKDusSbEOzGyyuce6w==}
+    engines: {node: '>= 20'}
+    hasBin: true
 
   math-intrinsics@1.1.0:
     resolution: {integrity: sha512-/IXtbwEk5HTPyEwyKX6hGkYXxM9nbj64B+ilVJnC/R6B0pH5G4V3b0pVbL7DBj4tkhBAppbQUlf6F6Xl9LHu1g==}
@@ -387,13 +403,12 @@ packages:
   zod@4.4.3:
     resolution: {integrity: sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ==}
 
-  glimpseui@0.8.0:
-    resolution: {integrity: sha512-trpEKiULW9sGjsLqtSH/+hMPcohvq3tkN6yM55t0WIgTsHt53+HXVTMf5ipy/w+kXbkbC/XP7DSRvzZC+E8xig==}
-    engines: {node: '>=18'}
-    os: [darwin, linux, win32]
-    hasBin: true
-
 snapshots:
+
+  '@earendil-works/pi-tui@0.82.1':
+    dependencies:
+      get-east-asian-width: 1.6.0
+      marked: 18.0.5
 
   '@hono/node-server@1.19.15(hono@4.12.32)':
     dependencies:
@@ -580,6 +595,8 @@ snapshots:
 
   function-bind@1.1.2: {}
 
+  get-east-asian-width@1.6.0: {}
+
   get-intrinsic@1.3.0:
     dependencies:
       call-bind-apply-helpers: 1.0.2
@@ -635,6 +652,8 @@ snapshots:
   json-schema-traverse@1.0.0: {}
 
   json-schema-typed@8.0.2: {}
+
+  marked@18.0.5: {}
 
   math-intrinsics@1.1.0: {}
 
@@ -791,5 +810,3 @@ snapshots:
       zod: 4.4.3
 
   zod@4.4.3: {}
-
-  glimpseui@0.8.0: {}

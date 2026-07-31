@@ -91,6 +91,8 @@ export interface GappTool {
 
 export interface GappToolsFile {
   v: GappProtocolVersion | string;
+  /** v0.2 convention: trusted app-owned executable module, fixed to tools.mjs. */
+  module?: "tools.mjs";
   tools: GappTool[];
 }
 

@@ -835,16 +835,17 @@ Structured paths (v2):
 - daily memories → ${currentRolePath}/memory/daily/${today}.md
 
 Use these paths only when you need to inspect or edit on-disk state.
-They are not a mandatory startup checklist, and you should not mechanically call \`role_read\` for greetings or normal replies.
+They are not a mandatory startup checklist, and you should not mechanically read role files for greetings or normal replies.
 
 ## 📝 MEMORY
 
-Memory is auto-managed in the background, but you may still use memory tools when they materially improve the task.
+Memory is auto-managed in the background. Use memory tools only when they materially improve the current task.
 
-Use the \`memory\` tool proactively for **recall/search/reinforce** when past learnings may help.
-Use the \`memory\` tool proactively for **maintenance** when the user asks to organize, tidy, or review memory.
+Use \`memory({ action: "search", query: "..." })\` when prior cross-session context is likely to affect the answer; do not search mechanically on greetings or self-contained tasks. Search may reinforce matches or promote pending entries.
+Use maintenance actions when the user asks to organize, tidy, or review memory, or when an explicitly configured maintenance workflow requires them.
 Use **save/add** actions conservatively: prefer writing memory only for durable, non-obvious insights, or when the user explicitly asks to remember something.
-Do NOT mechanically do memory reflections on every turn, and do NOT save trivial or task-local noise.
+Use delete/update actions only for entries that are clearly duplicated, obsolete, or explicitly selected by the user; never delete preferences without confirmation.
+Do NOT mechanically reflect on memory at task end, and do NOT save trivial or task-local noise.
 
 Bundled skills may guide this behavior (for example: memory-recall, memory-retro, memory-organize, memory-best-practices).
 
@@ -1219,7 +1220,7 @@ Rules:
     description:
       "Searchable knowledge base (design patterns, scaffolds, architecture, troubleshooting). " +
       "Sources (priority↓): role (rw, per-role) > global (rw, shared) > project (ro, docs/knowledge/) > external (ro, config). " +
-      "list→browse, search→query/tags, read→full content by path, write→add/update (rw sources only, prefers existing categories).",
+      "list/search/read are retrieval actions. write adds or updates an rw source and should be used only when the user asks to persist knowledge or the active task explicitly requires that write.",
     parameters: Type.Object({
       action: StringEnum(["list", "search", "read", "write"] as const),
       query: Type.Optional(Type.String({ description: "Search text" })),
@@ -1398,7 +1399,7 @@ Rules:
     name: "memory",
     label: "Role Memory",
     description:
-      "Manage role memory in memory/consolidated.md (markdown sections). Actions: add_learning, add_preference, add_event, update_learning, update_preference, delete_learning, delete_preference, reinforce, search, list, consolidate, repair, llm_tidy, vector_rebuild, vector_stats. search covers learnings, preferences, events, pending, and recent daily.",
+      "Role memory retrieval and maintenance. list/vector_stats inspect state; search covers learnings, preferences, events, pending, and recent daily, and may reinforce matches or promote pending entries. Add/update/reinforce/consolidate/repair/llm_tidy/vector_rebuild mutate memory; use them only when the user asks or the active task explicitly requires persistence or maintenance. Delete only clearly identified entries, and never delete preferences without user confirmation.",
     parameters: Type.Object({
       action: StringEnum(["add_learning", "add_preference", "add_event", "update_learning", "update_preference", "delete_learning", "delete_preference", "reinforce", "search", "list", "consolidate", "repair", "llm_tidy", "vector_rebuild", "vector_stats"] as const),
       content: Type.Optional(Type.String({ description: "Memory text" })),
@@ -1730,7 +1731,7 @@ Rules:
   pi.registerTool({
     name: "role_info",
     label: "Role Info",
-    description: "Get the active role directory structure. For reading/writing/searching role files, use the knowledge and memory tools instead.",
+    description: "List the active role's directory structure; this tool does not read file contents. Use memory/knowledge for those stores, and standard file tools only when an explicitly needed core file must be inspected.",
     parameters: Type.Object({
       path: Type.Optional(Type.String({ description: "Relative directory path. Default: ." })),
       recursive: Type.Optional(Type.Boolean({ description: "Whether to list recursively" })),

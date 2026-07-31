@@ -19,21 +19,49 @@ const context = {
     notify: (text: string) => notifications.push(text),
   },
 };
-const assistant = {
-  role: "assistant",
-  usage: { output: 1_115, input: 10, cacheRead: 0, cacheWrite: 0, cost: { total: 0 } },
-};
 
-await handlers.get("message_start")?.({ message: assistant }, context);
-await handlers.get("message_update")?.({
-  message: assistant,
-  assistantMessageEvent: { type: "text_delta" },
-}, context);
-await handlers.get("message_end")?.({ message: assistant }, context);
-await handlers.get("agent_end")?.({}, context);
+let now = 1_000;
+const originalPerformance = globalThis.performance;
+Object.defineProperty(globalThis, "performance", {
+  configurable: true,
+  value: { now: () => now },
+});
 
-assert.equal(statuses.at(-1), "-- tok/s");
-assert.equal(notifications.length, 0);
+try {
+  await handlers.get("session_start")?.({}, context);
+  await handlers.get("agent_start")?.({}, context);
+
+  await handlers.get("message_end")?.({
+    message: {
+      role: "assistant",
+      usage: { output: 100, input: 50_000, cacheRead: 40_000, cacheWrite: 10_000, cost: { total: 0.01 } },
+    },
+  }, context);
+
+  // A retry starts another low-level agent run, but the full-run clock and totals
+  // must continue until agent_settled.
+  now = 2_000;
+  await handlers.get("agent_start")?.({}, context);
+  await handlers.get("message_end")?.({
+    message: {
+      role: "assistant",
+      usage: { output: 200, input: 90_000, cacheRead: 80_000, cacheWrite: 10_000, cost: { total: 0.02 } },
+    },
+  }, context);
+
+  now = 4_000;
+  await handlers.get("agent_settled")?.({}, context);
+} finally {
+  Object.defineProperty(globalThis, "performance", {
+    configurable: true,
+    value: originalPerformance,
+  });
+}
+
+assert.equal(statuses.at(-1), "100.0 tok/s");
+assert.deepEqual(notifications, ["100.0 tok/s | Cost: $0.0300 | out 300"]);
+assert.ok(!notifications[0].includes("in "));
+assert.ok(!notifications[0].includes("cache"));
 assert.ok(!statuses.some((text) => text.includes("TPS:")));
 
 console.log("token-rate tests passed");

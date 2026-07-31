@@ -101,7 +101,6 @@ export function registerAgentEndHandler(
 
     // 检查接近预算警告（80%）
     if (goal.tokenBudget && tokensUsed >= goal.tokenBudget * BUDGET_WARN_RATIO) {
-      const remaining = goal.tokenBudget - tokensUsed;
       const updated: GoalData = {
         ...goal,
         tokensUsed,
@@ -117,9 +116,7 @@ export function registerAgentEndHandler(
       pi.sendMessage(
         {
           customType: GOAL_CONTINUATION_TYPE,
-          content:
-            buildBudgetWarningPrompt(updated) +
-            `\n⚠️ Budget nearly exhausted, ${remaining} tokens remaining. Please complete soon.`,
+          content: buildBudgetWarningPrompt(updated),
           display: true,
         },
         { deliverAs: "followUp", triggerTurn: true }

@@ -1,9 +1,11 @@
 // ── HTML Helpers ──────────────────────────────────────────────────────────
 
 import { execSync, spawn } from "node:child_process";
-import { open } from "glimpseui";
+import { getGlimpseui, loadGlimpseui, preloadGlimpseui } from "./resolve-glimpseui.js";
 import { SVG_STYLES, cssVariables } from "./svg-styles.js";
 import { WIDGET_CSP, WIDGET_UI_KIT_CSS, WIDGET_UI_KIT_RESOURCES } from "./widget-ui-kit.js";
+
+export { preloadGlimpseui, loadGlimpseui, getGlimpseui };
 
 // ── Detect system appearance (cached) ─────────────────────────────────────
 // Legacy helper for window chrome / analytics only.
@@ -177,11 +179,14 @@ export function openInBrowser(filePath: string): void {
   } catch {}
 }
 
-// Suppress macOS IMKCFRunLoop os_log noise when WKWebView windows close
+// Suppress macOS IMKCFRunLoop os_log noise when WKWebView windows close.
+// Uses prefer-local/global glimpseui (see resolve-glimpseui.ts). Must be
+// preloaded via preloadGlimpseui() at extension start.
 export function openWindow(html: string, options: any): any {
   const prev = process.env.OS_ACTIVITY_MODE;
   process.env.OS_ACTIVITY_MODE = "disable";
   try {
+    const { open } = getGlimpseui();
     return open(html, options);
   } finally {
     if (prev === undefined) delete process.env.OS_ACTIVITY_MODE;

@@ -12,14 +12,7 @@ import { compact } from "@earendil-works/pi-coding-agent";
 import { Container, type SelectItem, SelectList, Text } from "@earendil-works/pi-tui";
 import { DynamicBorder } from "@earendil-works/pi-coding-agent";
 
-type LoopMode = "tests" | "custom" | "self" | "plan" | "debug" | "tdd" | "review" | "verify";
-
-type LoopTask = {
-	id: number;
-	description: string;
-	criteria: string[];
-	passes: boolean;
-};
+type LoopMode = "tests" | "custom" | "self" | "debug" | "tdd" | "review" | "verify";
 
 type LoopStateData = {
 	active: boolean;
@@ -28,18 +21,15 @@ type LoopStateData = {
 	prompt?: string;
 	summary?: string;
 	loopCount?: number;
-	tasks?: LoopTask[];
-	currentTaskIndex?: number;
 };
 
 const LOOP_PRESETS = [
 	{ value: "self", label: "自主模式 (Agent 自行决定)", description: "自主拆解并完成任务" },
 	{ value: "debug", label: "系统调试 (先找根因)", description: "复现、追踪、假设、验证" },
 	{ value: "tdd", label: "TDD 修复 (红绿重构)", description: "先写失败测试，再最小实现" },
-	{ value: "review", label: "代码审查 (找风险)", description: "按严重度列问题并修到无阻塞" },
+	{ value: "review", label: "代码审查 (找风险)", description: "按严重度列问题；仅按请求修复" },
 	{ value: "verify", label: "验证收尾 (跑检查)", description: "运行验证命令，确认输出再结束" },
 	{ value: "tests", label: "直到测试通过", description: "持续修复直到测试绿" },
-	{ value: "plan", label: "计划模式 (拆解为子任务)", description: "先提交子任务计划再逐项执行" },
 	{ value: "custom", label: "直到满足自定义条件", description: "按自定义跳出条件循环" },
 	{ value: "stop", label: "停止当前循环", description: "结束当前循环" },
 ] as const;
@@ -56,12 +46,12 @@ const SUMMARY_SYSTEM_PROMPT = `你为状态小部件总结循环跳出条件。
 使用最适合该循环条件的形式。
 `;
 
-function buildPrompt(mode: LoopMode, condition?: string, tasks?: LoopTask[], currentTaskIndex?: number): string {
+function buildPrompt(mode: LoopMode, condition?: string): string {
 	switch (mode) {
 		case "tests":
 			return (
-				"运行所有测试。如果测试通过，调用 signal_loop_success 工具。" +
-				"否则继续执行，直到测试通过。"
+				"运行与当前任务或改动范围直接相关的测试；仅在项目规则或失败证据需要时扩大范围。" +
+				"确认输出和退出码后，所需测试全部通过才调用 signal_loop_success；测试无法运行或存在阻塞不算成功。"
 			);
 		case "custom": {
 			const customCondition = condition?.trim() || "满足自定义条件";
@@ -76,19 +66,20 @@ function buildPrompt(mode: LoopMode, condition?: string, tasks?: LoopTask[], cur
 				"执行原则：\n" +
 				"1. 明确识别任务范围和目标\n" +
 				"2. 分步骤执行，必要时使用工具\n" +
-				"3. 完成后调用 signal_loop_success 工具\n\n" +
-				"判断完成的标准：所有子任务已完成、文件已创建/修改、预期结果已达成。\n" +
+				"3. 不自行扩大范围，也不把“必须修改文件”当作完成条件\n" +
+				"4. 用户要求和可验证验收条件均满足后，调用 signal_loop_success 工具\n\n" +
+				"只在现有授权内继续；若必须取得用户选择、新权限或外部状态变化，不要把阻塞标记为成功。\n" +
 				"如果任务复杂，主动拆解为可验证的里程碑。"
 			);
 		case "debug":
 			return (
-				"按系统调试流程继续执行，直到问题根因已定位、修复已完成并验证。\n\n" +
+				"按系统调试流程继续执行，直到用户要求的诊断或修复目标完成。\n\n" +
 				"必须遵循：\n" +
 				"1. 先复现或用证据确认故障，不要猜测\n" +
 				"2. 沿调用链和数据流追踪根因\n" +
-				"3. 提出单一假设，用最小改动验证\n" +
-				"4. 运行相关测试或检查确认问题消失\n\n" +
-				"根因清楚、修复落地、验证通过后调用 signal_loop_success 工具。"
+				"3. 诊断型请求在给出有证据的根因和影响后停止，不擅自修改\n" +
+				"4. 只有用户要求修复时才做最小改动，并运行相关验证\n\n" +
+				"达到本次请求的完成条件后调用 signal_loop_success 工具。"
 			);
 		case "tdd":
 			return (
@@ -102,13 +93,13 @@ function buildPrompt(mode: LoopMode, condition?: string, tasks?: LoopTask[], cur
 			);
 		case "review":
 			return (
-				"按代码审查流程继续执行，直到没有阻塞性问题。\n\n" +
+				"按代码审查流程继续执行，直到审查范围已覆盖且结论有证据。\n\n" +
 				"必须遵循：\n" +
 				"1. 先审查当前 diff 和相关上下文\n" +
 				"2. 优先寻找 bug、回归风险、安全问题、缺失测试\n" +
-				"3. 对发现的问题做最小修复\n" +
-				"4. 运行相关验证命令\n\n" +
-				"无阻塞问题且验证完成后调用 signal_loop_success 工具。"
+				"3. 默认只报告问题、严重度和证据；只有用户明确要求时才修复\n" +
+				"4. 运行能验证审查结论的最小相关检查\n\n" +
+				"审查报告完成；若用户要求修复，则所需修复和验证也完成后，调用 signal_loop_success 工具。"
 			);
 		case "verify":
 			return (
@@ -120,28 +111,6 @@ function buildPrompt(mode: LoopMode, condition?: string, tasks?: LoopTask[], cur
 				"4. 审查 diff，确认只包含必要改动\n\n" +
 				"验证输出支持完成结论后调用 signal_loop_success 工具。"
 			);
-		case "plan": {
-			if (!tasks || tasks.length === 0 || currentTaskIndex === undefined) {
-				const goal = condition?.trim() || "完成目标";
-				return (
-					`请为以下目标制定执行计划：${goal}\n\n` +
-					`要求：\n` +
-					`1. 将目标拆分为 3-5 个可独立执行的小任务\n` +
-					`2. 每个任务必须包含：简短描述、明确的验收标准（可客观验证）\n` +
-					`3. 任务应该按依赖顺序排列\n` +
-					`4. 制定完成后，调用 submit_loop_plan 工具提交计划\n` +
-					`5. 不要直接开始执行，先提交计划`
-				);
-			}
-			const task = tasks[currentTaskIndex];
-			const isLast = currentTaskIndex === tasks.length - 1;
-			const progress = `(${currentTaskIndex + 1}/${tasks.length})`;
-			return (
-				`执行任务 ${progress}: ${task.description}\n\n` +
-				`验收标准：\n${task.criteria.map(c => `- ${c}`).join('\n')}\n\n` +
-				`完成后调用 signal_loop_success 工具。${isLast ? '这是最后一个任务，完成后循环将结束。' : '循环将自动推进到下一个任务。'}`
-			);
-		}
 	}
 }
 
@@ -160,13 +129,9 @@ function summarizeCondition(mode: LoopMode, condition?: string): string {
 		case "tdd":
 			return "TDD通过";
 		case "review":
-			return "审查通过";
+			return "审查完成";
 		case "verify":
 			return "验证完成";
-		case "plan": {
-			const summary = condition?.trim() || "计划执行";
-			return summary.length > 48 ? `${summary.slice(0, 45)}...` : summary;
-		}
 	}
 }
 
@@ -183,11 +148,9 @@ function getConditionText(mode: LoopMode, condition?: string): string {
 		case "tdd":
 			return "失败测试已补充，实现已通过测试";
 		case "review":
-			return "无阻塞审查问题";
+			return "审查结论有证据；明确要求的修复已验证";
 		case "verify":
 			return "验证命令输出支持完成结论";
-		case "plan":
-			return condition?.trim() || "计划执行完成";
 	}
 }
 
@@ -253,11 +216,7 @@ async function summarizeBreakoutCondition(
 	*/
 }
 
-function getCompactionInstructions(mode: LoopMode, condition?: string, tasks?: LoopTask[], currentTaskIndex?: number): string {
-	if (mode === "plan" && tasks && currentTaskIndex !== undefined) {
-		const task = tasks[currentTaskIndex];
-		return `循环进行中（计划模式）。当前任务 (${currentTaskIndex + 1}/${tasks.length}): ${task.description}。请在摘要中保留当前循环状态和任务进度。`;
-	}
+function getCompactionInstructions(mode: LoopMode, condition?: string): string {
 	const conditionText = getConditionText(mode, condition);
 	return `循环进行中。跳出条件：${conditionText}。请在摘要中保留此循环状态和跳出条件。`;
 }
@@ -270,13 +229,10 @@ function updateStatus(ctx: ExtensionContext, state: LoopStateData): void {
 	}
 	const loopCount = state.loopCount ?? 0;
 	const turnText = `(第 ${loopCount} 轮)`;
-	const taskText = state.mode === "plan" && state.tasks && state.currentTaskIndex !== undefined
-		? ` [${state.currentTaskIndex + 1}/${state.tasks.length}]`
-		: "";
 	const summary = state.summary?.trim();
 	const text = summary
-		? `循环进行中: ${summary}${taskText} ${turnText}`
-		: `循环进行中${taskText} ${turnText}`;
+		? `循环进行中: ${summary} ${turnText}`
+		: `循环进行中 ${turnText}`;
 	ctx.ui.setWidget("loop", [ctx.ui.theme.fg("accent", text)]);
 }
 
@@ -424,16 +380,6 @@ export default function loopExtension(pi: ExtensionAPI): void {
 					prompt: buildPrompt("custom", condition.trim()),
 				};
 			}
-			case "plan": {
-				const condition = await ctx.ui.editor("输入计划目标:", "");
-				if (!condition?.trim()) return null;
-				return {
-					active: true,
-					mode: "plan",
-					condition: condition.trim(),
-					prompt: buildPrompt("plan", condition.trim()),
-				};
-			}
 			default:
 				return null;
 		}
@@ -469,119 +415,21 @@ export default function loopExtension(pi: ExtensionAPI): void {
 					prompt: buildPrompt("custom", condition),
 				};
 			}
-			case "plan": {
-				const condition = parts.slice(1).join(" ").trim();
-				if (!condition) return null;
-				return {
-					active: true,
-					mode: "plan",
-					condition,
-					prompt: buildPrompt("plan", condition),
-				};
-			}
 			default:
 				return null;
 		}
 	}
 
 	pi.registerTool({
-		name: "submit_loop_plan",
-		label: "提交循环计划",
-		description: "在 plan 模式下，提交由子任务组成的执行计划。",
-		parameters: Type.Object({
-			tasks: Type.Array(
-				Type.Object({
-					description: Type.String({ description: "任务描述" }),
-					criteria: Type.Array(Type.String({ description: "验收标准" })),
-				}),
-				{ description: "子任务列表" }
-			),
-		}),
-		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-			// 如果没有正在运行的 plan 模式循环，自动启动一个
-			if (!loopState.active || loopState.mode !== "plan") {
-				const autoStartedState: LoopStateData = {
-					active: true,
-					mode: "plan",
-					summary: undefined,
-					loopCount: 0,
-				};
-				setLoopState(autoStartedState, ctx);
-				notify(ctx, "没有运行中的 plan 循环，已自动启动 plan 模式", "info");
-			}
-
-			const tasks: LoopTask[] = params.tasks.map((t, i) => ({
-				id: i + 1,
-				description: t.description,
-				criteria: t.criteria,
-				passes: false,
-			}));
-
-			if (tasks.length === 0) {
-				return {
-					content: [{ type: "text", text: "计划不能为空。" }],
-					details: { active: true },
-				};
-			}
-
-			const newState: LoopStateData = {
-				...loopState,
-				tasks,
-				currentTaskIndex: 0,
-				prompt: buildPrompt("plan", loopState.condition, tasks, 0),
-				loopCount: 0,
-			};
-
-			setLoopState(newState, ctx);
-			notify(ctx, `计划已提交，共 ${tasks.length} 个任务`, "info");
-			triggerLoopPrompt(ctx);
-
-			return {
-				content: [{ type: "text", text: `计划已提交，共 ${tasks.length} 个任务。开始执行第一个任务。` }],
-				details: { active: true, taskCount: tasks.length },
-			};
-		},
-	});
-
-	pi.registerTool({
 		name: "signal_loop_success",
 		label: "标记循环成功",
-		description: "当跳出条件满足时停止当前循环。仅在用户、工具或系统提示明确要求时调用此工具。",
+		description: "仅在当前循环模式的跳出条件已由证据满足时停止循环。部分进展、失败、无法验证或等待用户输入都不算成功。",
 		parameters: Type.Object({}),
 		async execute(_toolCallId, _params, _signal, _onUpdate, ctx) {
 			if (!loopState.active) {
 				return {
 					content: [{ type: "text", text: "没有正在运行的循环。" }],
 					details: { active: false },
-				};
-			}
-
-			if (loopState.mode === "plan" && loopState.tasks && loopState.currentTaskIndex !== undefined) {
-				const tasks = [...loopState.tasks];
-				tasks[loopState.currentTaskIndex].passes = true;
-				const nextIndex = loopState.currentTaskIndex + 1;
-
-				if (nextIndex >= tasks.length) {
-					clearLoopState(ctx);
-					return {
-						content: [{ type: "text", text: "所有任务已完成，循环结束。" }],
-						details: { active: false },
-					};
-				}
-
-				const newState: LoopStateData = {
-					...loopState,
-					tasks,
-					currentTaskIndex: nextIndex,
-					prompt: buildPrompt("plan", loopState.condition, tasks, nextIndex),
-					loopCount: 0,
-				};
-				setLoopState(newState, ctx);
-				triggerLoopPrompt(ctx);
-
-				return {
-					content: [{ type: "text", text: `任务 ${loopState.currentTaskIndex + 1}/${tasks.length} 已完成，准备执行下一个任务。` }],
-					details: { active: true, currentTask: nextIndex + 1 },
 				};
 			}
 
@@ -600,7 +448,7 @@ export default function loopExtension(pi: ExtensionAPI): void {
 			let nextState = parseArgs(args);
 			if (!nextState) {
 				if (!ctx.hasUI) {
-					ctx.ui.notify("用法: /loop self | /loop debug | /loop tdd | /loop review | /loop verify | /loop tests | /loop plan <目标> | /loop custom <条件> | /loop stop", "warning");
+					ctx.ui.notify("用法: /loop self | /loop debug | /loop tdd | /loop review | /loop verify | /loop tests | /loop custom <条件> | /loop stop", "warning");
 					return;
 				}
 				nextState = await showLoopSelector(ctx);
@@ -669,7 +517,7 @@ export default function loopExtension(pi: ExtensionAPI): void {
 		const auth = await ctx.modelRegistry.getApiKeyAndHeaders(ctx.model);
 		if (!auth.ok || !auth.apiKey) return;
 
-		const instructionParts = [event.customInstructions, getCompactionInstructions(loopState.mode, loopState.condition, loopState.tasks, loopState.currentTaskIndex)]
+		const instructionParts = [event.customInstructions, getCompactionInstructions(loopState.mode, loopState.condition)]
 			.filter(Boolean)
 			.join("\n\n");
 

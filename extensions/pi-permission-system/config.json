@@ -1,0 +1,52 @@
+{
+  "$schema": "https://raw.githubusercontent.com/gotgenes/pi-packages/refs/heads/main/packages/pi-permission-system/schemas/permissions.schema.json",
+  "debugLog": false,
+  "permissionReviewLog": false,
+  "yoloMode": false,
+
+  "permission": {
+    "*": "allow",
+    "external_directory": {
+      "*": "allow",
+
+      "*\\users\\*\\.pi\\agent\\skills\\*": "allow",
+      "*\\users\\*\\.pi\\agent\\npm\\*": "allow",
+      "*\\users\\*\\.pi\\agent\\sessions\\*": "allow",
+      "*\\users\\*\\.pi\\agent\\repos\\*": "allow",
+
+      "*\\node_modules\\@earendil-works\\*": "allow",
+      "*\\node_modules\\@earendil-works": "allow",
+
+      "*\\dev\\null\\*": "allow",
+      "*\\dev\\null*": "allow",
+      "*\\dev\\null\\": "allow",
+      "*\\dev\\null": "allow"
+    },
+
+    "path": {
+      "*.env": "deny",
+      "*.env.*": "deny",
+      "~/.ssh/*": "deny",
+      "$HOME/.ssh/*": "deny",
+
+      "*\\users\\*\\.pi\\agent\\auth.json": "deny",
+      "*\\users\\*\\.pi\\agent\\models.json": "deny"
+    },
+
+    "bash": {
+
+      "rm *": "ask",
+      "del *": "ask",
+      "erase *": "ask",
+      "rd *": "ask",
+      "rmdir *": "ask",
+      "ri *": "ask",
+      "mv *": "ask",
+
+      "git clean *": "ask",
+      "git reset --hard *": "ask",
+      "git checkout -- *": "ask",
+      "git restore *": "ask"
+    }
+  }
+}

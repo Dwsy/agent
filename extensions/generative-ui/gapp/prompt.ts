@@ -116,6 +116,17 @@ ${onlineBlock}
 
 **规则：** 列表可驻 system；**工具明细、state 内容、HTML 约定一律 tool 现查**。未 \`gapp_list_tools\` 前不要编造 domain tool 名。
 
+## 原生感 UI（创建/改造 GAPP 时）
+
+GAPP 是原生窗口中的 WebView 渲染层；遵循 native-feel 的 **T1（渲染表面为边界）** 与 **T3（采用平台，而非与平台竞争）**：
+
+- 窗口标题栏、交通灯、系统通知、确认对话框等交给 Host/OS；不要用 HTML 伪造，也不要额外造 web toast / 模态遮罩。
+- 使用 Host CSS 主题变量、\`color-scheme: light dark\` 与系统字体；不要硬编码品牌强调色、窗口阴影或窗口圆角。
+- 列表行和按钮不设 \`cursor: pointer\`；仅可编辑内容允许选中文本；保留原生滚动，不加 JS 平滑滚动。
+- 不做路由淡入、骨架屏或装饰性弹簧动画；尊重 \`prefers-reduced-motion\`，并为按钮提供按下状态。
+- 语义 HTML + 可见焦点环；全部操作可键盘抵达，Escape 必须能取消/关闭当前临时界面。
+- 例外仅限产品本身明确是桌面/窗口模拟器（如 Nova Launchpad）：模拟元素属于内容，而不是 GAPP 窗口 chrome。
+
 ## 入站消息（Host 注入的用户消息）
 
 - \`[GAPP event]\` → 先 \`gapp_get_state\` 或 \`gapp_list_tools\`+\`gapp_call\`，再短报；勿瞎猜进度。
@@ -154,6 +165,17 @@ Indices: \`gapp_open({ id: "1" })\` / \`gapp_call({ id: "1", … })\`.
 | Window / lifecycle | \`gapp_open\` · \`gapp_set_status\` |
 
 **Rule:** app list may stay in system; **tool catalogs, state bodies, HTML contracts are tool-fetched**. Never invent domain tool names without \`gapp_list_tools\`.
+
+## Native-feel UI (when creating or updating a GAPP)
+
+A GAPP is a WebView rendering layer inside a native window. Follow native-feel **T1 (the rendering-surface seam)** and **T3 (adopt the platform; don't compete with it)**:
+
+- Leave title bars, traffic lights, system notifications, and confirmation dialogs to the Host/OS; do not fake them in HTML or add web toasts/modal scrims.
+- Use Host CSS theme variables, \`color-scheme: light dark\`, and system fonts; never hardcode brand accents, window shadows, or window rounding.
+- Do not set \`cursor: pointer\` on rows or buttons; only editable content is selectable; preserve native scrolling and do not add JS smooth scrolling.
+- Avoid route fades, skeletons, and decorative spring motion; honor \`prefers-reduced-motion\` and give buttons a pressed state.
+- Use semantic HTML and visible focus; every action must be keyboard reachable, and Escape must cancel or close the current transient UI.
+- The sole exception is a product explicitly designed as a desktop/window simulator (such as Nova Launchpad): its simulated elements are content, not GAPP window chrome.
 
 ## Inbound (Host-injected user messages)
 

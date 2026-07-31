@@ -28,9 +28,11 @@ import {
   armGenerateTimeout,
   setLiveTools,
   getAgentBridge,
+  pushStateToWindow,
 } from "./registry.js";
 import { loadGappToolsFile, setGappState, resolveGapp } from "./storage.js";
 import { applyStateOps } from "./stateops.js";
+import { executeGappToolModule } from "./tool-module.js";
 import { dispatchHostRpc } from "./host-rpc.js";
 import {
   formatGenerateUserMessage,
@@ -126,7 +128,34 @@ async function handleCall(appId: string, body: any) {
     };
   }
 
-  // Prefer live window handler
+  // v2: execute the app-owned shared module before live/stateOps fallbacks.
+  // This keeps browser, TUI, agent and HTTP host calls on one implementation.
+  const cwd = body.cwd || live?.cwd || process.cwd();
+  const bundle = await resolveGapp(appId, cwd);
+  if (bundle) {
+    try {
+      const moduleOutput = await executeGappToolModule(bundle, toolName, args);
+      if (moduleOutput) {
+        await setGappState(appId, moduleOutput.state, {
+          scope: bundle.meta.scope,
+          cwd: bundle.meta.cwd || cwd,
+          merge: false,
+        });
+        if (live?.win) pushStateToWindow(appId, moduleOutput.state, "tools.mjs");
+        return { status: 200, body: { ok: true, result: moduleOutput.result, via: "module" } };
+      }
+    } catch (e) {
+      return {
+        status: 400,
+        body: {
+          ok: false,
+          error: { code: "handler_error", message: e instanceof Error ? e.message : String(e) },
+        },
+      };
+    }
+  }
+
+  // Prefer live window handler for legacy/live-only tools.
   if (live?.win) {
     const result = await dispatchToolCallToWindow(appId, toolName, args);
     return { status: result.ok ? 200 : 400, body: result };
@@ -134,7 +163,6 @@ async function handleCall(appId: string, body: any) {
 
   // Fallback: stateOps on disk
   if (tool.stateOps?.length) {
-    const cwd = body.cwd || live?.cwd || process.cwd();
     const bundle = await resolveGapp(appId, cwd);
     if (!bundle) {
       return { status: 404, body: { ok: false, error: { code: "not_found", message: `app ${appId}` } } };

@@ -1,13 +1,33 @@
 // ── Generative UI Extension ───────────────────────────────────────────────
 // Composed from: storage.ts, html-helpers.ts, gallery.ts, tools.ts, commands.ts
+// GAPP: gapp/ (storage, open, tools, commands, prompt)
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { shellHTML, escapeJS, detectDarkMode, openWindow } from "./html-helpers.js";
+import { shellHTML, escapeJS, detectDarkMode, openWindow, preloadGlimpseui } from "./html-helpers.js";
+import { getGlimpseuiSource } from "./resolve-glimpseui.js";
 import { registerTools, type ToolContext } from "./tools.js";
 import { registerWidgetsCommand } from "./commands.js";
 import { registerGapp } from "./gapp/index.js";
 
-export default function (pi: ExtensionAPI) {
+export default async function (pi: ExtensionAPI) {
+  // Prefer local/global glimpseui (Dock + control socket fork) over nested registry copy.
+  try {
+    await preloadGlimpseui();
+    const src = getGlimpseuiSource();
+    if (src) {
+      // Quiet by default; set GLIMPSEUI_DEBUG=1 to surface path
+      if (process.env.GLIMPSEUI_DEBUG === "1") {
+        console.error(`[generative-ui] using glimpseui: ${src}`);
+      }
+    }
+  } catch (err) {
+    console.error(
+      `[generative-ui] failed to load glimpseui (${err instanceof Error ? err.message : err}). ` +
+        `Install with: npm i -g ~/Dev/AI/glimpse   or set GLIMPSEUI_PATH`,
+    );
+    throw err;
+  }
+
   // ── Shared state ──────────────────────────────────────────────────────
 
   const toolCtx: ToolContext = {
@@ -97,6 +117,7 @@ export default function (pi: ExtensionAPI) {
 
   registerTools(pi, toolCtx);
   registerWidgetsCommand(pi, toolCtx.activeWindows);
+  registerGapp(pi, toolCtx);
 
   // ── Cleanup on shutdown ───────────────────────────────────────────────
 

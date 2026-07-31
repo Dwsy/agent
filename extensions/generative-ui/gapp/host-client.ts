@@ -75,15 +75,24 @@ export async function hostReleaseLease(appId: string, sessionId: string): Promis
   }
 }
 
-export async function hostListTools(appId: string, cwd?: string): Promise<GappTool[]> {
+export async function hostToolCatalog(
+  appId: string,
+  cwd?: string,
+): Promise<{ live: boolean; tools: GappTool[] } | null> {
   try {
     const q = cwd ? `?cwd=${encodeURIComponent(cwd)}` : "";
     const { status, data } = await req("GET", GAPP_PATHS.tools(appId) + q);
-    if (status === 200 && Array.isArray(data?.tools)) return data.tools;
+    if (status === 200 && Array.isArray(data?.tools)) {
+      return { live: data.live === true, tools: data.tools };
+    }
   } catch {
     // ignore
   }
-  return [];
+  return null;
+}
+
+export async function hostListTools(appId: string, cwd?: string): Promise<GappTool[]> {
+  return (await hostToolCatalog(appId, cwd))?.tools ?? [];
 }
 
 export async function hostCallTool(

@@ -217,13 +217,16 @@ type GappTool = {
 - 调用时用 `gapp_call` 的 `tool` 字段传 **短名** `toolName`（app 内）
 - 禁止：`register` / `unregister` / `__*` 等保留名
 
-### 4.2 Declarative tools on disk（可选）
+### 4.2 Tool catalog on disk（可选）
 
 路径：`.pi/gapp/<id>/tools.json` 或 `~/.pi/gapp/<id>/tools.json`
 
+v0.2 推荐把 schema/catalog 与实现分开：`tools.json` 可发现，固定 bundle 入口 `tools.mjs` 可执行。
+
 ```json
 {
-  "v": "0.1",
+  "v": "0.2",
+  "module": "tools.mjs",
   "tools": [
     {
       "name": "list_items",
@@ -261,8 +264,40 @@ type GappTool = {
 
 窗口未开时：
 
-- 仅有 `description` + schema 的工具 → `gapp_call` 返回 `needs_live_handler`
-- 带 `stateOps` 的工具 → Host 在磁盘 state 上执行（见 §4.5）
+- bundle 含 `tools.mjs` 且导出同名 handler → Host/Service 在磁盘 state 上执行
+- 否则带 `stateOps` 的工具 → 走 v0.1 declarative fallback（见 §4.5）
+- 仅有 schema 且没有上述实现 → `gapp_call` 返回 `needs_live_handler`
+
+#### 4.2.1 Executable `tools.mjs`（v0.2）
+
+`tools.mjs` 是与 `tui.mjs` / `index.html` 同级的本地可信应用代码。固定导出：
+
+```js
+export const gappToolHandlers = {
+  add_item({ state, arguments: args, context }) {
+    const item = {
+      id: context.uuid(),
+      title: String(args.title),
+      createdAt: context.now(),
+    };
+    return {
+      state: { ...state, items: [...(state.items || []), item] },
+      result: item,
+    };
+  },
+};
+```
+
+handler contract：
+
+- input：`{ state, arguments, context }`
+- `context.app`：当前 GAPP meta 摘要
+- `context.now()` / `context.uuid()`：宿主提供的时间与 ID
+- output：必须为 `{ state, result? }`
+- 固定文件名，Host 不接受 manifest 中的任意路径，避免 path traversal
+- WebView 通过 `window.__GAPP_TOOLS_MODULE_URL__` import；TUI 通过 `./tools.mjs` import
+
+模块还可导出应用自己的客户端（例如 `createKanbanTools(invoke)`），让 HTML/TUI 共享具名 API，而不是各自硬编码 tool 名称。
 
 ### 4.3 Live registration (App → Host)
 
@@ -331,9 +366,10 @@ type GappTool = {
 
 执行优先级：
 
-1. 窗口 live + 页面已 `onToolCall` → 走 WebView
-2. 否则若 tool 有 `stateOps` → Host 磁盘执行 + 若窗开着则 `gapp_state_push`
-3. 否则 `needs_live_handler`
+1. bundle 有 `tools.mjs` 且导出同名 `gappToolHandlers[name]` → 执行共享模块，写回磁盘；若窗开着则 `gapp_state_push`
+2. 否则窗口 live + 页面已 `onToolCall` → 走 WebView
+3. 否则若 tool 有 `stateOps` → Host 磁盘执行 + 若窗开着则 `gapp_state_push`
+4. 否则 `needs_live_handler`
 
 ### 4.5 Optional stateOps（磁盘可执行）
 
@@ -617,7 +653,7 @@ window.GappHost = {
   unregisterTools(),
   listTools(),
   onToolCall(handler),  // (name, args, { requestId }) => result | Promise
-  // Host also supports: tools with only stateOps need no handler
+  // Host also supports: tools.mjs and legacy stateOps without a live handler
 
   // Events
   emit(event, payload, { notifyAgent = false, prompt } = {}),
@@ -636,7 +672,9 @@ window.GappHost = {
 };
 ```
 
-### 8.1 Minimal To-Do snippet
+WebView runtime 还注入 `window.__GAPP_TOOLS_MODULE_URL__`，其值为当前 bundle 固定 `tools.mjs` 的绝对 file URL；v0.2 页面应动态 import 该 URL，以便与 Host/TUI 使用同一领域实现。
+
+### 8.1 Minimal To-Do snippet (legacy live-handler form)
 
 ```html
 <script>
@@ -825,3 +863,68 @@ async function summarize() {
 |-----|------|-------|
 | 0.1 | 2026-07-24 | Initial protocol: tools, events, generative bridge, meta-tools, stateOps |
 | 0.1.1 | 2026-07-24 | Lock: main-session generate only; no destructive confirm; single-connection default + multi opt-in |
+| 0.1.2 | 2026-07-31 | Add app-owned `tui.mjs` renderer contract shared by standalone and Pi hosts |
+
+---
+
+## 16. TUI application renderer contract
+
+TUI 是 GAPP 的正式 renderer，不是 WebView 控制台。Bundle 可在根目录提供 `tui.mjs`：
+
+```text
+<meta/state/tools shared SSOT>
+├─ index.html  → WebView renderer
+└─ tui.mjs     → terminal renderer
+                 ├─ standalone TUI + ProcessTerminal
+                 └─ Pi ctx.ui.custom()
+```
+
+### 16.1 Module entry
+
+```js
+export default function createGappTui(runtime) {
+  return {
+    invalidate() {},
+    render(width) { return [runtime.app.name]; },
+    handleInput(data) { if (data === "q") runtime.close(); },
+  };
+}
+```
+
+具名 `createGappTui(runtime)` 也有效。Factory 可同步或异步，必须返回结构化 `pi-tui` Component：
+
+- `render(width): string[]`（required）
+- `invalidate(): void`（缺省由 Host 补 no-op）
+- `handleInput(data): void`（optional）
+
+GAPP module 不要求直接 import `@earendil-works/pi-tui`，因此 bundle 不需要自己的 `node_modules`。Host 包装输出并按终端可见宽度截断。
+
+### 16.2 Injected runtime
+
+| member | contract |
+|---|---|
+| `app` | `{ id, name, description, scope }` |
+| `palette` | Host theme/ANSI text functions |
+| `getState()` | Return current bundle `state.json` |
+| `call(tool, args)` | Invoke shared GAPP service and reload state |
+| `refresh()` | Reload bundle state without invoking a tool |
+| `prompt({ title, initial, submit })` | Suspend app mount, collect host text input, then resume callback |
+| `notify(message)` / `getStatus()` | Renderer status line |
+| `isBusy()` | One action is running |
+| `key(data, name)` | Match `up/down/left/right/enter/escape/tab/backspace` |
+| `truncate(text, width)` / `pad(text, width)` | ANSI-aware width helpers |
+| `close()` | Exit the TUI app |
+
+### 16.3 Host rules
+
+1. `gapp-tui [id]` and Pi `/gapp tui [id]` load the same `tui.mjs`.
+2. Missing id opens a picker containing only bundles with `tui.mjs`.
+3. TUI tool calls force `openIfNeeded: false`; a terminal action must not open a WebView as a side effect.
+4. After tool calls, Host reloads `state.json`, invalidates the app Component, and requests render.
+5. App-local input (selection/navigation) also triggers render even when it does not mutate persisted state.
+6. Browser-only GAPPs remain valid but are not listed by the TUI picker.
+7. `index.html` and `tui.mjs` may coexist; they share state and domain tools but own their renderer-specific UI logic.
+
+### 16.4 Security boundary
+
+`tui.mjs` is executable application code loaded from an installed/local GAPP bundle. It inherits the trust level of other extension-side code and is not an untrusted HTML sandbox. The runtime intentionally exposes no arbitrary filesystem API; application persistence should go through declared tools and `state.json`.

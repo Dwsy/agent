@@ -28,7 +28,7 @@ daily/*.md       ← L1: raw session logs
 | `memory({ action: "reinforce", content: "..." })` | Increment `[Nx]` usage count |
 | `memory({ action: "delete_learning", content: "..." })` | Remove stale entry |
 | `memory({ action: "update_learning", id/query, content })` | Rewrite entry |
-| `role_read` / `role_write` | Direct file access |
+| `role_info` | List role paths only; use memory actions for memory changes |
 
 ## Process
 
@@ -80,9 +80,7 @@ LLM produces a plan:
 ### Step 5: Pending Management
 
 Check `memory/pending.md`:
-```
-role_read({ path: "memory/pending.md" })
-```
+Use the standard file-read tool on the injected role's `memory/pending.md` path only when pending details are needed.
 
 - `[○]` pending → if relevant to current work, `search` to auto-promote (score ≥0.5)
 - `[✓]` already promoted

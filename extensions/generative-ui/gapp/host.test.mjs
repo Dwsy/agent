@@ -15,6 +15,32 @@ async function load(name) {
   return import(pathToFileURL(join(root, name)).href + "?t=" + Date.now());
 }
 
+test("old window cleanup cannot unregister a same-session replacement", async () => {
+  const { registerLiveApp, unregisterLiveApp, getLiveApp } = await load("registry.ts");
+  const oldWin = { id: "old" };
+  const newWin = { id: "new" };
+  registerLiveApp({
+    appId: "generation-guard",
+    sessionId: "same-session",
+    scope: "project",
+    cwd: "/tmp/project",
+    instances: "single",
+    win: oldWin,
+  });
+  registerLiveApp({
+    appId: "generation-guard",
+    sessionId: "same-session",
+    scope: "project",
+    cwd: "/tmp/project",
+    instances: "single",
+    win: newWin,
+  });
+  unregisterLiveApp("generation-guard", "same-session", oldWin);
+  assert.equal(getLiveApp("generation-guard")?.win, newWin);
+  unregisterLiveApp("generation-guard", "same-session", newWin);
+  assert.equal(getLiveApp("generation-guard"), undefined);
+});
+
 test("stateOps push / updateWhere / get", async () => {
   const { applyStateOps } = await load("stateops.ts");
   let out = applyStateOps(

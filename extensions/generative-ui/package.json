@@ -1,12 +1,17 @@
 {
   "private": true,
+  "bin": {
+    "gapp-tui": "gapp/cli.ts"
+  },
   "scripts": {
     "build": "node psm-renderer/build.mjs",
-    "test": "node --test psm-renderer/index.test.mjs theme-templates.test.mjs storage.test.mjs && bun test gapp/storage.test.mjs gapp/host.test.mjs"
+    "gapp:tui": "bun gapp/cli.ts",
+    "test": "node --test psm-renderer/index.test.mjs theme-templates.test.mjs storage.test.mjs && bun test gapp/storage.test.mjs gapp/host.test.mjs gapp/tui.test.mjs"
   },
   "dependencies": {
+    "@earendil-works/pi-tui": "0.82.1",
     "@modelcontextprotocol/sdk": "^1.29.0",
-    "glimpseui": "*"
+    "glimpseui": "link:../../../../Dev/AI/glimpse"
   },
   "psm": {
     "extensions": [

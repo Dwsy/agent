@@ -103,24 +103,22 @@ export default function (pi: ExtensionAPI) {
 
   pi.registerTool({
     name: "ace-tool",
-    description: `Semantic code search - retrieves conceptually related code using natural language queries. Use this tool when file names, symbols, or locations are unknown.
+    description: `Semantic code search for conceptually related code. Use it as the first semantic fallback when file names, symbols, or locations are unknown and direct file/symbol search is insufficient.
 
 Trigger when:
 - User asks where something is implemented ("Where is user authentication handled?")
 - Need to find code locations ("Find the database connection code")
-- Want to understand how something works ("How does the payment processing work?")
-- Need to make changes but don't know where ("I need to add a new API endpoint")
-- Ask about code structure ("What tests exist for the login feature?")
+- Need to make changes but direct search has not located the relevant code
 
 Query strategies:
-- Direct: Use function names, class names, variable names (e.g. "UserService.authenticate")
 - Conceptual: Describe what the code does (e.g. "user authentication", "database connection")
 - Related: Search for similar functionality or related concepts
 
 Iteration:
 - If results aren't helpful, reformulate with different terminology
-- Use multiple related queries for completeness
-- Never guess - always search before assuming code locations`,
+- Use additional queries only when the first result leaves a material gap
+- For deeper multi-round analysis of a cross-file flow, use fast-context-mcp instead
+- Prefer direct repository search when an exact path or symbol is already known`,
     parameters: Type.Object({
       query: Type.String({ description: "Natural language search description" }),
       project_root_path: Type.Optional(Type.String({ description: "Absolute path to project root directory, defaults to current directory" })),
