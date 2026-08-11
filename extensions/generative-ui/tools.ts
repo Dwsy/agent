@@ -7,8 +7,9 @@ import { Text } from "@earendil-works/pi-tui";
 import { join } from "node:path";
 import { getGuidelines, AVAILABLE_MODULES } from "./guidelines.js";
 import { TEMPLATE_IDS } from "./templates/index.js";
-import { appendWidgetEvent, type WidgetRecord, WIDGETS_DIR, saveWidget, loadActiveWidgetIndex, loadWidgetIndex, loadWidgetHtml } from "./storage.js";
-import { detectDarkMode, shellHTML, wrapHTML, escapeJS, timestamp, openWindow } from "./html-helpers.js";
+import { appendWidgetEvent, type WidgetRecord, widgetsDir, saveWidget, loadActiveWidgetIndex, loadWidgetIndex, loadWidgetHtml } from "./storage.js";
+import { shellHTML, wrapHTML, escapeJS, timestamp, openWindow } from "./html-helpers.js";
+import { transpileCanvas, validateCanvasCode, canvasShellHTML, canvasDocumentHTML, CANVAS_ALLOWED_IMPORTS } from "./canvas.js";
 
 const MAX_WIDGET_CODE_BYTES = 2 * 1024 * 1024;
 const ALLOWED_RESOURCE_HOSTS = new Set([
@@ -57,10 +58,130 @@ export interface ToolContext {
 
 export interface StreamingWidget {
   contentIndex: number;
+  kind: "widget" | "canvas";
   window: any | null;
   lastHTML: string;
   updateTimer: any;
   ready: boolean;
+}
+
+interface PresentWindowOptions {
+  ctx: ToolContext;
+  interactive: boolean;
+  noun: "Widget" | "Canvas";
+  title: string;
+  filename: string;
+  fullPath: string;
+  width: number;
+  height: number;
+  floating: boolean;
+  /** Shell document used when no streaming preview window exists yet. */
+  shell: string;
+  streamingKind: "widget" | "canvas";
+  /** JS evaluated in the window once it is ready. */
+  activationCode: string;
+  details: Record<string, unknown>;
+}
+
+/** Open (or adopt the streaming preview) window, activate content, and wire
+ * the interactive/message/cleanup lifecycle shared by widgets and canvases. */
+function presentWindow(opts: PresentWindowOptions): Promise<any> | any {
+  const { ctx, title, filename, fullPath, noun } = opts;
+  let win: any = null;
+  let windowReady = false;
+
+  if (ctx.streaming?.window && ctx.streaming.kind === opts.streamingKind) {
+    win = ctx.streaming.window;
+    windowReady = ctx.streaming.ready;
+    ctx.streaming = null;
+  } else {
+    win = openWindow(opts.shell, {
+      width: opts.width,
+      height: opts.height,
+      title,
+      floating: opts.floating,
+      noDock: true,
+    });
+    ctx.activeWindows.push(win);
+  }
+
+  let activated = false;
+  const activate = () => {
+    if (activated) return;
+    activated = true;
+    win.send(opts.activationCode);
+  };
+  const scheduleActivation = () => {
+    if (windowReady) activate();
+    else win.on("ready", activate);
+  };
+
+  // Window stays tracked until it actually closes so session_shutdown can
+  // clean up widgets that outlive their tool call (interactive included).
+  const untrack = () => {
+    ctx.activeWindows = ctx.activeWindows.filter((w) => w !== win);
+  };
+  win.on("closed", untrack);
+  win.on("error", untrack);
+
+  if (opts.interactive) {
+    return new Promise<any>((resolve, reject) => {
+      let messageData: unknown;
+      let hasMessage = false;
+      let settling = false;
+      let resolved = false;
+
+      const timeout = setTimeout(() => { if (!settling) finish("Timeout"); }, 120_000);
+
+      const finish = (reason: string, widgetEvent: unknown = null) => {
+        if (resolved) return;
+        resolved = true;
+        clearTimeout(timeout);
+        resolve({
+          content: [{
+            type: "text" as const,
+            text: hasMessage
+              ? noun + " \"" + title + "\" interaction data: " + JSON.stringify(messageData)
+              : noun + " \"" + title + "\" closed (" + reason + ").",
+          }],
+          details: { ...opts.details, messageData, widgetEvent, closedReason: reason },
+        });
+      };
+
+      win.on("message", (data: unknown) => {
+        const settlesTool = !resolved && !settling;
+        if (settlesTool) {
+          settling = true;
+          messageData = data;
+          hasMessage = true;
+        }
+        appendWidgetEvent(filename, data).then((event) => {
+          if (settlesTool) finish("User sent data", event);
+        }).catch((error) => {
+          if (!settlesTool) return;
+          resolved = true;
+          clearTimeout(timeout);
+          reject(error);
+        });
+      });
+      win.on("closed", () => { if (!settling) finish("Window closed"); });
+      win.on("error", (err: Error) => { if (!settling) finish("Error: " + err.message); });
+      scheduleActivation();
+    });
+  }
+
+  win.on("message", (data: unknown) => {
+    void appendWidgetEvent(filename, data).catch(() => {});
+  });
+  scheduleActivation();
+
+  return {
+    content: [{
+      type: "text" as const,
+      text: noun + " \"" + title + "\" rendered (" + opts.width + "\u00d7" + opts.height + "). Saved to " + fullPath + ".",
+    }],
+    details: opts.details,
+  };
 }
 
 export function registerTools(pi: ExtensionAPI, ctx: ToolContext) {
@@ -76,7 +197,7 @@ export function registerTools(pi: ExtensionAPI, ctx: ToolContext) {
     promptGuidelines: [
       "Call visualize_read_me once before your first show_widget call to load design guidelines.",
       "Do NOT mention the read_me call to the user — call it silently, then proceed directly to building the widget.",
-      "Pick the modules that match your use case: interactive, chart, mockup, art, diagram, runtime.",
+      "Pick the modules that match your use case: interactive, chart, mockup, art, diagram, runtime, canvas (React components via show_canvas).",
       "Guidelines include a catalog of ready-made HTML fragments (flow-steps, flow-mermaid, architecture-cards, metric-chart, compare-cards, contact-card). Prefer these over multi-color SVG flow boxes.",
       "Template bodies are on-demand: first call modules only (catalog). When ready to build, re-call with templates: [\"flow-mermaid\"] (or multiple ids / \"all\") to load full HTML skeletons.",
       "Theme: always use host CSS variables (var(--color-text-*), var(--color-background-*), var(--color-border-*)). Never hardcode light-only hex. Chart.js/Mermaid must read computed CSS vars or window._themeVars() so light/dark both work.",
@@ -177,8 +298,12 @@ export function registerTools(pi: ExtensionAPI, ctx: ToolContext) {
     }),
 
     async execute(_toolCallId, params) {
+      // Enforced against actual tool usage, not the model's self-report.
+      if (!ctx.hasSeenReadMe) {
+        throw new Error("You must call visualize_read_me before show_widget. Call it now, then retry.");
+      }
       if (!params.i_have_seen_read_me) {
-        throw new Error("You must call visualize_read_me before show_widget. Set i_have_seen_read_me: true after doing so.");
+        throw new Error("Set i_have_seen_read_me: true after calling visualize_read_me.");
       }
 
       const code = params.widget_code;
@@ -190,10 +315,9 @@ export function registerTools(pi: ExtensionAPI, ctx: ToolContext) {
       const ts = timestamp();
       const safeTitle = params.title.replace(/[^a-zA-Z0-9_-]/g, "_");
       const filename = ts + "_" + safeTitle + ".html";
-      const fullPath = join(WIDGETS_DIR, filename);
+      const fullPath = join(widgetsDir(), filename);
 
-      const dark = detectDarkMode();
-      const fullHTML = wrapHTML(code, isSVG, dark);
+      const fullHTML = wrapHTML(code, isSVG);
       const cwd = process.cwd();
       const record: WidgetRecord = {
         id: ts + "_" + safeTitle,
@@ -207,100 +331,21 @@ export function registerTools(pi: ExtensionAPI, ctx: ToolContext) {
       };
       await saveWidget(record, fullHTML);
 
-      let win: any = null;
-      let windowReady = false;
-
-      if (ctx.streaming?.window) {
-        win = ctx.streaming.window;
-        windowReady = ctx.streaming.ready;
-        ctx.streaming = null;
-      } else {
-        const dark = detectDarkMode();
-        win = openWindow(shellHTML(dark), {
-          width,
-          height,
-          title,
-          floating: params.floating ?? false,
-          noDock: true,
-        });
-        ctx.activeWindows.push(win);
-      }
-
-      let activated = false;
-      const activateWidget = () => {
-        if (activated) return;
-        activated = true;
-        const escaped = escapeJS(code);
-        win.send("window._setContent('" + escaped + "'); window._runScripts();");
-      };
-      const scheduleActivation = () => {
-        if (windowReady) activateWidget();
-        else win.on("ready", activateWidget);
-      };
-
-      if (params.interactive) {
-        return new Promise<any>((resolve, reject) => {
-          let messageData: unknown;
-          let hasMessage = false;
-          let settling = false;
-          let resolved = false;
-
-          const finish = (reason: string, widgetEvent: unknown = null) => {
-            if (resolved) return;
-            resolved = true;
-            ctx.activeWindows = ctx.activeWindows.filter((w) => w !== win);
-            resolve({
-              content: [{
-                type: "text" as const,
-                text: hasMessage
-                  ? "Widget \"" + title + "\" interaction data: " + JSON.stringify(messageData)
-                  : "Widget \"" + title + "\" closed (" + reason + ").",
-              }],
-              details: { title: params.title, width, height, isSVG, savedFile: filename, fullPath, messageData, widgetEvent, closedReason: reason },
-            });
-          };
-
-          win.on("message", (data: unknown) => {
-            const settlesTool = !resolved && !settling;
-            if (settlesTool) {
-              settling = true;
-              messageData = data;
-              hasMessage = true;
-            }
-            appendWidgetEvent(filename, data).then((event) => {
-              if (settlesTool) finish("User sent data", event);
-            }).catch((error) => {
-              if (!settlesTool) return;
-              resolved = true;
-              ctx.activeWindows = ctx.activeWindows.filter((w) => w !== win);
-              reject(error);
-            });
-          });
-          win.on("closed", () => { if (!settling) finish("Window closed"); });
-          win.on("error", (err: Error) => { if (!settling) finish("Error: " + err.message); });
-          setTimeout(() => { if (!settling) finish("Timeout"); }, 120_000);
-          scheduleActivation();
-        });
-      }
-
-      win.on("message", (data: unknown) => {
-        void appendWidgetEvent(filename, data).catch(() => {});
-      });
-      win.on("closed", () => {
-        ctx.activeWindows = ctx.activeWindows.filter((w) => w !== win);
-      });
-      win.on("error", () => {
-        ctx.activeWindows = ctx.activeWindows.filter((w) => w !== win);
-      });
-      scheduleActivation();
-
-      return {
-        content: [{
-          type: "text" as const,
-          text: "Widget \"" + title + "\" rendered (" + width + "\u00d7" + height + "). Saved to " + fullPath + ".",
-        }],
+      return presentWindow({
+        ctx,
+        interactive: params.interactive ?? false,
+        noun: "Widget",
+        title,
+        filename,
+        fullPath,
+        width,
+        height,
+        floating: params.floating ?? false,
+        shell: shellHTML(),
+        streamingKind: "widget",
+        activationCode: "window._setContent('" + escapeJS(code) + "'); window._runScripts();",
         details: { title: params.title, width, height, isSVG, savedFile: filename, fullPath },
-      };
+      });
     },
 
     renderCall(args: any, theme: any) {
@@ -322,6 +367,123 @@ export function registerTools(pi: ExtensionAPI, ctx: ToolContext) {
       let text = theme.fg("success", "\u2713 ") + theme.fg("accent", title);
       text += theme.fg("dim", " " + (details.width ?? 800) + "\u00d7" + (details.height ?? 600));
       if (details.isSVG) text += theme.fg("dim", " (SVG)");
+      if (details.fullPath) text += theme.fg("muted", " \u2192 " + details.fullPath);
+      return new Text(text, 0, 0);
+    },
+  });
+
+  // ── show_canvas tool ──────────────────────────────────────────────────────
+
+  pi.registerTool({
+    name: "show_canvas",
+    label: "Show Canvas",
+    description:
+      "Render a React component in a native macOS window. Write a single TSX file that default-exports the " +
+      "top-level component; it is compiled host-side and rendered with React 18. " +
+      "Use for analytical artifacts: metrics breakdowns, audits and reviews with categorized findings, " +
+      "data tables, timelines, interactive explorations — anything with component state or rich composition. " +
+      "For single static SVG/HTML visuals prefer show_widget. " +
+      "IMPORTANT: Call visualize_read_me (module \"canvas\") once before your first show_canvas call.",
+    promptSnippet: "Render a React component (TSX, compiled host-side) in a native macOS window.",
+    promptGuidelines: [
+      "Use show_canvas when the output is a standalone analytical artifact (analyses, audits, structured findings, data-heavy tables, interactive explorations). Use show_widget for single static SVG/HTML visuals.",
+      "Call visualize_read_me with the \"canvas\" module first, then set i_have_seen_read_me: true.",
+      "canvas_code is one TSX file that default-exports the top-level component. Allowed imports: " + CANVAS_ALLOWED_IMPORTS.join(", ") + ". Everything else must be inline.",
+      "Embed all data inline. No fetch, XMLHttpRequest, or WebSocket.",
+      "Take all colors from useHostTheme() (@gen-ui/canvas) or host CSS variables so light/dark both work. Never hardcode light-only hex.",
+      "No slop: no gradients, no emojis as icons, no box-shadows, no rainbow coloring, no walls of identical cards, no empty placeholder sections.",
+      "Every chart/table must be self-describing: specific title, axis labels with units, legend for multiple series, source caption.",
+      "Set interactive=true ONLY when the component must return data the agent needs to continue; call sendToAgent(data) from @gen-ui/canvas to settle it.",
+      "Compile errors are returned verbatim — fix the TSX and retry.",
+    ],
+    parameters: Type.Object({
+      i_have_seen_read_me: Type.Boolean({
+        description: "Confirm you have already called visualize_read_me in this conversation.",
+      }),
+      title: Type.String({
+        description: "Short snake_case identifier for this canvas (used as window title and saved filename).",
+      }),
+      canvas_code: Type.String({
+        description:
+          "TSX source for a single-file React component. Must default-export the top-level component. " +
+          "Allowed imports: " + CANVAS_ALLOWED_IMPORTS.join(", ") + ".",
+      }),
+      width: Type.Optional(Type.Number({ description: "Window width in pixels. Default: 900." })),
+      height: Type.Optional(Type.Number({ description: "Window height in pixels. Default: 640." })),
+      floating: Type.Optional(Type.Boolean({ description: "Keep window always on top. Default: false." })),
+      interactive: Type.Optional(Type.Boolean({
+        description:
+          "Whether this canvas must return data to the agent via sendToAgent. " +
+          "false (default): display-only, agent continues immediately. true: blocking until the canvas responds.",
+      })),
+    }),
+
+    async execute(_toolCallId, params) {
+      if (!ctx.hasSeenReadMe) {
+        throw new Error("You must call visualize_read_me before show_canvas. Call it now (include the \"canvas\" module), then retry.");
+      }
+
+      const code = params.canvas_code;
+      validateCanvasCode(code, params.interactive ?? false);
+      const compiled = await transpileCanvas(code);
+
+      const title = params.title.replace(/_/g, " ");
+      const width = params.width ?? 900;
+      const height = params.height ?? 640;
+      const ts = timestamp();
+      const safeTitle = params.title.replace(/[^a-zA-Z0-9_-]/g, "_");
+      const filename = ts + "_" + safeTitle + ".html";
+      const sourceFile = ts + "_" + safeTitle + ".tsx";
+      const fullPath = join(widgetsDir(), filename);
+
+      const record: WidgetRecord = {
+        id: ts + "_" + safeTitle,
+        title,
+        timestamp: ts,
+        file: filename,
+        width,
+        height,
+        isSVG: false,
+        kind: "canvas",
+        sourceFile,
+        cwd: process.cwd(),
+      };
+      await saveWidget(record, canvasDocumentHTML(compiled), code);
+
+      return presentWindow({
+        ctx,
+        interactive: params.interactive ?? false,
+        noun: "Canvas",
+        title,
+        filename,
+        fullPath,
+        width,
+        height,
+        floating: params.floating ?? false,
+        shell: canvasShellHTML(),
+        streamingKind: "canvas",
+        activationCode: compiled,
+        details: { title: params.title, width, height, kind: "canvas", savedFile: filename, sourceFile, fullPath },
+      });
+    },
+
+    renderCall(args: any, theme: any) {
+      const title = (args.title ?? "canvas").replace(/_/g, " ");
+      const size = args.width && args.height ? " " + args.width + "\u00d7" + args.height : "";
+      let text = theme.fg("toolTitle", theme.bold("show_canvas "));
+      text += theme.fg("accent", title);
+      if (size) text += theme.fg("dim", size);
+      return new Text(text, 0, 0);
+    },
+
+    renderResult(result: any, { isPartial }: any, theme: any) {
+      if (isPartial) {
+        return new Text(theme.fg("warning", "\u27f3 Canvas compiling..."), 0, 0);
+      }
+      const details = result.details ?? {};
+      const title = (details.title ?? "canvas").replace(/_/g, " ");
+      let text = theme.fg("success", "\u2713 ") + theme.fg("accent", title);
+      text += theme.fg("dim", " " + (details.width ?? 900) + "\u00d7" + (details.height ?? 640) + " (React)");
       if (details.fullPath) text += theme.fg("muted", " \u2192 " + details.fullPath);
       return new Text(text, 0, 0);
     },
@@ -365,7 +527,7 @@ export function registerTools(pi: ExtensionAPI, ctx: ToolContext) {
           };
         }
         const lines = recent.map(
-          (w, i) => (i + 1) + ". " + w.title + " \u2014 " + w.timestamp + " \u2014 " + w.width + "\u00d7" + w.height + " \u2014 " + w.file
+          (w, i) => (i + 1) + ". " + w.title + (w.kind === "canvas" ? " [canvas]" : "") + " \u2014 " + w.timestamp + " \u2014 " + w.width + "\u00d7" + w.height + " \u2014 " + w.file
         );
         return {
           content: [{ type: "text" as const, text: lines.join("\n") }],
@@ -382,15 +544,25 @@ export function registerTools(pi: ExtensionAPI, ctx: ToolContext) {
           throw new Error("Widget not found: " + params.filename);
         }
 
+        const index = await loadWidgetIndex();
+        const record = index.find((w) => w.file === params.filename);
+
         if (params.action === "html") {
+          // Canvases return their TSX source — that is what gets edited and re-shown.
+          if (record?.kind === "canvas" && record.sourceFile) {
+            const source = await loadWidgetHtml(record.sourceFile);
+            if (source) {
+              return {
+                content: [{ type: "text" as const, text: source }],
+                details: { filename: params.filename, sourceFile: record.sourceFile, kind: "canvas" },
+              };
+            }
+          }
           return {
             content: [{ type: "text" as const, text: html }],
             details: { filename: params.filename },
           };
         }
-
-        const index = await loadWidgetIndex();
-        const record = index.find((w) => w.file === params.filename);
         const title = record?.title ?? "Saved Widget";
         const width = record?.width ?? 800;
         const height = record?.height ?? 600;

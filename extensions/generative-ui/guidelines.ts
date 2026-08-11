@@ -861,6 +861,71 @@ Use \`imagine_html\`. Wrap the entire thing in a single raised card. All content
 </div>
 \`\`\``;
 
+const CANVAS_GUIDE = `## Canvas (React components via show_canvas)
+
+A canvas is ONE TSX file that default-exports the top-level component. It is compiled host-side (esbuild) and rendered with React 18 in a native window.
+
+**When to use canvas vs widget.** Use show_canvas for standalone analytical artifacts: metrics breakdowns, audits/reviews with categorized findings, data-heavy tables, timelines, interactive explorations, anything needing component state or rich composition. Use show_widget for single static SVG/HTML visuals and Mermaid diagrams.
+
+**Hard rules**
+- Allowed imports: \`react\`, \`react-dom/client\`, \`@gen-ui/canvas\`. Nothing else — no npm packages, no relative imports, no Node built-ins.
+- Embed all data inline. No fetch / XMLHttpRequest / WebSocket (CSP blocks them anyway).
+- Default-export the component: \`export default function Report() { ... }\`.
+- Runtime errors render in-window and are reported back as \`{ type: "canvas_error" }\` events; compile errors fail the tool call with esbuild diagnostics — fix and retry.
+
+**SDK (@gen-ui/canvas)**
+\`\`\`tsx
+import { useHostTheme, sendToAgent, sendPrompt, sendAnnotation } from "@gen-ui/canvas";
+
+const theme = useHostTheme();
+// { dark, text, textSecondary, textTertiary, textInfo, textSuccess, textWarning,
+//   textDanger, bg, bgSecondary, bgTertiary, border, borderSecondary,
+//   chartTick, chartGrid, fontSans }
+\`\`\`
+- All colors from \`useHostTheme()\` tokens or CSS \`var(--color-*)\` — the hook re-resolves when the system scheme flips, so light/dark both work. No hardcoded light-only hex.
+- \`sendToAgent(data)\` returns structured data to the agent (settles interactive canvases). \`sendPrompt(text)\` requests a follow-up. \`sendAnnotation(targetId, comment)\` records feedback on elements with \`data-spec-id\`.
+- Base components (flat, theme-aware — prefer these over hand-rolled equivalents):
+  - \`<Card title?>{children}</Card>\` — rounded bordered container for grouping a section.
+  - \`<Stat label value hint? />\` — one metric: small label, prominent value, optional hint.
+  - \`<DataTable columns rows />\` — minimal table; \`columns: { key, label, align?: "right", render?: (row) => node }[]\`, right-aligned columns get tabular-nums; \`render\` overrides the cell content.
+- The shell provides data-tooltip (Floating UI) and data-lucide icons — use those instead of loading libraries.
+
+**Design: flat, minimal, purposeful**
+- Visual hierarchy: one thing stands out. Primary content gets space, size, and accent; supporting content stays compact and neutral.
+- Forbidden slop: gradients; emojis as icons/bullets/status; box-shadows; a different color on every element; walls of identical cards; giant text above 24px; decorative colored borders; empty placeholder sections ("No data", "TODO"). If a section has no real data, omit it.
+- Label every plot: specific title (not "Metrics"), axis labels with units, legend when multiple series, source + time range caption. Say so when a value is transformed (mean, p95, normalized).
+- Tables: right-align numerics, tabular-nums, subtle row separators using \`theme.border\`.
+
+**Skeleton**
+\`\`\`tsx
+import React, { useState } from "react";
+import { useHostTheme, DataTable } from "@gen-ui/canvas";
+
+const FINDINGS = [
+  { id: "F1", severity: "high", title: "Unauthenticated control plane", detail: "..." },
+];
+
+export default function SecurityReview() {
+  const theme = useHostTheme();
+  const [selected, setSelected] = useState<string | null>(null);
+  return (
+    <div style={{ fontFamily: theme.fontSans, color: theme.text }}>
+      <h1 style={{ fontSize: 20, margin: "0 0 4px" }}>Security review — gapp host</h1>
+      <p style={{ color: theme.textSecondary, margin: "0 0 12px" }}>3 findings · source: code review · 2026-08-11</p>
+      <DataTable
+        columns={[
+          { key: "id", label: "ID" },
+          { key: "severity", label: "Severity" },
+          { key: "title", label: "Finding", render: (r) => <a onClick={() => setSelected(r.id)}>{r.title}</a> },
+        ]}
+        rows={FINDINGS}
+      />
+      {/* ... */}
+    </div>
+  );
+}
+\`\`\``;
+
 const MODULE_SECTIONS: Record<string, string[]> = {
   runtime: [WIDGET_RUNTIME],
   art: [SVG_SETUP, ART_AND_ILLUSTRATION],
@@ -868,6 +933,7 @@ const MODULE_SECTIONS: Record<string, string[]> = {
   interactive: [UI_COMPONENTS, COLOR_PALETTE],
   chart: [UI_COMPONENTS, COLOR_PALETTE, CHARTS_CHART_JS],
   diagram: [COLOR_PALETTE, SVG_SETUP, DIAGRAM_TYPES],
+  canvas: [CANVAS_GUIDE, COLOR_PALETTE],
 };
 
 export function getGuidelines(

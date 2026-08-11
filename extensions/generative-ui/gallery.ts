@@ -13,11 +13,11 @@ import {
   renameWidgetTitle,
   setWidgetsArchived,
   WidgetEventValidationError,
-  WIDGETS_DIR,
+  widgetsDir,
 } from "./storage.js";
 import { detectDarkMode, openInBrowser } from "./html-helpers.js";
 
-const LOCK_FILE = join(WIDGETS_DIR, ".gallery-lock");
+const lockFile = () => join(widgetsDir(), ".gallery-lock");
 
 function escapeHtml(value: string): string {
   return value
@@ -60,7 +60,8 @@ async function readJsonBody(req: IncomingMessage): Promise<any> {
 function buildCard(w: WidgetRecord, i: number): string {
   const archived = Boolean(w.archivedAt);
   const eventCount = w.events?.length ?? (w.interactionData === undefined ? 0 : 1);
-  const meta = w.width + "\u00d7" + w.height + " \u00b7 " + w.timestamp
+  const meta = (w.kind === "canvas" ? "canvas \u00b7 " : "")
+    + w.width + "\u00d7" + w.height + " \u00b7 " + w.timestamp
     + (w.cwd ? " \u00b7 " + w.cwd.split("/").pop() : "")
     + (eventCount ? " \u00b7 " + eventCount + " feedback" : "");
   const cwdAttr = w.cwd ? ' data-cwd="' + escapeHtml(w.cwd) + '"' : "";
@@ -908,7 +909,7 @@ interface LockInfo {
 
 async function readLock(): Promise<LockInfo | null> {
   try {
-    const raw = await readFile(LOCK_FILE, "utf-8");
+    const raw = await readFile(lockFile(), "utf-8");
     return JSON.parse(raw);
   } catch {
     return null;
@@ -916,12 +917,12 @@ async function readLock(): Promise<LockInfo | null> {
 }
 
 async function writeLock(info: LockInfo): Promise<void> {
-  await mkdir(WIDGETS_DIR, { recursive: true });
-  await writeFile(LOCK_FILE, JSON.stringify(info), "utf-8");
+  await mkdir(widgetsDir(), { recursive: true });
+  await writeFile(lockFile(), JSON.stringify(info), "utf-8");
 }
 
 async function removeLock(): Promise<void> {
-  try { await unlink(LOCK_FILE); } catch {}
+  try { await unlink(lockFile()); } catch {}
 }
 
 /** Check if a process is still alive (cross-platform). */
@@ -988,7 +989,7 @@ export async function launchGallery(_widgets?: WidgetRecord[]): Promise<string> 
 
         await writeLock({ pid: process.pid, port, startedAt: new Date().toISOString() });
 
-        const cleanup = () => { try { require("fs").unlinkSync(LOCK_FILE); } catch {} };
+        const cleanup = () => { try { require("fs").unlinkSync(lockFile()); } catch {} };
         process.on("exit", cleanup);
         process.on("SIGINT", () => { cleanup(); process.exit(0); });
         process.on("SIGTERM", () => { cleanup(); process.exit(0); });

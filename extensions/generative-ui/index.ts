@@ -3,13 +3,18 @@
 // GAPP: gapp/ (storage, open, tools, commands, prompt)
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { shellHTML, escapeJS, detectDarkMode, openWindow, preloadGlimpseui } from "./html-helpers.js";
+import { shellHTML, escapeJS, openWindow, preloadGlimpseui } from "./html-helpers.js";
+import { canvasShellHTML, transpileCanvas } from "./canvas.js";
 import { getGlimpseuiSource } from "./resolve-glimpseui.js";
 import { registerTools, type ToolContext } from "./tools.js";
 import { registerWidgetsCommand } from "./commands.js";
 import { registerGapp } from "./gapp/index.js";
 
 export default async function (pi: ExtensionAPI) {
+  // Headless generate subagents must not re-register this extension:
+  // no windows, no gapp host, no streaming hooks inside worker processes.
+  if (process.env.GAPP_SUBAGENT === "1") return;
+
   // Prefer local/global glimpseui (Dock + control socket fork) over nested registry copy.
   try {
     await preloadGlimpseui();
@@ -36,7 +41,35 @@ export default async function (pi: ExtensionAPI) {
     activeWindows: [],
   };
 
-  // ── Streaming: intercept show_widget tool calls mid-generation ─────────
+  // ── Streaming: intercept show_widget / show_canvas calls mid-generation ──
+
+  // Widgets morph raw HTML every frame; canvases only get a frame when the
+  // partial TSX happens to compile, so their throttle is wider.
+  const STREAM_THROTTLE_MS = { widget: 150, canvas: 300 } as const;
+  let canvasCompileBusy = false;
+
+  const pushStreamFrame = async () => {
+    const streaming = toolCtx.streaming;
+    if (!streaming?.window || !streaming.ready || !streaming.lastHTML) return;
+    if (streaming.kind === "widget") {
+      const escaped = escapeJS(streaming.lastHTML);
+      streaming.window.send("window._setContent('" + escaped + "')");
+      return;
+    }
+    if (canvasCompileBusy) return;
+    canvasCompileBusy = true;
+    try {
+      const compiled = await transpileCanvas(streaming.lastHTML);
+      // Recheck: the tool call may have finished while esbuild ran.
+      if (toolCtx.streaming === streaming && streaming.window) {
+        streaming.window.send(compiled);
+      }
+    } catch {
+      // Partial TSX rarely compiles — keep the previous frame.
+    } finally {
+      canvasCompileBusy = false;
+    }
+  };
 
   pi.on("message_update", async (event) => {
     const raw: any = event.assistantMessageEvent;
@@ -45,9 +78,10 @@ export default async function (pi: ExtensionAPI) {
     if (raw.type === "toolcall_start") {
       const partial: any = raw.partial;
       const block = partial?.content?.[raw.contentIndex];
-      if (block?.type === "toolCall" && block?.name === "show_widget") {
+      if (block?.type === "toolCall" && (block?.name === "show_widget" || block?.name === "show_canvas")) {
         toolCtx.streaming = {
           contentIndex: raw.contentIndex,
+          kind: block.name === "show_canvas" ? "canvas" : "widget",
           window: null,
           lastHTML: "",
           updateTimer: null,
@@ -58,56 +92,56 @@ export default async function (pi: ExtensionAPI) {
     }
 
     if (raw.type === "toolcall_delta" && toolCtx.streaming && raw.contentIndex === toolCtx.streaming.contentIndex) {
+      const streaming = toolCtx.streaming;
       const partial: any = raw.partial;
       const block = partial?.content?.[raw.contentIndex];
-      const html = block?.arguments?.widget_code;
-      if (!html || html.length < 20 || html === toolCtx.streaming.lastHTML) return;
+      const code = streaming.kind === "canvas" ? block?.arguments?.canvas_code : block?.arguments?.widget_code;
+      if (!code || code.length < 20 || code === streaming.lastHTML) return;
 
-      toolCtx.streaming.lastHTML = html;
+      streaming.lastHTML = code;
 
-      if (toolCtx.streaming.updateTimer) return;
-      toolCtx.streaming.updateTimer = setTimeout(async () => {
-        if (!toolCtx.streaming) return;
-        toolCtx.streaming.updateTimer = null;
+      if (streaming.updateTimer) return;
+      streaming.updateTimer = setTimeout(async () => {
+        if (toolCtx.streaming !== streaming) return;
+        streaming.updateTimer = null;
 
         try {
-          if (!toolCtx.streaming.window) {
+          if (!streaming.window) {
             const args = block?.arguments ?? {};
-            const title = (args.title ?? "Widget").replace(/_/g, " ");
-            const width = args.width ?? 800;
-            const height = args.height ?? 600;
+            const title = (args.title ?? (streaming.kind === "canvas" ? "Canvas" : "Widget")).replace(/_/g, " ");
+            const width = args.width ?? (streaming.kind === "canvas" ? 900 : 800);
+            const height = args.height ?? (streaming.kind === "canvas" ? 640 : 600);
 
-            const dark = detectDarkMode();
-            toolCtx.streaming.window = openWindow(shellHTML(dark), {
-              width, height, title, noDock: true,
-            });
-            toolCtx.activeWindows.push(toolCtx.streaming.window);
+            const shell = streaming.kind === "canvas" ? canvasShellHTML() : shellHTML();
+            streaming.window = openWindow(shell, { width, height, title, noDock: true });
+            toolCtx.activeWindows.push(streaming.window);
 
-            toolCtx.streaming.window.on("ready", (_info: any) => {
-              if (!toolCtx.streaming) return;
-              toolCtx.streaming.ready = true;
-              const escaped = escapeJS(toolCtx.streaming.lastHTML);
-              toolCtx.streaming.window.send("window._setContent('" + escaped + "')");
+            streaming.window.on("ready", (_info: any) => {
+              if (toolCtx.streaming !== streaming) return;
+              streaming.ready = true;
+              void pushStreamFrame();
             });
-          } else if (toolCtx.streaming.ready) {
-            const escaped = escapeJS(toolCtx.streaming.lastHTML);
-            toolCtx.streaming.window.send("window._setContent('" + escaped + "')");
+          } else {
+            void pushStreamFrame();
           }
         } catch {}
-      }, 150);
+      }, STREAM_THROTTLE_MS[streaming.kind]);
       return;
     }
 
     if (raw.type === "toolcall_end" && toolCtx.streaming && raw.contentIndex === toolCtx.streaming.contentIndex) {
-      if (toolCtx.streaming.updateTimer) {
-        clearTimeout(toolCtx.streaming.updateTimer);
-        toolCtx.streaming.updateTimer = null;
+      const streaming = toolCtx.streaming;
+      if (streaming.updateTimer) {
+        clearTimeout(streaming.updateTimer);
+        streaming.updateTimer = null;
       }
 
+      // Widgets can show the final HTML immediately; canvases are compiled
+      // and activated by show_canvas.execute, which adopts this window.
       const toolCall = raw.toolCall;
-      if (toolCall?.arguments?.widget_code && toolCtx.streaming.window && toolCtx.streaming.ready) {
+      if (streaming.kind === "widget" && toolCall?.arguments?.widget_code && streaming.window && streaming.ready) {
         const escaped = escapeJS(toolCall.arguments.widget_code);
-        toolCtx.streaming.window.send("window._setContent('" + escaped + "');");
+        streaming.window.send("window._setContent('" + escaped + "');");
       }
       return;
     }

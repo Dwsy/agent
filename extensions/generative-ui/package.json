@@ -4,18 +4,17 @@
     "gapp-tui": "gapp/cli.ts"
   },
   "scripts": {
-    "build": "node psm-renderer/build.mjs",
     "gapp:tui": "bun gapp/cli.ts",
-    "test": "node --test psm-renderer/index.test.mjs theme-templates.test.mjs storage.test.mjs && bun test gapp/storage.test.mjs gapp/host.test.mjs gapp/tui.test.mjs"
+    "test": "node --test psm-renderer/index.test.mjs theme-templates.test.mjs storage.test.mjs && bun test canvas.test.mjs gapp/storage.test.mjs gapp/host.test.mjs gapp/tui.test.mjs gapp/subagent.test.mjs"
   },
   "dependencies": {
     "@earendil-works/pi-tui": "0.82.1",
     "@modelcontextprotocol/sdk": "^1.29.0",
-    "glimpseui": "link:../../../../Dev/AI/glimpse"
+    "esbuild": "^0.28.2"
   },
   "psm": {
     "extensions": [
-      "./dist/index.mjs"
+      "./psm-renderer/index.mjs"
     ]
   },
   "packageManager": "pnpm@10.33.4+sha512.1c67b3b359b2d408119ba1ed289f34b8fc3c6873412bec6fd264fbdc82489e510fcbecb9ce9d22dae7f3b76269d8441046014bdca53b9979cd7a561ad631b800"

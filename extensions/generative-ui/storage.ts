@@ -1,6 +1,6 @@
 // ── Widget Storage ────────────────────────────────────────────────────────
 
-import { mkdir, writeFile, readFile, readdir, rmdir, unlink } from "node:fs/promises";
+import { mkdir, writeFile, readFile, readdir, rename, rmdir, unlink } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 
@@ -17,9 +17,6 @@ export function widgetsIndexPath(): string {
   return join(widgetsDir(), "index.json");
 }
 
-// Compat for tools/commands that import the constant path (production default).
-export const WIDGETS_DIR = defaultWidgetsDir();
-export const WIDGETS_INDEX = join(WIDGETS_DIR, "index.json");
 
 export class WidgetEventValidationError extends Error {
   constructor(message: string) {
@@ -52,6 +49,10 @@ export interface WidgetRecord {
   width: number;
   height: number;
   isSVG: boolean;
+  /** Absent means plain HTML widget. */
+  kind?: "widget" | "canvas";
+  /** Canvas TSX source filename (sibling of the compiled html). */
+  sourceFile?: string;
   cwd?: string;
   /** Last interaction retained for compatibility with existing widget indexes. */
   interactionData?: unknown;
@@ -120,7 +121,10 @@ async function readWidgetIndex(): Promise<WidgetRecord[]> {
 
 async function writeWidgetIndex(index: WidgetRecord[]): Promise<void> {
   await ensureWidgetsDir();
-  await writeFile(widgetsIndexPath(), JSON.stringify(index, null, 2), "utf-8");
+  // Atomic replace: a crash mid-write must not leave a torn index.json.
+  const tmp = join(widgetsDir(), `.index.json.tmp-${process.pid}-${randomUUID().slice(0, 8)}`);
+  await writeFile(tmp, JSON.stringify(index, null, 2), "utf-8");
+  await rename(tmp, widgetsIndexPath());
 }
 
 function widgetEventsDir(file: string): string {
@@ -189,10 +193,13 @@ function uniqueRecords(index: WidgetRecord[]): WidgetRecord[] {
   });
 }
 
-export async function saveWidget(record: WidgetRecord, html: string) {
+export async function saveWidget(record: WidgetRecord, html: string, source?: string) {
   await ensureWidgetsDir();
-  // HTML files are unique by filename — safe to write in parallel.
+  // HTML/source files are unique by filename — safe to write in parallel.
   await writeFile(join(widgetsDir(), record.file), html, "utf-8");
+  if (source !== undefined && record.sourceFile) {
+    await writeFile(join(widgetsDir(), record.sourceFile), source, "utf-8");
+  }
 
   await withIndexLock(async () => {
     let index = await readWidgetIndex();
@@ -279,6 +286,7 @@ export async function deleteWidgets(files: string[]): Promise<WidgetRecord[]> {
     await writeWidgetIndex(kept);
     await Promise.all(deleted.flatMap((record) => [
       unlink(join(widgetsDir(), record.file)).catch(() => {}),
+      ...(record.sourceFile ? [unlink(join(widgetsDir(), record.sourceFile)).catch(() => {})] : []),
       deleteWidgetEvents(record.file),
     ]));
     return deleted;

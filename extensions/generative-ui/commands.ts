@@ -3,7 +3,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Key, matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
 import { join } from "node:path";
-import { type WidgetRecord, WIDGETS_DIR, loadActiveWidgetIndex, loadWidgetIndex, loadWidgetHtml } from "./storage.js";
+import { type WidgetRecord, widgetsDir, loadActiveWidgetIndex, loadWidgetIndex, loadWidgetHtml } from "./storage.js";
 import { openWindow, openInBrowser } from "./html-helpers.js";
 import { launchGallery, stopGallery } from "./gallery.js";
 
@@ -165,7 +165,7 @@ export function registerWidgetsCommand(pi: ExtensionAPI, activeWindows: any[]) {
 
       // Handle Shift+Enter browser action
       if (selectedFile.startsWith("__browser__:")) {
-        openInBrowser(join(WIDGETS_DIR, selectedFile.slice("__browser__:".length)));
+        openInBrowser(join(widgetsDir(), selectedFile.slice("__browser__:".length)));
         return;
       }
 
@@ -241,7 +241,7 @@ export function registerWidgetsCommand(pi: ExtensionAPI, activeWindows: any[]) {
         activeWindows.push(win);
         win.on("closed", () => { activeWindows = activeWindows.filter((w) => w !== win); });
       } else if (action === "browser") {
-        openInBrowser(join(WIDGETS_DIR, widget.file));
+        openInBrowser(join(widgetsDir(), widget.file));
       } else if (action === "copy") {
         const { execSync } = await import("node:child_process");
         try { execSync("pbcopy", { input: html }); ctx.ui.notify("HTML copied to clipboard", "success"); }
