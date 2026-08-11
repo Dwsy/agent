@@ -4,12 +4,13 @@ import { execSync, spawn } from "node:child_process";
 import { getGlimpseui, loadGlimpseui, preloadGlimpseui } from "./resolve-glimpseui.js";
 import { SVG_STYLES, cssVariables } from "./svg-styles.js";
 import { WIDGET_CSP, WIDGET_UI_KIT_CSS, WIDGET_UI_KIT_RESOURCES } from "./widget-ui-kit.js";
+import { MORPHDOM_UMD_JS } from "./vendor-morphdom.js";
 
 export { preloadGlimpseui, loadGlimpseui, getGlimpseui };
 
 // ── Detect system appearance (cached) ─────────────────────────────────────
-// Legacy helper for window chrome / analytics only.
-// Palette is driven by CSS prefers-color-scheme via cssVariables(), not this flag.
+// Used by the gallery browser page for its initial theme; widget palettes
+// follow CSS prefers-color-scheme instead.
 
 let _cachedDarkMode: boolean | null = null;
 export function detectDarkMode(): boolean {
@@ -82,9 +83,8 @@ export const WIDGET_EVENTS_SCRIPT = `(function() {
   };
 })();`;
 
-export function shellHTML(darkMode = true): string {
-  // darkMode is legacy metadata only; palette follows prefers-color-scheme.
-  const vars = cssVariables(darkMode);
+export function shellHTML(): string {
+  const vars = cssVariables();
   return `<!DOCTYPE html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <meta name="color-scheme" content="light dark">
@@ -99,14 +99,11 @@ ${WIDGET_UI_KIT_CSS}
 </style>
 </head><body><div id="root"></div>
 ${WIDGET_UI_KIT_RESOURCES}
+<script>${MORPHDOM_UMD_JS}</script>
 <script>
-  window._morphReady = false;
-  window._pending = null;
-  window._darkMode = ${darkMode};
   ${THEME_VARS_SCRIPT}
   ${WIDGET_EVENTS_SCRIPT}
   window._setContent = function(html) {
-    if (!window._morphReady) { window._pending = html; return; }
     var root = document.getElementById('root');
     var target = document.createElement('div');
     target.id = 'root';
@@ -138,14 +135,11 @@ ${WIDGET_UI_KIT_RESOURCES}
     });
   };
 </script>
-<script src="https://cdn.jsdelivr.net/npm/morphdom@2.7.4/dist/morphdom-umd.min.js"
-  onload="window._morphReady=true;if(window._pending){window._setContent(window._pending);window._pending=null;}"></script>
 </body></html>`;
 }
 
-export function wrapHTML(code: string, isSVG = false, darkMode = true): string {
-  // darkMode is legacy metadata only; palette follows prefers-color-scheme.
-  const vars = cssVariables(darkMode);
+export function wrapHTML(code: string, isSVG = false): string {
+  const vars = cssVariables();
   const themeMeta = `<meta name="color-scheme" content="light dark"><meta http-equiv="Content-Security-Policy" content="${WIDGET_CSP}">`;
   const themeScript = `<script>${THEME_VARS_SCRIPT}\n${WIDGET_EVENTS_SCRIPT}</script>`;
   if (isSVG) {

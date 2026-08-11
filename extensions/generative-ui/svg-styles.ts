@@ -2,7 +2,7 @@
 // Dual theme via prefers-color-scheme so light/dark both work without a JS snapshot.
 
 /** Always emits light defaults + dark overrides. darkMode kept for API compat (unused). */
-export function cssVariables(_darkMode = false): string {
+export function cssVariables(): string {
   return `:root {
   color-scheme: light dark;
   --p: #1a1a1a;

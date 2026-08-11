@@ -58,7 +58,7 @@ test("_themeVars contract includes chart fields", async () => {
     assert.match(script, new RegExp(key));
   }
   const shell = rt
-    ? rt.html.shellHTML(true)
+    ? rt.html.shellHTML()
     : readFileSync(join(root, "html-helpers.ts"), "utf8");
   assert.match(shell, /_themeVars/);
   assert.match(shell, /color-scheme/);
@@ -68,7 +68,7 @@ test("_themeVars contract includes chart fields", async () => {
 test("widget UI kit is injected into native and saved documents", async () => {
   const rt = await loadRuntime();
   if (rt) {
-    const shell = rt.html.shellHTML(false);
+    const shell = rt.html.shellHTML();
     const standalone = rt.html.wrapHTML("<button data-tooltip=\"Help\">Help</button>");
     for (const document of [shell, standalone]) {
       assert.match(document, /FloatingUIDOM/);
@@ -112,7 +112,7 @@ test("widget pages expose a native and gallery feedback bridge", async () => {
   assert.match(script, /postMessage/);
 
   if (rt) {
-    assert.match(rt.html.shellHTML(false), /sendAnnotation/);
+    assert.match(rt.html.shellHTML(), /sendAnnotation/);
     assert.match(rt.html.wrapHTML("<button>Review</button>"), /sendAnnotation/);
   }
 });
