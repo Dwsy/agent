@@ -1,12 +1,16 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { convertToLlm, serializeConversation } from "@earendil-works/pi-coding-agent";
-import { complete, completeSimple } from "@earendil-works/pi-ai";
+// Import from the compat entrypoint explicitly: pi's extension loader currently
+// aliases the pi-ai root to compat, but that alias is documented as temporary.
+import { complete, completeSimple } from "@earendil-works/pi-ai/compat";
 import { config, type ModelSpec } from "./config.ts";
 
 import {
   addRoleLearning,
   addRolePreference,
   applyLlmTidyPlan,
+  updateRoleLearning,
+  updateRolePreference,
   extractMemoryFacts,
   readRoleMemory,
   readDailyMemoryRaw,
@@ -22,9 +26,28 @@ import {
 } from "./memory-extraction-rules.ts";
 import { log, logStart, logEnd, logWarn, logError, setCurrentRole } from "./logger.ts";
 
+type AutoMemoryEdit = {
+  type?: "learning" | "preference";
+  id?: string;
+  text?: string;
+  category?: string;
+};
+
+type AutoMemoryOperation = {
+  op: "learning" | "preference" | "update_learning" | "update_preference";
+  content: string;
+  previous?: string;
+  id?: string;
+  oldId?: string;
+  category?: string;
+  stored: boolean;
+  detail?: string;
+};
+
 type AutoMemoryResponse = {
   learnings?: Array<{ text?: string }>;
   preferences?: Array<{ text?: string; category?: string }>;
+  edits?: AutoMemoryEdit[];
 };
 
 function normalizeMemoryText(text: string): string {
@@ -92,7 +115,16 @@ function parseAutoMemoryResponse(text: string): AutoMemoryResponse | null {
   const jsonText = extractJsonObject(text);
   if (!jsonText) return null;
   try {
-    return JSON.parse(jsonText) as AutoMemoryResponse;
+    const parsed = JSON.parse(jsonText) as AutoMemoryResponse;
+    parsed.edits = Array.isArray(parsed.edits)
+      ? parsed.edits.filter((edit) =>
+          edit &&
+          (edit.type === "learning" || edit.type === "preference") &&
+          typeof edit.id === "string" &&
+          typeof edit.text === "string"
+        )
+      : [];
+    return parsed;
   } catch {
     return null;
   }
@@ -432,9 +464,9 @@ export async function runLlmMemoryTidy(
 // AUTO MEMORY EXTRACTION (aligned with pi branch-summarization algorithm)
 // ============================================================================
 
-const AUTO_MEMORY_RESPONSE_SCHEMA = '{"learnings":[{"text":"..."}],"preferences":[{"category":"Communication|Code|Tools|Workflow|General","text":"..."}]}';
+const AUTO_MEMORY_RESPONSE_SCHEMA = '{"learnings":[{"text":"..."}],"preferences":[{"category":"Communication|Code|Tools|Workflow|General","text":"..."}],"edits":[{"type":"learning","id":"existing-learning-id","text":"replacement text"},{"type":"preference","id":"existing-preference-id","text":"replacement text","category":"Communication|Code|Tools|Workflow|General"}]}';
 
-const AUTO_MEMORY_EMPTY_RESPONSE = '{"learnings":[],"preferences":[]}';
+const AUTO_MEMORY_EMPTY_RESPONSE = '{"learnings":[],"preferences":[],"edits":[]}';
 
 const MEMORY_EXTRACTION_SYSTEM_PROMPT = `You are a JSON-only memory extractor for a role-based coding assistant.
 
@@ -444,7 +476,7 @@ You are NOT a chat assistant. You do NOT continue the conversation. You do NOT a
 1. Your entire reply is exactly ONE JSON object. Nothing else.
 2. First non-whitespace character MUST be open brace { and last MUST be close brace }.
 3. Forbidden anywhere in the reply: markdown fences, prose, headings, labels, XML/HTML, <think> tags, tool calls, or commentary before/after JSON.
-4. Both keys are required every time. Arrays may be empty.
+4. All three keys are required every time. Arrays may be empty.
 5. Schema:
 ${AUTO_MEMORY_RESPONSE_SCHEMA}
 6. If nothing qualifies, output exactly this and stop:
@@ -452,12 +484,14 @@ ${AUTO_MEMORY_EMPTY_RESPONSE}
 7. "I found nothing" in natural language is INVALID. Empty arrays are the only valid empty result.
 8. category MUST be one of: Communication | Code | Tools | Workflow | General.
 9. Each text under 120 characters; one atomic fact per item; no duplicates within the same array.
+10. For edits, type and id MUST refer to an item listed in <already-stored>; text is the complete replacement.
 
 ## INCLUDE only if ALL are true
 - Useful in future sessions (durable), not only this turn
 - Stable user preference OR non-obvious reusable learning
-- Not already listed in <already-stored>
+- Not already listed in <already-stored>, unless an existing item must be corrected or made more precise
 - Cannot be rediscovered from the current repo/files/config/git
+- Use edits only when the conversation clearly supersedes or corrects an existing preference/learning
 
 ## EXCLUDE always (hard)
 - Anything derivable from repository state: code structure, file paths, filenames, config keys, env vars, logs, error messages, test failures, commit/PR/Issue/branch facts
@@ -467,7 +501,7 @@ ${AUTO_MEMORY_EMPTY_RESPONSE}
 
 ## Valid full-response examples
 ${AUTO_MEMORY_EMPTY_RESPONSE}
-{"learnings":[{"text":"Prefer soft-delete for audit-critical records"}],"preferences":[{"category":"Workflow","text":"验证通过前不宣称已修好"}]}
+{"learnings":[{"text":"Prefer soft-delete for audit-critical records"}],"preferences":[{"category":"Workflow","text":"验证通过前不宣称已修好"}],"edits":[]}
 
 Return JSON now. No other text.`;
 
@@ -519,8 +553,17 @@ function prepareConversationWithBudget(
   return serializeConversation(kept);
 }
 
-function buildAutoMemoryPrompt(conversationText: string, existing: { learnings: string[]; preferences: string[] }): string {
-  const existingBlock = [...existing.learnings, ...existing.preferences].map((x) => `- ${x}`).join("\n") || "(none)";
+function buildAutoMemoryPrompt(
+  conversationText: string,
+  existing: {
+    learnings: Array<{ id: string; text: string }>;
+    preferences: Array<{ id: string; category: string; text: string }>;
+  }
+): string {
+  const existingBlock = [
+    ...existing.learnings.map((item) => `- [learning:${item.id}] ${item.text}`),
+    ...existing.preferences.map((item) => `- [preference:${item.id}] [${item.category}] ${item.text}`),
+  ].join("\n") || "(none)";
 
   return `<conversation>
 ${conversationText}
@@ -532,9 +575,11 @@ ${existingBlock}
 
 Extract only NEW durable learnings and stable user preferences.
 Skip transient tasks, one-off requests, generic facts, and anything already in <already-stored>.
+If the conversation clearly corrects or supersedes an existing item, put a replacement in edits using its exact id; do not add a duplicate.
+Only edit learning/preference items shown in <already-stored>. Do not edit based on task status.
 Hard exclusion: do not extract repo-derivable facts (paths, filenames, config/env keys, logs, errors, test failures, code structure, git/PR/Issue history).
 
-Respond with exactly one JSON object matching the schema. Both arrays required.
+Respond with exactly one JSON object matching the schema. All three arrays required.
 If nothing new qualifies, respond with exactly:
 ${AUTO_MEMORY_EMPTY_RESPONSE}
 
@@ -546,8 +591,15 @@ export async function runAutoMemoryExtraction(
   rolePath: string,
   ctx: ExtensionContext,
   messages: unknown[],
-  options?: { enabled?: boolean; model?: string | string[]; maxItems?: number; maxText?: number; reserveTokens?: number }
-): Promise<{ storedLearnings: number; storedPrefs: number } | null> {
+  options?: { enabled?: boolean; model?: string | string[] | ModelSpec[]; maxItems?: number; maxText?: number; reserveTokens?: number }
+): Promise<{
+  storedLearnings: number;
+  storedPrefs: number;
+  updatedLearnings: number;
+  updatedPrefs: number;
+  updatedItems: Array<{ type: "learning" | "preference"; id: string; oldId: string; text: string; category?: string }>;
+  items: AutoMemoryOperation[];
+} | null> {
   if (options?.enabled === false) return null;
 
   setCurrentRole(roleName);
@@ -664,7 +716,7 @@ export async function runAutoMemoryExtraction(
       return null;
     }
 
-    log("auto-extract", `parsed from ${resolved.label}: ${parsed.learnings?.length || 0} learnings, ${parsed.preferences?.length || 0} preferences`);
+    log("auto-extract", `parsed from ${resolved.label}: ${parsed.learnings?.length || 0} learnings, ${parsed.preferences?.length || 0} preferences, ${parsed.edits?.length || 0} edits`);
 
     const rawLearnings = (parsed.learnings || []).map((item) => normalizeMemoryText(item.text || "")).filter(Boolean);
     const rawPreferences = (parsed.preferences || [])
@@ -716,13 +768,94 @@ export async function runAutoMemoryExtraction(
     const maxText = options?.maxText ?? config.autoMemory.maxText;
 
     let remaining = maxItems;
+    const editableLearningIds = new Set(existing.learnings.map((item) => item.id));
+    const editablePreferenceIds = new Set(existing.preferences.map((item) => item.id));
+    let updatedLearnings = 0;
+    let updatedPrefs = 0;
+    const updatedItems: Array<{ type: "learning" | "preference"; id: string; oldId: string; text: string; category?: string }> = [];
+    const items: AutoMemoryOperation[] = [];
     let storedLearnings = 0;
     let storedPrefs = 0;
 
+    for (const edit of parsed.edits || []) {
+      if (remaining <= 0) break;
+      const text = normalizeMemoryText(edit.text || "");
+      if (!edit.id || !text || text.length > maxText) {
+        items.push({
+          op: edit.type === "preference" ? "update_preference" : "update_learning",
+          content: text || edit.text || "",
+          id: edit.id,
+          stored: false,
+          detail: "invalid or over maxText",
+        });
+        continue;
+      }
+
+      if (edit.type === "learning") {
+        if (!editableLearningIds.has(edit.id)) {
+          items.push({ op: "update_learning", content: text, id: edit.id, stored: false, detail: "unknown id" });
+          log("auto-extract", `skip learning edit (unknown id): ${edit.id}`);
+          continue;
+        }
+        if (filterAutoExtractedLearnings([text]).length === 0 || isEphemeralTaskObservation(text)) {
+          items.push({ op: "update_learning", content: text, id: edit.id, stored: false, detail: "filtered" });
+          log("auto-extract", `drop learning edit: ${text}`);
+          continue;
+        }
+        const updated = updateRoleLearning(rolePath, roleName, edit.id, text);
+        if (updated.updated) {
+          updatedLearnings += 1;
+          editableLearningIds.delete(edit.id);
+          updatedItems.push({ type: "learning", id: updated.id!, oldId: updated.oldId!, text: updated.newText! });
+          items.push({ op: "update_learning", content: updated.newText!, previous: updated.oldText, id: updated.id, oldId: updated.oldId, stored: true, detail: updated.reason });
+          remaining -= 1;
+          log("auto-extract", `~learning [${edit.id}]: ${text}`);
+        } else {
+          items.push({ op: "update_learning", content: text, id: edit.id, stored: false, detail: updated.reason || "not found" });
+          log("auto-extract", `skip learning edit (${updated.reason || "not found"}): ${edit.id}`);
+        }
+        continue;
+      }
+
+      if (!editablePreferenceIds.has(edit.id)) {
+        items.push({ op: "update_preference", content: text, id: edit.id, stored: false, detail: "unknown id" });
+        log("auto-extract", `skip preference edit (unknown id): ${edit.id}`);
+        continue;
+      }
+      const pref = filterAutoExtractedPreferences([{ category: edit.category || "General", text }])[0];
+      if (!pref || isEphemeralTaskObservation(pref.text)) {
+        items.push({ op: "update_preference", content: text, id: edit.id, stored: false, detail: "filtered" });
+        log("auto-extract", `drop preference edit: ${text}`);
+        continue;
+      }
+      const updated = updateRolePreference(
+        rolePath,
+        roleName,
+        edit.id,
+        pref.text,
+        edit.category === undefined ? undefined : pref.category,
+      );
+      if (updated.updated) {
+        updatedPrefs += 1;
+        editablePreferenceIds.delete(edit.id);
+        updatedItems.push({ type: "preference", id: updated.id!, oldId: updated.oldId!, text: updated.newText!, category: updated.category });
+        items.push({ op: "update_preference", content: updated.newText!, previous: updated.oldText, id: updated.id, oldId: updated.oldId, category: updated.category, stored: true, detail: updated.reason });
+        remaining -= 1;
+        log("auto-extract", `~preference [${edit.id}]: ${pref.text}`);
+      } else {
+        items.push({ op: "update_preference", content: pref.text, id: edit.id, stored: false, detail: updated.reason || "not found" });
+        log("auto-extract", `skip preference edit (${updated.reason || "not found"}): ${edit.id}`);
+      }
+    }
+
     for (const text of filteredLearnings) {
       if (remaining <= 0) break;
-      if (!text || text.length > maxText) continue;
+      if (!text || text.length > maxText) {
+        items.push({ op: "learning", content: text, stored: false, detail: "empty or over maxText" });
+        continue;
+      }
       const stored = addRoleLearning(rolePath, roleName, text, { source: "auto", appendDaily: true });
+      items.push({ op: "learning", content: text, id: stored.id, stored: stored.stored, detail: stored.reason });
       if (stored.stored) {
         log("auto-extract", `+learning: ${text}`);
         storedLearnings += 1;
@@ -735,8 +868,12 @@ export async function runAutoMemoryExtraction(
     for (const item of filteredPreferences) {
       if (remaining <= 0) break;
       const text = item.text;
-      if (!text || text.length > maxText) continue;
+      if (!text || text.length > maxText) {
+        items.push({ op: "preference", content: text, category: item.category, stored: false, detail: "empty or over maxText" });
+        continue;
+      }
       const stored = addRolePreference(rolePath, roleName, item.category || "General", text, { appendDaily: true });
+      items.push({ op: "preference", content: text, id: stored.id, category: stored.category, stored: stored.stored, detail: stored.reason });
       if (stored.stored) {
         log("auto-extract", `+preference [${stored.category}]: ${text}`);
         storedPrefs += 1;
@@ -750,12 +887,14 @@ export async function runAutoMemoryExtraction(
       model: resolved.label,
       storedL: storedLearnings,
       storedP: storedPrefs,
+      updatedL: updatedLearnings,
+      updatedP: updatedPrefs,
       parsedL: parsed.learnings?.length || 0,
       parsedP: parsed.preferences?.length || 0,
       filteredL: filteredLearnings.length,
       filteredP: filteredPreferences.length,
     });
-    return { storedLearnings, storedPrefs };
+    return { storedLearnings, storedPrefs, updatedLearnings, updatedPrefs, updatedItems, items };
   }
 
   logError("auto-extract", `all models failed`, { lastError: lastError?.slice(0, 300) });

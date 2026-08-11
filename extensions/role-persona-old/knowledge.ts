@@ -9,13 +9,14 @@
  * Aggregation across categories is done via tags at the software level.
  */
 
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, join, relative, resolve } from "node:path";
 import { homedir } from "node:os";
 import { log } from "./logger.ts";
 import { ROLES_DIR } from "./role-store.ts";
 import { config } from "./config.ts";
 import type { KnowledgeExternalSource } from "./config.ts";
+import { writeCommittedMemoryFile } from "./memory-git.ts";
 
 // ============================================================================
 // Constants
@@ -173,18 +174,16 @@ export function parseFrontmatter(content: string): { meta: Partial<KnowledgeFron
     const key = trimLine.slice(0, colonIdx).trim();
     let value = trimLine.slice(colonIdx + 1).trim();
 
-    // Array: [a, b, c]
+    // Array: quoted elements ["a", "b"] or legacy bare elements [a, b]
     if (value.startsWith("[") && value.endsWith("]")) {
-      const inner = value.slice(1, -1);
-      meta[key] = inner
-        .split(",")
-        .map((s) => s.trim().replace(/^["']|["']$/g, ""))
-        .filter(Boolean);
+      meta[key] = parseInlineArray(value.slice(1, -1));
       continue;
     }
 
-    // Strip quotes
-    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+    // Strip quotes; double-quoted values carry \" and \\ escapes.
+    if (value.length >= 2 && value.startsWith('"') && value.endsWith('"')) {
+      value = unescapeDoubleQuoted(value.slice(1, -1));
+    } else if (value.length >= 2 && value.startsWith("'") && value.endsWith("'")) {
       value = value.slice(1, -1);
     }
 
@@ -200,14 +199,64 @@ export function parseFrontmatter(content: string): { meta: Partial<KnowledgeFron
   return { meta: meta as Partial<KnowledgeFrontmatter>, body };
 }
 
+function escapeDoubleQuoted(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+}
+
+function unescapeDoubleQuoted(value: string): string {
+  return value.replace(/\\(["\\])/g, "$1");
+}
+
+/**
+ * Parse the inside of an inline array. Supports quoted elements with
+ * backslash escapes (new format, e.g. ["a, b", "x\"y"]) as well as the
+ * legacy bare-element format written by older versions (e.g. [a, b]).
+ */
+function parseInlineArray(inner: string): string[] {
+  const items: string[] = [];
+  let i = 0;
+  while (i < inner.length) {
+    const ch = inner[i];
+    if (ch === "," || ch === " " || ch === "\t") {
+      i++;
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      const quote = ch;
+      i++;
+      let item = "";
+      while (i < inner.length && inner[i] !== quote) {
+        if (quote === '"' && inner[i] === "\\" && i + 1 < inner.length) {
+          item += inner[i + 1];
+          i += 2;
+        } else {
+          item += inner[i];
+          i++;
+        }
+      }
+      i++; // skip closing quote
+      items.push(item);
+    } else {
+      // Legacy bare element: read until the next comma.
+      let item = "";
+      while (i < inner.length && inner[i] !== ",") {
+        item += inner[i];
+        i++;
+      }
+      items.push(item.trim());
+    }
+  }
+  return items.filter(Boolean);
+}
+
 /**
  * Build frontmatter string from metadata.
  */
 export function buildFrontmatter(meta: KnowledgeFrontmatter): string {
   const lines = ["---"];
-  lines.push(`title: "${meta.title}"`);
-  lines.push(`description: "${meta.description}"`);
-  lines.push(`tags: [${meta.tags.join(", ")}]`);
+  lines.push(`title: "${escapeDoubleQuoted(meta.title)}"`);
+  lines.push(`description: "${escapeDoubleQuoted(meta.description)}"`);
+  lines.push(`tags: [${meta.tags.map((t) => `"${escapeDoubleQuoted(t)}"`).join(", ")}]`);
   if (meta.category) lines.push(`category: ${meta.category}`);
   lines.push(`version: ${meta.version}`);
   lines.push(`created: ${meta.created}`);
@@ -522,7 +571,11 @@ export function readKnowledge(
   }
 
   for (const c of candidates) {
-    const fullPath = join(c.dir, path);
+    const fullPath = resolve(c.dir, path);
+    // Containment check: the path parameter is model/user supplied via the
+    // knowledge tool; never allow reads outside the source root.
+    const rel = relative(resolve(c.dir), fullPath);
+    if (rel.startsWith("..") || rel.split(/[\\/]/).includes("..")) continue;
     if (existsSync(fullPath)) {
       return readKnowledgeFile(fullPath, c.source, c.readonly);
     }
@@ -670,9 +723,15 @@ export function writeKnowledge(
     global?: boolean;
   },
 ): KnowledgeWriteResult {
-  const isGlobal = opts.global !== false;
-  const rootDir = isGlobal ? GLOBAL_KNOWLEDGE_DIR : (rolePath ? getRoleKnowledgeDir(rolePath) : GLOBAL_KNOWLEDGE_DIR);
-  const source: "global" | "role" = isGlobal ? "global" : "role";
+  // global=false without an active role cannot target a role dir; fall back
+  // to the global layer and label the result accordingly (non-fatal for callers).
+  const roleDir = opts.global === false && rolePath ? getRoleKnowledgeDir(rolePath) : null;
+  const roleFallback = opts.global === false && !roleDir;
+  const rootDir = roleDir ?? GLOBAL_KNOWLEDGE_DIR;
+  const source: "global" | "role" = roleDir ? "role" : "global";
+  if (roleFallback) {
+    log("knowledge", "global=false requested but no role active; falling back to global knowledge");
+  }
 
   ensureDir(rootDir);
 
@@ -703,10 +762,11 @@ export function writeKnowledge(
 
   // If updating, bump version
   let version = 1;
+  let existingContent: string | null = null;
   if (!isNew) {
     try {
-      const existing = readFileSync(filePath, "utf-8");
-      const { meta } = parseFrontmatter(existing);
+      existingContent = readFileSync(filePath, "utf-8");
+      const { meta } = parseFrontmatter(existingContent);
       version = (typeof meta.version === "number" ? meta.version : 1) + 1;
     } catch {
       // ignore
@@ -725,10 +785,21 @@ export function writeKnowledge(
   };
 
   const fileContent = `${buildFrontmatter(meta)}\n\n${opts.content}`;
-  writeFileSync(filePath, fileContent, "utf-8");
+  writeCommittedMemoryFile(
+    rolePath || rootDir,
+    filePath,
+    fileContent,
+    `${isNew ? "add" : "update"} knowledge`,
+    { expectedContent: existingContent },
+  );
 
   const relPath = relative(rootDir, filePath);
   log("knowledge", `${isNew ? "created" : "updated"} ${source}:${relPath} v${version}`);
+
+  if (roleFallback) {
+    const note = "No active role; wrote to global knowledge instead of role knowledge";
+    suggestion = suggestion ? `${note}. ${suggestion}` : note;
+  }
 
   return {
     written: filePath,

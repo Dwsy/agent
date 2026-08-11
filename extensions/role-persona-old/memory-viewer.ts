@@ -65,7 +65,10 @@ export function buildRoleMemoryViewerMarkdown(
   }
 
   const dailyBlocks = blocks.filter((b) => b.startsWith("### Daily Memory:"));
-  const lines: string[] = ["# Events", "", ...(data.events.length > 0 ? data.events : ["- (none)"])];
+  const eventLines = data.events.length > 0
+    ? data.events.flatMap((e) => [`## [${e.date}] ${e.title}`, ...(e.body ? [e.body] : []), ""])
+    : ["- (none)"];
+  const lines: string[] = ["# Events", "", ...eventLines];
 
   if (dailyBlocks.length > 0) {
     lines.push("", "---", "", "# Daily Memory Logs", "", ...dailyBlocks);

@@ -8,7 +8,7 @@
  * - Format: newline-delimited JSON (NDJSON/JSONL)
  */
 
-import { existsSync, mkdirSync, appendFileSync, readdirSync, statSync, unlinkSync } from "node:fs";
+import { existsSync, mkdirSync, appendFileSync, readdirSync, readFileSync, statSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { config } from "./config.ts";
@@ -450,6 +450,72 @@ export function logMemory(
   }
 ): void {
   logJsonl("info", "memory", operation, details);
+}
+
+export interface MemoryLogRecord {
+  time: string;
+  source: string;
+  op: string;
+  content: string;
+  previous?: string;
+  id?: string;
+  oldId?: string;
+  category?: string;
+  stored: boolean;
+  detail?: string;
+}
+
+/** Read structured memory mutations written by logMemory(). */
+export function readMemoryLog(role?: string, limit = 100): MemoryLogRecord[] {
+  const dir = getLogDir();
+  if (!existsSync(dir)) return [];
+
+  let files: string[];
+  try {
+    files = readdirSync(dir).filter((name) => /^\d{4}-\d{2}-\d{2}\.jsonl$/.test(name)).sort().slice(-7);
+  } catch {
+    return [];
+  }
+
+  const entries: Array<MemoryLogRecord & { epoch: number }> = [];
+  for (const file of files) {
+    let lines: string[];
+    try {
+      lines = readFileSync(join(dir, file), "utf-8").split("\n").filter(Boolean);
+    } catch {
+      continue;
+    }
+    for (const line of lines) {
+      try {
+        const raw = JSON.parse(line) as LogEntry;
+        if (raw.tag !== "memory") continue;
+        if (role && raw.context.role && raw.context.role !== "-" && raw.context.role !== role) continue;
+        const meta = raw.meta || {};
+        if (typeof meta.op !== "string" || typeof meta.content !== "string") continue;
+        const date = raw.timestamp ? new Date(raw.timestamp) : new Date(raw.epoch_ms);
+        entries.push({
+          time: [date.getHours(), date.getMinutes(), date.getSeconds()].map((n) => String(n).padStart(2, "0")).join(":"),
+          source: String(meta.source || "tool"),
+          op: meta.op,
+          content: meta.content,
+          previous: typeof meta.previous === "string" ? meta.previous : undefined,
+          id: typeof meta.id === "string" ? meta.id : undefined,
+          oldId: typeof meta.oldId === "string" ? meta.oldId : undefined,
+          category: typeof meta.category === "string" ? meta.category : undefined,
+          stored: meta.stored !== false,
+          detail: typeof meta.detail === "string" ? meta.detail : undefined,
+          epoch: raw.epoch_ms || date.getTime(),
+        });
+      } catch {
+        // Ignore malformed log lines.
+      }
+    }
+  }
+
+  return entries
+    .sort((a, b) => a.epoch - b.epoch)
+    .slice(-Math.max(1, limit))
+    .map(({ epoch: _epoch, ...entry }) => entry);
 }
 
 /**

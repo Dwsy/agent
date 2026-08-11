@@ -2,6 +2,54 @@
 
 ## [Unreleased]
 
+### Changed (第二轮并行完善)
+- **配置热加载**：runtime 模块（auto-memory / external-readonly / injection / lifecycle / compaction）的模块级 config 常量快照全部改为调用点实时读取，`reloadConfig()` 即刻生效；force-keywords 正则按源字符串 memoize
+- **memory/ 清理**：移除 `repairRoleMemory` 从未读取的 `force` 参数及三个调用点；移除 `parsePendingMemory` 恒为空的 `roleName` 参数；conflicts.ts 与 text.ts 的相似度实现差异标注为有意保留
+- **文档同步**：README / ARCHITECTURE 按拆分后结构重写（runtime/ 16 模块、memory/ 14 子模块、工程设施、实测行数与命令表）
+
+### Fixed (第二轮)
+- `writeKnowledge({ global: false })` 且无 rolePath 时回退写全局目录却标 `source: "role"`，现返回真实来源
+- frontmatter 序列化不转义引号/反斜杠、tags 含逗号或 `]` 破坏往返；现转义并保持旧磁盘格式可读
+
+### Added (第二轮)
+- `memory-api.test.ts`：pending 生命周期（添加→晋升→过期）、搜索驱动晋升阈值（0.5）、去重、reinforce 分层、repair 幂等，5 个行为测试
+- 测试套件 93/93（11 文件）；typecheck OK
+
+### Fixed
+- **API 漂移修复（对齐当前安装的 pi）**：
+  - `memory-llm.ts` / `memory-tags.ts` 改为显式从 `@earendil-works/pi-ai/compat` 导入 `complete/completeSimple`（pi loader 的根别名注释明确是临时的）；相关测试 mock 同步更新
+  - `memory-tags.ts` LLM 打标调用从旧版 API（自造 model 对象 + 字符串返回值）迁移到当前 `completeSimple(model, context, options)` 签名——此前运行时必然抛错静默走规则 fallback
+  - **遗忘曲线 NaN bug**：`getAllTags` 调用 `calculateRetention(daysSinceUse)` 时把天数传给了从未使用的 `originalStrength` 参数，导致所有标签权重为 NaN、`forgotten` 永远为 false；移除无用参数并加回归测试
+  - `/memory-tags`：移除已安装 pi 不支持的 `args` 对象 schema（`--export` 与关键词过滤此前从未生效），改为手动解析参数字符串；TUI 标签浏览器按当前 `SelectList` API 重写（原实现传 `string[]` + 错误 theme，打开即崩）
+  - `SelectListTheme` 补齐必填的 `scrollInfo`/`noMatch`（角色 >10 个滚动时会崩溃）
+  - memory viewer 事件过滤视图把 `MemoryEventRecord[]` 直接拼进字符串（渲染 `[object Object]`），改为格式化输出
+
+### Added (工程设施)
+- `scripts/typecheck.sh`：对着实际加载本扩展的 pi 安装做 tsc 全图类型检查，`paths` 镜像 pi loader 的运行时别名；`types/optional-deps.d.ts` 为可选原生依赖（lancedb/onnxruntime/llama）提供 ambient 声明
+- 新增测试：`runtime/fs-utils.test.ts`（路径逃逸防护）、`runtime/messages.test.ts`、`memory-tags-retention.test.ts`（NaN 回归）；`bun test` 36/36
+- package.json 增加 `test` / `typecheck` scripts
+
+### Changed
+- **memory-md.ts 拆分重构（行为不变）**：2564 行单体收敛为 93 行纯 re-export 门面，实现移入 `memory/` 14 个子模块（types/text/paths/consolidated/pending-store/pending/daily/mutations/search/prompt/stats/tidy/conflicts/html-export），公共导出 60 个逐一核对无缺失，12 个导入方零改动；依赖方向单向分层无循环
+
+### Fixed (并行评审发现的运行时 bug)
+- **知识库路径穿越**：`readKnowledge` 对模型可控的 path 参数无包含性校验，`../` 可读知识根目录外任意文件；已加逐源包含性检查 + 回归测试
+- **角色显示名解析**：`getRoleIdentity` 多行正则会越过同行值捕获下一个列表标签，同行值后还有标签行时返回 `"-"`，空模板返回 `{name:"-"}`；改为同行优先 + 多行负向前瞻，空标签返回 undefined
+- **搜索相关标签永不命中**：`searchRoleMemory` 的 relatedTagsSet 存原始大小写但用 lowercase 查询，含大写的关联标签加权（+0.15）从未生效
+- **环境变量优先级不一致**：`config.ts` 中 legacy `PI_AGENT_ROLES_DIR` 反而覆盖 `PI_ROLES_DIR`，与 `role-store.ts` 相反，两者同时设置时 ROLES_DIR 与 storage.rolesDir 指向不同目录；已对齐
+- 新增测试：`knowledge.test.ts`（25 个：frontmatter、五源聚合、读取优先级、搜索加权、写入版本递增、只读性）、`role-store.test.ts`（23 个：v2 布局、CWD 解析、禁用路径、identity 解析、旧布局迁移）；`bun test` 84/84
+
+### Changed
+- **编排层拆分重构（行为不变）**: `index.ts` 从 2793 行收敛为 ~90 行装配层，实现移入 `runtime/` 16 个职责单一模块：
+  - `context.ts`（共享 Runtime 状态，替代闭包变量）、`lifecycle.ts`（session/agent/turn 事件）、`injection.ts`（system prompt 注入）、`compaction.ts`（压缩记忆抢救 + handoff）、`auto-memory.ts`（自动记忆检查点）、`role-activation.ts`（角色激活）、`external-readonly.ts`（外部只读记忆）
+  - 工具：`tool-memory.ts` / `tool-knowledge.ts` / `tool-role-info.ts`；命令：`commands-memory.ts` / `commands-kb.ts` / `commands-role.ts`；纯工具：`messages.ts` / `fs-utils.ts` / `ui.ts`
+  - 移除死代码 `setupRole` / `loadMemoryFiles`；验证：bun test 15/15、全模块图 bundle 通过、tsc 未引入新错误
+
+### Added
+- **`/role` TUI 角色控制中心**：无参数 `/role` 现在直接渲染自定义键盘导航 overlay，不再先打开系统 `select`；支持查看状态、切换/映射、创建角色、设置默认角色、禁用当前目录、查看当前角色记忆。
+- **全量配置编辑器**：覆盖自动记忆、注入与搜索、向量记忆、外部只读、知识、日志、UI、高级和存储配置；按字段合并持久化到 `pi-role-persona.jsonc`，并保留环境变量最高优先级。
+- **实际注入预览**：展示 core prompt、高优先级记忆、长期记忆和 daily memory；查询相关的按需/向量/外部召回只展示规则和开关，预览无搜索或晋升副作用。
+
 ### Fixed
 - **向量记忆索引范围修复**: `rebuildVectorIndex` 现在同时索引 `memory/consolidated.md` 和 `memory/daily/*.md`，与架构注释保持一致
   - 原实现只索引 consolidated.md
@@ -97,7 +145,8 @@
 ### Added
 - **压缩时记忆抢救** (`session_before_compact`): 拦截上下文压缩流程，在压缩提示词中注入 `<memory>` 提取指令，让同一次 LLM 调用同时生成 summary 和结构化记忆 JSON。解析后写入 MEMORY.md + daily memory，再从 summary 中剥离 `<memory>` 块。零额外 LLM 调用。
   - 提取类型: learning / preference / event
-- **`/memory-log` 命令**: 会话内记忆操作日志，不持久化。追踪 compaction / auto-extract / tool 三个来源的所有写入操作，显示时间、来源、类型、存储状态和内容摘要。
+- **`/memory-log` 命令**: 查看近期持久化与当前会话记忆操作日志。新增/编辑/删除均写入 `.log/YYYY-MM-DD.jsonl`，保留来源、ID、旧值、新值、分类和存储状态。
+- **Git memory commits**: 当 `~/.pi/roles` 是 Git 仓库时，每次 consolidated/pending/daily memory 写入自动生成 `docs(<role>): ...` 提交，并使用仓库锁、隔离 index 和冲突检测保护其他暂存改动；提交失败会恢复本次写入。
   - 每次最多 5 条，单条 ≤120 字符
   - 仅提取持久可复用的洞察，跳过一次性任务细节
   - 失败时静默回退到 pi 默认压缩逻辑

@@ -3,6 +3,10 @@
   "version": "2.1.0",
   "description": "Pi role persona extension with vector memory support",
   "type": "module",
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "bash scripts/typecheck.sh"
+  },
   "dependencies": {
     "@lancedb/lancedb": "^0.15.0",
     "node-llama-cpp": "^3.16.2",

@@ -286,7 +286,14 @@ class VectorDB {
 let activeDB: VectorDB | null = null;
 let activeEmbedding: EmbeddingProvider | null = null;
 let activeRolePath: string | null = null;
-let indexQueue: Array<{ id: string; text: string; kind: "learning" | "preference" | "event"; category: string }> = [];
+let indexQueue: Array<{
+  id: string;
+  text: string;
+  kind: "learning" | "preference" | "event";
+  category: string;
+  replaceId?: string;
+  removeId?: string;
+}> = [];
 let indexFlushTimer: ReturnType<typeof setTimeout> | null = null;
 
 // ============================================================================
@@ -430,6 +437,11 @@ export function isVectorActive(): boolean {
  * Queue a memory entry for async vector indexing.
  * Entries are batched and flushed after a short delay.
  */
+function scheduleIndexFlush(): void {
+  if (indexFlushTimer) clearTimeout(indexFlushTimer);
+  indexFlushTimer = setTimeout(() => flushIndexQueue(), 2000);
+}
+
 export function queueVectorIndex(
   id: string,
   text: string,
@@ -439,10 +451,27 @@ export function queueVectorIndex(
   if (!isVectorActive()) return;
 
   indexQueue.push({ id, text, kind, category });
+  scheduleIndexFlush();
+}
 
-  // Debounce: flush after 2 seconds of quiet
-  if (indexFlushTimer) clearTimeout(indexFlushTimer);
-  indexFlushTimer = setTimeout(() => flushIndexQueue(), 2000);
+export function replaceVectorIndex(
+  oldId: string,
+  id: string,
+  text: string,
+  kind: "learning" | "preference" | "event",
+  category: string = ""
+): void {
+  if (!isVectorActive()) return;
+
+  indexQueue.push({ id, text, kind, category, replaceId: oldId });
+  scheduleIndexFlush();
+}
+
+export function removeVectorIndex(id: string): void {
+  if (!isVectorActive()) return;
+
+  indexQueue.push({ id: "", text: "", kind: "learning", category: "", removeId: id });
+  scheduleIndexFlush();
 }
 
 /**
@@ -457,8 +486,17 @@ async function flushIndexQueue(): Promise<void> {
 
   log("vector-index", `flushing ${batch.length} entries`);
 
+  for (const id of new Set(batch.flatMap((item) => [item.replaceId, item.removeId]).filter((value): value is string => Boolean(value)))) {
+    try {
+      await activeDB.delete(id);
+    } catch (err) {
+      log("vector-index", `replace delete failed for ${id}: ${err}`);
+    }
+  }
+
   const entries: VectorEntry[] = [];
   for (const item of batch) {
+    if (item.removeId) continue;
     try {
       const vector = await activeEmbedding.embed(item.text);
       entries.push({

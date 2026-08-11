@@ -12,7 +12,8 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { completeSimple } from "@earendil-works/pi-ai";
+// Compat entrypoint: pi's root alias to compat is temporary (see loader.js).
+import { completeSimple } from "@earendil-works/pi-ai/compat";
 import { log } from "./logger.ts";
 import { config, type ModelSpec } from "./config.ts";
 
@@ -123,7 +124,7 @@ Return JSON only:
 async function resolveTagModel(
   ctx: ExtensionContext,
   requested?: string | string[] | ModelSpec[]
-): Promise<{ provider: string; modelId: string; apiKey: string; label: string } | null> {
+): Promise<{ model: any; apiKey: string; label: string } | null> {
   const registry = ctx.modelRegistry as any;
   if (!registry || typeof registry.getApiKeyAndHeaders !== "function") {
     log("memory-tags", "modelRegistry.getApiKeyAndHeaders not available");
@@ -138,8 +139,7 @@ async function resolveTagModel(
     const auth = await registry.getApiKeyAndHeaders(ctx.model);
     if (!auth.ok || !auth.apiKey) return null;
     return {
-      provider: ctx.model.provider,
-      modelId: ctx.model.id,
+      model: ctx.model,
       apiKey: auth.apiKey,
       label: `${ctx.model.provider}/${ctx.model.id}`,
     };
@@ -170,8 +170,7 @@ async function resolveTagModel(
     }
     
     return {
-      provider: picked.provider,
-      modelId: picked.id,
+      model: picked,
       apiKey: auth.apiKey,
       label: `${picked.provider}/${picked.id}`,
     };
@@ -182,8 +181,7 @@ async function resolveTagModel(
     const auth = await registry.getApiKeyAndHeaders(ctx.model);
     if (auth.ok && auth.apiKey) {
       return {
-        provider: ctx.model.provider,
-        modelId: ctx.model.id,
+        model: ctx.model,
         apiKey: auth.apiKey,
         label: `${ctx.model.provider}/${ctx.model.id}`,
       };
@@ -212,17 +210,24 @@ export async function extractTagsWithLLM(
   
   try {
     const response = await completeSimple(
+      modelInfo.model,
       {
-        provider: modelInfo.provider,
-        modelId: modelInfo.modelId,
-        apiKey: modelInfo.apiKey,
-        dangerouslyAllowBrowser: true,
+        messages: [
+          {
+            role: "user" as const,
+            content: [{ type: "text" as const, text: prompt }],
+            timestamp: Date.now(),
+          },
+        ],
       },
-      [{ role: "user", content: prompt }],
-      { temperature: 0.3, maxTokens: 300 }
+      { apiKey: modelInfo.apiKey, maxTokens: 300 }
     );
-    
-    const result = parseTagResponse(response);
+
+    const responseText = response.content
+      .filter((item: any) => item.type === "text" && typeof item.text === "string")
+      .map((item: any) => item.text)
+      .join("");
+    const result = parseTagResponse(responseText);
     log("memory-tags", `LLM extracted ${result.tags.length} tags using ${modelInfo.label}`);
     
     return result;
@@ -294,7 +299,6 @@ function extractTagsFallback(content: string): TagExtractionResult {
  * Ebbinghaus 遗忘曲线计算
  */
 export function calculateRetention(
-  originalStrength: number,
   daysPassed: number,
   reviewCount: number = 0,
   baseHalfLife: number = 30
@@ -328,7 +332,7 @@ export function calculateTagStrength(
   const confidenceBonus = confidence * 20;
   
   // 遗忘衰减
-  const retention = calculateRetention(1, daysPassed, reviewCount);
+  const retention = calculateRetention(daysPassed, reviewCount);
   
   // 最终强度
   const strength = (baseWeight + confidenceBonus) * retention;

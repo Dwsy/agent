@@ -305,12 +305,17 @@ export function getRoleIdentity(rolePath: string): { name?: string; emoji?: stri
   if (!existsSync(identityPath)) return null;
 
   const content = readFileSync(identityPath, "utf-8");
+  // Two supported layouts, checked same-line first because the multi-line
+  // pattern would otherwise skip past an inline value and capture the next
+  // list label (yielding garbage like "-"). The multi-line pattern only
+  // accepts a plain value on the next line (not another "-"/"**" label),
+  // so empty templates yield undefined instead of junk.
   const nameMatch =
-    content.match(/\*\*(?:Name|名字)：\*\*[\s\S]*?^\s*([^\n*]+)/m) ||
-    content.match(/^-\s*\*\*(?:Name|名字)：\*\*\s*(.+)$/m);
+    content.match(/^-?[ \t]*\*\*(?:Name|名字)：\*\*[ \t]*(\S[^\n]*)$/m) ||
+    content.match(/\*\*(?:Name|名字)：\*\*[ \t]*\n(?![ \t]*[-*])[ \t]*([^\n]+)/);
   const emojiMatch =
-    content.match(/\*\*(?:Emoji|表情符号)：\*\*[\s\S]*?^\s*([^\n*]+)/m) ||
-    content.match(/^-\s*\*\*(?:Emoji|表情符号)：\*\*\s*(.+)$/m);
+    content.match(/^-?[ \t]*\*\*(?:Emoji|表情符号)：\*\*[ \t]*(\S[^\n]*)$/m) ||
+    content.match(/\*\*(?:Emoji|表情符号)：\*\*[ \t]*\n(?![ \t]*[-*])[ \t]*([^\n]+)/);
 
   return {
     name: nameMatch?.[1]?.trim(),

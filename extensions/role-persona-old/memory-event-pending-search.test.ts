@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 // pi-ai export surface varies by version; mock for isolated unit check
-mock.module("@earendil-works/pi-ai", () => ({
+mock.module("@earendil-works/pi-ai/compat", () => ({
   completeSimple: async () => ({ stopReason: "end", content: [] }),
   complete: async () => ({ stopReason: "end", content: [] }),
   StringEnum: (x: unknown) => x,

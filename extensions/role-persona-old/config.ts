@@ -7,7 +7,7 @@
  * 3. 内置默认值
  */
 
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { homedir } from "node:os";
 import { getDefaultSpinnerFrames } from "./spinner-utils.ts";
@@ -423,13 +423,13 @@ function parseJsonc(content: string): unknown {
 function applyEnvOverrides(config: RolePersonaConfig): RolePersonaConfig {
   const result = structuredClone(config);
 
-  // storage.rolesDir
-  if (process.env.PI_ROLES_DIR) {
-    result.storage.rolesDir = process.env.PI_ROLES_DIR;
-  }
-  // Legacy env var support (backward compat)
+  // storage.rolesDir — same precedence as role-store.ts resolveRolesDir:
+  // PI_ROLES_DIR wins over the legacy PI_AGENT_ROLES_DIR.
   if (process.env.PI_AGENT_ROLES_DIR) {
     result.storage.rolesDir = process.env.PI_AGENT_ROLES_DIR;
+  }
+  if (process.env.PI_ROLES_DIR) {
+    result.storage.rolesDir = process.env.PI_ROLES_DIR;
   }
 
   // autoMemory.enabled
@@ -642,6 +642,59 @@ function loadConfigFromSources(searchPaths: string[]): Partial<RolePersonaConfig
 // ============================================================================
 
 let cachedConfig: RolePersonaConfig | null = null;
+
+export type DeepPartial<T> = {
+  [K in keyof T]?: T[K] extends Array<infer U>
+    ? Array<U>
+    : T[K] extends Record<string, any>
+      ? DeepPartial<T[K]>
+      : T[K];
+};
+
+function mergeConfigPatch(base: any, patch: any): any {
+  if (patch === null || patch === undefined || typeof patch !== "object") {
+    return patch;
+  }
+  if (Array.isArray(patch)) {
+    return [...patch];
+  }
+
+  const result = base && typeof base === "object" && !Array.isArray(base)
+    ? structuredClone(base)
+    : {};
+  for (const [key, value] of Object.entries(patch)) {
+    result[key] = mergeConfigPatch(result[key], value);
+  }
+  return result;
+}
+
+/**
+ * Persist a partial user configuration into the highest-priority writable
+ * role config file. Environment-variable overrides still take precedence.
+ */
+export function saveConfigPatch(
+  patch: DeepPartial<RolePersonaConfig>,
+  extensionDir?: string,
+): RolePersonaConfig {
+  const targetDir = expandHomeDir(
+    process.env.PI_ROLES_DIR
+      || process.env.PI_AGENT_ROLES_DIR
+      || join(homedir(), ".pi", "roles"),
+  );
+  mkdirSync(targetDir, { recursive: true });
+
+  const configPath = join(targetDir, "pi-role-persona.jsonc");
+  let existing: DeepPartial<RolePersonaConfig> = {};
+  if (existsSync(configPath)) {
+    existing = parseJsonc(readFileSync(configPath, "utf-8")) as DeepPartial<RolePersonaConfig>;
+  }
+
+  const merged = mergeConfigPatch(existing, patch);
+  writeFileSync(configPath, `${JSON.stringify(merged, null, 2)}\n`, "utf-8");
+
+  cachedConfig = null;
+  return loadConfig(extensionDir);
+}
 
 export function loadConfig(extensionDir?: string): RolePersonaConfig {
   if (cachedConfig) {

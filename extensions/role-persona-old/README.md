@@ -23,7 +23,7 @@
 - **向量记忆**：LanceDB + embedding + hybrid search
 - **标签系统**：LLM 自动打标、标签关联、遗忘曲线
 - **知识系统**：role/global/project/external 多源知识检索
-- **可编程工具**：`memory` / `role_*` / `knowledge`
+- **可编程工具**：`memory` / `role_info` / `knowledge`
 
 ## 快速开始
 
@@ -63,22 +63,32 @@ cd ~/project
 
 ## 架构总览
 
+`index.ts` 只剩装配（~90 行）：注册 `--nr` 禁用旗标，然后把 16 个 `runtime/` 模块拼起来。事件、工具、命令的实现全部在 `runtime/` 下。
+
 ```text
 Pi Core (事件系统)
     ↓
-index.ts (编排层)
-    ├─ session_start
-    ├─ before_agent_start
-    ├─ agent_end
-    ├─ session_before_compact
-    └─ session_shutdown
+index.ts (装配层 / composition root, ~90 行)
+    ↓
+runtime/ (编排实现, 16 个模块, ~3,000 行)
+    ├─ context            共享 Runtime 状态
+    ├─ lifecycle          session_start / resources_discover / agent_end / session_shutdown / turn_end
+    ├─ injection          before_agent_start 系统提示注入
+    ├─ compaction         session_before_compact 记忆抢救
+    ├─ auto-memory        自动记忆检查点调度与 flush
+    ├─ role-activation    角色激活流程
+    ├─ external-readonly  外部只读记忆服务
+    ├─ ui / messages / fs-utils
+    ├─ tool-memory / tool-knowledge / tool-role-info
+    └─ commands-memory / commands-kb / commands-role
     ↓
 ┌─────────────────────────────────────────────────────────┐
 │ 基础设施                                                │
 │ role-store   role-template   config   logger           │
 ├─────────────────────────────────────────────────────────┤
 │ 记忆核心                                                │
-│ memory-md    memory-llm      memory-tags               │
+│ memory-md (门面) → memory/ 14 个子模块                  │
+│ memory-llm      memory-tags      memory-git            │
 ├─────────────────────────────────────────────────────────┤
 │ 检索与交互                                              │
 │ memory-vector  memory-viewer  tui-renderers            │
@@ -88,11 +98,13 @@ index.ts (编排层)
 └─────────────────────────────────────────────────────────┘
 ```
 
+记忆核心同样拆过了：`memory-md.ts` 现在是 ~93 行的纯 re-export 门面，真正的实现在 `memory/` 下 14 个子模块（types / text / paths / pending-store / consolidated / pending / daily / mutations / search / prompt / stats / tidy / conflicts / html-export），依赖方向单向分层，外部调用方照旧 import `memory-md.ts` 即可。
+
 ## 记忆分层：不是两层，是一整套流水线
 
 ### L3 运行时层
 
-- `memoryLog[]`：会话内操作日志
+- `memoryLog[]`：会话内操作日志，并同步写入 `.log/YYYY-MM-DD.jsonl`
 - `TagIndex`：标签索引、关联图、遗忘曲线
 - `VectorDB`：语义检索索引
 
@@ -327,13 +339,12 @@ memory({ action: "vector_stats" })
 - LLM 整理
 - 向量索引重建/状态查看
 
-### `role_read` / `role_write` / `role_list` / `role_search`
+### `role_info`
+
+旧的 `role_read` / `role_write` / `role_list` / `role_search` 已经删掉了。现在只有一个 `role_info`，只列角色目录结构、不读内容——读写请直接用标准文件工具，记忆和知识走 `memory` / `knowledge`。
 
 ```ts
-role_read({ path: "memory/consolidated.md" })
-role_write({ path: "context/active-project.md", mode: "overwrite", content: "..." })
-role_list({ path: "core", recursive: true })
-role_search({ path: ".", query: "constraint" })
+role_info({ path: "core", recursive: true })
 ```
 
 ### `knowledge`
@@ -348,25 +359,33 @@ knowledge({ action: "write", title: "RRF Hybrid Search", category: "retrieval", 
 
 | 命令 | 用途 |
 |------|------|
-| `/role create/map/unmap/info/list` | 角色管理 |
-| `/memories` | 查看记忆 |
-| `/memories --export` | 导出浏览器记忆视图 |
-| `/memory-log` | 查看会话内记忆操作日志 |
+| `/role` | 直接打开自定义角色 TUI 控制中心（非系统 select）：状态、切换/映射、创建、默认角色、禁用、注入预览、记忆查看与全量配置 |
+| `/role create/map/unmap/info/list` | 兼容的命令行角色管理入口 |
+| `/memories` | 查看记忆（默认起本地 HTTP 服务并打开浏览器；`/memories tui` 用终端查看器） |
+| `/memory-export [path]` | 导出记忆为 HTML 可视化 |
+| `/memory-log` | 查看近期持久化与当前会话记忆操作日志 |
 | `/memory-fix` | 修复结构问题 |
 | `/memory-tidy` | 规则整理/去重 |
 | `/memory-tidy-llm` | LLM 深度整理 |
-| `/memory-tags` | 标签查看/标签云 |
+| `/memory-tags [--export] [keyword]` | 标签查看/标签云 |
+| `/memory-conflicts` | 检测记忆冲突 |
+| `/memory-distill` / `/memory-distill-stop` | 交互式记忆→知识蒸馏模式开关 |
 | `/memory-vector stats/rebuild` | 向量记忆管理 |
+| `/kb list/search/stats` | 知识库查看与搜索 |
 
 ## 配置
 
-主配置文件：`extensions/role-persona/pi-role-persona.jsonc`
+主配置文件：`~/.pi/roles/pi-role-persona.jsonc`（`PI_ROLES_DIR` / `PI_AGENT_ROLES_DIR` 可覆盖目录）
 
 优先级：
 
 ```text
 env ROLE_* > pi-role-persona.jsonc > defaults
 ```
+
+无参数 `/role` 会直接渲染自定义键盘导航 overlay（不会先进入系统 `select`），并可在 TUI 中编辑全部配置字段。修改按字段合并写入配置文件，不会覆盖未编辑字段；环境变量仍具有最高优先级。部分启动期常量、角色存储目录和向量后端设置需执行 `/reload` 或重启后完全生效。
+
+“查看当前实际注入内容”会展示角色 core prompt、高优先级记忆、长期记忆和启用的 daily memory。按需关键词召回、向量召回和外部只读记忆依赖下一条用户查询，因此界面只展示其真实开关与规则，不执行搜索或伪造结果。
 
 ### 关键配置块
 
@@ -459,8 +478,21 @@ updated: "2026-04-17"
 - [CONFIG-MIGRATION.md](./CONFIG-MIGRATION.md) — 配置迁移
 - [comparison-analysis.html](./comparison-analysis.html) — 方案/设计比较分析
 - [project-analysis.html](./project-analysis.html) — 项目分析可视化
+- `runtime/` — 事件、工具、命令的编排实现（16 个模块）
+- `memory/` — 记忆核心实现（14 个子模块，经 `memory-md.ts` 门面导出）
 - `skills/memory-recall/SKILL.md` — 召回工作流
 - `skills/memory-organize/SKILL.md` — 整理与 pending 管理
+
+## 开发与验证
+
+```bash
+bun test                  # 或 npm run test；当前 93 tests / 11 files 全绿
+bash scripts/typecheck.sh # 或 npm run typecheck；对着实际安装的 pi 做全图 tsc 检查
+```
+
+`scripts/typecheck.sh` 会定位 `pi` 二进制所在的安装目录，把 pi loader 运行时的 import 别名镜像成 tsc `paths`，所以类型检查和运行时解析走同一套包。可选原生依赖（lancedb / onnxruntime / llama）由 `types/optional-deps.d.ts` 打桩，不用装原生二进制也能跑。
+
+导入约定：`complete` / `completeSimple` 必须显式从 `@earendil-works/pi-ai/compat` 导入——pi loader 把根路径 `@earendil-works/pi-ai` 也临时指向 compat，但那是过渡行为，补全类调用别依赖它。
 
 ## 设计原则
 
@@ -469,17 +501,24 @@ updated: "2026-04-17"
 3. **静默降级**：向量、外部服务、LLM 标签失败都不应打断主流程
 4. **分层而不是混堆**：daily / pending / consolidated / knowledge 各干各的
 5. **零额外调用优先**：compaction rescue 复用已有 LLM 调用
-6. **可观测**：`/memory-log`、viewer、tag cloud、vector stats 都能看状态
+6. **可观测**：`/memory-log`、JSONL 审计日志、viewer、tag cloud、vector stats 都能看状态
+7. **Git 审计**：当 `storage.rolesDir`（默认 `~/.pi/roles`）是 Git 仓库时，每次 consolidated/pending/daily memory 写入都会生成一个 `docs(<role>): ...` 提交；使用仓库锁与隔离 index，不会带走其他已暂存改动，冲突或提交失败会拒绝本次写入并恢复文件。
 
 ## 什么时候该看哪个文件
 
-- 想看主流程：`index.ts`
-- 想看记忆真相源与 pending：`memory-md.ts`
-- 想看自动提取：`memory-llm.ts`
+- 想看模块怎么拼起来：`index.ts`（就 ~90 行）
+- 想看主流程：`runtime/lifecycle.ts` + `runtime/injection.ts`
+- 想看记忆真相源（consolidated 解析/写入/修复）：`memory/consolidated.ts`
+- 想看 pending 验证与晋升：`memory/pending.ts`
+- 想看记忆搜索打分：`memory/search.ts`
+- 想看注入用的记忆块拼装：`memory/prompt.ts`
+- 想看自动提取：`memory-llm.ts` + `runtime/auto-memory.ts`
+- 想看压缩期记忆抢救：`runtime/compaction.ts`
 - 想看标签与遗忘曲线：`memory-tags.ts`
 - 想看语义检索：`memory-vector.ts`
 - 想看知识层：`knowledge.ts`
 - 想看角色目录与迁移：`role-store.ts`
+- 想看记忆写入的 Git 提交机制：`memory-git.ts`
 
 ---
 

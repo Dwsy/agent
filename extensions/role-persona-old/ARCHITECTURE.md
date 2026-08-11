@@ -5,30 +5,38 @@
 ```
 Pi Core (事件系统)
     ↓
-index.ts (编排层: session_start → before_agent_start → agent_end → session_shutdown)
+index.ts (装配层 / composition root, ~90L)
+    ↓
+runtime/ (编排实现, 16 模块, ~3,000L)
+  事件: lifecycle / injection / compaction
+  调度: auto-memory / role-activation / external-readonly
+  工具: tool-memory / tool-knowledge / tool-role-info
+  命令: commands-memory / commands-kb / commands-role
+  支撑: context / ui / messages / fs-utils
     ↓
 ┌─────────────────────────────────────────────────────────────────┐
 │ 基础设施                                                         │
-│   role-store (210L)  role-template (370L)  config (272L)         │
-│   CWD→角色映射       i18n模板            三级配置                │
+│   role-store (~460L)  role-template (~380L)  config (~780L)      │
+│   CWD→角色映射       i18n模板            配置加载/合并            │
 ├─────────────────────────────────────────────────────────────────┤
 │ 记忆核心                                                         │
-│   memory-md (1111L)  memory-llm (417L)  memory-tags (682L)       │
-│   解析/写入/搜索     自动提取/tidy      LLM打标/标签云            │
+│   memory-md (~93L 门面) → memory/ (14 子模块, ~2,600L)           │
+│   memory-llm (~1,080L)  memory-tags (~780L)  memory-git (~320L)  │
+│   自动提取/tidy         LLM打标/标签云       写入即 Git 提交       │
 ├─────────────────────────────────────────────────────────────────┤
 │ 向量嵌入层 (Embedding Providers)                                │
 │   OpenAI              |  Local (PSM HTTP)                        │
 │   text-embedding-3-*  |  :52131 向后兼容                         │
-│   minilm-direct (NEW) |  minilm-daemon (NEW)                     │
+│   minilm-direct       |  minilm-daemon                          │
 │   ONNX单进程 ~150MB   |  共享守护进程 ~150MB总                    │
 │   384维, ~80MB模型     |  Unix Socket / Named Pipe IPC           │
 ├─────────────────────────────────────────────────────────────────┤
 │ 交互层                                                           │
-│   memory-viewer (214L)  memory-vector (595L)  logger (77L)       │
-│   TUI查看器             LanceDB + HybridSearch  文件日志          │
+│   memory-viewer (~640L)  memory-vector (~850L)  logger (~540L)   │
+│   TUI/HTTP查看器         LanceDB + HybridSearch  文件日志         │
 └─────────────────────────────────────────────────────────────────┘
     ↓
-~/.pi/agent/roles/
+~/.pi/roles/  (默认；PI_ROLES_DIR / storage.rolesDir 可覆盖，旧 ~/.pi/agent/roles 自动迁移)
 ├── config.json              # CWD→角色映射
 └── <role>/
     ├── core/                # 人格定义
@@ -45,7 +53,58 @@ index.ts (编排层: session_start → before_agent_start → agent_end → sess
 └── embedding-daemon (进程)   # 共享 embedding 守护进程
 ```
 
+## runtime/ 模块拆分
+
+`index.ts` 不再持有任何实现，只做装配。所有会话状态收进 `runtime/context.ts` 的单一 `Runtime` 对象，模块间靠它共享。
+
+| 模块 | 行数 | 职责 |
+|------|------|------|
+| `context.ts` | ~130 | Runtime 状态容器 + memoryLog 记录 |
+| `lifecycle.ts` | ~200 | session_start / resources_discover / agent_end / session_shutdown / turn_end |
+| `injection.ts` | ~180 | before_agent_start 系统提示注入 |
+| `compaction.ts` | ~290 | session_before_compact 记忆抢救 + custom-compaction 交接 |
+| `auto-memory.ts` | ~170 | 自动记忆检查点调度与 flush |
+| `role-activation.ts` | ~120 | 角色激活流程 |
+| `external-readonly.ts` | ~110 | 外部只读记忆服务（可选） |
+| `ui.ts` | ~150 | TUI 可用性判断、notify、角色选择 UI |
+| `messages.ts` | ~25 | 消息数组工具 |
+| `fs-utils.ts` | ~65 | 路径规范化、角色目录内安全路径解析 |
+| `tool-memory.ts` | ~420 | `memory` 工具（15 个 action） |
+| `tool-knowledge.ts` | ~190 | `knowledge` 工具 |
+| `tool-role-info.ts` | ~60 | `role_info` 工具（只列目录，不读内容） |
+| `commands-memory.ts` | ~530 | `/memories` `/memory-*` 全家桶 |
+| `commands-kb.ts` | ~80 | `/kb` |
+| `commands-role.ts` | ~280 | `/role` |
+
+## memory/ 子模块拆分
+
+`memory-md.ts` 是 ~93 行的纯 re-export 门面，调用方不用改 import。实现按单一职责拆进 `memory/`，依赖方向单向分层（下层不知道上层）：
+
+```
+types → text → paths → pending-store → consolidated → pending → daily
+  → mutations → search → prompt / stats / tidy / conflicts / html-export
+```
+
+| 模块 | 行数 | 职责 |
+|------|------|------|
+| `types.ts` | ~90 | 数据类型与常量 |
+| `text.ts` | ~85 | 文本规范化、tokenize、hashId、日期 |
+| `paths.ts` | ~55 | 记忆文件路径 |
+| `pending-store.ts` | ~110 | pending.md 读写（含 Git 提交） |
+| `consolidated.ts` | ~620 | consolidated.md 解析/写入/修复（真相源） |
+| `pending.ts` | ~150 | pending 增删、晋升、过期 |
+| `daily.ts` | ~165 | daily/*.md 追加与读取、每日摘要 |
+| `mutations.ts` | ~310 | learning/preference/event 增删改 + 打标 |
+| `search.ts` | ~290 | 关键词搜索打分、tag 加权、pending 自动晋升 |
+| `prompt.ts` | ~145 | 注入用记忆块拼装、按需召回 |
+| `stats.ts` | ~115 | 统计与列表 |
+| `tidy.ts` | ~165 | 规则去重整理 + LLM tidy plan 应用 |
+| `conflicts.ts` | ~160 | 记忆冲突检测 |
+| `html-export.ts` | ~185 | HTML 导出 |
+
 ## 事件流水线
+
+事件归属：`runtime/lifecycle.ts` 管 session_start / resources_discover / agent_end / session_shutdown / turn_end，`runtime/injection.ts` 管 before_agent_start，`runtime/compaction.ts` 管 session_before_compact。
 
 ### session_start
 ```
@@ -61,7 +120,8 @@ loadConfig → resolveRoleForCwd → loadRolePrompts(core/*.md) → migrateLegac
 ### agent_end
 ```
 shouldFlush? (累计5轮 / 结束词 / 30分钟且≥2轮)
-  → runAutoMemoryExtraction → 写入 consolidated.md + daily/*.md
+  → runAutoMemoryExtraction
+  → learning 先进 pending.md，preference/event 写 consolidated.md，追加 daily/*.md
 ```
 
 ### session_before_compact (零额外调用)
@@ -121,37 +181,59 @@ L1 原始: daily/YYYY-MM-DD.md (LESSON/PREFERENCE/EVENT)
 
 ## 命令映射
 
-| 命令 | 模块 |
-|------|------|
-| `/role create/map/unmap/info/list` | role-store |
-| `/memories` `/memory-log` `/memory-fix` `/memory-tidy` | memory-md/viewer |
-| `/memory-tidy-llm` | memory-llm |
-| `/memory-tags` | memory-tags |
-| `/memory-vector stats/rebuild` | memory-vector |
+命令注册全部在 `runtime/commands-*.ts`，下面是各命令背后干活的模块。
+
+| 命令 | 注册处 | 实现 |
+|------|--------|------|
+| `/role [tui\|info\|create\|map\|unmap\|list]` | commands-role | role-store / role-control-center |
+| `/memories [tui]` `/memory-log` `/memory-fix` `/memory-tidy` | commands-memory | memory-md / memory-viewer |
+| `/memory-tidy-llm` `/memory-distill[-stop]` | commands-memory | memory-llm |
+| `/memory-tags [--export]` | commands-memory | memory-tags |
+| `/memory-conflicts` `/memory-export` | commands-memory | memory/conflicts / memory/html-export |
+| `/memory-vector stats/rebuild` | commands-memory | memory-vector |
+| `/kb list/search/stats` | commands-kb | knowledge |
 
 ## Tool API
 
+三个工具，注册在 `runtime/tool-*.ts`：
+
 ```typescript
-memory({ action: "add_learning|add_preference|reinforce|search|llm_tidy|vector_rebuild" })
-role_read({ path }) / role_write({ path, content }) / role_list({ path }) / role_search({ query })
+memory({ action: "add_learning|add_preference|add_event|update_*|delete_*|reinforce|search|list|consolidate|repair|llm_tidy|vector_rebuild|vector_stats" })
+knowledge({ action: "list|search|read|write" })
+role_info({ path, recursive })   // 只列角色目录结构；旧的 role_read/write/list/search 已删除
 ```
 
 ## 新增文件 (all-MiniLM-L6-v2 Integration)
 
 | 文件 | 行数 | 用途 |
 |------|------|------|
-| `embedding-minilm.ts` | ~240 | Direct ONNX Provider (单进程) |
-| `embedding-daemon.ts` | ~560 | 跨平台守护进程服务器 |
-| `embedding-minilm-daemon-client.ts` | ~150 | Daemon Client Provider |
+| `embedding-minilm.ts` | ~440 | Direct ONNX Provider (单进程) |
+| `embedding-daemon.ts` | ~820 | 跨平台守护进程服务器 |
+| `embedding-minilm-daemon-client.ts` | ~155 | Daemon Client Provider |
 | `docs/all-minilm-embedding-design.md` | - | 设计文档 |
 | `docs/IMPLEMENTATION-PLAN.md` | - | 实现计划 |
 
+## 工程设施
+
+- **测试**：`bun test`（`npm run test`）。当前 93 tests / 11 files 全绿，覆盖 knowledge、role-store、memory-git、memory 核心 API（pending 生命周期/搜索晋升/去重/reinforce/repair）、LLM 提取/编辑、tag 遗忘、runtime 的 fs-utils 与 messages。
+- **类型检查**：`bash scripts/typecheck.sh`（`npm run typecheck`）。脚本定位实际安装的 `pi` 二进制，把 pi loader 运行时的 import 别名镜像成 tsc `paths`（`@earendil-works/pi-ai` → compat 入口、`@sinclair/typebox` → pi 内置 typebox），对 `index.ts + runtime/ + types/` 做全图 `tsc --noEmit`——类型检查和运行时解析走同一套包。
+- **可选原生依赖打桩**：`types/optional-deps.d.ts` 把 `@lancedb/lancedb` / `onnxruntime-node` / `node-llama-cpp` 声明为 `any`，typecheck 不需要装原生二进制。
+- **pi-ai 导入约定**：`complete` / `completeSimple` 显式从 `@earendil-works/pi-ai/compat` 导入。pi loader 目前把根路径也临时别名到 compat，但那是过渡行为，补全类调用不依赖它。
+
 ## 源码规模
 
+按 `wc -l` 实测（不含测试文件，行数有并行改动，取约数）：
+
 ```
-index.ts (1446) + memory-md (1111) + memory-tags (682) + memory-vector (595) +
-config (272) + role-store (210) + memory-viewer (214) + memory-llm (417) +
-role-template (370) + logger (77) +
-embedding-minilm (240) + embedding-daemon (560) + embedding-minilm-daemon-client (150)
-≈ 6,350 lines
+装配层:   index.ts (~90) + memory-md.ts 门面 (~93)
+编排层:   runtime/ 16 模块 ≈ 3,000
+记忆核心: memory/ 14 子模块 ≈ 2,600
+单文件:   memory-llm (~1,080) + memory-vector (~850) + knowledge (~840) +
+          config (~780) + memory-tags (~780) + role-control-center (~670) +
+          memory-viewer (~640) + logger (~540) + role-store (~460) +
+          role-template (~380) + tui-renderers (~330) + memory-git (~320) +
+          memory-extraction-rules (~50)
+嵌入层:   embedding-daemon (~820) + embedding-minilm (~440) +
+          embedding-minilm-daemon-client (~155)
+≈ 15,000 lines
 ```
