@@ -168,7 +168,16 @@ pnpm gapp:tui demo-kanban --cwd /Users/dengwenyu/.pi/agent
 ## Host control plane
 
 - **Port:** `54888`（`GAPP_HOST_PORT`）
+- **Auth:** 除 `/health` 外所有路由要求 `Authorization: Bearer <token>`；token 由 hub 写入 `~/.pi/gapp/host-token`（0600），本地进程读文件、WebView 由 runtime 注入
 - **Paths:** `/health`, `/v1/gapp/...` — 见 `PROTOCOL.md`
 - First process = hub; others = HTTP clients to same port
 
 Host Protocol 仍负责 WebView live tools、events、generate 和跨进程调用；TUI renderer contract 是同一 bundle 的另一种表现层。
+
+## 并行 generate（subagent）
+
+`GappHost.generate()` / `POST /generate` 默认 `mode: "subagent"`：每个请求 spawn 一个无头
+`pi -p --no-session --no-tools` 子代理，多个请求**真并行**执行；并发上限
+`GAPP_SUBAGENT_CONCURRENCY`（默认 3），超出 FIFO 排队。子代理进程带 `GAPP_SUBAGENT=1`，
+generative-ui 在其中跳过自注册（防递归）。传 `mode: "agent"` 则回到旧行为：注入主会话
+（串行，但共享会话上下文）。实现见 `subagent.ts`（进程池）+ `generate.ts`（统一调度）。

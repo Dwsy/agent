@@ -129,8 +129,11 @@ export interface GappEventMsg extends GappEnvelope {
   prompt?: string;
 }
 
-/** Always fulfilled on the main Pi session via sendUserMessage — no side model. */
-export type GappLlmMode = "agent";
+/**
+ * "subagent" (default): parallel headless pi process per job.
+ * "agent": injected into the main session as a user message (serialized).
+ */
+export type GappLlmMode = "agent" | "subagent";
 export type GappLlmFormat = "text" | "json";
 
 export interface GappLlmRequestMsg extends GappEnvelope {
@@ -141,7 +144,6 @@ export interface GappLlmRequestMsg extends GappEnvelope {
   stream?: boolean;
   maxTokens?: number;
   format?: GappLlmFormat;
-  /** @deprecated Ignored; always main-session agent turn. */
   mode?: GappLlmMode;
   jsonSchema?: Record<string, unknown>;
 }
@@ -266,6 +268,7 @@ export function parseLlmRequest(data: unknown): GappLlmRequestMsg | null {
   if (m.type !== "gapp_llm_request") return null;
   if (typeof m.id !== "string" || typeof m.requestId !== "string") return null;
   if (typeof m.prompt !== "string" || !m.prompt.trim()) return null;
+  if (m.mode !== undefined && m.mode !== "agent" && m.mode !== "subagent") return null;
   return m;
 }
 

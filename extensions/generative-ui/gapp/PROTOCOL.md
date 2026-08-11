@@ -28,7 +28,7 @@ MCP-inspired **dynamic tools + generative bridge** for Glimpse-APPs running unde
 | POST | `/v1/gapp/apps/:appId/call` | 调用工具（live 或 stateOps） |
 | GET/PUT | `/v1/gapp/apps/:appId/state` | 读/写 `state.json` |
 | POST | `/v1/gapp/apps/:appId/events` | 事件；`notifyAgent` → 主会话 |
-| POST | `/v1/gapp/apps/:appId/generate` | 主会话 `sendUserMessage` 生成 |
+| POST | `/v1/gapp/apps/:appId/generate` | 生成：默认并行 subagent；`mode:"agent"` 走主会话 |
 | GET | `/v1/gapp/apps/:appId/generate/:requestId` | 轮询生成结果 |
 
 - 首个 Pi 进程 bind 成为 **hub**；后到进程 probe `/health` 后作 **client**（lease/call 走 HTTP）。
@@ -599,9 +599,10 @@ for await (const chunk of GappHost.generateStream(prompt, opts)) {
 
 | `mode` | 行为 |
 |--------|------|
-| **`agent`（唯一路径）** | 走 **当前主会话**：`pi.sendUserMessage(...)`（busy 时 `deliverAs: "followUp"`）。**禁止**另起独立 model/completion API。结果取本 turn 最终 assistant text（有 delta 则可选 `gapp_llm_chunk`）回流 App。 |
+| **`subagent`（默认）** | 每个请求 spawn 一个无头 `pi -p --no-session --no-tools` 子代理进程，**多请求真并行**（并发上限 `GAPP_SUBAGENT_CONCURRENCY`，默认 3，超出 FIFO 排队）。结果取子代理 stdout 回流 App。子代理进程带 `GAPP_SUBAGENT=1`，generative-ui 扩展在其中自动跳过注册（防递归）。 |
+| **`agent`** | 走 **当前主会话**：`pi.sendUserMessage(...)`（busy 时 `deliverAs: "followUp"`，串行）。与用户对话共用同一模型与上下文，适合需要会话上下文的生成。结果取该 marker 之后的最终 assistant text 回流 App。 |
 
-**已定决策：** generate **只用主会话 `sendUserMessage`**，与用户对话共用同一模型与上下文；不单独调 provider。
+**决策更新（0.1.3）：** 默认改为并行 subagent；`mode:"agent"` 保留给需要主会话上下文的场景。
 
 ### 7.4 Wire: stream back
 
@@ -625,9 +626,9 @@ for await (const chunk of GappHost.generateStream(prompt, opts)) {
 
 约束：
 
-- 并发 generate 每 app 默认 **1**；第二请求 `busy` 或排队（实现选排队）
-- 超时默认 **120s**
-- `isolated` 模式立即 `host_unavailable`
+- subagent 模式全局并发默认 **3**（`GAPP_SUBAGENT_CONCURRENCY`），超出 FIFO 排队；agent 模式串行
+- 超时默认 **120s**（subagent 进程 110s 先行超时并 kill）
+- `isolated` 模式：`mode:"agent"` 返回 `host_unavailable`；`mode:"subagent"` 可经 HTTP `/generate` + 轮询使用
 - prompt 长度 cap（例如 32k chars）防炸 context
 
 ### 7.5 Cancel
@@ -837,7 +838,7 @@ async function summarize() {
 1. **元工具而非动态 registerTool** — 适配当前 Pi ExtensionAPI；语义仍 MCP-like。
 2. **state.json 仍是 SSOT** — tools 是领域 API，不是第二数据源。
 3. **disk tools + live tools 分层** — 窗关仍可发现接口；live 覆盖实现。
-4. **generate 只用主会话 `sendUserMessage`** — 与用户对话共用同一模型；**不**另起 completion / 独立 model 调用。
+4. **generate 双模式** — 默认并行无头 subagent（`pi -p`）；`mode:"agent"` 走主会话 `sendUserMessage` 共享上下文。
 5. **event 默认不打扰** — 必须 `notifyAgent: true` 才唤起 AI。
 6. **stateOps 白名单** — 无 Pi 时也能安全自动化，禁止任意代码。
 7. **无 destructive 二次确认** — 不弹 TUI 确认、不额外记确认日志；依赖 agent 工具轨迹。
@@ -864,6 +865,7 @@ async function summarize() {
 | 0.1 | 2026-07-24 | Initial protocol: tools, events, generative bridge, meta-tools, stateOps |
 | 0.1.1 | 2026-07-24 | Lock: main-session generate only; no destructive confirm; single-connection default + multi opt-in |
 | 0.1.2 | 2026-07-31 | Add app-owned `tui.mjs` renderer contract shared by standalone and Pi hosts |
+| 0.1.3 | 2026-08-11 | Host token auth on all non-health routes; generate defaults to parallel headless subagents (`mode:"subagent"`), main-session path kept as `mode:"agent"` |
 
 ---
 

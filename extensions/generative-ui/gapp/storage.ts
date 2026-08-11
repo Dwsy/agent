@@ -583,6 +583,8 @@ export async function deleteGapp(
 export interface InjectGappRuntimeOptions {
   /** e.g. http://127.0.0.1:54888 — enables multipath host fetch fallback */
   hostBase?: string;
+  /** Bearer token the host requires; injected so the WebView can call it. */
+  hostToken?: string;
   mode?: "pi-live" | "isolated";
   sessionId?: string;
   /** Absolute file URL for the trusted app-owned tools.mjs module. */
@@ -599,6 +601,7 @@ export function injectGappRuntime(
   options?: InjectGappRuntimeOptions,
 ): string {
   const hostBase = options?.hostBase || "";
+  const hostToken = options?.hostToken || "";
   const mode = options?.mode || "pi-live";
   const sessionId = options?.sessionId || "";
   const toolsModuleUrl = options?.toolsModuleUrl || "";
@@ -624,6 +627,7 @@ window.__GAPP_HOST__=${JSON.stringify({
     protocolVersion: "0.1",
     connected: true,
     hostBase,
+    hostToken,
     sessionId,
   })};
 (function(){
@@ -646,11 +650,15 @@ window.__GAPP_HOST__=${JSON.stringify({
     wireSend({ type: "gapp_state", state: state, reason: reason || "set" });
   }
   function hostFetch(method, path, body){
-    var base = (window.__GAPP_HOST__ && window.__GAPP_HOST__.hostBase) || "";
+    var host = window.__GAPP_HOST__ || {};
+    var base = host.hostBase || "";
     if (!base || typeof fetch !== "function") return Promise.reject(new Error("host_unavailable"));
+    var headers = {};
+    if (body !== undefined) headers["Content-Type"] = "application/json";
+    if (host.hostToken) headers["Authorization"] = "Bearer " + host.hostToken;
     return fetch(base + path, {
       method: method,
-      headers: body !== undefined ? { "Content-Type": "application/json" } : undefined,
+      headers: headers,
       body: body !== undefined ? JSON.stringify(body) : undefined
     }).then(function(r){ return r.json().then(function(j){ return { status: r.status, data: j }; }); });
   }
@@ -720,6 +728,9 @@ window.__GAPP_HOST__=${JSON.stringify({
     },
     generate: function(prompt, options){
       options = options || {};
+      // mode "subagent" (default): parallel headless pi per request.
+      // mode "agent": serialized main-session turn sharing its context.
+      var mode = options.mode === "agent" ? "agent" : "subagent";
       var requestId = "gen_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 8);
       return new Promise(function(resolve, reject){
         genWaiters[requestId] = { resolve: resolve, reject: reject };
@@ -731,13 +742,14 @@ window.__GAPP_HOST__=${JSON.stringify({
           stream: !!options.stream,
           maxTokens: options.maxTokens,
           format: options.format || "text",
-          mode: "agent"
+          mode: mode
         });
         hostFetch("POST", "/v1/gapp/apps/" + encodeURIComponent(window.__GAPP_ID__) + "/generate", {
           requestId: requestId,
           prompt: String(prompt || ""),
           system: options.system,
-          format: options.format || "text"
+          format: options.format || "text",
+          mode: mode
         }).catch(function(){});
         setTimeout(function(){
           if (!genWaiters[requestId]) return;

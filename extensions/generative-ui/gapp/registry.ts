@@ -294,7 +294,7 @@ export function completeGenerateJob(
     }
   }
   // GC later
-  setTimeout(() => generateJobs.delete(requestId), 60_000);
+  setTimeout(() => generateJobs.delete(requestId), 60_000).unref?.();
 }
 
 export function armGenerateTimeout(requestId: string, ms = GENERATE_TIMEOUT_MS) {
@@ -307,6 +307,7 @@ export function armGenerateTimeout(requestId: string, ms = GENERATE_TIMEOUT_MS) 
       error: { code: "timeout", message: "generate timed out" },
     });
   }, ms);
+  job.timer.unref?.();
 }
 
 export function listGenerateJobs(): GenerateJob[] {

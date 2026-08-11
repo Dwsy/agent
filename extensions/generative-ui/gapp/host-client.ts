@@ -4,6 +4,7 @@
  */
 
 import { GAPP_HOST_BASE, GAPP_PATHS } from "./constants.js";
+import { readHostToken } from "./auth.js";
 import type { GappInstances, GappLease, GappTool } from "./protocol.js";
 
 async function req<T = any>(
@@ -12,9 +13,13 @@ async function req<T = any>(
   body?: unknown,
   timeoutMs = 8_000,
 ): Promise<{ status: number; data: T }> {
+  const headers: Record<string, string> = {};
+  if (body !== undefined) headers["Content-Type"] = "application/json";
+  const token = await readHostToken();
+  if (token) headers["Authorization"] = `Bearer ${token}`;
   const res = await fetch(`${GAPP_HOST_BASE}${path}`, {
     method,
-    headers: body !== undefined ? { "Content-Type": "application/json" } : undefined,
+    headers,
     body: body !== undefined ? JSON.stringify(body) : undefined,
     signal: AbortSignal.timeout(timeoutMs),
   });

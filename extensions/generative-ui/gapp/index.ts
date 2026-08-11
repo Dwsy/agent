@@ -58,32 +58,40 @@ export function registerGapp(pi: ExtensionAPI, ctx: GappToolContext) {
   });
   pi.on("agent_end", async (event) => {
     agentBusy = false;
-    // Capture final assistant text for pending [GAPP generate] jobs
+    // Capture assistant text for pending [GAPP generate] jobs. Each marker
+    // message is paired with the assistant output that follows it (up to the
+    // next marker), so queued jobs and trailing user chatter don't cross wires.
     try {
-      const messages = (event as any)?.messages as any[] | undefined;
-      const lastUser = [...(messages || [])].reverse().find((m) => m?.role === "user");
-      const content =
-        typeof lastUser?.content === "string"
-          ? lastUser.content
-          : Array.isArray(lastUser?.content)
-            ? lastUser.content.map((c: any) => c?.text || "").join("")
-            : "";
-      const m = String(content).match(/\[GAPP generate\][^\n]*requestId=([^\s\n]+)/);
-      if (!m) return;
-      const requestId = m[1];
-      const job = getGenerateJob(requestId);
-      if (!job || job.status === "done" || job.status === "error") return;
+      const messages = ((event as any)?.messages as any[] | undefined) ?? [];
+      const textOf = (message: any): string => {
+        if (typeof message?.content === "string") return message.content;
+        if (Array.isArray(message?.content)) {
+          return message.content
+            .filter((c: any) => c?.type === "text" || typeof c?.text === "string")
+            .map((c: any) => c.text || "")
+            .join("");
+        }
+        return "";
+      };
 
-      const lastAssistant = [...(messages || [])].reverse().find((m) => m?.role === "assistant");
-      let text = "";
-      if (typeof lastAssistant?.content === "string") text = lastAssistant.content;
-      else if (Array.isArray(lastAssistant?.content)) {
-        text = lastAssistant.content
-          .filter((c: any) => c?.type === "text" || typeof c?.text === "string")
-          .map((c: any) => c.text || "")
-          .join("");
+      const markers: { requestId: string; index: number }[] = [];
+      messages.forEach((message, index) => {
+        if (message?.role !== "user") return;
+        const match = textOf(message).match(/\[GAPP generate\][^\n]*requestId=([^\s\n]+)/);
+        if (match) markers.push({ requestId: match[1], index });
+      });
+
+      for (let k = 0; k < markers.length; k++) {
+        const { requestId, index } = markers[k];
+        const job = getGenerateJob(requestId);
+        if (!job || job.status === "done" || job.status === "error") continue;
+
+        const end = k + 1 < markers.length ? markers[k + 1].index : messages.length;
+        const assistants = messages.slice(index + 1, end).filter((m) => m?.role === "assistant");
+        if (assistants.length === 0) continue; // job runs in a later turn
+        const text = textOf(assistants[assistants.length - 1]).trim();
+        completeGenerateJob(requestId, { ok: true, text });
       }
-      completeGenerateJob(requestId, { ok: true, text: text.trim() });
     } catch {
       // non-fatal
     }

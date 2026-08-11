@@ -15,27 +15,27 @@
  */
 
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { resolve } from "node:path";
 import { GAPP_HOST_BIND, GAPP_HOST_PORT, GAPP_HTTP_PREFIX, GAPP_PATHS } from "./constants.js";
+import { ensureHostToken, verifyHostToken } from "./auth.js";
 import { acquireLease, listLeases, readLease, releaseLease } from "./lease.js";
 import {
-  createGenerateJob,
   dispatchToolCallToWindow,
   getGenerateJob,
   getHostSessionId,
   getLiveApp,
   getMergedTools,
   listLiveApps,
-  armGenerateTimeout,
   setLiveTools,
   getAgentBridge,
   pushStateToWindow,
 } from "./registry.js";
-import { loadGappToolsFile, setGappState, resolveGapp } from "./storage.js";
+import { dispatchGenerate } from "./generate.js";
+import { loadGappToolsFile, setGappState, resolveGapp, gappProjectScanCwds } from "./storage.js";
 import { applyStateOps } from "./stateops.js";
 import { executeGappToolModule } from "./tool-module.js";
 import { dispatchHostRpc } from "./host-rpc.js";
 import {
-  formatGenerateUserMessage,
   defaultEventPrompt,
   validateToolDescriptor,
   type GappTool,
@@ -46,6 +46,7 @@ export type HostRole = "hub" | "client" | "stopped";
 let server: Server | null = null;
 let role: HostRole = "stopped";
 let boundPort = GAPP_HOST_PORT;
+let hostToken: string | null = null;
 
 const MAX_HOST_RPC_BODY_BYTES = 24 * 1024 * 1024;
 const sessions = new Map<string, { sessionId: string; pid: number; cwd?: string; joinedAt: string }>();
@@ -55,11 +56,36 @@ function json(res: ServerResponse, status: number, body: unknown) {
   res.writeHead(status, {
     "Content-Type": "application/json; charset=utf-8",
     "Content-Length": Buffer.byteLength(data),
+    // Null-origin WebViews need CORS; actual access control is the bearer token,
+    // which browser pages cannot read from disk.
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization",
   });
   res.end(data);
+}
+
+function isAuthorized(req: IncomingMessage): boolean {
+  return hostToken !== null && verifyHostToken(req.headers.authorization, hostToken);
+}
+
+/**
+ * Callers may only point `cwd` at the process cwd, a registered gapp project,
+ * or a live app's cwd — never an arbitrary directory (tools.mjs executes from there).
+ */
+async function assertAllowedCwd(cwd: unknown): Promise<string | undefined> {
+  if (cwd === undefined || cwd === null || cwd === "") return undefined;
+  if (typeof cwd !== "string") throw new Error("cwd must be a string");
+  const requested = resolve(cwd);
+  const known = new Set(
+    [...(await gappProjectScanCwds(process.cwd())), ...listLiveApps().map((a) => a.cwd)]
+      .filter((c): c is string => typeof c === "string" && c.length > 0)
+      .map((c) => resolve(c)),
+  );
+  if (!known.has(requested)) {
+    throw new Error(`cwd not allowed: ${cwd}. Register the project first (open a gapp from it).`);
+  }
+  return requested;
 }
 
 function privateJson(res: ServerResponse, status: number, body: unknown) {
@@ -84,6 +110,7 @@ function readBody(req: IncomingMessage, maxBytes = Number.POSITIVE_INFINITY): Pr
         failed = true;
         chunks.length = 0;
         reject(new Error(`request body exceeds ${maxBytes} bytes`));
+        req.destroy();
         return;
       }
       chunks.push(chunk);
@@ -200,7 +227,7 @@ async function route(req: IncomingMessage, res: ServerResponse) {
     res.writeHead(204, {
       "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization",
     });
     res.end();
     return;
@@ -208,6 +235,12 @@ async function route(req: IncomingMessage, res: ServerResponse) {
 
   const u = new URL(req.url || "/", `http://${GAPP_HOST_BIND}:${boundPort}`);
   const path = u.pathname.replace(/\/+$/, "") || "/";
+
+  // Everything except the hub probe requires the local bearer token.
+  const isHealthProbe = method === "GET" && (path === "/health" || path === GAPP_PATHS.health);
+  if (!isHealthProbe && !isAuthorized(req)) {
+    return json(res, 401, { ok: false, error: { code: "unauthorized", message: "Missing or invalid host token" } });
+  }
 
   try {
     // GET /health
@@ -311,7 +344,7 @@ async function route(req: IncomingMessage, res: ServerResponse) {
           }
           const result = await dispatchHostRpc(rpcMethod, args, {
             appId: m.appId,
-            cwd: typeof body.cwd === "string" && body.cwd ? body.cwd : process.cwd(),
+            cwd: (await assertAllowedCwd(body.cwd)) || process.cwd(),
             sessionId:
               typeof body.sessionId === "string" && body.sessionId
                 ? body.sessionId
@@ -336,8 +369,14 @@ async function route(req: IncomingMessage, res: ServerResponse) {
       if (m) {
         const appId = m.appId;
         if (method === "GET") {
+          let toolsCwd: string | undefined;
+          try {
+            toolsCwd = await assertAllowedCwd(u.searchParams.get("cwd"));
+          } catch (e) {
+            return json(res, 403, { ok: false, error: { code: "cwd_forbidden", message: e instanceof Error ? e.message : String(e) } });
+          }
           const live = getLiveApp(appId);
-          const disk = live?.diskTools ?? (await loadGappToolsFile(appId, u.searchParams.get("cwd") || undefined));
+          const disk = live?.diskTools ?? (await loadGappToolsFile(appId, toolsCwd));
           const tools = live ? getMergedTools(appId) : disk;
           return json(res, 200, {
             ok: true,
@@ -362,6 +401,11 @@ async function route(req: IncomingMessage, res: ServerResponse) {
       const m = matchPath(path, `${GAPP_HTTP_PREFIX}/apps/:appId/call`);
       if (m && method === "POST") {
         const body = await parseJson(req);
+        try {
+          body.cwd = await assertAllowedCwd(body.cwd);
+        } catch (e) {
+          return json(res, 403, { ok: false, error: { code: "cwd_forbidden", message: e instanceof Error ? e.message : String(e) } });
+        }
         const result = await handleCall(m.appId, body);
         return json(res, result.status, result.body);
       }
@@ -372,7 +416,12 @@ async function route(req: IncomingMessage, res: ServerResponse) {
       const m = matchPath(path, `${GAPP_HTTP_PREFIX}/apps/:appId/state`);
       if (m) {
         const appId = m.appId;
-        const cwd = u.searchParams.get("cwd") || process.cwd();
+        let cwd: string;
+        try {
+          cwd = (await assertAllowedCwd(u.searchParams.get("cwd"))) || process.cwd();
+        } catch (e) {
+          return json(res, 403, { ok: false, error: { code: "cwd_forbidden", message: e instanceof Error ? e.message : String(e) } });
+        }
         if (method === "GET") {
           const bundle = await resolveGapp(appId, cwd);
           if (!bundle) return json(res, 404, { ok: false, error: "not found" });
@@ -380,11 +429,17 @@ async function route(req: IncomingMessage, res: ServerResponse) {
         }
         if (method === "PUT" || method === "POST") {
           const body = await parseJson(req);
-          const bundle = await resolveGapp(appId, body.cwd || cwd);
+          let bodyCwd: string | undefined;
+          try {
+            bodyCwd = await assertAllowedCwd(body.cwd);
+          } catch (e) {
+            return json(res, 403, { ok: false, error: { code: "cwd_forbidden", message: e instanceof Error ? e.message : String(e) } });
+          }
+          const bundle = await resolveGapp(appId, bodyCwd || cwd);
           if (!bundle) return json(res, 404, { ok: false, error: "not found" });
           const result = await setGappState(appId, body.state, {
             scope: bundle.meta.scope,
-            cwd: bundle.meta.cwd || body.cwd || cwd,
+            cwd: bundle.meta.cwd || bodyCwd || cwd,
             merge: body.merge === true,
           });
           return json(res, 200, { ok: true, id: appId, state: result.state });
@@ -440,35 +495,22 @@ async function route(req: IncomingMessage, res: ServerResponse) {
         const prompt = String(body.prompt || "").trim();
         if (!prompt) return json(res, 400, { ok: false, error: { code: "invalid_args", message: "prompt required" } });
 
-        const bridge = getAgentBridge();
-        if (!bridge.notifyAgent) {
-          return json(res, 503, {
-            ok: false,
-            error: { code: "host_unavailable", message: "No Pi agent bridge in this process" },
-          });
-        }
-
-        const { created } = createGenerateJob({
+        const result = dispatchGenerate({
           appId,
           requestId,
           prompt,
           system: body.system,
           format: body.format === "json" ? "json" : "text",
+          mode: body.mode === "agent" ? "agent" : "subagent",
         });
-        if (created) {
-          armGenerateTimeout(requestId);
-          const userMsg = formatGenerateUserMessage({
-            appId,
-            requestId,
-            prompt,
-            system: body.system,
-            format: body.format === "json" ? "json" : "text",
-          });
-          const busy = bridge.isAgentBusy();
-          bridge.notifyAgent(userMsg, busy ? { deliverAs: "followUp" } : undefined);
-        }
+        if (!result.ok) return json(res, 503, result);
 
-        return json(res, 202, { ok: true, requestId, status: created ? "queued" : "already_queued" });
+        return json(res, 202, {
+          ok: true,
+          requestId,
+          via: result.via,
+          status: result.created ? "queued" : "already_queued",
+        });
       }
     }
 
@@ -523,6 +565,10 @@ export async function startGappHostServer(options?: {
 }): Promise<{ role: HostRole; port: number; base: string }> {
   const port = options?.port ?? GAPP_HOST_PORT;
   boundPort = port;
+
+  // Both roles need the token: hub verifies it, and creating it up front means
+  // the file exists before any client or WebView asks for it.
+  hostToken = await ensureHostToken();
 
   if (server?.listening) {
     return { role: "hub", port: boundPort, base: `http://${GAPP_HOST_BIND}:${boundPort}` };

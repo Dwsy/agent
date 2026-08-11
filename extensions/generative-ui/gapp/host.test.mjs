@@ -164,11 +164,15 @@ test("stale lease is removed without recursive read", async () => {
   }
 });
 
-test("host multipath :54888 health + lease + tools paths", async () => {
-  // Use ephemeral port for test isolation
+test("host multipath :54888 health + auth + lease + cwd guard", async () => {
+  // Use ephemeral port + isolated global dir (token file) for test isolation
   const port = 54888 + Math.floor(Math.random() * 1000) + 100;
+  const globalDir = await mkdtemp(join(tmpdir(), "gapp-host-global-"));
+  const leaseDir = await mkdtemp(join(tmpdir(), "gapp-host-leases-"));
   process.env.GAPP_HOST_PORT = String(port);
   process.env.GAPP_HOST_BASE = `http://127.0.0.1:${port}`;
+  process.env.GAPP_GLOBAL_DIR = globalDir;
+  process.env.GAPP_LEASES_DIR = leaseDir;
 
   const { startGappHostServer, stopGappHostServer } = await load("host-server.ts");
   const { setHostSessionId } = await load("registry.ts");
@@ -178,13 +182,28 @@ test("host multipath :54888 health + lease + tools paths", async () => {
   assert.equal(info.role, "hub");
   assert.equal(info.port, port);
 
+  const token = (await readFile(join(globalDir, "host-token"), "utf8")).trim();
+  assert.ok(token.length >= 32, "hub wrote a token file");
+  const auth = { Authorization: `Bearer ${token}` };
+
   try {
+    // Health probe stays tokenless (hub discovery).
     const health = await fetch(`http://127.0.0.1:${port}/health`).then((r) => r.json());
     assert.equal(health.ok, true);
     assert.equal(health.service, "gapp-host");
     assert.ok(health.prefix.includes("/v1/gapp"));
 
-    const catalog = await fetch(`http://127.0.0.1:${port}/v1/gapp`).then((r) => r.json());
+    // Everything else requires the token.
+    const noToken = await fetch(`http://127.0.0.1:${port}/v1/gapp`);
+    assert.equal(noToken.status, 401);
+    const badToken = await fetch(`http://127.0.0.1:${port}/v1/gapp/leases/x`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer wrong" },
+      body: JSON.stringify({ sessionId: "s1" }),
+    });
+    assert.equal(badToken.status, 401);
+
+    const catalog = await fetch(`http://127.0.0.1:${port}/v1/gapp`, { headers: auth }).then((r) => r.json());
     assert.equal(catalog.ok, true);
     assert.ok(catalog.paths.leases);
 
@@ -192,7 +211,7 @@ test("host multipath :54888 health + lease + tools paths", async () => {
       `http://127.0.0.1:${port}/v1/gapp/apps/missing-handler/rpc`,
       {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...auth },
         body: JSON.stringify({ method: "echo", arguments: {} }),
       },
     );
@@ -201,16 +220,26 @@ test("host multipath :54888 health + lease + tools paths", async () => {
     const rpcBody = await rpcResponse.json();
     assert.match(rpcBody.error.message, /No host RPC handler/);
 
+    // cwd outside process.cwd / registry / live apps is rejected.
+    const badCwd = await fetch(`http://127.0.0.1:${port}/v1/gapp/apps/some-app/call`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...auth },
+      body: JSON.stringify({ tool: "x", cwd: "/tmp/definitely-not-registered" }),
+    });
+    assert.equal(badCwd.status, 403);
+    const badCwdBody = await badCwd.json();
+    assert.equal(badCwdBody.error.code, "cwd_forbidden");
+
     const leasePut = await fetch(`http://127.0.0.1:${port}/v1/gapp/leases/todo-test`, {
       method: "PUT",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...auth },
       body: JSON.stringify({ sessionId: "s1", instances: "single", pid: process.pid }),
     }).then((r) => r.json());
     assert.equal(leasePut.ok, true);
 
     const leaseConflict = await fetch(`http://127.0.0.1:${port}/v1/gapp/leases/todo-test`, {
       method: "PUT",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...auth },
       body: JSON.stringify({ sessionId: "s2", instances: "single", pid: process.pid }),
     });
     assert.equal(leaseConflict.status, 409);
@@ -219,12 +248,16 @@ test("host multipath :54888 health + lease + tools paths", async () => {
 
     await fetch(`http://127.0.0.1:${port}/v1/gapp/leases/todo-test`, {
       method: "DELETE",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...auth },
       body: JSON.stringify({ sessionId: "s1" }),
     });
   } finally {
     await stopGappHostServer();
     delete process.env.GAPP_HOST_PORT;
     delete process.env.GAPP_HOST_BASE;
+    delete process.env.GAPP_GLOBAL_DIR;
+    delete process.env.GAPP_LEASES_DIR;
+    await rm(globalDir, { recursive: true, force: true });
+    await rm(leaseDir, { recursive: true, force: true });
   }
 });

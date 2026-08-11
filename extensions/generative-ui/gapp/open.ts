@@ -10,6 +10,7 @@ import {
 import { openWindow } from "../html-helpers.js";
 import { GAPP_HOST_BASE } from "./constants.js";
 import { acquireLease, releaseLease, alreadyConnectedUserMessage } from "./lease.js";
+import { readHostToken } from "./auth.js";
 import { hostAcquireLease, hostReleaseLease } from "./host-client.js";
 import { isHub } from "./host-server.js";
 import {
@@ -20,11 +21,10 @@ import {
   clearLiveTools,
   resolveToolResult,
   getHostSessionId,
-  createGenerateJob,
-  armGenerateTimeout,
   getAgentBridge,
   pushStateToWindow,
 } from "./registry.js";
+import { dispatchGenerate } from "./generate.js";
 import {
   parseToolsRegister,
   parseToolResult,
@@ -32,7 +32,6 @@ import {
   parseLlmRequest,
   parseHostRequest,
   defaultEventPrompt,
-  formatGenerateUserMessage,
   normalizeInstances,
 } from "./protocol.js";
 import { EVENT_DEBOUNCE_MS } from "./constants.js";
@@ -185,8 +184,17 @@ export function attachGappMessageRouter(win: any, meta: GappMeta, cwd: string) {
     if (type === "gapp_llm_request") {
       const parsed = parseLlmRequest(msg);
       if (!parsed) return;
-      const bridge = getAgentBridge();
-      if (!bridge.notifyAgent) {
+      // Dedupes dual-path (glimpse + HTTP /v1/gapp/.../generate) via job registry.
+      const result = dispatchGenerate({
+        appId: meta.id,
+        requestId: parsed.requestId,
+        prompt: parsed.prompt,
+        system: parsed.system,
+        format: parsed.format,
+        mode: parsed.mode,
+        cwd,
+      });
+      if (!result.ok) {
         try {
           win.send(
             `window.GappHost&&window.GappHost.__dispatch(${JSON.stringify({
@@ -195,32 +203,13 @@ export function attachGappMessageRouter(win: any, meta: GappMeta, cwd: string) {
               id: meta.id,
               requestId: parsed.requestId,
               ok: false,
-              error: { code: "host_unavailable", message: "No Pi agent bridge" },
+              error: result.error,
             })})`,
           );
         } catch {
           // ignore
         }
-        return;
       }
-      // Dedupe dual-path (glimpse + HTTP /v1/gapp/.../generate)
-      const { created } = createGenerateJob({
-        appId: meta.id,
-        requestId: parsed.requestId,
-        prompt: parsed.prompt,
-        system: parsed.system,
-        format: parsed.format,
-      });
-      if (!created) return;
-      armGenerateTimeout(parsed.requestId);
-      const userMsg = formatGenerateUserMessage({
-        appId: meta.id,
-        requestId: parsed.requestId,
-        prompt: parsed.prompt,
-        system: parsed.system,
-        format: parsed.format,
-      });
-      notifyAgentText(userMsg);
       return;
     }
 
@@ -319,6 +308,7 @@ export async function openGappBundle(
   const diskTools = await loadGappToolsFromDir(bundle.dir);
   const html = injectGappRuntime(bundle.html, bundle.meta, bundle.state, {
     hostBase,
+    hostToken: (await readHostToken()) ?? undefined,
     mode: "pi-live",
     sessionId,
     toolsModuleUrl: pathToFileURL(join(bundle.dir, "tools.mjs")).href,
