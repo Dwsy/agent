@@ -9,10 +9,17 @@ const DEFAULT_BRIDGE_PATH = join(
 );
 const PROTOCOL_VERSION = "2025-11-25";
 const MAX_STDERR_CHARS = 16_000;
+const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
 
 function abortError() {
   const error = new Error("Computer Use request aborted");
   error.name = "AbortError";
+  return error;
+}
+
+function timeoutError(method, timeoutMs) {
+  const error = new Error(`Computer Use request timed out after ${timeoutMs}ms: ${method}`);
+  error.name = "TimeoutError";
   return error;
 }
 
@@ -25,19 +32,32 @@ export class ComputerUseMcpClient {
   #nextId = 1;
   #pending = new Map();
   #startPromise;
+  #requestTimeoutMs;
   #closing = false;
 
   constructor(options = {}) {
     this.#bridgePath = options.bridgePath ?? DEFAULT_BRIDGE_PATH;
     this.#env = { ...process.env, ...options.env };
+    this.#requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
   }
 
   async start() {
     this.#startPromise ??= this.#start();
-    return this.#startPromise;
+    try {
+      return await this.#startPromise;
+    } catch (error) {
+      this.#startPromise = undefined;
+      this.#child?.kill("SIGTERM");
+      this.#child = undefined;
+      throw error;
+    }
   }
 
   async #start() {
+    this.#closing = false;
+    this.#buffer = "";
+    this.#stderr = "";
+
     const child = spawn(process.execPath, [this.#bridgePath], {
       env: this.#env,
       stdio: ["pipe", "pipe", "pipe"],
@@ -103,18 +123,25 @@ export class ComputerUseMcpClient {
 
     const id = this.#nextId++;
     return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        this.#pending.delete(id);
+        cleanup();
+        this.#notify("notifications/cancelled", { requestId: id, reason: "timeout" });
+        reject(timeoutError(method, this.#requestTimeoutMs));
+      }, this.#requestTimeoutMs);
+      const cleanup = () => {
+        clearTimeout(timeout);
+        signal?.removeEventListener("abort", onAbort);
+      };
       const onAbort = () => {
         this.#pending.delete(id);
+        cleanup();
         this.#notify("notifications/cancelled", { requestId: id, reason: "aborted" });
         reject(abortError());
       };
 
       if (signal) signal.addEventListener("abort", onAbort, { once: true });
-      this.#pending.set(id, {
-        resolve,
-        reject,
-        cleanup: () => signal?.removeEventListener("abort", onAbort),
-      });
+      this.#pending.set(id, { resolve, reject, cleanup });
       this.#write({ jsonrpc: "2.0", id, method, params });
     });
   }
