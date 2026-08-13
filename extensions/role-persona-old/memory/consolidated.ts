@@ -5,7 +5,17 @@ import { log } from "../logger.ts";
 import { contentHash, writeCommittedMemoryFile } from "../memory-git.ts";
 import { renderPendingMemory } from "./pending-store.ts";
 import { dailyMemoryDir, memoryFilePath, memoryRootDir, pendingMemoryPath } from "./paths.ts";
-import { dedupeLearnings, hashId, isPlaceholderItem, normalizeText, sanitizeCategory, today } from "./text.ts";
+import {
+  dedupeLearnings,
+  hashId,
+  isPlaceholderItem,
+  type ItemMeta,
+  normalizeText,
+  renderItemMeta,
+  sanitizeCategory,
+  stripItemMeta,
+  today,
+} from "./text.ts";
 import {
   DEFAULT_MEMORY_CATEGORIES,
   type MemoryEventRecord,
@@ -199,8 +209,13 @@ export function ensureRoleMemoryFiles(rolePath: string, roleName: string): void 
   }
 }
 
-function parseLearningItem(line: string, fallbackUsed: number): { text: string; used: number } | null {
-  let text = normalizeText(line);
+function parseLearningItem(
+  line: string,
+  fallbackUsed: number
+): { text: string; used: number; meta: ItemMeta } | null {
+  // Metadata comes off first: the used-count suffix pattern is end-anchored.
+  const { text: withoutMeta, meta } = stripItemMeta(line);
+  let text = normalizeText(withoutMeta);
   let used = fallbackUsed;
 
   const prefixed = text.match(/^\[(\d+)x\]\s*(.+)$/i);
@@ -218,7 +233,7 @@ function parseLearningItem(line: string, fallbackUsed: number): { text: string; 
   if (!text || isPlaceholderItem(text)) return null;
   if (!Number.isFinite(used) || used < 0) used = fallbackUsed;
 
-  return { text, used: Math.floor(used) };
+  return { text, used: Math.floor(used), meta };
 }
 
 /**
@@ -436,6 +451,9 @@ function parseRoleMemory(content: string, roleName: string): RoleMemoryData {
         id: hashId("learning", parsed.text),
         text: parsed.text,
         used: parsed.used,
+        tags: parsed.meta.tags,
+        source: parsed.meta.source,
+        lastAccessed: parsed.meta.date,
       });
     }
   };
@@ -457,7 +475,8 @@ function parseRoleMemory(content: string, roleName: string): RoleMemoryData {
 
   for (const [category, items] of prefSections.entries()) {
     for (const raw of items) {
-      const text = normalizeText(raw);
+      const { text: withoutMeta, meta } = stripItemMeta(raw);
+      const text = normalizeText(withoutMeta);
       if (!text) continue;
       const key = `${sanitizeCategory(category)}::${text.toLowerCase()}`;
       if (!prefMap.has(key)) {
@@ -465,6 +484,7 @@ function parseRoleMemory(content: string, roleName: string): RoleMemoryData {
           id: hashId("preference", text, category),
           category: sanitizeCategory(category),
           text,
+          tags: meta.tags,
         });
       }
     }
@@ -493,7 +513,7 @@ function renderLearningList(learnings: MemoryLearningRecord[], minUsed: number, 
     });
 
   if (list.length === 0) return ["- (none)"];
-  return list.map((l) => `- [${l.used}x] ${l.text}`);
+  return list.map((l) => `- [${l.used}x] ${l.text}${renderItemMeta({ tags: l.tags, source: l.source, date: l.lastAccessed })}`);
 }
 
 function renderRoleMemory(data: RoleMemoryData): string {
@@ -546,7 +566,7 @@ function renderRoleMemory(data: RoleMemoryData): string {
     if (items.length === 0) {
       lines.push("- (none)");
     } else {
-      for (const item of items) lines.push(`- ${item.text}`);
+      for (const item of items) lines.push(`- ${item.text}${renderItemMeta({ tags: item.tags })}`);
     }
     lines.push("");
   }

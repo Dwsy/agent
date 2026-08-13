@@ -2,6 +2,65 @@
 
 ## [Unreleased]
 
+### Added (模型自主编辑记忆)
+- **注入的记忆全部带 id**：`readLongTermMemoryBlock` 不再 dump `consolidated.md` 原文，改为结构化渲染，每条 learning / preference / event 前缀 `[id:...]`（High Priority 块同样带 id）。模型在上下文里看到过时或错误的条目，直接拿 id 调 `update_*` / `delete_*` / `reinforce`，省掉先 search 定位的一轮往返；顺带不再把 frontmatter 与机器元数据注释泄进提示词
+- **pending 候选进入模型视野**：后台提取 / 压缩抢救的条目此前只能等搜索命中自动晋升或 7 天过期，模型完全不可见。现在注入「Pending Memories Awaiting Review」块（最多列 8 条,带 id），新增 `promote_pending` / `discard_pending` 动作（`ids` 批量），晋升同步向量索引，全部写审计日志
+- **`read` 动作**：全量带 id 记忆视图，`section: all|learnings|preferences|events|pending` 过滤，替代「list 只给 20 条摘要」的窘境
+- **events 补齐工具侧改删**：`update_event` / `delete_event`（精确 id 匹配,改后同步向量索引）——此前 viewer 能改,模型反而不能
+- **提示词从「劝退」改为「授权」**：原注入文案（"Memory is auto-managed in the background… use them only when the user asks"）实质是在禁止模型自主编辑。重写为主动记忆协议：学到耐用的东西立即写、看到错误条目就地修、pending 候选顺手裁决；同时保留噪音红线（不存一次性琐事、删偏好需确认、不做机械性任务末反思）。工具 description 同步重写
+- 测试：新增 `memory-autonomy.test.ts`（read 视图 id 完整性与 section 过滤、注入块 id、pending 待审块、promote 返回 learningId），120 tests 全绿
+
+### Fixed (主内容区无法滚动)
+- **超出视口的内容够不着**：`.app` 的隐式行是 `auto`，`.main` 又没有 `min-height: 0`，于是主区按内容撑高而不是被限制在视口内；`.pane` 因此永远不会成为滚动容器（`scrollHeight === clientHeight`），超出部分被 `body { overflow: hidden }` 直接裁掉。给三层各补上缺失的约束：`.app` 加 `grid-template-rows: minmax(0, 1fr)`、`.main` 加 `min-height: 0`、`.workspace` 加 `grid-template-rows: minmax(0, 1fr)`。全用 `minmax(0, 1fr)` 而非裸 `1fr`——后者保留 `auto` 最小值，高内容仍能把轨道顶破
+- **角色定义的编辑模式塌成 153px**：`.main` 原本是三行网格（工具栏 / 分面 / 工作区），而分面栏在多数分区是 `display: none`——隐藏元素不再是网格项，工作区于是落进第二行那个 `auto` 轨道，按内容定高。预览模式内容高看不出来，编辑模式内容矮就塌掉。改成纵向 flex，消除整类「隐藏子元素挪动轨道」的问题
+- 实测覆盖：列表 / 概览 / 日志 / 标签 / 详情面板 / markdown 预览 / 侧栏导航 / 分面栏横向滚动，以及 1280×420 的矮视口与 390×680 的窄屏抽屉，document 自身不再溢出
+
+### Fixed (记忆持久化的两个长期缺口)
+- **每条记忆上的 tags / source / lastAccessed 从不落盘**：`consolidated.md` 的行格式只有 `- [3x] text`，序列化时这三个字段全丢，所以 LLM 打的标签在下一次保存后就消失，`/memory-tags` 标签云与 viewer 的 Tags 视图在实践中永远是空的。现在条目末尾带一段机器维护的 HTML 注释 `<!-- tags: a, b | src: auto | seen: 2026-08-11 -->`：markdown 渲染时不可见、解析上不歧义、人在编辑原始文件时一眼能看出这段不归自己管。没有元数据的旧条目照常解析
+  - 去重时合并元数据而不是丢弃：tags 取并集、source 取先到的、seen 取更晚的
+  - `reinforceRoleLearning` 现在同时刷新 `lastAccessed`（字段名如此，之前因为不落盘所以无所谓）
+  - 编辑、`consolidateRoleMemory`、`repairRoleMemory`、LLM tidy 全部保留元数据，均有回归测试
+- **daily 条目只读**：`memory/daily/*.md` 的每个 `##` 块现在可以在 viewer 里改和删。日记条目没有 id，用「日期 + 块序号」定位，并要求请求携带调用方看到的原文，对不上就 409——序号会随 agent 追加而移动，内容才是真正的凭据。改写保留原有时间戳与类型标记，走 `writeCommittedMemoryFile`，Git 审计不断链
+  - 顺带修好 `readDailyMemories`：原实现用 `lines.slice(1).join(' ')` 把多行正文压成一行，并丢掉了 EVENT/LESSON 这类类型标记
+
+### Added (Web viewer 可编辑)
+- **记忆可直接在浏览器里改**：learning / preference / event 支持编辑正文（preference 带分类、event 带标题与日期）、删除（二次确认并说明会重写 `memory/consolidated.md`）；learning 可 +1 强化；pending 可晋升/丢弃；工具栏 New 按钮按当前分区新建。快捷键 `e` 编辑、`n` 新建、`⌘Enter` 保存、`Esc` 取消
+- `POST /api/memory`：单一变更入口，action 为 create/update/delete/reinforce/promote/discard，全部在边界做参数校验
+- **精确 id 前置校验**：`updateRoleLearning` 等函数在 id 落空时会退化成文本子串匹配（对 LLM 工具合理，对已知 id 的界面则可能改到相邻的相似记忆）。服务端改为先确认该 id 存在，落空返回 409 让前端重新加载；并发写入撞上 `expectedHash` 同样映射为 409 而不是 500
+- `updateRoleEvent` / `deleteRoleEvent`：events 此前只能新增不能改删，补齐并保持 id 与 `parseEventBlocks` 回读一致
+- 变更以 `source: "viewer"` 写入 JSONL 审计日志，`/memory-log` 与工具、压缩抢救的操作并排显示（补齐 viewer/promote/discard/update_event/delete_event 图标）
+- `memory-viewer-api.test.ts`：8 个真实 HTTP 集成测试，覆盖路由与状态码、CRUD 落盘、陈旧 id 拒绝（并断言没有任何记录被误改）、重复与畸形请求、pending 流转、events markdown 往返、`core/` 路径逃逸防护
+
+### Fixed (Web viewer 可编辑)
+- 只有标题、没有正文的 event 在服务端被 400 拒绝，而前端表单认为合法——两侧统一为“标题与正文至少有一个”
+- 表单有未保存改动时切分区/切分面/选中其他条目会静默丢弃，现在会先确认（显式 Cancel / Esc 仍直接丢弃）
+- `[`/`]` 切分面不像点击 chip 那样清除选中项，详情面板会停留在已被筛掉的条目上
+- 详情面板关闭时只置 `hidden` 不清空内容，留下带监听器的陈旧 DOM
+- 保存角色定义文件时若父目录已被外部删除会抛 ENOENT 返回 500，现按需重建目录
+
+### Changed (Web viewer 重写)
+- **模板不再被运行时注入改写**：旧实现把主题 CSS 用 `replace("</style>", …)`、把 Logs 视图用 `replace("</script>", …)` 塞进模板，并在运行时猴补丁 `renderTable`——注入顺序导致整套主题只能靠 `!important` 覆盖。现在界面就是 `templates/viewer.{html,css,js}` 三个文件，`renderMemoryViewerHtml()` 负责装配，零 `!important`（仅 reduced-motion 保留）
+- **live 与 static 合并为一套实现**：`memory-viewer.ts` 与 `memory/html-export.ts` 各有一份互相漂移的导出数据构建器，现统一到 `memory/export-data.ts`；`mode: "live" | "static"` 决定是否暴露 Logs / Role definition 与刷新按钮
+- **界面重做**：Overview 概览（统计卡、learning 强度、preference 分类、标签、近期日记）+ 分区列表 + 右侧详情面板；分面 chip 取代深层树；表格式布局改为可读的行卡片，长文本在详情面板完整展示
+- **去 AI 味**：移除全部 emoji 图标（📚⚙️📅📝⏳🗂️🔴🟡🟢📊…），改用单色描边 SVG 图标集；移除注入脚本里成片的内联 style 字符串；中英混杂的提示（“保存成功”/“Loading...”）统一
+- **明暗主题**：用 `light-dark()` + `color-scheme` 单套 token 表达，替代原来 dark 变量声明三遍再互相覆盖的写法；跟随系统、可手动切换并持久化
+- **键盘与无障碍**：`/` 过滤、`j/k`、`1..9` 跳分区、`[`/`]` 切分面、`c` 复制、`d` 详情、`t` 主题、`r` 重载、`?` 快捷键表；listbox/option 语义、真实焦点环、`aria-current`/`aria-pressed`、reduced-motion
+- **角色定义编辑器**：Read/Edit 双模式（内置极简 markdown 渲染）、脏标记、⌘S 保存、离开前确认、失败可重试
+- `buildTagCloudHTML` 重写：标签名不再未转义拼进 HTML，配色与 viewer 统一
+- 删除死代码 `memory-export-html.ts`（687 行，无任何引用）与旧模板 `templates/memory-export.html`
+
+### Fixed (Web viewer)
+- **事件渲染为 `[object Object]`**：服务端的 `buildExportData` 把整个 `MemoryEventRecord` 塞进 `text` 字段，Events 视图内容与搜索全废；现由共享构建器输出 `title`/`body`/`text`
+- **端口探测是竞态**：`findPort` 随机猜端口后 `listen`（异步）再立刻 `close`，`try/catch` 捕不到任何错误就返回该端口；改为 `listen(0)` 由内核分配，`startMemoryServer` 相应改为返回 Promise
+- **HTML 注入**：树节点名、面包屑、toast 都用 `innerHTML` 拼未转义文本；现全程 DOM 构建，内嵌 JSON 的 `<` 一律转义为 `\u003c`
+- **数据是启动时的快照**：服务只在启动时构建一次 HTML，agent 后续写入的记忆看不到；现每次请求重建，并新增 `GET /api/data` 供前端 `r` 刷新
+- `memory/html-export.ts` 在 ESM 下用 `__filename` 解析模板路径（Node 下必然抛错后静默降级到简陋 fallback 页面）；改用 `import.meta.url`，模板缺失直接报错
+- Logs 面板的 `logsCache` 一旦加载永不失效
+
+### Added (Web viewer)
+- `memory-export-data.test.ts`：events 字符串化回归、learning 分层与统计、pending 计数、live/static 模式差异、模板装配与 `</script>` 逃逸，6 个行为测试
+- Tags 视图合并两个来源：`<role>/.log/memory-tags.json` 的历史用量与遗忘曲线强度，加上当前条目实际携带的标签；没有任何当前条目引用的标签标为 idle 且不可点击筛选
+
 ### Changed (第二轮并行完善)
 - **配置热加载**：runtime 模块（auto-memory / external-readonly / injection / lifecycle / compaction）的模块级 config 常量快照全部改为调用点实时读取，`reloadConfig()` 即刻生效；force-keywords 正则按源字符串 memoize
 - **memory/ 清理**：移除 `repairRoleMemory` 从未读取的 `force` 参数及三个调用点；移除 `parsePendingMemory` 恒为空的 `roleName` 参数；conflicts.ts 与 text.ts 的相似度实现差异标注为有意保留

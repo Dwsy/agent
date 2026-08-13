@@ -22,8 +22,12 @@ export interface MemoryLogEntry {
     | "consolidate"
     | "update_learning"
     | "update_preference"
+    | "update_event"
     | "delete_learning"
-    | "delete_preference";
+    | "delete_preference"
+    | "delete_event"
+    | "promote_pending"
+    | "discard_pending";
   content: string;
   previous?: string;
   id?: string;
@@ -113,7 +117,7 @@ export function memLogPush(rt: Runtime, entry: Omit<MemoryLogEntry, "time">): vo
 
   const operation = entry.op.startsWith("update_")
     ? "update"
-    : entry.op.startsWith("delete_")
+    : entry.op.startsWith("delete_") || entry.op === "discard_pending"
       ? "delete"
       : entry.op === "consolidate"
         ? "compact"

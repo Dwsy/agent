@@ -48,7 +48,7 @@ export function promotePendingLearning(
   rolePath: string,
   roleName: string,
   idOrQuery: string
-): { promoted: boolean; id?: string; text?: string } {
+): { promoted: boolean; id?: string; text?: string; learningId?: string } {
   const query = normalizeText(idOrQuery).toLowerCase();
   const pendingData = readPendingMemory(rolePath);
   
@@ -69,9 +69,10 @@ export function promotePendingLearning(
     (l) => normalizeText(l.text).toLowerCase() === item.text.toLowerCase()
   );
   
+  const learningId = duplicate?.id ?? hashId("learning", item.text);
   if (!duplicate) {
     consolidatedData.learnings.push({
-      id: hashId("learning", item.text),
+      id: learningId,
       text: item.text,
       used: 0,
       source: `promoted:${item.source}`,
@@ -84,7 +85,7 @@ export function promotePendingLearning(
   pendingData.items[index].promoted = true;
   writePendingMemory(rolePath, pendingData);
   
-  return { promoted: true, id: item.id, text: item.text };
+  return { promoted: true, id: item.id, text: item.text, learningId };
 }
 
 export function discardPendingLearning(

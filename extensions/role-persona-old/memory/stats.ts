@@ -2,7 +2,97 @@
 import { readRoleMemory } from "./consolidated.ts";
 import { listDailyMemoryFilesByDate } from "./paths.ts";
 import { getPendingMemories } from "./pending.ts";
-import { eventSearchText } from "./types.ts";
+import { eventSearchText, type MemoryLearningRecord } from "./types.ts";
+
+export type MemoryReadSection = "all" | "learnings" | "preferences" | "events" | "pending";
+
+const READ_VIEW_SECTIONS: readonly MemoryReadSection[] = ["all", "learnings", "preferences", "events", "pending"];
+
+export function isMemoryReadSection(value: string): value is MemoryReadSection {
+  return READ_VIEW_SECTIONS.includes(value as MemoryReadSection);
+}
+
+function renderLearningTier(title: string, items: MemoryLearningRecord[]): string[] {
+  const lines = [`### ${title}`];
+  if (items.length === 0) {
+    lines.push("- (none)");
+  } else {
+    for (const l of items) {
+      const tags = l.tags?.length ? ` (tags: ${l.tags.join(", ")})` : "";
+      lines.push(`- [id:${l.id}] [${l.used}x] ${l.text}${tags}`);
+    }
+  }
+  lines.push("");
+  return lines;
+}
+
+/**
+ * Full ID-annotated memory view for autonomous model editing.
+ * Every entry carries `[id:xxxxxxxxxx]` so the model can target it directly
+ * with update/delete/reinforce/promote actions — no search roundtrip needed.
+ */
+export function renderMemoryReadView(
+  rolePath: string,
+  roleName: string,
+  section: MemoryReadSection = "all"
+): { text: string; learnings: number; preferences: number; events: number; pending: number } {
+  const data = readRoleMemory(rolePath, roleName);
+  const pendingItems = getPendingMemories(rolePath);
+  const lines: string[] = [];
+
+  if (section === "all" || section === "learnings") {
+    const sorted = [...data.learnings].sort((a, b) => b.used - a.used || a.text.localeCompare(b.text));
+    lines.push(...renderLearningTier("Learnings (High Priority)", sorted.filter((l) => l.used >= 3)));
+    lines.push(...renderLearningTier("Learnings (Normal)", sorted.filter((l) => l.used >= 1 && l.used < 3)));
+    lines.push(...renderLearningTier("Learnings (New)", sorted.filter((l) => l.used === 0)));
+  }
+
+  if (section === "all" || section === "preferences") {
+    const byCategory = new Map<string, typeof data.preferences>();
+    for (const pref of data.preferences) {
+      const list = byCategory.get(pref.category) || [];
+      list.push(pref);
+      byCategory.set(pref.category, list);
+    }
+    lines.push("### Preferences");
+    if (data.preferences.length === 0) lines.push("- (none)");
+    for (const [category, items] of [...byCategory.entries()].sort(([a], [b]) => a.localeCompare(b))) {
+      for (const p of [...items].sort((a, b) => a.text.localeCompare(b.text))) {
+        lines.push(`- [id:${p.id}] [${category}] ${p.text}`);
+      }
+    }
+    lines.push("");
+  }
+
+  if (section === "all" || section === "events") {
+    lines.push("### Events");
+    if (data.events.length === 0) lines.push("- (none)");
+    for (const e of data.events) {
+      lines.push(`- [id:${e.id}] [${e.date || "?"}] ${e.title}`);
+      if (e.body.trim()) {
+        const body = e.body.length > 300 ? `${e.body.slice(0, 300)}…` : e.body;
+        lines.push(...body.split("\n").map((line) => `  ${line}`));
+      }
+    }
+    lines.push("");
+  }
+
+  if (section === "all" || section === "pending") {
+    lines.push("### Pending (unreviewed auto-extracted candidates — promote_pending or discard_pending)");
+    if (pendingItems.length === 0) lines.push("- (none)");
+    for (const p of pendingItems) {
+      lines.push(`- [id:${p.id}] [${p.source}] [${p.createdAt}] ${p.text}`);
+    }
+  }
+
+  return {
+    text: lines.join("\n").replace(/\n+$/, ""),
+    learnings: data.learnings.length,
+    preferences: data.preferences.length,
+    events: data.events.length,
+    pending: pendingItems.length,
+  };
+}
 
 export function listRoleMemory(rolePath: string, roleName: string): {
   text: string;

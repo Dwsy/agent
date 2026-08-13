@@ -52,6 +52,61 @@ export function addRoleEvent(
   return { stored: true, id };
 }
 
+/** Event ids are content-derived, so any edit produces a new one. */
+function eventId(title: string, body: string, date: string): string {
+  return hashId("event", [title, body].filter(Boolean).join("\n"), date);
+}
+
+/**
+ * Rewrite an event in place. Matches on exact id only: events carry no stable
+ * key beyond their content, so a fuzzy fallback could rewrite the wrong entry.
+ */
+export function updateRoleEvent(
+  rolePath: string,
+  roleName: string,
+  id: string,
+  patch: { title?: string; body?: string; date?: string }
+): { updated: boolean; id?: string; oldId?: string; title?: string; reason?: string } {
+  const data = readRoleMemory(rolePath, roleName);
+  const event = data.events.find((e) => e.id === id);
+  if (!event) return { updated: false, reason: "not found" };
+
+  const givenTitle = normalizeText(patch.title ?? event.title);
+  const givenBody = normalizeText(patch.body ?? event.body);
+  if (!givenTitle && !givenBody) return { updated: false, reason: "empty" };
+
+  // Same shape rule as addRoleEvent: a body identical to the title is dropped.
+  const title = givenTitle || givenBody.slice(0, 80);
+  const body = title === givenBody ? "" : givenBody;
+  const date = (patch.date ?? event.date ?? "").trim();
+  const next = { id: eventId(title, body, date), date, title, body };
+
+  const clash = data.events.find((e) => e.id !== event.id && e.id === next.id);
+  if (clash) return { updated: false, reason: "duplicate", id: clash.id };
+
+  Object.assign(event, next);
+  saveRoleMemory(rolePath, data);
+
+  log("event", `updated [${id} → ${next.id}] ${next.title.slice(0, 120)}`);
+  return { updated: true, id: next.id, oldId: id, title: next.title };
+}
+
+export function deleteRoleEvent(
+  rolePath: string,
+  roleName: string,
+  id: string
+): { deleted: boolean; id?: string; title?: string; reason?: string } {
+  const data = readRoleMemory(rolePath, roleName);
+  const index = data.events.findIndex((e) => e.id === id);
+  if (index < 0) return { deleted: false, reason: "not found" };
+
+  const [removed] = data.events.splice(index, 1);
+  saveRoleMemory(rolePath, data);
+
+  log("event", `deleted [${removed.id}] ${removed.title.slice(0, 120)}`);
+  return { deleted: true, id: removed.id, title: removed.title };
+}
+
 export function addRoleLearning(
   rolePath: string,
   roleName: string,
@@ -198,6 +253,7 @@ export function reinforceRoleLearning(
   if (!fuzzy) return { updated: false };
 
   fuzzy.used += 1;
+  fuzzy.lastAccessed = today();
   saveRoleMemory(rolePath, data);
   return { updated: true, id: fuzzy.id, used: fuzzy.used, text: fuzzy.text };
 }

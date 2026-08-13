@@ -8,12 +8,18 @@ import {
   addRoleEvent,
   addRolePreference,
   consolidateRoleMemory,
+  deleteRoleEvent,
+  discardPendingLearning,
   formatSearchMatchLine,
+  isMemoryReadSection,
   listRoleMemory,
+  promotePendingLearning,
   readRoleMemory,
   reinforceRoleLearning,
+  renderMemoryReadView,
   repairRoleMemory,
   searchRoleMemory,
+  updateRoleEvent,
 } from "../memory-md.ts";
 import {
   getVectorStats,
@@ -32,13 +38,16 @@ export function registerMemoryTool(rt: Runtime): void {
     name: "memory",
     label: "Role Memory",
     description:
-      "Role memory retrieval and maintenance. list/vector_stats inspect state; search covers learnings, preferences, events, pending, and recent daily, and may reinforce matches or promote pending entries. Add/update/reinforce/consolidate/repair/llm_tidy/vector_rebuild mutate memory; use them only when the user asks or the active task explicitly requires persistence or maintenance. Delete only clearly identified entries, and never delete preferences without user confirmation.",
+      "You own this role's long-term memory — manage it proactively. read gives the full ID-annotated view (section: all|learnings|preferences|events|pending); search covers all layers and may reinforce or promote matches. Write durable insights the moment they occur (add_learning/add_preference/add_event); fix stale or wrong entries on sight (update_*/delete_* by [id:...] from context); reinforce entries that proved useful; review background-extracted candidates with promote_pending/discard_pending (batch via ids). Never delete preferences without user confirmation; skip trivial task-local noise. consolidate/repair/llm_tidy/vector_* are maintenance.",
     parameters: Type.Object({
-      action: StringEnum(["add_learning", "add_preference", "add_event", "update_learning", "update_preference", "delete_learning", "delete_preference", "reinforce", "search", "list", "consolidate", "repair", "llm_tidy", "vector_rebuild", "vector_stats"] as const),
-      content: Type.Optional(Type.String({ description: "Memory text" })),
-      category: Type.Optional(Type.String({ description: "Preference category" })),
+      action: StringEnum(["read", "add_learning", "add_preference", "add_event", "update_learning", "update_preference", "update_event", "delete_learning", "delete_preference", "delete_event", "promote_pending", "discard_pending", "reinforce", "search", "list", "consolidate", "repair", "llm_tidy", "vector_rebuild", "vector_stats"] as const),
+      content: Type.Optional(Type.String({ description: "Memory text (event body for add_event/update_event)" })),
+      category: Type.Optional(Type.String({ description: "Preference category, or event title for add_event/update_event" })),
       query: Type.Optional(Type.String({ description: "Search query" })),
-      id: Type.Optional(Type.String({ description: "Memory id" })),
+      id: Type.Optional(Type.String({ description: "Memory id (from [id:...] in context or read output)" })),
+      ids: Type.Optional(Type.Array(Type.String(), { description: "Batch of memory ids for promote_pending/discard_pending" })),
+      section: Type.Optional(Type.String({ description: "read scope: all|learnings|preferences|events|pending (default all)" })),
+      date: Type.Optional(Type.String({ description: "Event date YYYY-MM-DD for update_event" })),
       model: Type.Optional(Type.String({ description: "Optional model override, e.g. openai/gpt-4.1-mini" })),
     }),
     async execute(_toolCallId: string, params: Record<string, any>, _signal?: any, _onUpdate?: any, ctx?: any) {
@@ -247,6 +256,110 @@ export function registerMemoryTool(rt: Runtime): void {
           return {
             content: [{ type: "text", text: `Deleted preference [${result.id}] [${result.category}]: "${result.text}"` }],
             details: result,
+          };
+        }
+
+        case "update_event": {
+          if (!params.id) {
+            memLogPush(rt, { source: "tool", op: "update_event", content: "", stored: false, detail: "id required (events match on exact id only)" });
+            return { content: [{ type: "text", text: "Error: id required (find it via read/search)" }], details: { error: true } };
+          }
+          if (!params.content && !params.category && !params.date) {
+            return { content: [{ type: "text", text: "Error: provide content (body), category (title), or date to change" }], details: { error: true } };
+          }
+          const result = updateRoleEvent(currentRolePath, currentRole, params.id, {
+            title: params.category,
+            body: params.content,
+            date: params.date,
+          });
+          memLogPush(rt, { source: "tool", op: "update_event", content: params.content || params.category || "", id: result.id, oldId: result.oldId, stored: result.updated, detail: result.reason });
+          log("memory-tool", `update_event: ${result.updated ? `ok [${result.oldId} -> ${result.id}]` : result.reason}`, params.id);
+          if (!result.updated) {
+            return { content: [{ type: "text", text: `Update failed: ${result.reason}` }], details: { error: true, reason: result.reason } };
+          }
+          if (result.id && result.oldId && config.vectorMemory?.autoIndex) {
+            const updated = readRoleMemory(currentRolePath, currentRole).events.find((e) => e.id === result.id);
+            if (updated) {
+              replaceVectorIndex(result.oldId, result.id, [updated.title, updated.body].filter(Boolean).join("\n"), "event");
+            }
+          }
+          return {
+            content: [{ type: "text", text: `Updated event [${result.id}]: ${result.title}` }],
+            details: result,
+          };
+        }
+
+        case "delete_event": {
+          if (!params.id) {
+            memLogPush(rt, { source: "tool", op: "delete_event", content: "", stored: false, detail: "id required (events match on exact id only)" });
+            return { content: [{ type: "text", text: "Error: id required (find it via read/search)" }], details: { error: true } };
+          }
+          const result = deleteRoleEvent(currentRolePath, currentRole, params.id);
+          memLogPush(rt, { source: "tool", op: "delete_event", content: result.title || params.id, id: result.id, stored: result.deleted, detail: result.reason });
+          log("memory-tool", `delete_event: ${result.deleted ? `ok [${result.id}]` : result.reason}`, params.id);
+          if (!result.deleted) {
+            return { content: [{ type: "text", text: `Delete failed: ${result.reason}` }], details: { error: true, reason: result.reason } };
+          }
+          if (result.id && config.vectorMemory?.autoIndex) removeVectorIndex(result.id);
+          return {
+            content: [{ type: "text", text: `Deleted event [${result.id}]: "${result.title}"` }],
+            details: result,
+          };
+        }
+
+        case "promote_pending":
+        case "discard_pending": {
+          const targets: string[] = (Array.isArray(params.ids) && params.ids.length ? params.ids : [params.id]).filter(Boolean);
+          if (targets.length === 0) {
+            return { content: [{ type: "text", text: "Error: id or ids required" }], details: { error: true } };
+          }
+          const promote = params.action === "promote_pending";
+          const lines: string[] = [];
+          let ok = 0;
+          for (const target of targets) {
+            if (promote) {
+              const result = promotePendingLearning(currentRolePath, currentRole, target);
+              memLogPush(rt, { source: "tool", op: "promote_pending", content: result.text || target, id: result.learningId || result.id, stored: result.promoted, detail: result.promoted ? "promoted to consolidated" : "not found or already handled" });
+              if (result.promoted) {
+                ok += 1;
+                if (result.learningId && config.vectorMemory?.autoIndex && result.text) {
+                  queueVectorIndex(result.learningId, result.text, "learning");
+                }
+                lines.push(`promoted [${result.id}] -> learning [${result.learningId}]: ${result.text}`);
+              } else {
+                lines.push(`skip [${target}]: not found or already handled`);
+              }
+            } else {
+              const result = discardPendingLearning(currentRolePath, target);
+              memLogPush(rt, { source: "tool", op: "discard_pending", content: target, id: result.id, stored: result.discarded, detail: result.discarded ? "discarded" : "not found" });
+              if (result.discarded) {
+                ok += 1;
+                lines.push(`discarded [${result.id}]`);
+              } else {
+                lines.push(`skip [${target}]: not found`);
+              }
+            }
+          }
+          log("memory-tool", `${params.action}: ${ok}/${targets.length} ok`);
+          return {
+            content: [{ type: "text", text: lines.join("\n") }],
+            details: { ok, total: targets.length, error: ok === 0 },
+          };
+        }
+
+        case "read": {
+          const section = params.section && isMemoryReadSection(params.section) ? params.section : "all";
+          const result = renderMemoryReadView(currentRolePath, currentRole, section);
+          log("memory-tool", `read section=${section}: ${result.learnings}L ${result.preferences}P ${result.events}E ${result.pending}Pend`);
+          return {
+            content: [{ type: "text", text: result.text || "(empty)" }],
+            details: {
+              section,
+              learnings: result.learnings,
+              preferences: result.preferences,
+              events: result.events,
+              pending: result.pending,
+            },
           };
         }
 

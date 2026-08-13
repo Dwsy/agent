@@ -527,7 +527,7 @@ async function showInjectionPreview(options: RoleControlCenterOptions): Promise<
 
   const rolePrompt = await loadRolePrompts(rolePath);
   const highPriority = loadHighPriorityMemories(rolePath, roleName);
-  const longTerm = readLongTermMemoryBlock(rolePath);
+  const longTerm = readLongTermMemoryBlock(rolePath, roleName);
   const daily = config.memory.dailyInjection.enabled ? readDailyMemoryBlocks(rolePath) : [];
   const pending = getPendingMemories(rolePath).filter((item) => !item.discarded && !item.promoted);
 

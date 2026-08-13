@@ -32,8 +32,9 @@ runtime/ (编排实现, 16 模块, ~3,000L)
 │   384维, ~80MB模型     |  Unix Socket / Named Pipe IPC           │
 ├─────────────────────────────────────────────────────────────────┤
 │ 交互层                                                           │
-│   memory-viewer (~640L)  memory-vector (~850L)  logger (~540L)   │
-│   TUI/HTTP查看器         LanceDB + HybridSearch  文件日志         │
+│   memory-viewer (~420L)  memory-vector (~850L)  logger (~540L)   │
+│   TUI + HTTP 服务        LanceDB + HybridSearch  文件日志         │
+│   templates/viewer.*     Web viewer（live/静态导出同一份实现）    │
 └─────────────────────────────────────────────────────────────────┘
     ↓
 ~/.pi/roles/  (默认；PI_ROLES_DIR / storage.rolesDir 可覆盖，旧 ~/.pi/agent/roles 自动迁移)
@@ -69,7 +70,7 @@ runtime/ (编排实现, 16 模块, ~3,000L)
 | `ui.ts` | ~150 | TUI 可用性判断、notify、角色选择 UI |
 | `messages.ts` | ~25 | 消息数组工具 |
 | `fs-utils.ts` | ~65 | 路径规范化、角色目录内安全路径解析 |
-| `tool-memory.ts` | ~420 | `memory` 工具（15 个 action） |
+| `tool-memory.ts` | ~530 | `memory` 工具（20 个 action，含 read / pending 审阅 / event 改删） |
 | `tool-knowledge.ts` | ~190 | `knowledge` 工具 |
 | `tool-role-info.ts` | ~60 | `role_info` 工具（只列目录，不读内容） |
 | `commands-memory.ts` | ~530 | `/memories` `/memory-*` 全家桶 |
@@ -82,7 +83,7 @@ runtime/ (编排实现, 16 模块, ~3,000L)
 
 ```
 types → text → paths → pending-store → consolidated → pending → daily
-  → mutations → search → prompt / stats / tidy / conflicts / html-export
+  → mutations → search → prompt / stats / tidy / conflicts / export-data → html-export
 ```
 
 | 模块 | 行数 | 职责 |
@@ -93,14 +94,15 @@ types → text → paths → pending-store → consolidated → pending → dail
 | `pending-store.ts` | ~110 | pending.md 读写（含 Git 提交） |
 | `consolidated.ts` | ~620 | consolidated.md 解析/写入/修复（真相源） |
 | `pending.ts` | ~150 | pending 增删、晋升、过期 |
-| `daily.ts` | ~165 | daily/*.md 追加与读取、每日摘要 |
-| `mutations.ts` | ~310 | learning/preference/event 增删改 + 打标 |
+| `daily.ts` | ~300 | daily/*.md 追加/解析/条目改删、每日摘要 |
+| `mutations.ts` | ~370 | learning/preference/event 增删改 + 打标 |
 | `search.ts` | ~290 | 关键词搜索打分、tag 加权、pending 自动晋升 |
 | `prompt.ts` | ~145 | 注入用记忆块拼装、按需召回 |
 | `stats.ts` | ~115 | 统计与列表 |
 | `tidy.ts` | ~165 | 规则去重整理 + LLM tidy plan 应用 |
 | `conflicts.ts` | ~160 | 记忆冲突检测 |
-| `html-export.ts` | ~185 | HTML 导出 |
+| `export-data.ts` | ~215 | Web viewer 数据契约（live/static 共用一个构建器） |
+| `html-export.ts` | ~60 | 把 `templates/viewer.{html,css,js}` 装配成单文件文档 |
 
 ## 事件流水线
 
@@ -113,8 +115,8 @@ loadConfig → resolveRoleForCwd → loadRolePrompts(core/*.md) → migrateLegac
 
 ### before_agent_start
 ```
-首条消息: High Priority [3x]+ + 按需搜索 + 最近2天日记 + 向量召回(可选)
-后续消息: 仅最近2天日记
+首条消息: High Priority [3x]+ + 按需搜索 + 长期记忆(带id) + 最近2天日记 + pending待审块 + 向量召回(可选)
+后续消息: 长期记忆(带id) + 最近2天日记 + pending待审块
 ```
 
 ### agent_end
@@ -189,7 +191,7 @@ L1 原始: daily/YYYY-MM-DD.md (LESSON/PREFERENCE/EVENT)
 | `/memories [tui]` `/memory-log` `/memory-fix` `/memory-tidy` | commands-memory | memory-md / memory-viewer |
 | `/memory-tidy-llm` `/memory-distill[-stop]` | commands-memory | memory-llm |
 | `/memory-tags [--export]` | commands-memory | memory-tags |
-| `/memory-conflicts` `/memory-export` | commands-memory | memory/conflicts / memory/html-export |
+| `/memory-conflicts` `/memory-export` | commands-memory | memory/conflicts / memory/export-data + html-export |
 | `/memory-vector stats/rebuild` | commands-memory | memory-vector |
 | `/kb list/search/stats` | commands-kb | knowledge |
 
@@ -198,10 +200,12 @@ L1 原始: daily/YYYY-MM-DD.md (LESSON/PREFERENCE/EVENT)
 三个工具，注册在 `runtime/tool-*.ts`：
 
 ```typescript
-memory({ action: "add_learning|add_preference|add_event|update_*|delete_*|reinforce|search|list|consolidate|repair|llm_tidy|vector_rebuild|vector_stats" })
+memory({ action: "read|add_learning|add_preference|add_event|update_*|delete_*|promote_pending|discard_pending|reinforce|search|list|consolidate|repair|llm_tidy|vector_rebuild|vector_stats" })
 knowledge({ action: "list|search|read|write" })
 role_info({ path, recursive })   // 只列角色目录结构；旧的 role_read/write/list/search 已删除
 ```
+
+自主编辑设计：注入的记忆块每条带 `[id:...]`（结构化渲染，不再 dump 原文件），模型看到问题条目可直接改删；`read` 提供全量带 id 视图（section 过滤）；后台/压缩提取的 pending 候选注入待审块，由模型 `promote_pending` / `discard_pending`（支持 ids 批量）裁决。所有变更同步向量索引并写审计日志。
 
 ## 新增文件 (all-MiniLM-L6-v2 Integration)
 
@@ -215,7 +219,7 @@ role_info({ path, recursive })   // 只列角色目录结构；旧的 role_read/
 
 ## 工程设施
 
-- **测试**：`bun test`（`npm run test`）。当前 93 tests / 11 files 全绿，覆盖 knowledge、role-store、memory-git、memory 核心 API（pending 生命周期/搜索晋升/去重/reinforce/repair）、LLM 提取/编辑、tag 遗忘、runtime 的 fs-utils 与 messages。
+- **测试**：`bun test`（`npm run test`）。当前 116 tests / 14 files 全绿，覆盖 knowledge、role-store、memory-git、memory 核心 API（pending 生命周期/搜索晋升/去重/reinforce/repair）、LLM 提取/编辑、tag 遗忘、viewer 数据契约与 HTTP 接口、runtime 的 fs-utils 与 messages。
 - **类型检查**：`bash scripts/typecheck.sh`（`npm run typecheck`）。脚本定位实际安装的 `pi` 二进制，把 pi loader 运行时的 import 别名镜像成 tsc `paths`（`@earendil-works/pi-ai` → compat 入口、`@sinclair/typebox` → pi 内置 typebox），对 `index.ts + runtime/ + types/` 做全图 `tsc --noEmit`——类型检查和运行时解析走同一套包。
 - **可选原生依赖打桩**：`types/optional-deps.d.ts` 把 `@lancedb/lancedb` / `onnxruntime-node` / `node-llama-cpp` 声明为 `any`，typecheck 不需要装原生二进制。
 - **pi-ai 导入约定**：`complete` / `completeSimple` 显式从 `@earendil-works/pi-ai/compat` 导入。pi loader 目前把根路径也临时别名到 compat，但那是过渡行为，补全类调用不依赖它。
@@ -225,12 +229,13 @@ role_info({ path, recursive })   // 只列角色目录结构；旧的 role_read/
 按 `wc -l` 实测（不含测试文件，行数有并行改动，取约数）：
 
 ```
-装配层:   index.ts (~90) + memory-md.ts 门面 (~93)
+装配层:   index.ts (~90) + memory-md.ts 门面 (~100)
 编排层:   runtime/ 16 模块 ≈ 3,000
-记忆核心: memory/ 14 子模块 ≈ 2,600
+记忆核心: memory/ 15 子模块 ≈ 2,800
+Web viewer: templates/viewer.html (~120) + viewer.css (~790) + viewer.js (~1,290)
 单文件:   memory-llm (~1,080) + memory-vector (~850) + knowledge (~840) +
-          config (~780) + memory-tags (~780) + role-control-center (~670) +
-          memory-viewer (~640) + logger (~540) + role-store (~460) +
+          memory-tags (~805) + config (~780) + role-control-center (~670) +
+          logger (~540) + memory-viewer (~460) + role-store (~460) +
           role-template (~380) + tui-renderers (~330) + memory-git (~320) +
           memory-extraction-rules (~50)
 嵌入层:   embedding-daemon (~820) + embedding-minilm (~440) +

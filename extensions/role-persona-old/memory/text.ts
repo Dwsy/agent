@@ -53,6 +53,84 @@ export function jaccard(a: Set<string>, b: Set<string>): number {
   return union === 0 ? 0 : overlap / union;
 }
 
+/**
+ * Per-item metadata that markdown bullets cannot express on their own.
+ *
+ * It rides along in a trailing HTML comment — invisible when the file is
+ * rendered, unambiguous to parse, and obvious to a human editing the raw file
+ * that the tail is machine-owned:
+ *
+ *   - [3x] prefer explicit contracts <!-- tags: design, api | src: auto | seen: 2026-08-11 -->
+ */
+export interface ItemMeta {
+  tags?: string[];
+  source?: string;
+  date?: string;
+}
+
+const META_SUFFIX = /\s*<!--\s*([^]*?)\s*-->\s*$/;
+
+/** `|` and `,` are the field separators, so they cannot survive inside a value. */
+function metaSafe(value: string): string {
+  return normalizeText(value).replace(/[|,<>]/g, "").trim();
+}
+
+export function stripItemMeta(line: string): { text: string; meta: ItemMeta } {
+  const match = line.match(META_SUFFIX);
+  if (!match) return { text: line, meta: {} };
+
+  const meta: ItemMeta = {};
+  for (const field of match[1].split("|")) {
+    const separator = field.indexOf(":");
+    if (separator < 0) continue;
+    const key = field.slice(0, separator).trim().toLowerCase();
+    const value = field.slice(separator + 1).trim();
+    if (!value) continue;
+    if (key === "tags") {
+      const tags = value.split(",").map((tag) => tag.trim()).filter(Boolean);
+      if (tags.length) meta.tags = tags;
+    } else if (key === "src") {
+      meta.source = value;
+    } else if (key === "seen") {
+      meta.date = value;
+    }
+  }
+
+  return { text: line.slice(0, match.index).trimEnd(), meta };
+}
+
+export function renderItemMeta(meta: ItemMeta): string {
+  const fields: string[] = [];
+  const tags = (meta.tags || []).map(metaSafe).filter(Boolean);
+  if (tags.length) fields.push(`tags: ${tags.join(", ")}`);
+  const source = metaSafe(meta.source || "");
+  if (source) fields.push(`src: ${source}`);
+  const date = metaSafe(meta.date || "");
+  if (date) fields.push(`seen: ${date}`);
+  return fields.length ? ` <!-- ${fields.join(" | ")} -->` : "";
+}
+
+/** Union of tags, preserving first-seen order. */
+export function mergeTags(a?: string[], b?: string[]): string[] | undefined {
+  if (!a?.length && !b?.length) return undefined;
+  const seen = new Map<string, string>();
+  for (const tag of [...(a || []), ...(b || [])]) {
+    const key = tag.toLowerCase();
+    if (!seen.has(key)) seen.set(key, tag);
+  }
+  return Array.from(seen.values());
+}
+
+/** Keeps the record that wins, but never drops the other's metadata. */
+function absorb(keep: MemoryLearningRecord, other: MemoryLearningRecord): void {
+  keep.used = Math.max(keep.used, other.used);
+  keep.tags = mergeTags(keep.tags, other.tags);
+  keep.source = keep.source || other.source;
+  if (!keep.lastAccessed || (other.lastAccessed && other.lastAccessed > keep.lastAccessed)) {
+    keep.lastAccessed = other.lastAccessed || keep.lastAccessed;
+  }
+}
+
 export function dedupeLearnings(learnings: MemoryLearningRecord[]): MemoryLearningRecord[] {
   const byExact = new Map<string, MemoryLearningRecord>();
   for (const learning of learnings) {
@@ -61,7 +139,7 @@ export function dedupeLearnings(learnings: MemoryLearningRecord[]): MemoryLearni
     if (!existing) {
       byExact.set(key, learning);
     } else {
-      existing.used = Math.max(existing.used, learning.used);
+      absorb(existing, learning);
     }
   }
 
@@ -77,7 +155,7 @@ export function dedupeLearnings(learnings: MemoryLearningRecord[]): MemoryLearni
     if (!similar) {
       kept.push(current);
     } else {
-      similar.used = Math.max(similar.used, current.used);
+      absorb(similar, current);
     }
   }
 

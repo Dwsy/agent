@@ -4,27 +4,102 @@ import { config } from "../config.ts";
 import { readRoleMemory } from "./consolidated.ts";
 import { getRecentDailyMemoryFiles, readDailySummary } from "./daily.ts";
 import { dailyMemoryPath, listDailyMemoryFilesByDate, memoryFilePath } from "./paths.ts";
+import { getPendingMemories } from "./pending.ts";
 import { formatSearchMatchLine, searchRoleMemory } from "./search.ts";
 import { today } from "./text.ts";
 
 export function readMemoryPromptBlocks(
   rolePath: string,
+  roleName: string,
   options?: { summaryEnabled?: boolean; recentDays?: number }
 ): string[] {
   const blocks: string[] = [];
-  const longTerm = readLongTermMemoryBlock(rolePath);
+  const longTerm = readLongTermMemoryBlock(rolePath, roleName);
   if (longTerm) blocks.push(longTerm);
   blocks.push(...readDailyMemoryBlocks(rolePath, options));
   return blocks;
 }
 
 /**
- * Read the long-term consolidated memory as a single prompt block, or null if empty.
+ * Long-term consolidated memory as a single prompt block, or null if empty.
+ *
+ * Rendered from parsed data (not a raw file dump) so every entry carries its
+ * `[id:xxxxxxxxxx]` — the model can target any entry for update/delete/
+ * reinforce without a search roundtrip. Frontmatter and machine-owned meta
+ * comments are dropped to save prompt tokens.
  */
-export function readLongTermMemoryBlock(rolePath: string): string | null {
+export function readLongTermMemoryBlock(rolePath: string, roleName: string): string | null {
   const memoryFile = memoryFilePath(rolePath);
   if (!existsSync(memoryFile)) return null;
-  return `### Long-Term Memory\n\n${readFileSync(memoryFile, "utf-8")}`;
+
+  const data = readRoleMemory(rolePath, roleName);
+  if (data.learnings.length === 0 && data.preferences.length === 0 && data.events.length === 0) {
+    return null;
+  }
+
+  const lines: string[] = [
+    "### Long-Term Memory",
+    "",
+    "Every entry carries [id:...] — pass that id to the memory tool to update/delete/reinforce it directly.",
+    "",
+  ];
+
+  const sorted = [...data.learnings].sort((a, b) => b.used - a.used || a.text.localeCompare(b.text));
+  const tiers: Array<[string, (used: number) => boolean]> = [
+    ["Learnings (High Priority)", (used) => used >= 3],
+    ["Learnings (Normal)", (used) => used >= 1 && used < 3],
+    ["Learnings (New)", (used) => used === 0],
+  ];
+  for (const [title, match] of tiers) {
+    const items = sorted.filter((l) => match(l.used));
+    if (items.length === 0) continue;
+    lines.push(`#### ${title}`);
+    for (const l of items) lines.push(`- [id:${l.id}] [${l.used}x] ${l.text}`);
+    lines.push("");
+  }
+
+  if (data.preferences.length > 0) {
+    lines.push("#### Preferences");
+    const prefs = [...data.preferences].sort((a, b) => a.category.localeCompare(b.category) || a.text.localeCompare(b.text));
+    for (const p of prefs) lines.push(`- [id:${p.id}] [${p.category}] ${p.text}`);
+    lines.push("");
+  }
+
+  if (data.events.length > 0) {
+    lines.push("#### Events");
+    for (const e of data.events) {
+      lines.push(`- [id:${e.id}] [${e.date || "?"}] ${e.title}`);
+      if (e.body.trim()) lines.push(...e.body.split("\n").map((line) => `  ${line}`));
+    }
+    lines.push("");
+  }
+
+  return lines.join("\n").replace(/\n+$/, "");
+}
+
+/**
+ * Pending review block: surfaces unreviewed auto-extracted candidates so the
+ * model can curate them (promote/discard) instead of leaving them to expire.
+ * Returns null when there is nothing to review.
+ */
+export function buildPendingReviewBlock(rolePath: string, maxItems = 8): string | null {
+  const items = getPendingMemories(rolePath);
+  if (items.length === 0) return null;
+
+  const lines = [
+    `### Pending Memories Awaiting Review (${items.length})`,
+    "",
+    "Background extraction produced these unverified candidates. When convenient (not mid-task), review them:",
+    "keep → memory({ action: \"promote_pending\", id }) · drop → memory({ action: \"discard_pending\", id }). Batch via ids: [...]. Unreviewed items expire after a few days.",
+    "",
+  ];
+  for (const item of items.slice(0, maxItems)) {
+    lines.push(`- [id:${item.id}] [${item.source}] ${item.text}`);
+  }
+  if (items.length > maxItems) {
+    lines.push(`- … ${items.length - maxItems} more — memory({ action: "read", section: "pending" })`);
+  }
+  return lines.join("\n");
 }
 
 /**
@@ -86,7 +161,7 @@ export function loadHighPriorityMemories(rolePath: string, roleName: string): st
 
   if (highPriority.length === 0) return "";
 
-  const lines = highPriority.map((l) => `- [${l.used}x] ${l.text}`);
+  const lines = highPriority.map((l) => `- [id:${l.id}] [${l.used}x] ${l.text}`);
   return `### High Priority Learnings\n\n${lines.join("\n")}`;
 }
 
@@ -140,5 +215,5 @@ export function loadMemoryOnDemand(
 }
 
 export function buildMemoryEditInstruction(rolePath: string): string {
-  return `## 🧠 Memory Edit Spec (STRICT)\n\nMemory file: ${memoryFilePath(rolePath)}\n\nWhen you update memory, follow this format exactly:\n\n1) Learning sections\n- # Learnings (High Priority)  -> used >= 3\n- # Learnings (Normal)         -> used 1-2\n- # Learnings (New)            -> used = 0\n- Learning line format: - [Nx] concise text\n\n2) Preference sections\n- # Preferences: Communication | Code | Tools | Workflow | General\n- Preference line format: - concise text\n\n3) Event section\n- # Events\n- Event format:\n  ## [YYYY-MM-DD] Title\n  Details...\n\nRules:\n- Keep items durable and reusable across sessions.\n- Avoid one-off tasks and noisy logs.\n- Do not delete valid memory entries unless clearly duplicated.\n- If file looks malformed, normalize to canonical heading structure.\n- Never use free-form paragraphs under learning/preference sections; use bullet lines.\n- Keep learning/preference lines under 120 chars when possible.`;
+  return `## 🧠 Memory Edit Spec\n\nPrefer the \`memory\` tool for all edits — it handles ids, dedupe, tiers, git commits, and vector index sync automatically. Injected memory entries carry [id:...]; pass that id straight to update_*/delete_*/reinforce/promote_pending.\n\nDirect file editing (${memoryFilePath(rolePath)}) is a fallback for bulk restructuring only. If you do edit the file, follow this format exactly:\n\n1) Learning sections\n- # Learnings (High Priority)  -> used >= 3\n- # Learnings (Normal)         -> used 1-2\n- # Learnings (New)            -> used = 0\n- Learning line format: - [Nx] concise text\n\n2) Preference sections\n- # Preferences: Communication | Code | Tools | Workflow | General\n- Preference line format: - concise text\n\n3) Event section\n- # Events\n- Event format:\n  ## [YYYY-MM-DD] Title\n  Details...\n\nRules:\n- Keep items durable and reusable across sessions.\n- Avoid one-off tasks and noisy logs.\n- Do not delete valid memory entries unless clearly duplicated.\n- If file looks malformed, normalize to canonical heading structure.\n- Never use free-form paragraphs under learning/preference sections; use bullet lines.\n- Keep learning/preference lines under 120 chars when possible.\n- After a direct file edit, run memory({ action: "repair" }) to normalize, then memory({ action: "vector_rebuild" }) if vector memory is enabled.`;
 }

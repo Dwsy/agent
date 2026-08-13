@@ -39,12 +39,18 @@ export {
 
 export {
   appendDailyRoleMemory,
+  type DailyEntry,
+  type DailyMemory,
+  deleteDailyEntry,
   ensureDailySummaryDir,
   listAllDailySummaries,
   listDailySummariesToGenerate,
+  parseDailyEntries,
   readDailyMemories,
   readDailyMemoryRaw,
   readDailySummary,
+  renderDailyFile,
+  updateDailyEntry,
   writeDailySummary,
 } from "./memory/daily.ts";
 
@@ -53,9 +59,11 @@ export {
   addRoleLearning,
   addRoleLearningWithTags,
   addRolePreference,
+  deleteRoleEvent,
   deleteRoleLearning,
   deleteRolePreference,
   reinforceRoleLearning,
+  updateRoleEvent,
   updateRoleLearning,
   updateRolePreference,
 } from "./memory/mutations.ts";
@@ -64,6 +72,7 @@ export { formatSearchMatchLine, searchRoleMemory } from "./memory/search.ts";
 
 export {
   buildMemoryEditInstruction,
+  buildPendingReviewBlock,
   loadHighPriorityMemories,
   loadMemoryOnDemand,
   readDailyMemoryBlocks,
@@ -74,8 +83,11 @@ export {
 export {
   extractMemoryFacts,
   getMemoryStats,
+  isMemoryReadSection,
   listRoleMemory,
+  type MemoryReadSection,
   type MemoryStats,
+  renderMemoryReadView,
 } from "./memory/stats.ts";
 
 export {
@@ -90,4 +102,13 @@ export {
   type MemoryConflict,
 } from "./memory/conflicts.ts";
 
-export { exportMemoryToHtml, type MemoryExportData } from "./memory/html-export.ts";
+export {
+  buildMemoryExportData,
+  CORE_FILE_DIRS,
+  exportMemoryToHtml,
+  type LearningTier,
+  type MemoryExportData,
+  renderMemoryViewerHtml,
+  type ViewerCoreFile,
+  type ViewerMode,
+} from "./memory/html-export.ts";

@@ -741,35 +741,65 @@ export function getAllTags(data: any): TagRegistry {
   return registry;
 }
 
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+/** Standalone tag page: same visual language as the memory viewer. */
 export function buildTagCloudHTML(registry: TagRegistry, roleName: string): string {
   const sortedTags = Object.entries(registry).sort((a, b) => b[1].weight - a[1].weight);
+  const fading = sortedTags.filter(([, meta]) => meta.forgotten).length;
 
-  const tagsHtml = sortedTags.map(([tag, meta]) => {
-    const cls = meta.weight > 5 ? "hot" : meta.weight > 2 ? "warm" : "cold";
-    return "<div class=\"tag " + cls + "\">" + tag + "<span class=\"count\">" + meta.count + "</span><span class=\"weight\">" + meta.weight.toFixed(1) + "</span></div>";
+  const cards = sortedTags.map(([tag, meta]) => {
+    const strength = meta.weight > 5 ? "strong" : meta.weight > 2 ? "warm" : "faint";
+    return [
+      `<li class="tag" data-strength="${strength}"${meta.forgotten ? ' data-fading="true"' : ""}>`,
+      `<span class="name">${escapeHtml(tag)}</span>`,
+      `<span class="meta"><span class="count">${meta.count}</span><span class="weight">w ${meta.weight.toFixed(1)}</span></span>`,
+      "</li>",
+    ].join("");
   }).join("");
 
-  const html = [
-    "<!DOCTYPE html>",
-    "<html>",
-    "<head><meta charset=\"UTF-8\"><title>Tags - " + roleName + "</title>",
-    "<style>",
-    "body{font-family:system-ui;background:#0d0d0d;color:#e5e5e5;padding:40px}",
-    "h1{color:#f59e0b}",
-    ".subtitle{color:#888;margin-bottom:30px}",
-    ".tag-cloud{display:flex;flex-wrap:wrap;gap:8px}",
-    ".tag{background:#111;border:1px solid #222;padding:6px 12px;border-radius:4px;font-size:13px}",
-    ".tag.hot{border-color:#ef4444}",
-    ".tag.warm{border-color:#f59e0b}",
-    ".tag.cold{opacity:0.5}",
-    ".count{background:#0d0d0d;padding:2px 6px;border-radius:3px;font-size:11px;color:#888}",
-    ".weight{font-size:11px;color:#22c55e}",
-    "</style></head><body>",
-    "<h1>Tag Cloud</h1>",
-    "<div class=\"subtitle\">" + roleName + " - " + sortedTags.length + " tags</div>",
-    "<div class=\"tag-cloud\">" + tagsHtml + "</div>",
-    "</body></html>"
+  const styles = [
+    ":root{color-scheme:light dark;--bg:light-dark(#fbfaf8,#0c0c0e);--surface:light-dark(#fff,#131316);",
+    "--border:light-dark(#e6e2db,#26262c);--text:light-dark(#1c1b19,#ececee);--text-2:light-dark(#6a6560,#a2a2aa);",
+    "--text-3:light-dark(#98928a,#6b6b74);--accent:light-dark(#b0512c,#e28c58);--info:light-dark(#3d5aa8,#8199e0)}",
+    "*{box-sizing:border-box}",
+    "body{margin:0;padding:44px 32px;background:var(--bg);color:var(--text);",
+    "font-family:-apple-system,BlinkMacSystemFont,\"Segoe UI\",Roboto,\"PingFang SC\",sans-serif;font-size:13px}",
+    "h1{margin:0;font-size:18px;font-weight:620;letter-spacing:-.01em}",
+    ".sub{margin:4px 0 28px;color:var(--text-3);font-size:12px}",
+    ".cloud{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:8px;list-style:none;margin:0;padding:0}",
+    ".tag{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 12px;",
+    "border:1px solid var(--border);border-radius:8px;background:var(--surface)}",
+    ".tag[data-strength=strong]{border-color:color-mix(in srgb,var(--accent) 55%,transparent)}",
+    ".tag[data-strength=warm]{border-color:color-mix(in srgb,var(--info) 40%,transparent)}",
+    ".tag[data-fading=true]{opacity:.55}",
+    ".name{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
+    ".meta{display:flex;gap:8px;font-variant-numeric:tabular-nums;font-size:11px;color:var(--text-3);white-space:nowrap}",
+    ".tag[data-strength=strong] .count{color:var(--accent)}",
+    ".weight{color:var(--text-2)}",
+    ".empty{color:var(--text-3)}",
   ].join("");
 
-  return html;
+  const summary = [
+    `${sortedTags.length} tag${sortedTags.length === 1 ? "" : "s"}`,
+    fading > 0 ? `${fading} fading` : null,
+  ].filter(Boolean).join(" · ");
+
+  return [
+    "<!DOCTYPE html>",
+    '<html lang="en"><head><meta charset="UTF-8">',
+    '<meta name="viewport" content="width=device-width,initial-scale=1">',
+    `<title>Tags · ${escapeHtml(roleName)}</title>`,
+    `<style>${styles}</style></head><body>`,
+    "<h1>Tags</h1>",
+    `<p class="sub">${escapeHtml(roleName)} · ${summary}</p>`,
+    sortedTags.length ? `<ul class="cloud">${cards}</ul>` : '<p class="empty">No tags recorded yet.</p>',
+    "</body></html>",
+  ].join("");
 }

@@ -9,6 +9,7 @@ import { config } from "../config.ts";
 import { log } from "../logger.ts";
 import {
   buildMemoryEditInstruction,
+  buildPendingReviewBlock,
   loadHighPriorityMemories,
   loadMemoryOnDemand,
   readDailyMemoryBlocks,
@@ -39,15 +40,25 @@ Structured paths (v2):
 Use these paths only when you need to inspect or edit on-disk state.
 They are not a mandatory startup checklist, and you should not mechanically read role files for greetings or normal replies.
 
-## 📝 MEMORY
+## 🧠 MEMORY (YOU OWN IT)
 
-Memory is auto-managed in the background. Use memory tools only when they materially improve the current task.
+You are the primary editor of this role's memory. Background extraction and compaction are only a safety net for what you miss — do not rely on them. Manage memory proactively with the \`memory\` tool, in the natural flow of the conversation.
 
-Use \`memory({ action: "search", query: "..." })\` when prior cross-session context is likely to affect the answer; do not search mechanically on greetings or self-contained tasks. Search may reinforce matches or promote pending entries.
-Use maintenance actions when the user asks to organize, tidy, or review memory, or when an explicitly configured maintenance workflow requires them.
-Use **save/add** actions conservatively: prefer writing memory only for durable, non-obvious insights, or when the user explicitly asks to remember something.
-Use delete/update actions only for entries that are clearly duplicated, obsolete, or explicitly selected by the user; never delete preferences without confirmation.
-Do NOT mechanically reflect on memory at task end, and do NOT save trivial or task-local noise.
+**Recall** — \`memory({ action: "search", query })\` when prior cross-session context could change your answer; \`memory({ action: "read", section })\` for a full ID-annotated view. Don't search mechanically on greetings or self-contained tasks.
+
+**Write immediately when it happens** (don't defer to background extraction):
+- Durable lesson, non-obvious insight, hard-won fix → \`add_learning\`
+- Stable user preference or working convention you observed → \`add_preference\`
+- Milestone, decision, or notable episode → \`add_event\`
+Skip trivial, one-off, task-local noise. Test: "would I want to know this in the next session?"
+
+**Curate on sight** — injected memory entries carry \`[id:...]\`; act the moment you notice a problem:
+- Outdated or wrong entry → \`update_learning\` / \`update_preference\` / \`update_event\` with its id
+- Duplicate or obsolete entry → \`delete_*\` (never delete preferences without user confirmation)
+- An entry proved genuinely useful this session → \`reinforce\`
+- Pending candidates shown below → review with \`promote_pending\` / \`discard_pending\` (batch via \`ids\`)
+
+Fixing a wrong memory you just noticed is part of answering well — do it inline, no permission needed. Do NOT write mechanical end-of-task reflections.
 
 Bundled skills may guide this behavior (for example: memory-recall, memory-retro, memory-organize, memory-best-practices).
 
@@ -90,13 +101,16 @@ function buildMemoryPrompt(rt: Runtime, event: any): string {
     state.isFirstUserMessage = false;
   }
 
-  const longTerm = readLongTermMemoryBlock(currentRolePath);
+  const longTerm = readLongTermMemoryBlock(currentRolePath, currentRole);
   if (longTerm) memoryBlocks.push(longTerm);
 
   if (config.memory.dailyInjection.enabled) {
     const dailyBlocks = readDailyMemoryBlocks(currentRolePath);
     if (dailyBlocks.length > 0) memoryBlocks.push(...dailyBlocks);
   }
+
+  const pendingReview = buildPendingReviewBlock(currentRolePath);
+  if (pendingReview) memoryBlocks.push(pendingReview);
 
   if (memoryBlocks.length === 0) return "";
   return `\n\n## Your Memory\n\n${memoryBlocks.join("\n\n---\n\n")}`;

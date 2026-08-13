@@ -87,18 +87,19 @@ runtime/ (编排实现, 16 个模块, ~3,000 行)
 │ role-store   role-template   config   logger           │
 ├─────────────────────────────────────────────────────────┤
 │ 记忆核心                                                │
-│ memory-md (门面) → memory/ 14 个子模块                  │
+│ memory-md (门面) → memory/ 15 个子模块                  │
 │ memory-llm      memory-tags      memory-git            │
 ├─────────────────────────────────────────────────────────┤
 │ 检索与交互                                              │
 │ memory-vector  memory-viewer  tui-renderers            │
+│ templates/viewer.{html,css,js}  (Web viewer)           │
 ├─────────────────────────────────────────────────────────┤
 │ 知识层                                                  │
 │ knowledge.ts (role / global / project / external)      │
 └─────────────────────────────────────────────────────────┘
 ```
 
-记忆核心同样拆过了：`memory-md.ts` 现在是 ~93 行的纯 re-export 门面，真正的实现在 `memory/` 下 14 个子模块（types / text / paths / pending-store / consolidated / pending / daily / mutations / search / prompt / stats / tidy / conflicts / html-export），依赖方向单向分层，外部调用方照旧 import `memory-md.ts` 即可。
+记忆核心同样拆过了：`memory-md.ts` 现在是 ~100 行的纯 re-export 门面，真正的实现在 `memory/` 下 15 个子模块（types / text / paths / pending-store / consolidated / pending / daily / mutations / search / prompt / stats / tidy / conflicts / export-data / html-export），依赖方向单向分层，外部调用方照旧 import `memory-md.ts` 即可。
 
 ## 记忆分层：不是两层，是一整套流水线
 
@@ -266,6 +267,35 @@ auto extract / compaction
 
 这让不同措辞但语义相关的记忆更容易浮上来。
 
+## Web viewer
+
+`/memories` 起一个只监听 `127.0.0.1` 的本地服务并打开浏览器，`/memory-export` 把同一套界面写成单文件 HTML。两者共用 `memory/export-data.ts` 一个数据构建器，界面共用 `templates/viewer.{html,css,js}`，不存在“服务端版和导出版长得不一样”的问题。
+
+界面按记忆的分层组织：Overview 概览、Learnings / Preferences / Events / Daily / Pending 分区列表、Tags 标签词表；live 模式额外有 Logs（读 `.log/*.jsonl` 聚合）和 Role definition（直接编辑 `core/` `context/` `knowledge/` 下的 markdown，Read/Edit 双模式、脏标记、⌘S 保存、离开前确认）。
+
+- 顶部过滤框支持普通子串和 `/regex/`，命中处高亮；分面 chip 按分区变化（learning 强度 / preference 分类 / 日期 / pending 状态 / 日志级别）
+- 右侧详情面板显示完整正文与元数据，长文本不再被表格截断
+- 键盘：`/` 聚焦过滤、`j/k` 或方向键选择、`1..9` 跳分区、`[`/`]` 切分面、`c` 复制、`d` 开关详情、`e` 编辑、`n` 新建、`t` 换主题、`r` 从磁盘重载、`?` 快捷键表
+- 明暗主题跟随系统，可手动切换并记住选择；窄屏下侧栏变抽屉、详情变底部面板
+- live 模式下每次请求都重新读盘，`r` 可在 agent 继续写记忆时刷新当前视图
+
+### 直接改记忆
+
+live 模式下 learning / preference / event / daily 都能在详情面板里改：编辑正文（preference 连带分类、event 连带标题与日期）、删除（二次确认，并说明会重写哪个文件）、learning 可 +1 次强化；pending 条目可一键晋升或丢弃；工具栏的 New 按钮在对应分区新建条目（daily 除外——日记由 agent 追加，viewer 只负责改和删）。每次写入后前端重新拉取 `/api/data`，所以你看到的永远是磁盘上的状态。
+
+日记条目没有 id，用「日期 + 块序号」定位，并且请求里带上你当时看到的原文；对不上就拒绝写入。改写会保留原有时间戳与类型标记，只替换正文，并和其它记忆写入一样走 `writeCommittedMemoryFile`（Git 审计不断链）。
+
+两条安全保证值得单独说：
+
+1. **精确 id，不做模糊回退**。底层的 `updateRoleLearning` 等函数在 id 落空时会退化成文本子串匹配（这对 LLM 工具是对的），但对已经知道 id 的界面是危险的——可能改到另一条相似记忆。所以服务端在调用前先校验该 id 确实存在，落空就返回 409 让你重新加载。
+2. **并发写入被拒绝**。`saveRoleMemory` 带 `expectedHash`，agent 在你编辑期间写过同一个文件时写入会被拒，界面提示重新加载而不是覆盖。
+
+表单有未保存改动时，切分区、切分面或选中别的条目都会先确认；显式点 Cancel 或按 Esc 则直接丢弃（那是你主动要的）。
+
+所有改动都会以 `source: "viewer"` 记进 JSONL 审计日志，`/memory-log` 里和工具、压缩抢救的操作并排显示。
+
+数据接口只有四个：`GET /api/data`（重建快照）、`GET /api/logs`（日志聚合）、`GET|PUT /api/core?file=`（角色定义读写，路径被限制在 `core/` `context/` `knowledge/` 三个目录内的 `.md`）、`POST /api/memory`（记忆增删改，action 为 create/update/delete/reinforce/promote/discard）。
+
 ## 向量记忆
 
 `memory-vector.ts` 在 Markdown 真相源之上叠加语义索引，不替代原系统。
@@ -315,13 +345,22 @@ auto extract / compaction
 
 ### `memory`
 
-常用 actions：
+模型是记忆的第一编辑者:注入到上下文的每条记忆都带 `[id:...]`,模型看到过时/错误条目可直接用该 id 改删,不需要先 search 一轮。后台提取只是安全网。
+
+常用 actions:
 
 ```ts
+memory({ action: "read", section: "pending" })   // 全量带 id 视图: all|learnings|preferences|events|pending
 memory({ action: "search", query: "pending verification" })
 memory({ action: "list" })
 memory({ action: "add_learning", content: "声明完成前验证铁律" })
 memory({ action: "add_preference", category: "Workflow", content: "先检索后修改" })
+memory({ action: "add_event", category: "标题", content: "正文" })
+memory({ action: "update_learning", id: "a1b2c3d4e5", content: "新表述" })
+memory({ action: "update_event", id: "...", category: "新标题", date: "2026-08-13" })
+memory({ action: "delete_event", id: "..." })
+memory({ action: "promote_pending", ids: ["...", "..."] })   // 审阅后台提取的候选
+memory({ action: "discard_pending", id: "..." })
 memory({ action: "reinforce", content: "声明完成前验证铁律" })
 memory({ action: "consolidate" })
 memory({ action: "repair" })
@@ -330,14 +369,14 @@ memory({ action: "vector_rebuild" })
 memory({ action: "vector_stats" })
 ```
 
-能力覆盖：
+能力覆盖:
 
-- learning / preference 增删改查
+- learning / preference / event 全量增删改查(events 精确 id 匹配)
+- read 带 id 全量视图 + section 过滤
+- pending 候选人工审阅:promote / discard,支持 ids 批量
 - search + auto-reinforce + pending auto-promote
-- 结构修复
-- 规则去重
-- LLM 整理
-- 向量索引重建/状态查看
+- 结构修复、规则去重、LLM 整理、向量索引重建/状态查看
+- 所有变更走 Git 提交与 JSONL 审计,向量索引自动同步
 
 ### `role_info`
 
@@ -362,7 +401,7 @@ knowledge({ action: "write", title: "RRF Hybrid Search", category: "retrieval", 
 | `/role` | 直接打开自定义角色 TUI 控制中心（非系统 select）：状态、切换/映射、创建、默认角色、禁用、注入预览、记忆查看与全量配置 |
 | `/role create/map/unmap/info/list` | 兼容的命令行角色管理入口 |
 | `/memories` | 查看记忆（默认起本地 HTTP 服务并打开浏览器；`/memories tui` 用终端查看器） |
-| `/memory-export [path]` | 导出记忆为 HTML 可视化 |
+| `/memory-export [path]` | 导出为单文件 HTML 快照（与 `/memories` 同一套界面，去掉需要服务端的功能） |
 | `/memory-log` | 查看近期持久化与当前会话记忆操作日志 |
 | `/memory-fix` | 修复结构问题 |
 | `/memory-tidy` | 规则整理/去重 |
@@ -440,21 +479,39 @@ tags: ["clean-architecture", "memory-management"]
 ---
 
 # Learnings (High Priority)
-- [6x] 声明完成前验证铁律：运行命令→读取输出→确认结果→才能声明
+- [6x] 声明完成前验证铁律：运行命令→读取输出→确认结果→才能声明 <!-- tags: verification, workflow | src: compaction | seen: 2026-04-17 -->
 
 # Learnings (Normal)
 - [2x] 软删除优先
 
 # Learnings (New)
-- [0x] 标签系统闭环是快速 win
+- [0x] 标签系统闭环是快速 win <!-- tags: memory -->
 
 # Preferences: Workflow
-- 先检索、再修改、后验证
+- 先检索、再修改、后验证 <!-- tags: workflow -->
 
 # Events
 ## [2026-04-17] 某次关键变更
 详情...
 ```
+
+条目末尾的 HTML 注释是机器维护的元数据：`tags`（逗号分隔）、`src`（来源）、`seen`（最后一次被强化的日期）。用注释是因为它在任何 markdown 渲染里都不可见、解析上不会和正文歧义，而且人在编辑原始文件时一眼能看出这段不归自己管。没有元数据的旧条目照常解析，只是这些字段为空。
+
+### `memory/daily/YYYY-MM-DD.md`
+
+```markdown
+# Memory: 2026-04-17
+
+## [09:14] EVENT
+
+当天发生的事，可以有多行。
+
+## [14:02] LESSON
+
+从这件事里学到的东西。
+```
+
+每个 `##` 块是一条独立条目，viewer 用「日期 + 块序号」定位它，改写时保留原有时间戳与类型标记。
 
 ### `memory/pending.md`
 
@@ -479,14 +536,15 @@ updated: "2026-04-17"
 - [comparison-analysis.html](./comparison-analysis.html) — 方案/设计比较分析
 - [project-analysis.html](./project-analysis.html) — 项目分析可视化
 - `runtime/` — 事件、工具、命令的编排实现（16 个模块）
-- `memory/` — 记忆核心实现（14 个子模块，经 `memory-md.ts` 门面导出）
+- `memory/` — 记忆核心实现（15 个子模块，经 `memory-md.ts` 门面导出）
+- `templates/viewer.{html,css,js}` — Web viewer 的唯一实现
 - `skills/memory-recall/SKILL.md` — 召回工作流
 - `skills/memory-organize/SKILL.md` — 整理与 pending 管理
 
 ## 开发与验证
 
 ```bash
-bun test                  # 或 npm run test；当前 93 tests / 11 files 全绿
+bun test                  # 或 npm run test；当前 116 tests / 14 files 全绿
 bash scripts/typecheck.sh # 或 npm run typecheck；对着实际安装的 pi 做全图 tsc 检查
 ```
 
@@ -519,6 +577,7 @@ bash scripts/typecheck.sh # 或 npm run typecheck；对着实际安装的 pi 做
 - 想看知识层：`knowledge.ts`
 - 想看角色目录与迁移：`role-store.ts`
 - 想看记忆写入的 Git 提交机制：`memory-git.ts`
+- 想看 Web viewer：`memory/export-data.ts`（数据契约）+ `templates/viewer.js`（界面）
 
 ---
 

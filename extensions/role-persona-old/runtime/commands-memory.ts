@@ -235,6 +235,7 @@ export function registerMemoryCommands(rt: Runtime): void {
         "auto-extract": "🤖",
         "tool": "🔧",
         "manual": "✏️",
+        "viewer": "🖥",
       };
       const opIcon: Record<string, string> = {
         "learning": "📘",
@@ -243,10 +244,14 @@ export function registerMemoryCommands(rt: Runtime): void {
         "knowledge": "📚",
         "reinforce": "💪",
         "consolidate": "🧹",
+        "promote": "⬆️",
+        "discard": "🚫",
         "update_learning": "✏️",
         "update_preference": "✏️",
+        "update_event": "✏️",
         "delete_learning": "🗑",
         "delete_preference": "🗑",
+        "delete_event": "🗑",
       };
 
       const stored = logEntries.filter(e => e.stored).length;

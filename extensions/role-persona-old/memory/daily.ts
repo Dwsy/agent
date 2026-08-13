@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { log } from "../logger.ts";
 import { writeCommittedMemoryFile } from "../memory-git.ts";
-import { dailyMemoryPath, dailySummaryDir, dailySummaryPath, listDailyMemoryFilesByDate } from "./paths.ts";
+import { dailyMemoryDir, dailyMemoryPath, dailySummaryDir, dailySummaryPath, listDailyMemoryFilesByDate } from "./paths.ts";
 import { normalizeText, nowTime, today } from "./text.ts";
 
 export function ensureDailySummaryDir(rolePath: string): void {
@@ -124,41 +124,154 @@ export function getRecentDailyMemoryFiles(rolePath: string, count: number = 2): 
     .map((item) => ({ date: item.date, path: item.path }));
 }
 
-/**
- * Read all daily memory files
- */
-export function readDailyMemories(rolePath: string): Array<{ text: string; date: string; time?: string }> {
-  const dailyDir = join(rolePath, "memory", "daily");
-  const memories: Array<{ text: string; date: string; time?: string }> = [];
+/** One `## [HH:MM] KIND` block inside a day's journal file. */
+export interface DailyEntry {
+  /** Position in the file: the only stable handle an entry has. */
+  index: number;
+  time?: string;
+  kind?: string;
+  text: string;
+}
 
-  try {
-    const files = readdirSync(dailyDir)
-      .filter(f => /^\d{4}-\d{2}-\d{2}\.md$/.test(f))
-      .sort()
-      .reverse();
-    for (const file of files.slice(0, 30)) { // Latest 30 days
-      const date = file.replace('.md', '');
-      const content = readFileSync(join(dailyDir, file), 'utf-8');
-      // Parse entries (## [HH:MM] text format)
-      const entries = content.split(/^## /m).filter(Boolean);
-      for (const entry of entries) {
-        const lines = entry.trim().split('\n');
-        const firstLine = lines[0] || '';
-        const text = lines.slice(1).join(' ').trim();
-        if (text) {
-          // Extract time from first line if present
-          const timeMatch = firstLine.match(/^\[(\d{2}:\d{2})\]/);
-          memories.push({
-            text,
-            date,
-            time: timeMatch ? timeMatch[1] : undefined
-          });
-        }
-      }
+const DAILY_HEADING = /^##\s+(?:\[(\d{1,2}:\d{2})\]\s*)?(.*)$/;
+const DAILY_WINDOW_DAYS = 30;
+
+/** Keeps every block, including empty ones, so indices address the real file. */
+export function parseDailyEntries(content: string): DailyEntry[] {
+  const entries: DailyEntry[] = [];
+  let current: { time?: string; kind?: string; body: string[] } | null = null;
+
+  const flush = () => {
+    if (!current) return;
+    entries.push({
+      index: entries.length,
+      time: current.time,
+      kind: current.kind,
+      text: current.body.join("\n").trim(),
+    });
+    current = null;
+  };
+
+  for (const line of content.split(/\r?\n/)) {
+    const heading = line.match(DAILY_HEADING);
+    if (heading) {
+      flush();
+      current = { time: heading[1] || undefined, kind: heading[2].trim() || undefined, body: [] };
+      continue;
     }
+    // Lines before the first heading are the `# Memory: <date>` title block.
+    if (current) current.body.push(line);
+  }
+  flush();
+
+  return entries;
+}
+
+export function renderDailyFile(date: string, entries: DailyEntry[]): string {
+  const lines: string[] = [`# Memory: ${date}`, ""];
+  for (const entry of entries) {
+    const label = [entry.time ? `[${entry.time}]` : "", entry.kind || ""].filter(Boolean).join(" ").trim();
+    lines.push(`## ${label || "Entry"}`, "", entry.text.trim(), "");
+  }
+  // Trailing blank line keeps appendDailyRoleMemory's concatenation clean.
+  return lines.join("\n") + "\n";
+}
+
+export interface DailyMemory extends DailyEntry {
+  date: string;
+}
+
+/** Recent journal entries, newest day first; empty blocks are not shown. */
+export function readDailyMemories(rolePath: string): DailyMemory[] {
+  let files: string[];
+  try {
+    files = readdirSync(dailyMemoryDir(rolePath))
+      .filter((f) => /^\d{4}-\d{2}-\d{2}\.md$/.test(f))
+      .sort()
+      .reverse()
+      .slice(0, DAILY_WINDOW_DAYS);
   } catch {
-    // Daily dir may not exist
+    return []; // daily dir may not exist yet
   }
 
+  const memories: DailyMemory[] = [];
+  for (const file of files) {
+    const date = file.replace(/\.md$/, "");
+    let content: string;
+    try {
+      content = readFileSync(join(dailyMemoryDir(rolePath), file), "utf-8");
+    } catch {
+      continue;
+    }
+    for (const entry of parseDailyEntries(content)) {
+      if (entry.text) memories.push({ ...entry, date });
+    }
+  }
   return memories;
+}
+
+function rewriteDailyFile(
+  rolePath: string,
+  date: string,
+  action: string,
+  mutate: (entries: DailyEntry[]) => string | null,
+): { ok: boolean; reason?: string } {
+  const file = dailyMemoryPath(rolePath, date);
+  if (!existsSync(file)) return { ok: false, reason: "not found" };
+
+  const previous = readFileSync(file, "utf-8");
+  const entries = parseDailyEntries(previous);
+  const rejection = mutate(entries);
+  if (rejection) return { ok: false, reason: rejection };
+
+  writeCommittedMemoryFile(rolePath, file, renderDailyFile(date, entries), `${action} ${date}`, {
+    expectedContent: previous,
+  });
+  return { ok: true };
+}
+
+/**
+ * Rewrite one journal entry. `expectedText` is the copy the caller was looking
+ * at: indices shift when the agent appends, so the content is what confirms
+ * the caller and the file still agree on which entry this is.
+ */
+export function updateDailyEntry(
+  rolePath: string,
+  date: string,
+  index: number,
+  text: string,
+  expectedText?: string,
+): { updated: boolean; reason?: string } {
+  const next = text.trim();
+  if (!next) return { updated: false, reason: "empty" };
+
+  // The mutator returns a rejection reason, or null when it applied cleanly.
+  const result = rewriteDailyFile(rolePath, date, "edit daily memory", (entries) => {
+    const entry = entries[index];
+    if (!entry) return "not found";
+    if (expectedText !== undefined && entry.text !== expectedText) return "changed";
+    entry.text = next;
+    return null;
+  });
+
+  if (result.ok) log("daily-memory", `edited ${date}#${index}: ${next.slice(0, 120)}`);
+  return { updated: result.ok, reason: result.reason };
+}
+
+export function deleteDailyEntry(
+  rolePath: string,
+  date: string,
+  index: number,
+  expectedText?: string,
+): { deleted: boolean; reason?: string } {
+  const result = rewriteDailyFile(rolePath, date, "delete daily memory", (entries) => {
+    const entry = entries[index];
+    if (!entry) return "not found";
+    if (expectedText !== undefined && entry.text !== expectedText) return "changed";
+    entries.splice(index, 1);
+    return null;
+  });
+
+  if (result.ok) log("daily-memory", `deleted ${date}#${index}`);
+  return { deleted: result.ok, reason: result.reason };
 }
