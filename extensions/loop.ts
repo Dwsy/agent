@@ -2,14 +2,23 @@
  * 循环扩展 (Loop Extension)
  *
  * 提供 /loop 命令，启动一个带跳出条件的循环。
- * 循环会在每次回合结束时发送提示，直到 Agent 调用 signal_loop_success 工具。
+ * 循环会在每次回合结束时发送提示，直到 Agent 调用 signal_loop_success 工具，
+ * 或达到最大轮数 / 连续错误上限。
+ *
+ * 用法:
+ *   /loop                      交互式选择循环模式 (TUI)
+ *   /loop self                 自主模式
+ *   /loop debug | tdd | review | verify | tests
+ *   /loop custom <条件>        自定义跳出条件
+ *   /loop <模式> --max 20      覆盖最大轮数（默认 50）
+ *   /loop status               查看当前循环状态
+ *   /loop stop                 停止循环
  */
 
 import { Type } from "@sinclair/typebox";
-import { complete, type Api, type Model, type UserMessage } from "@earendil-works/pi-ai";
-import type { ExtensionAPI, ExtensionContext, SessionSwitchEvent } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { compact } from "@earendil-works/pi-coding-agent";
-import { Container, type SelectItem, SelectList, Text } from "@earendil-works/pi-tui";
+import { type AutocompleteItem, Container, type SelectItem, SelectList, Text } from "@earendil-works/pi-tui";
 import { DynamicBorder } from "@earendil-works/pi-coding-agent";
 
 type LoopMode = "tests" | "custom" | "self" | "debug" | "tdd" | "review" | "verify";
@@ -19,8 +28,8 @@ type LoopStateData = {
 	mode?: LoopMode;
 	condition?: string;
 	prompt?: string;
-	summary?: string;
 	loopCount?: number;
+	maxLoops?: number;
 };
 
 const LOOP_PRESETS = [
@@ -34,17 +43,16 @@ const LOOP_PRESETS = [
 	{ value: "stop", label: "停止当前循环", description: "结束当前循环" },
 ] as const;
 
+const LOOP_MODES: readonly LoopMode[] = ["self", "debug", "tdd", "review", "verify", "tests", "custom"];
+
 const LOOP_STATE_ENTRY = "loop-state";
 
-const HAIKU_MODEL_ID = "claude-haiku-4-5";
+/** 防失控：默认最大轮数与连续错误上限 */
+const DEFAULT_MAX_LOOPS = 50;
+const MAX_CONSECUTIVE_ERRORS = 3;
 
-const SUMMARY_SYSTEM_PROMPT = `你为状态小部件总结循环跳出条件。
-返回一个简洁的短语（最多6个字），说明循环应该在何时停止。
-仅使用纯文本，不要引号，不要标点，不要前缀。
-
-格式应该是 "当...时停止"、"循环直到..."、"运行至..." 或类似表达。
-使用最适合该循环条件的形式。
-`;
+const USAGE_TEXT =
+	"用法: /loop self | debug | tdd | review | verify | tests | custom <条件> [--max N] | status | stop";
 
 function buildPrompt(mode: LoopMode, condition?: string): string {
 	switch (mode) {
@@ -114,6 +122,7 @@ function buildPrompt(mode: LoopMode, condition?: string): string {
 	}
 }
 
+/** 状态小部件用的短摘要 */
 function summarizeCondition(mode: LoopMode, condition?: string): string {
 	switch (mode) {
 		case "tests":
@@ -135,6 +144,7 @@ function summarizeCondition(mode: LoopMode, condition?: string): string {
 	}
 }
 
+/** 压缩指令等场景用的完整条件描述 */
 function getConditionText(mode: LoopMode, condition?: string): string {
 	switch (mode) {
 		case "tests":
@@ -154,68 +164,6 @@ function getConditionText(mode: LoopMode, condition?: string): string {
 	}
 }
 
-async function selectSummaryModel(
-	ctx: ExtensionContext,
-): Promise<{ model: Model<Api>; apiKey: string } | null> {
-	if (!ctx.model) return null;
-
-	if (ctx.model.provider === "anthropic") {
-		const haikuModel = ctx.modelRegistry.find("anthropic", HAIKU_MODEL_ID);
-		if (haikuModel) {
-			const auth = await ctx.modelRegistry.getApiKeyAndHeaders(haikuModel);
-			if (auth.ok && auth.apiKey) {
-				return { model: haikuModel, apiKey: auth.apiKey };
-			}
-		}
-	}
-
-	const auth = await ctx.modelRegistry.getApiKeyAndHeaders(ctx.model);
-	if (!auth.ok || !auth.apiKey) return null;
-	return { model: ctx.model, apiKey: auth.apiKey };
-}
-
-async function summarizeBreakoutCondition(
-	ctx: ExtensionContext,
-	mode: LoopMode,
-	condition?: string,
-): Promise<string> {
-	// 功能已禁用，直接返回本地摘要
-	return Promise.resolve(summarizeCondition(mode, condition));
-
-	/* 原来使用 AI 模型生成摘要的逻辑已禁用
-	const fallback = summarizeCondition(mode, condition);
-	const selection = await selectSummaryModel(ctx);
-	if (!selection) return fallback;
-
-	const conditionText = getConditionText(mode, condition);
-	const userMessage: UserMessage = {
-		role: "user",
-		content: [{ type: "text", text: conditionText }],
-		timestamp: Date.now(),
-	};
-
-	const response = await complete(
-		selection.model,
-		{ systemPrompt: SUMMARY_SYSTEM_PROMPT, messages: [userMessage] },
-		{ apiKey: selection.apiKey },
-	);
-
-	if (response.stopReason === "aborted" || response.stopReason === "error") {
-		return fallback;
-	}
-
-	const summary = response.content
-		.filter((c): c is { type: "text"; text: string } => c.type === "text")
-		.map((c) => c.text)
-		.join(" ")
-		.replace(/\s+/g, " ")
-		.trim();
-
-	if (!summary) return fallback;
-	return summary.length > 60 ? `${summary.slice(0, 57)}...` : summary;
-	*/
-}
-
 function getCompactionInstructions(mode: LoopMode, condition?: string): string {
 	const conditionText = getConditionText(mode, condition);
 	return `循环进行中。跳出条件：${conditionText}。请在摘要中保留此循环状态和跳出条件。`;
@@ -228,11 +176,9 @@ function updateStatus(ctx: ExtensionContext, state: LoopStateData): void {
 		return;
 	}
 	const loopCount = state.loopCount ?? 0;
-	const turnText = `(第 ${loopCount} 轮)`;
-	const summary = state.summary?.trim();
-	const text = summary
-		? `循环进行中: ${summary} ${turnText}`
-		: `循环进行中 ${turnText}`;
+	const maxLoops = state.maxLoops ?? DEFAULT_MAX_LOOPS;
+	const summary = summarizeCondition(state.mode, state.condition);
+	const text = `循环进行中: ${summary} (第 ${loopCount}/${maxLoops} 轮)`;
 	ctx.ui.setWidget("loop", [ctx.ui.theme.fg("accent", text)]);
 }
 
@@ -247,66 +193,85 @@ async function loadState(ctx: ExtensionContext): Promise<LoopStateData> {
 	return { active: false };
 }
 
-/** Check if running in RPC mode (headless, no TUI) */
-function isRpcMode(): boolean {
-	return process.argv.includes("--mode") && process.argv.includes("rpc");
+/** 从参数中提取 --max N（或 --max=N），返回剩余参数与上限 */
+function extractMaxLoops(args: string): { rest: string; maxLoops?: number } {
+	const match = args.match(/--max[= ]+(\d+)/);
+	if (!match) return { rest: args };
+	const rest = args.replace(match[0], " ").replace(/\s+/g, " ").trim();
+	const value = Number(match[1]);
+	return value > 0 ? { rest, maxLoops: value } : { rest };
 }
 
-/** Notify user — falls back to console in headless (RPC) mode */
-function notify(ctx: ExtensionContext, message: string, type: "info" | "warning" | "error" = "info"): void {
-	if (ctx.hasUI && ctx.ui.notify) {
-		ctx.ui.notify(message, type);
-	} else if (!isRpcMode()) {
-		// eslint-disable-next-line no-console
-		console.log(`[${type.toUpperCase()}] ${message}`);
-	}
+function makeState(mode: LoopMode, condition?: string, maxLoops?: number): LoopStateData {
+	return {
+		active: true,
+		mode,
+		condition,
+		prompt: buildPrompt(mode, condition),
+		loopCount: 0,
+		maxLoops,
+	};
+}
+
+function modeLabel(mode: LoopMode): string {
+	return LOOP_PRESETS.find((preset) => preset.value === mode)?.label ?? mode;
 }
 
 export default function loopExtension(pi: ExtensionAPI): void {
 	let loopState: LoopStateData = { active: false };
-
-	function persistState(state: LoopStateData): void {
-		pi.appendEntry(LOOP_STATE_ENTRY, state);
-	}
+	let consecutiveErrors = 0;
 
 	function setLoopState(state: LoopStateData, ctx: ExtensionContext): void {
 		loopState = state;
-		persistState(state);
+		consecutiveErrors = 0;
+		pi.appendEntry(LOOP_STATE_ENTRY, state);
 		updateStatus(ctx, state);
 	}
 
-	function clearLoopState(ctx: ExtensionContext): void {
-		const cleared: LoopStateData = { active: false };
-		loopState = cleared;
-		persistState(cleared);
-		updateStatus(ctx, cleared);
+	function stopLoop(ctx: ExtensionContext, message: string, type: "info" | "warning" = "info"): void {
+		setLoopState({ active: false }, ctx);
+		ctx.ui.notify(message, type);
 	}
 
-	function breakLoop(ctx: ExtensionContext): void {
-		clearLoopState(ctx);
-		notify(ctx, "循环已结束", "info");
-	}
-
-	function wasLastAssistantAborted(messages: Array<{ role?: string; stopReason?: string }>): boolean {
+	function lastAssistantStopReason(messages: Array<{ role?: string; stopReason?: string }>): string | undefined {
 		for (let i = messages.length - 1; i >= 0; i--) {
 			const message = messages[i];
 			if (message?.role === "assistant") {
-				return message.stopReason === "aborted";
+				return message.stopReason;
 			}
 		}
-		return false;
+		return undefined;
 	}
 
 	function triggerLoopPrompt(ctx: ExtensionContext): void {
-		if (!loopState.active || !loopState.mode || !loopState.prompt) return;
+		const prompt = loopState.prompt;
+		if (!loopState.active || !loopState.mode || !prompt) return;
 		if (ctx.hasPendingMessages()) return;
 
 		const loopCount = (loopState.loopCount ?? 0) + 1;
+		const maxLoops = loopState.maxLoops ?? DEFAULT_MAX_LOOPS;
+		if (loopCount > maxLoops) {
+			stopLoop(ctx, `循环已达最大 ${maxLoops} 轮，自动停止`, "warning");
+			return;
+		}
+
 		loopState = { ...loopState, loopCount };
-		persistState(loopState);
+		pi.appendEntry(LOOP_STATE_ENTRY, loopState);
 		updateStatus(ctx, loopState);
 
-		pi.sendUserMessage(loopState.prompt, { deliverAs: "followUp" });
+		pi.sendUserMessage(prompt, { deliverAs: "followUp" });
+	}
+
+	function showStatus(ctx: ExtensionContext): void {
+		if (!loopState.active || !loopState.mode) {
+			ctx.ui.notify("当前没有运行中的循环", "info");
+			return;
+		}
+		const maxLoops = loopState.maxLoops ?? DEFAULT_MAX_LOOPS;
+		const text =
+			`循环进行中: ${modeLabel(loopState.mode)} · 第 ${loopState.loopCount ?? 0}/${maxLoops} 轮` +
+			` · 跳出条件: ${getConditionText(loopState.mode, loopState.condition)}`;
+		ctx.ui.notify(text, "info");
 	}
 
 	async function showLoopSelector(ctx: ExtensionContext): Promise<LoopStateData | "stop" | null> {
@@ -354,76 +319,43 @@ export default function loopExtension(pi: ExtensionAPI): void {
 		});
 
 		if (!selection) return null;
+		if (selection === "stop") return "stop";
 
-		switch (selection) {
-			case "stop":
-				return "stop";
-			case "tests":
-				return { active: true, mode: "tests", prompt: buildPrompt("tests") };
-			case "self":
-				return { active: true, mode: "self", prompt: buildPrompt("self") };
-			case "debug":
-				return { active: true, mode: "debug", prompt: buildPrompt("debug") };
-			case "tdd":
-				return { active: true, mode: "tdd", prompt: buildPrompt("tdd") };
-			case "review":
-				return { active: true, mode: "review", prompt: buildPrompt("review") };
-			case "verify":
-				return { active: true, mode: "verify", prompt: buildPrompt("verify") };
-			case "custom": {
-				const condition = await ctx.ui.editor("输入循环跳出条件:", "");
-				if (!condition?.trim()) return null;
-				return {
-					active: true,
-					mode: "custom",
-					condition: condition.trim(),
-					prompt: buildPrompt("custom", condition.trim()),
-				};
-			}
-			default:
-				return null;
+		if (selection === "custom") {
+			const condition = await ctx.ui.editor("输入循环跳出条件:", "");
+			if (!condition?.trim()) return null;
+			return makeState("custom", condition.trim());
 		}
+
+		return makeState(selection as LoopMode);
 	}
 
-	function parseArgs(args: string | undefined): LoopStateData | "stop" | null {
-		if (!args?.trim()) return null;
-		const parts = args.trim().split(/\s+/);
+	function parseArgs(args: string): LoopStateData | "stop" | null {
+		const { rest, maxLoops } = extractMaxLoops(args);
+		if (!rest) return null;
+		const parts = rest.split(/\s+/);
 		const mode = parts[0]?.toLowerCase();
 
-		switch (mode) {
-			case "stop":
-				return "stop";
-			case "tests":
-				return { active: true, mode: "tests", prompt: buildPrompt("tests") };
-			case "self":
-				return { active: true, mode: "self", prompt: buildPrompt("self") };
-			case "debug":
-				return { active: true, mode: "debug", prompt: buildPrompt("debug") };
-			case "tdd":
-				return { active: true, mode: "tdd", prompt: buildPrompt("tdd") };
-			case "review":
-				return { active: true, mode: "review", prompt: buildPrompt("review") };
-			case "verify":
-				return { active: true, mode: "verify", prompt: buildPrompt("verify") };
-			case "custom": {
-				const condition = parts.slice(1).join(" ").trim();
-				if (!condition) return null;
-				return {
-					active: true,
-					mode: "custom",
-					condition,
-					prompt: buildPrompt("custom", condition),
-				};
-			}
-			default:
-				return null;
+		if (mode === "stop") return "stop";
+
+		if (mode === "custom") {
+			const condition = parts.slice(1).join(" ").trim();
+			if (!condition) return null;
+			return makeState("custom", condition, maxLoops);
 		}
+
+		if ((LOOP_MODES as readonly string[]).includes(mode ?? "")) {
+			return makeState(mode as LoopMode, undefined, maxLoops);
+		}
+
+		return null;
 	}
 
 	pi.registerTool({
 		name: "signal_loop_success",
 		label: "标记循环成功",
-		description: "仅在当前循环模式的跳出条件已由证据满足时停止循环。部分进展、失败、无法验证或等待用户输入都不算成功。",
+		description:
+			"仅在当前循环模式的跳出条件已由证据满足时停止循环。部分进展、失败、无法验证或等待用户输入都不算成功。",
 		parameters: Type.Object({}),
 		async execute(_toolCallId, _params, _signal, _onUpdate, ctx) {
 			if (!loopState.active) {
@@ -433,22 +365,45 @@ export default function loopExtension(pi: ExtensionAPI): void {
 				};
 			}
 
-			clearLoopState(ctx);
+			const rounds = loopState.loopCount ?? 0;
+			setLoopState({ active: false }, ctx);
+			ctx.ui.notify(`循环已完成（共 ${rounds} 轮）`, "info");
 
 			return {
-				content: [{ type: "text", text: "循环已结束。" }],
-				details: { active: false },
+				content: [{ type: "text", text: `循环已结束（共 ${rounds} 轮）。` }],
+				details: { active: false, rounds },
 			};
 		},
 	});
 
 	pi.registerCommand("loop", {
 		description: "启动循环执行，直到满足跳出条件",
+		getArgumentCompletions: (argumentPrefix): AutocompleteItem[] | null => {
+			const items: AutocompleteItem[] = [
+				...LOOP_PRESETS.map((preset) => ({
+					value: preset.value,
+					label: preset.value,
+					description: preset.description,
+				})),
+				{ value: "status", label: "status", description: "查看当前循环状态" },
+			];
+			const prefix = argumentPrefix.trim().toLowerCase();
+			const filtered = items.filter((item) => item.value.startsWith(prefix));
+			return filtered.length > 0 ? filtered : null;
+		},
 		handler: async (args, ctx) => {
-			let nextState = parseArgs(args);
+			const trimmed = args?.trim() ?? "";
+
+			if (trimmed.toLowerCase() === "status") {
+				showStatus(ctx);
+				return;
+			}
+
+			let nextState = trimmed ? parseArgs(trimmed) : null;
 			if (!nextState) {
-				if (!ctx.hasUI) {
-					ctx.ui.notify("用法: /loop self | /loop debug | /loop tdd | /loop review | /loop verify | /loop tests | /loop custom <条件> | /loop stop", "warning");
+				if (trimmed || ctx.mode !== "tui") {
+					// 参数无法解析，或非 TUI 模式无法弹出选择器
+					ctx.ui.notify(USAGE_TEXT, "warning");
 					return;
 				}
 				nextState = await showLoopSelector(ctx);
@@ -464,7 +419,7 @@ export default function loopExtension(pi: ExtensionAPI): void {
 					ctx.ui.notify("当前没有运行中的循环", "info");
 					return;
 				}
-				breakLoop(ctx);
+				stopLoop(ctx, "循环已结束");
 				return;
 			}
 
@@ -478,35 +433,38 @@ export default function loopExtension(pi: ExtensionAPI): void {
 				}
 			}
 
-			const summarizedState: LoopStateData = { ...nextState, summary: undefined, loopCount: 0 };
-			setLoopState(summarizedState, ctx);
+			setLoopState(nextState, ctx);
 			ctx.ui.notify("循环已启动", "info");
 			triggerLoopPrompt(ctx);
-
-			const mode = nextState.mode!;
-			const condition = nextState.condition;
-			void (async () => {
-				const summary = await summarizeBreakoutCondition(ctx, mode, condition);
-				if (!loopState.active || loopState.mode !== mode || loopState.condition !== condition) return;
-				loopState = { ...loopState, summary };
-				persistState(loopState);
-				updateStatus(ctx, loopState);
-			})();
 		},
 	});
 
 	pi.on("agent_end", async (event, ctx) => {
 		if (!loopState.active) return;
 
-		if (ctx.hasUI && wasLastAssistantAborted(event.messages)) {
-			const confirm = await ctx.ui.confirm(
-				"终止当前循环?",
-				"操作已中止。是否跳出循环?",
-			);
-			if (confirm) {
-				breakLoop(ctx);
+		const stopReason = lastAssistantStopReason(event.messages);
+
+		if (stopReason === "aborted") {
+			// 无 UI 时中止即视为用户想停下，避免和用户抢控制权
+			if (!ctx.hasUI) {
+				stopLoop(ctx, "操作已中止，循环已结束");
 				return;
 			}
+			const confirm = await ctx.ui.confirm("终止当前循环?", "操作已中止。是否跳出循环?");
+			if (confirm) {
+				stopLoop(ctx, "循环已结束");
+				return;
+			}
+		}
+
+		if (stopReason === "error") {
+			consecutiveErrors++;
+			if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+				stopLoop(ctx, `连续 ${MAX_CONSECUTIVE_ERRORS} 次出错，循环已自动停止`, "warning");
+				return;
+			}
+		} else {
+			consecutiveErrors = 0;
 		}
 
 		triggerLoopPrompt(ctx);
@@ -521,8 +479,13 @@ export default function loopExtension(pi: ExtensionAPI): void {
 			.filter(Boolean)
 			.join("\n\n");
 
+		// ProviderHeaders 中 null 表示删除该请求头，compact 只接受纯字符串值
+		const headers = auth.headers
+			? Object.fromEntries(Object.entries(auth.headers).filter(([, v]) => v !== null) as [string, string][])
+			: undefined;
+
 		try {
-			const compaction = await compact(event.preparation, ctx.model, auth.apiKey, instructionParts, event.signal);
+			const compaction = await compact(event.preparation, ctx.model, auth.apiKey, headers, instructionParts, event.signal);
 			return { compaction };
 		} catch (error) {
 			if (ctx.hasUI) {
@@ -535,26 +498,12 @@ export default function loopExtension(pi: ExtensionAPI): void {
 
 	async function restoreLoopState(ctx: ExtensionContext): Promise<void> {
 		loopState = await loadState(ctx);
+		consecutiveErrors = 0;
 		updateStatus(ctx, loopState);
-
-		if (loopState.active && loopState.mode && !loopState.summary) {
-			const mode = loopState.mode;
-			const condition = loopState.condition;
-			void (async () => {
-				const summary = await summarizeBreakoutCondition(ctx, mode, condition);
-				if (!loopState.active || loopState.mode !== mode || loopState.condition !== condition) return;
-				loopState = { ...loopState, summary };
-				persistState(loopState);
-				updateStatus(ctx, loopState);
-			})();
-		}
 	}
 
+	// 会话启动/恢复/重载/fork 时恢复循环状态（此版本已无独立的 session_switch 事件）
 	pi.on("session_start", async (_event, ctx) => {
-		await restoreLoopState(ctx);
-	});
-
-	pi.on("session_switch", async (_event: SessionSwitchEvent, ctx) => {
 		await restoreLoopState(ctx);
 	});
 }
