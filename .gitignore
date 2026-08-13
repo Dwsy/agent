@@ -229,9 +229,17 @@ auth.json.lock
 .qoder/
 .superset/
 30
-models.json.backup-*
 session-slim-*.jsonl
 usage-data/
+
+# models.json and any of its backups embed live provider API keys
+models.json.*
+
+# Playwright CLI page snapshots (transient debugging artifacts)
+**/.playwright-cli/
+
+# Role/session research reports (real client and channel identities)
+docs/guides/20260731-Pi全角色与全对话价值研究.md
 
 # ACE Tool environment
 .ace-env
