@@ -1,0 +1,40 @@
+{
+  "name": "session-explorer",
+  "version": "0.1.0",
+  "description": "Pi extension: browse, search and read past Pi coding sessions in a local web UI",
+  "type": "module",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src",
+    "public",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node --test \"test/*.test.mjs\"",
+    "serve": "node --experimental-strip-types scripts/serve.mjs"
+  },
+  "keywords": [
+    "pi-package",
+    "pi",
+    "pi-extension",
+    "pi-coding-agent",
+    "sessions",
+    "search",
+    "transcript"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": ">=0.52.0"
+  }
+}

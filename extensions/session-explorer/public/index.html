@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="zh" data-theme="system">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Session Explorer</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' rx='4' fill='%234a9eff'/><path d='M4 5h8M4 8h6M4 11h4' stroke='white' stroke-width='1.5' stroke-linecap='round'/></svg>" />
+    <link rel="stylesheet" href="./css/app.css" />
+  </head>
+  <body>
+    <div class="app" id="app">
+      <header class="topbar">
+        <button class="icon-btn topbar__menu" id="menu-toggle" type="button" aria-expanded="false"></button>
+
+        <div class="brand">
+          <span class="brand__mark" aria-hidden="true"></span>
+          <span class="brand__name">Session Explorer</span>
+        </div>
+
+        <form class="search" id="search-form" role="search">
+          <span class="search__icon" aria-hidden="true"></span>
+          <input
+            class="search__input"
+            id="search-input"
+            type="search"
+            autocomplete="off"
+            spellcheck="false"
+            enterkeyhint="search"
+          />
+          <kbd class="search__hint" id="search-hint">/</kbd>
+          <button class="search__clear icon-btn" id="search-clear" type="button" hidden></button>
+        </form>
+
+        <div class="topbar__actions">
+          <button class="icon-btn" id="theme-toggle" type="button"></button>
+          <button class="icon-btn icon-btn--text" id="locale-toggle" type="button"></button>
+        </div>
+      </header>
+
+      <div class="layout">
+        <aside class="sidebar" id="sidebar">
+          <div class="sidebar__scroll">
+            <section class="filter">
+              <h2 class="filter__title" data-i18n="filters.range"></h2>
+              <div class="chips" id="range-chips" role="group"></div>
+            </section>
+
+            <section class="filter">
+              <h2 class="filter__title" data-i18n="filters.sort"></h2>
+              <div class="chips" id="sort-chips" role="group"></div>
+            </section>
+
+            <section class="filter filter--grow">
+              <h2 class="filter__title">
+                <span data-i18n="filters.projects"></span>
+                <button class="link-btn" id="project-clear" type="button" hidden data-i18n="filters.clear"></button>
+              </h2>
+              <input
+                class="filter__search"
+                id="project-filter"
+                type="search"
+                autocomplete="off"
+                spellcheck="false"
+              />
+              <div class="project-list" id="project-list"></div>
+            </section>
+          </div>
+
+          <footer class="sidebar__footer" id="status-bar"></footer>
+        </aside>
+
+        <div class="sidebar-scrim" id="sidebar-scrim" hidden></div>
+
+        <main class="results" id="results-pane">
+          <div class="results__head">
+            <h1 class="results__title" id="results-title"></h1>
+            <div class="results__meta" id="results-meta"></div>
+          </div>
+          <div class="results__body" id="results-body"></div>
+        </main>
+
+        <section class="reader" id="reader-pane" aria-live="polite">
+          <div class="reader__empty" id="reader-empty">
+            <span class="reader__empty-mark" aria-hidden="true"></span>
+            <p data-i18n="reader.empty"></p>
+            <p class="reader__empty-hint" data-i18n="reader.emptyHint"></p>
+          </div>
+          <div class="reader__inner" id="reader-inner" hidden>
+            <header class="reader__head" id="reader-head"></header>
+            <div class="reader__columns">
+              <nav class="outline" id="outline" aria-label="Outline"></nav>
+              <div class="transcript" id="transcript"></div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+    <script type="module" src="./js/app.js"></script>
+  </body>
+</html>
