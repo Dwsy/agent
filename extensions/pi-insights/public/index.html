@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark" data-locale="zh">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+	<meta name="color-scheme" content="light dark">
+	<title>Pi Insights</title>
+	<script>
+		// Resolve theme and locale before first paint so the shell never flashes.
+		(() => {
+			try {
+				const mode = localStorage.getItem("pi-insights-theme") || "system";
+				const root = document.documentElement;
+				root.dataset.themeMode = mode;
+				root.dataset.theme = mode === "system" ? (matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark") : mode;
+				const saved = localStorage.getItem("pi-insights-locale");
+				const locale = saved === "zh" || saved === "en" ? saved : /^zh\b/i.test(navigator.language || "") ? "zh" : "en";
+				root.dataset.locale = locale;
+				root.lang = locale === "zh" ? "zh-CN" : "en";
+			} catch {}
+		})();
+	</script>
+	<link rel="stylesheet" href="/css/app.css">
+	<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231b1e24'/%3E%3Cpath d='M7 24V9m0 15h18M11 24v-7m5 7V13m5 11v-9' stroke='%2357a5ff' stroke-width='2.2' stroke-linecap='round'/%3E%3C/svg%3E">
+</head>
+<body>
+	<div class="app" id="app" aria-busy="true">
+		<header class="topbar">
+			<div class="brand">
+				<span class="brand-mark" aria-hidden="true">
+					<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V6"/><path d="M4 19h16"/><path d="M8 19v-6"/><path d="M12.5 19V9"/><path d="M17 19v-9.5"/></svg>
+				</span>
+				<span class="brand-text">
+					<span class="brand-name" data-text="app.name"></span>
+					<span class="brand-tagline" data-text="app.tagline"></span>
+				</span>
+			</div>
+
+			<div class="segmented" id="rangeGroup" role="group" data-label="range.label">
+				<button type="button" data-range="24h"></button>
+				<button type="button" data-range="7d"></button>
+				<button type="button" data-range="30d"></button>
+				<button type="button" data-range="90d"></button>
+				<button type="button" data-range="all"></button>
+			</div>
+
+			<label class="search" for="search">
+				<svg aria-hidden="true" viewBox="0 0 24 24"><path d="M11 4.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13Z"/><path d="m16 16 3.8 3.8"/></svg>
+				<input id="search" type="search" autocomplete="off" spellcheck="false" data-placeholder="search.placeholder" data-label="search.label">
+				<kbd>/</kbd>
+			</label>
+
+			<div class="topbar-actions">
+				<button class="text-button" id="rescan" type="button"></button>
+				<button class="icon-button" id="theme" type="button"></button>
+				<button class="text-button" id="locale" type="button"></button>
+			</div>
+		</header>
+
+		<div class="provenance" id="provenance" aria-live="polite"></div>
+
+		<div class="workbench">
+			<nav class="nav" id="nav" data-label="nav.label">
+				<button type="button" data-view="overview" data-key="1"><span class="nav-label"></span><span class="nav-key">1</span></button>
+				<button type="button" data-view="sessions" data-key="2"><span class="nav-label"></span><span class="nav-key">2</span></button>
+				<button type="button" data-view="models" data-key="3"><span class="nav-label"></span><span class="nav-key">3</span></button>
+				<button type="button" data-view="tools" data-key="4"><span class="nav-label"></span><span class="nav-key">4</span></button>
+				<button type="button" data-view="projects" data-key="5"><span class="nav-label"></span><span class="nav-key">5</span></button>
+				<div class="nav-foot">
+					<p class="eyebrow" data-text="kbd.label"></p>
+					<dl>
+						<dt>/</dt>
+						<dd data-text="kbd.search"></dd>
+						<dt>1-5</dt>
+						<dd data-text="kbd.views"></dd>
+						<dt>Esc</dt>
+						<dd data-text="kbd.close"></dd>
+					</dl>
+				</div>
+			</nav>
+
+			<main class="view" id="view" tabindex="-1"></main>
+		</div>
+	</div>
+
+	<div class="scrim" id="scrim" hidden></div>
+	<aside class="detail" id="detail" role="dialog" aria-modal="true" data-label="detail.eyebrow" hidden></aside>
+
+	<script type="module" src="/js/main.js"></script>
+</body>
+</html>

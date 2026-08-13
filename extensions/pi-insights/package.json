@@ -1,15 +1,44 @@
 {
   "name": "pi-insights",
-  "version": "0.1.0",
-  "description": "Pi Agent Insights - Analyze your AI coding patterns",
-  "main": "dist/index.js",
+  "version": "0.2.0",
+  "description": "Pi extension: local usage analytics for Pi coding sessions — tokens, cost, tools, and edits read straight from session transcripts",
   "type": "module",
-  "scripts": {
-    "build": "tsc",
-    "dev": "tsc --watch",
-    "test": "echo \"No tests yet\""
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
   },
-  "keywords": ["pi", "insights", "analytics", "productivity"],
-  "author": "",
-  "license": "MIT"
+  "files": [
+    "src",
+    "public",
+    "docs",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node scripts/run-tests.mjs && node scripts/verify-public-ui.mjs",
+    "test:unit": "node scripts/run-tests.mjs",
+    "test:ui": "node scripts/verify-public-ui.mjs",
+    "test:visual": "python3 scripts/ui-visual-test.py"
+  },
+  "keywords": [
+    "pi-package",
+    "pi",
+    "pi-extension",
+    "pi-coding-agent",
+    "insights",
+    "analytics",
+    "usage",
+    "observability"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": ">=0.52.0"
+  }
 }
