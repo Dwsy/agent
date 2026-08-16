@@ -1,0 +1,566 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="description" content="DeepSeek Harness 深度研究：Cordis、插件架构、自我迭代、工具、外部 UI、社区反馈与 Pi Agent 对比。" />
+  <title>DeepSeek Harness 深度研究 · Agent Runtime 的下一层</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f7f8fb;
+      --surface: #ffffff;
+      --surface-2: #f1f4fb;
+      --text: #111827;
+      --muted: #667085;
+      --line: #e4e7ec;
+      --accent: #4d6bfe;
+      --accent-strong: #3151ef;
+      --accent-soft: #edf1ff;
+      --good: #137a58;
+      --warn: #9a5b13;
+      --code-bg: #111827;
+      --code-text: #e7ecff;
+      --max: 1160px;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0b0e14;
+        --surface: #11151d;
+        --surface-2: #171c27;
+        --text: #edf1f7;
+        --muted: #98a2b3;
+        --line: #252c3a;
+        --accent: #7c95ff;
+        --accent-strong: #9badff;
+        --accent-soft: #18203d;
+        --good: #5fd3a4;
+        --warn: #e5ad66;
+        --code-bg: #080b10;
+        --code-text: #dce5ff;
+      }
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Microsoft YaHei", Inter, system-ui, sans-serif;
+      line-height: 1.72;
+      -webkit-font-smoothing: antialiased;
+    }
+    a { color: var(--accent-strong); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .wrap { width: min(var(--max), calc(100% - 40px)); margin: 0 auto; }
+    .hero {
+      min-height: 76vh;
+      display: grid;
+      place-items: center;
+      padding: 86px 0 64px;
+      border-bottom: 1px solid var(--line);
+      background: var(--surface);
+    }
+    .hero-inner { width: min(980px, 100%); }
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 9px;
+      padding: 7px 11px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      color: var(--muted);
+      font-size: 13px;
+      letter-spacing: .02em;
+      background: var(--bg);
+    }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+    h1 {
+      margin: 26px 0 18px;
+      max-width: 930px;
+      font-size: clamp(48px, 8vw, 92px);
+      line-height: .98;
+      letter-spacing: -.055em;
+      font-weight: 760;
+    }
+    .accent { color: var(--accent); }
+    .lede {
+      max-width: 850px;
+      margin: 0;
+      color: var(--muted);
+      font-size: clamp(18px, 2.2vw, 24px);
+      line-height: 1.55;
+    }
+    .equation {
+      margin-top: 36px;
+      display: inline-flex;
+      gap: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+      padding: 14px 18px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: var(--bg);
+      font: 650 16px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+    .equation strong { color: var(--accent); }
+    .hero-meta { margin-top: 28px; color: var(--muted); font-size: 13px; }
+    nav {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      border-bottom: 1px solid var(--line);
+      background: color-mix(in srgb, var(--bg) 90%, transparent);
+      backdrop-filter: blur(16px) saturate(130%);
+      -webkit-backdrop-filter: blur(16px) saturate(130%);
+    }
+    .nav-inner {
+      min-height: 52px;
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      overflow-x: auto;
+      scrollbar-width: none;
+      white-space: nowrap;
+    }
+    .nav-inner::-webkit-scrollbar { display: none; }
+    .nav-inner a { color: var(--muted); font-size: 13px; font-weight: 560; }
+    .nav-inner a:hover { color: var(--text); text-decoration: none; }
+    main { padding: 12px 0 96px; }
+    section { padding: 76px 0 16px; scroll-margin-top: 54px; }
+    .section-kicker {
+      color: var(--accent);
+      font: 700 12px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+    }
+    h2 {
+      margin: 10px 0 18px;
+      max-width: 900px;
+      font-size: clamp(34px, 5vw, 56px);
+      line-height: 1.08;
+      letter-spacing: -.035em;
+    }
+    h3 { margin: 0 0 10px; font-size: 20px; letter-spacing: -.015em; }
+    p { margin: 0 0 18px; }
+    .intro { max-width: 880px; color: var(--muted); font-size: 19px; }
+    .verdict {
+      margin-top: 28px;
+      padding: 28px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: var(--surface);
+    }
+    .verdict strong { font-size: 22px; }
+    .grid { display: grid; gap: 14px; }
+    .grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .grid-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .card {
+      min-width: 0;
+      padding: 22px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: var(--surface);
+    }
+    .card p, .card li { color: var(--muted); font-size: 14px; }
+    .card ul { padding-left: 18px; margin: 10px 0 0; }
+    .tag {
+      display: inline-block;
+      margin-bottom: 13px;
+      padding: 4px 8px;
+      border-radius: 7px;
+      background: var(--accent-soft);
+      color: var(--accent-strong);
+      font: 700 11px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+      letter-spacing: .04em;
+    }
+    .architecture {
+      margin-top: 30px;
+      padding: 26px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: var(--surface);
+    }
+    .arch-row { display: grid; grid-template-columns: 155px 1fr; gap: 16px; align-items: stretch; }
+    .arch-row + .arch-row { margin-top: 12px; }
+    .arch-label {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 72px;
+      border-radius: 12px;
+      background: var(--accent-soft);
+      color: var(--accent-strong);
+      font-weight: 720;
+      text-align: center;
+      padding: 10px;
+    }
+    .arch-items { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+    .arch-item {
+      display: grid;
+      place-items: center;
+      min-height: 72px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--bg);
+      color: var(--muted);
+      text-align: center;
+      font-size: 13px;
+      padding: 10px;
+    }
+    .arch-arrow { text-align: center; color: var(--muted); margin: 10px 0; font: 700 15px ui-monospace, monospace; }
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 10px;
+      align-items: stretch;
+      margin-top: 28px;
+    }
+    .flow-step {
+      position: relative;
+      min-height: 150px;
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: var(--surface);
+    }
+    .flow-step:not(:last-child)::after {
+      content: "→";
+      position: absolute;
+      right: -18px;
+      top: 50%;
+      z-index: 2;
+      transform: translateY(-50%);
+      width: 26px;
+      text-align: center;
+      color: var(--accent);
+      font-weight: 800;
+    }
+    .flow-step b { display: block; margin-bottom: 8px; }
+    .flow-step span { color: var(--muted); font-size: 13px; }
+    .number { color: var(--accent); font: 700 12px ui-monospace, monospace; margin-bottom: 10px; }
+    .callout {
+      margin: 22px 0;
+      padding: 18px 20px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: var(--surface-2);
+      color: var(--muted);
+    }
+    .callout strong { color: var(--text); }
+    .callout.warn { border-color: color-mix(in srgb, var(--warn) 36%, var(--line)); }
+    .callout.good { border-color: color-mix(in srgb, var(--good) 36%, var(--line)); }
+    code {
+      padding: .16em .38em;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--surface-2);
+      color: var(--text);
+      font: 500 .9em ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+    pre {
+      overflow-x: auto;
+      margin: 18px 0 0;
+      padding: 20px;
+      border-radius: 14px;
+      background: var(--code-bg);
+      color: var(--code-text);
+      font: 500 13px/1.7 ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+    table {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 0;
+      margin-top: 26px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      overflow: hidden;
+      background: var(--surface);
+      font-size: 14px;
+    }
+    th, td { padding: 15px 16px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--line); }
+    tr:last-child td { border-bottom: 0; }
+    th { background: var(--surface-2); font-size: 12px; letter-spacing: .03em; }
+    td { color: var(--muted); }
+    td strong { color: var(--text); }
+    .metric-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 24px; }
+    .metric { padding: 20px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
+    .metric strong { display: block; font-size: 30px; line-height: 1.1; letter-spacing: -.03em; }
+    .metric span { color: var(--muted); font-size: 12px; }
+    .source-list { display: grid; gap: 10px; margin-top: 26px; }
+    .source {
+      display: grid;
+      grid-template-columns: 34px 1fr;
+      gap: 12px;
+      align-items: start;
+      padding: 14px 0;
+      border-bottom: 1px solid var(--line);
+    }
+    .source-index { color: var(--accent); font: 700 12px ui-monospace, monospace; }
+    .source b { display: block; margin-bottom: 3px; }
+    .source small { color: var(--muted); }
+    footer { padding: 34px 0 54px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
+    @media (max-width: 900px) {
+      .grid-4, .grid-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .arch-row { grid-template-columns: 1fr; }
+      .arch-items { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .flow { grid-template-columns: 1fr; }
+      .flow-step { min-height: auto; }
+      .flow-step:not(:last-child)::after { content: "↓"; right: auto; left: 50%; top: auto; bottom: -23px; transform: translateX(-50%); }
+    }
+    @media (max-width: 640px) {
+      .wrap { width: min(100% - 28px, var(--max)); }
+      .hero { min-height: auto; padding: 72px 0 52px; }
+      .grid-2, .grid-3, .grid-4, .metric-row { grid-template-columns: 1fr; }
+      .arch-items { grid-template-columns: 1fr; }
+      section { padding-top: 58px; }
+      table { display: block; overflow-x: auto; }
+      th, td { min-width: 150px; }
+    }
+  </style>
+</head>
+<body>
+  <header class="hero">
+    <div class="wrap hero-inner">
+      <div class="eyebrow"><span class="dot"></span> DeepSeek Harness · Developer Preview · 2026-08-14 调研快照</div>
+      <h1>模型是大脑。<br><span class="accent">Harness 是身体、神经和运行时。</span></h1>
+      <p class="lede">DeepSeek Harness 最重要的不是“又一个 AI 编程助手”，而是它试图把 Agent 的运行环境本身做成可组合、可替换、可回放、甚至可被 Agent 临时改写的系统。</p>
+      <div class="equation"><span>Agent</span><span>=</span><strong>Model</strong><span>+</span><strong>Harness</strong></div>
+      <div class="hero-meta">核心判断：它更接近 <b>Agent Runtime / AI System Substrate</b>，而不是 Claude Code 的简单复刻。</div>
+    </div>
+  </header>
+
+  <nav aria-label="页面目录">
+    <div class="wrap nav-inner">
+      <a href="#verdict">结论</a>
+      <a href="#architecture">架构</a>
+      <a href="#extensions">可扩展点</a>
+      <a href="#modes">四种模式</a>
+      <a href="#tools">工具</a>
+      <a href="#self-evolve">自我迭代</a>
+      <a href="#paper">论文</a>
+      <a href="#ui">外部 UI</a>
+      <a href="#pi">对比 Pi Agent</a>
+      <a href="#community">社区</a>
+      <a href="#future">它能成为什么</a>
+      <a href="#sources">来源</a>
+    </div>
+  </nav>
+
+  <main class="wrap">
+    <section id="verdict">
+      <div class="section-kicker">01 · Thesis</div>
+      <h2>它真正卖的不是一个 Agent，而是“造 Agent 的底盘”。</h2>
+      <p class="intro">官方的关键词是 <b>Everything is a plugin</b>。Model、Tool、Skill、Session、Sandbox、Storage、Agent Loop、Scheduling，甚至 UI，都不是不可替换的“核心”。Cordis 负责把它们动态组合起来。</p>
+      <div class="verdict">
+        <strong>一句话结论</strong>
+        <p style="margin-top:10px;margin-bottom:0;color:var(--muted)">DeepSeek Harness 是一套 <b style="color:var(--text)">事件溯源 + 插件化运行时 + 可逆组件生命周期</b> 的 Agent 系统骨架。它的野心比“做一个好用的 Coding CLI”更底层：让同一套 runtime 可以生成多种 Agent，并为未来的自修改、自演化留下结构化入口。</p>
+      </div>
+    </section>
+
+    <section id="architecture">
+      <div class="section-kicker">02 · Architecture</div>
+      <h2>Cordis 把 Agent 拆成“可以拔插的系统”。</h2>
+      <p class="intro">DeepSeek Harness 没有一个必须被魔改的 privileged core。插件通过稳定的 <code>ctx.&lt;key&gt;</code> 获取能力，通过声明依赖决定何时激活，通过 typed events 交互；注册本身被视为可撤销 effect。</p>
+
+      <div class="architecture" role="img" aria-label="DeepSeek Harness 分层架构示意：UI、Agent Runtime、Capability Providers 与 Cordis Context">
+        <div class="arch-row">
+          <div class="arch-label">Presentation</div>
+          <div class="arch-items">
+            <div class="arch-item">Web UI</div><div class="arch-item">Headless / API</div><div class="arch-item">ACP / JSON-RPC</div><div class="arch-item">未来 IDE / TUI / Mobile</div>
+          </div>
+        </div>
+        <div class="arch-arrow">↓ session/event · ctx.agents ↓</div>
+        <div class="arch-row">
+          <div class="arch-label">Agent Runtime</div>
+          <div class="arch-items">
+            <div class="arch-item">ctx.sessions<br>Append-only Log</div><div class="arch-item">ctx.tools<br>Guarded Pipeline</div><div class="arch-item">ctx.agentLoop<br>Loop Driver</div><div class="arch-item">ctx.llm<br>Model Adapters</div>
+          </div>
+        </div>
+        <div class="arch-arrow">↓ Service Definition · Provider · Consumer ↓</div>
+        <div class="arch-row">
+          <div class="arch-label">Capabilities</div>
+          <div class="arch-items">
+            <div class="arch-item">FS / Shell / PTY / LSP</div><div class="arch-item">Sandbox / Approval / Policy</div><div class="arch-item">Skills / Goals / Subagents</div><div class="arch-item">Jobs / Workflow / Web / Storage</div>
+          </div>
+        </div>
+        <div class="arch-arrow">↓ reversible effects · reactive dependencies ↓</div>
+        <div class="arch-row">
+          <div class="arch-label">Cordis Context</div>
+          <div class="arch-items">
+            <div class="arch-item">Service Registry</div><div class="arch-item">Typed Events</div><div class="arch-item">Effect Tracking</div><div class="arch-item">HMR / Reconciliation</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="callout good"><strong>最关键的设计：</strong> Session 是 append-only 的事件日志，模型历史从日志“推导”出来，而不是另存一份聊天记录。Fork、Resume、Replay、Trajectory、Telemetry、UI 都基于这同一条事件流。</div>
+    </section>
+
+    <section id="extensions">
+      <div class="section-kicker">03 · Extension Surface</div>
+      <h2>“可扩展点”到底是什么？几乎是整个系统。</h2>
+      <p class="intro">如果你说的“可可转点”是“可扩展点”，DeepSeek Harness 的答案非常激进：不是给一个 monolith 留几个 hook，而是把能力本身做成 seam。</p>
+      <div class="grid grid-4" style="margin-top:28px">
+        <article class="card"><span class="tag">MODEL</span><h3>模型路由</h3><p>在 <code>ctx.llm</code> 注册 adapter。DeepSeek 不是唯一模型；官方也提供多 provider 路径。</p></article>
+        <article class="card"><span class="tag">TOOLS</span><h3>工具面</h3><p>Tool schema、执行、pre/post policy、timeout、结果观察都在独立管线里。</p></article>
+        <article class="card"><span class="tag">SESSION</span><h3>会话与持久化</h3><p>事件类型、持久化后端、查询、fork/replay 都可围绕 SessionEvent 扩展。</p></article>
+        <article class="card"><span class="tag">LOOP</span><h3>Agent Loop</h3><p>连“模型何时请求、工具何时执行、何时停止”的 loop 都不是不可替换核心。</p></article>
+        <article class="card"><span class="tag">WORLD</span><h3>执行环境</h3><p>Filesystem、subprocess、shell、terminal、sandbox 可更换 provider，而工具 schema 无需跟着重写。</p></article>
+        <article class="card"><span class="tag">AGENCY</span><h3>Skills / Subagents</h3><p>Skills、Goals、Subagents、Jobs、Workflow 是独立能力，不被硬塞进一个 God Object。</p></article>
+        <article class="card"><span class="tag">POLICY</span><h3>权限与治理</h3><p><code>tools/pre-execute</code> / <code>execute</code> / <code>post-execute</code> 可以挂审批、拒绝、审计与治理策略。</p></article>
+        <article class="card"><span class="tag">UI</span><h3>用户界面</h3><p>UI 只是订阅 Agent 和 Session 事件的客户端层；它也可以由插件贡献新的 conversation node。</p></article>
+      </div>
+    </section>
+
+    <section id="modes">
+      <div class="section-kicker">04 · Presets</div>
+      <h2>四种预设，说明它不是只想做一个“固定产品”。</h2>
+      <div class="grid grid-2" style="margin-top:28px">
+        <article class="card"><span class="tag">STANDARD</span><h3>标准模式</h3><p>完整 coding agent：文件读写/搜索、Shell、Skills、Plan、Goal、Subagent、Workflow、Background Jobs 等。最像“成品 Coding Agent”。</p></article>
+        <article class="card"><span class="tag">PTC / CODE</span><h3>程序化工具调用</h3><p>能力与 Standard 基本相同，但模型主要看到 <code>run_code</code> 和生成的 TypeScript SDK。多次工具往返可以合并成一个程序执行，降低 round-trip。</p></article>
+        <article class="card"><span class="tag">MINIMAL</span><h3>最小模式</h3><p>刻意只保留两类模型工具：持久 Bash + <code>str_replace_editor</code>。没有完整 prompt 拼装，也没有 compaction。它像一个“研究基线”。</p></article>
+        <article class="card"><span class="tag">CREATOR / CORDIS</span><h3>创造模式</h3><p>Standard + 运行时检查 + 插件实验 + preset 创作指导。官方注释写得很直白：它存在，是为了“让一个 Agent 去创作另一个 Agent”。</p></article>
+      </div>
+    </section>
+
+    <section id="tools">
+      <div class="section-kicker">05 · Tools</div>
+      <h2>它内置的不只是文件、Shell 和搜索。</h2>
+      <p class="intro">从仓库中的工具包与 Standard 组成可以看到，DeepSeek Harness 已经覆盖 Coding Agent 的完整工作面。最有辨识度的是 Creator 模式里的自指 Cordis 工具。</p>
+      <table>
+        <thead><tr><th>能力组</th><th>代表工具 / 插件</th><th>解决什么问题</th></tr></thead>
+        <tbody>
+          <tr><td><strong>文件系统</strong></td><td><code>dsh-tool-fs</code>, <code>dsh-tool-fs-search</code>, str-replace editor</td><td>读、写、精确编辑、glob/grep 搜索；策略层可独立要求“先读后写”。</td></tr>
+          <tr><td><strong>执行</strong></td><td>Bash / PowerShell / persistent terminal</td><td>命令执行、持久 Shell 状态、PTY；底层可替换 sandbox/provider。</td></tr>
+          <tr><td><strong>任务控制</strong></td><td>Plan, Goal, Todo, Jobs</td><td>长任务拆解、目标持续、后台执行、结果收集与停止。</td></tr>
+          <tr><td><strong>智能协作</strong></td><td>Subagent, Subagent Control, Workflow</td><td>委派、并发/异步子代理、可组合工作流。</td></tr>
+          <tr><td><strong>上下文</strong></td><td>Skills, Session Query, Compaction</td><td>任务知识加载、历史查询、上下文压缩与持久状态。</td></tr>
+          <tr><td><strong>外部世界</strong></td><td>Web, LSP, MCP/扩展能力</td><td>联网、语义代码导航与外部系统接入。</td></tr>
+          <tr><td><strong>运行时自指</strong></td><td><code>cordis_inspect</code>, <code>define</code>, <code>run</code>, <code>stop</code>, <code>undefine</code></td><td>让 Agent 看见并临时改写自己正在运行的 Harness。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="self-evolve">
+      <div class="section-kicker">06 · Self Modification</div>
+      <h2>它的“自我迭代”不是魔法：先把自己变成一个可回滚实验场。</h2>
+      <p class="intro">目前真正落地的是 <b>runtime self-modification</b> 的基础设施，而不是“模型永久自主升级自己”。Creator/Cordis 模式可以在同一进程里检查、定义、运行、撤销模型写出的临时插件。</p>
+
+      <div class="flow" aria-label="DeepSeek Harness 自修改实验闭环">
+        <div class="flow-step"><div class="number">01</div><b>Inspect</b><span><code>cordis_inspect</code> 查看当前服务、工具、事件、动态包与 UI 插槽。</span></div>
+        <div class="flow-step"><div class="number">02</div><b>Define</b><span>模型生成 host/browser 插件代码，Harness 先做语法与结构检查，但暂不运行。</span></div>
+        <div class="flow-step"><div class="number">03</div><b>Run</b><span>在 live runtime 中挂载临时插件，让它贡献工具、prompt、listener 或 UI。</span></div>
+        <div class="flow-step"><div class="number">04</div><b>Observe</b><span>通过 Session log、测试、工具结果和行为轨迹判断这次修改是否真的有益。</span></div>
+        <div class="flow-step"><div class="number">05</div><b>Stop / Keep</b><span>失败则 stop/undefine；成功也不会自动永久化，必须再实现为正常插件/preset。</span></div>
+      </div>
+
+      <div class="callout warn"><strong>边界非常重要：</strong>动态插件只存在于进程内，默认不落盘、不跨重启；官方明确说 VM sandbox 不是安全边界，要像 Bash 权限一样谨慎授予。Cordis 也只能可靠撤销被它追踪的 effect；外部不可逆副作用仍需要事务、补偿或额外治理。</div>
+      <div class="callout"><strong>不要混淆另一篇论文：</strong><i>Self-Harness: Harnesses That Improve Themselves</i> 讨论的是 Weakness Mining → Harness Proposal → Evaluation 的自动优化算法。它与 DeepSeek Harness/Cordis 不是同一个项目。二者方向相邻，但不能把前者的实验结果算到 DeepSeek Harness 头上。</div>
+    </section>
+
+    <section id="paper">
+      <div class="section-kicker">07 · The Paper</div>
+      <h2>为什么发一个 Harness，还要配一篇“时空可组合性”论文？</h2>
+      <p class="intro">因为真正难的问题不是“插件能不能加载”，而是：当 Agent 在运行中不断加入、删除、替换自己的工具和策略时，系统能否保证自己不会被改成一团无法恢复的状态。</p>
+      <div class="grid grid-3" style="margin-top:28px">
+        <article class="card"><span class="tag">TEMPORAL</span><h3>时间可组合性</h3><p>组件被移除时，它造成的可追踪副作用应该能够被完整撤销。Cordis 将 effect 与 inverse 配对，由 runtime 记录。</p></article>
+        <article class="card"><span class="tag">SPATIAL</span><h3>空间可组合性</h3><p>组件声明自己依赖哪些服务。Provider 出现、消失或被替换时，相关组件自动失活/重激活，而不是手写启动顺序。</p></article>
+        <article class="card"><span class="tag">DYNAMIC</span><h3>动态组合</h3><p>把二者合起来，Cordis 才能做配置 reconciliation、Hot Module Replacement，以及失败时的局部恢复。</p></article>
+      </div>
+      <pre>传统插件系统：load() → 希望开发者记得 cleanup() → 祈祷依赖顺序正确
+
+Cordis：
+  context transformation = effect + inverse
+  dependency              = declared coeffect
+  runtime                 = track + react + reconcile
+
+结果：组件生命周期不再主要依赖“开发者记得善后”。</pre>
+      <div class="callout good"><strong>论文真正服务的未来：</strong>当 Agent 自己开始生成 Tool、Memory、Sandbox、Orchestration 插件时，“可撤销、可重连、不会半热更新”不再只是工程洁癖，而是自我演化系统的生存条件。</div>
+      <p style="color:var(--muted);font-size:13px">注意：Cordis 论文是 2026-08-13 的 active-revision preprint，理论与实现仍可能快速变化。</p>
+    </section>
+
+    <section id="ui">
+      <div class="section-kicker">08 · External UI</div>
+      <h2>外部 UI 是未来吗？更准确地说：<br>“UI 与 Agent Runtime 解耦”是未来。</h2>
+      <p class="intro">DeepSeek 的 Web UI 不是 Agent 本身。它消费 <code>ctx.agents</code> 和 <code>session/event</code>，把同一条事实流画出来。没有 Web Server，Headless runner 仍然可以工作。</p>
+      <div class="grid grid-2" style="margin-top:28px">
+        <article class="card"><h3>为什么这样更强</h3><ul><li>同一 Agent 可同时拥有 Web、IDE、TUI、API、自动化入口。</li><li>前端崩了，Agent 的持久事件日志仍然存在。</li><li>Replay/Fork 不依赖某一种 UI 如何存聊天消息。</li><li>UI 可以独立进化，不污染模型 loop。</li></ul></article>
+        <article class="card"><h3>为什么 TUI 不会消失</h3><ul><li>开发者在终端里仍然追求最低交互延迟。</li><li>SSH、tmux、自动化环境天然适合文本界面。</li><li>真正的未来不是“Web 赢”，而是 runtime 只暴露事件/命令协议，客户端自由竞争。</li></ul></article>
+      </div>
+      <div class="verdict"><strong>我的判断</strong><p style="margin-top:10px;margin-bottom:0;color:var(--muted)">DeepSeek Harness 选择外部 UI 的意义，是把 Agent 从“一个界面里的聊天机器人”升级成“一个可被多种界面驾驶的后台系统”。这比 Web UI 本身更重要。</p></div>
+    </section>
+
+    <section id="pi">
+      <div class="section-kicker">09 · DeepSeek Harness vs Pi Agent</div>
+      <h2>DeepSeek 更像“可组合 Agent OS”；Pi 更像“极简可编程终端 Harness”。</h2>
+      <p class="intro">两者不是同一条审美路线。Pi 明确选择 minimal core + TypeScript extensions；DeepSeek 选择把更多系统层都结构化成 provider/seam/plugin。</p>
+      <table>
+        <thead><tr><th>维度</th><th>DeepSeek Harness</th><th>Pi Agent</th><th>谁更占优</th></tr></thead>
+        <tbody>
+          <tr><td><strong>哲学</strong></td><td>Everything is a plugin，连 loop/session/UI 都可组合。</td><td>Minimal terminal harness，核心小，能力通过 extension/skill/package 增长。</td><td>看目标：系统平台选 DeepSeek；个人高效工作台选 Pi。</td></tr>
+          <tr><td><strong>默认工具面</strong></td><td>Standard 已含文件、Shell、Web、Skills、Plan、Goals、Subagents、Workflow 等。</td><td>默认只有 <code>read/write/edit/bash</code>，刻意不内置 plan/subagent。</td><td>开箱自治能力：DeepSeek。</td></tr>
+          <tr><td><strong>能力替换</strong></td><td>Service Definition → Provider → Consumer 的显式 capability seam。</td><td>Extension API 很强，但更多是在稳定核心周围注入行为。</td><td>底层 provider 替换：DeepSeek。</td></tr>
+          <tr><td><strong>运行时动态性</strong></td><td>Cordis effect tracking、reactive dependencies、HMR；Creator 可临时写 runtime。</td><td>Extension 可 reload，可拦截生命周期，但没有同等形式化的可逆组件模型。</td><td>动态重组：DeepSeek。</td></tr>
+          <tr><td><strong>会话模型</strong></td><td>Append-only SessionEvent 是模型历史与 UI 的统一 SSOT。</td><td>树形 Session、branch/compaction 成熟，SDK 暴露事件流。</td><td>审计/回放一致性：DeepSeek 的理念更彻底；交互工作流各有优势。</td></tr>
+          <tr><td><strong>UI</strong></td><td>Web Client 是插件，Host/Runtime 可独立运行。</td><td>终端原生，但 SDK/RPC 本身也支持外部 UI/嵌入。</td><td>Web/多客户端产品化：DeepSeek；终端手感：Pi。</td></tr>
+          <tr><td><strong>复杂度</strong></td><td>包、Context、Service、Realm、Event、Preset、Bundle 层次很多。</td><td>心智模型小，扩展一个 TS 模块就能做大量事情。</td><td>Pi。</td></tr>
+          <tr><td><strong>成熟度</strong></td><td>2026-08-13 刚进入 developer preview，官方承诺会有 breaking changes。</td><td>已形成稳定的 terminal/SDK/RPC/extension 工作方式。</td><td>当前生产稳定性：Pi 更保守。</td></tr>
+        </tbody>
+      </table>
+      <div class="callout"><strong>DeepSeek 相比 Pi Agent 最实质的优势：</strong>不是“工具更多”，而是它把<strong>运行时替换、事件事实源、可逆生命周期、自指修改</strong>都上升成一等架构概念。Pi 的优势则是极小、直接、易改，不需要先理解一套动态组件理论才能加功能。</div>
+    </section>
+
+    <section id="community">
+      <div class="section-kicker">10 · Community</div>
+      <h2>社区第一天：极强的架构兴奋感，几乎没有长期生产证据。</h2>
+      <p class="intro">仓库 2026-08-13 创建。调研快照时 GitHub API 显示：</p>
+      <div class="metric-row">
+        <div class="metric"><strong>40,752</strong><span>GitHub stars</span></div>
+        <div class="metric"><strong>3,200</strong><span>forks</span></div>
+        <div class="metric"><strong>≈ 1 day</strong><span>公开时间窗口</span></div>
+      </div>
+      <div class="grid grid-2" style="margin-top:28px">
+        <article class="card"><span class="tag">POSITIVE</span><h3>大家在兴奋什么</h3><ul><li>把 Agent Loop 也插件化，激进但一致。</li><li>不必为了换一个 provider / sandbox 就长期维护 fork。</li><li>事件日志 + replay/fork 对调试 Agent 很有吸引力。</li><li>Creator 模式让“Agent 创作 Agent”第一次变得很具象。</li></ul></article>
+        <article class="card"><span class="tag">CAUTION</span><h3>大家在担心什么</h3><ul><li>运行时组合比 source diff 更隐形，调试插件冲突需要好工具。</li><li>超高模块化会带来学习成本和配置复杂度。</li><li>ToolSearch / 大规模工具渐进披露仍在社区讨论中。</li><li>Developer preview：今天的 API 不是稳定契约。</li></ul></article>
+      </div>
+      <div class="callout warn"><strong>不要把 stars 当 benchmark。</strong>目前最可信的结论是“这个架构命中了开发者兴趣”；至于长期可靠性、插件生态质量、版本兼容成本、复杂工程性能，需要数周到数月真实使用后才能判断。</div>
+    </section>
+
+    <section id="future">
+      <div class="section-kicker">11 · What It Can Become</div>
+      <h2>它可以从 Harness，长成一个“AI 系统运行层”。</h2>
+      <p class="intro">如果把模型看作一个可替换的 cognition module，那么 DeepSeek Harness 已经覆盖了 Agent 作为“系统”需要的大多数其它部分：状态、行动、权限、工具、环境、调度、审计和界面。</p>
+      <div class="grid grid-3" style="margin-top:28px">
+        <article class="card"><span class="tag">TODAY</span><h3>Coding Agent Platform</h3><p>今天最现实：做可定制的编程 Agent、研究 harness 对模型性能的影响、构建企业内部 coding runtime。</p></article>
+        <article class="card"><span class="tag">NEXT</span><h3>General Agent Runtime</h3><p>替换工具和领域插件后，它完全可以承载研究、运维、数据、业务自动化等 Agent，而不只写代码。</p></article>
+        <article class="card"><span class="tag">RESEARCH</span><h3>Self-Evolving Substrate</h3><p>Creator + Cordis 给了“修改自身 runtime”的安全雏形；再叠加 eval/optimizer/长期记忆，才可能真正走向持续自我改进。</p></article>
+      </div>
+      <div class="verdict">
+        <strong>所以，它是不是一个 AI 系统？</strong>
+        <p style="margin-top:10px;margin-bottom:0;color:var(--muted)"><b style="color:var(--text)">它本身不是 AI 模型，但它已经是 AI 系统的运行骨架。</b>更准确的公式是：<br><br><code>AI Agent System = Model + Harness + Environment + Tools + State + Policy + UI</code><br><br>DeepSeek Harness 正在试图拥有等号右边除 Model 之外的大部分结构，并允许 Model 反过来修改其中一部分。</p>
+      </div>
+    </section>
+
+    <section id="sources">
+      <div class="section-kicker">12 · Evidence</div>
+      <h2>主要资料来源</h2>
+      <p class="intro">本页优先使用 DeepSeek 官方仓库、官方文档和 Cordis 原论文；社区材料只用于描述早期反应，不作为核心架构事实来源。</p>
+      <div class="source-list">
+        <div class="source"><span class="source-index">01</span><div><b><a href="https://deepseek.com/harness/en">DeepSeek Harness 官方页面</a></b><small>Everything is a plugin、运行模式、Trajectory、Quick Start。</small></div></div>
+        <div class="source"><span class="source-index">02</span><div><b><a href="https://github.com/deepseek-ai/deepseek-harness">deepseek-ai/deepseek-harness</a></b><small>官方源码、Developer Preview、MIT、社区入口。</small></div></div>
+        <div class="source"><span class="source-index">03</span><div><b><a href="https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/architecture.md">Architecture</a></b><small>Core packages、Session log、Capability seams、Turn flow、UI extension。</small></div></div>
+        <div class="source"><span class="source-index">04</span><div><b><a href="https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/cordis-primer.md">Cordis Primer</a></b><small>Service、Context、inject、typed events、reversible effects。</small></div></div>
+        <div class="source"><span class="source-index">05</span><div><b><a href="https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/extensions/tool-cordis/README.md">dsh-tool-cordis</a></b><small>五个自指工具、动态插件生命周期、安全边界。</small></div></div>
+        <div class="source"><span class="source-index">06</span><div><b><a href="https://github.com/cordiverse/paper">A Programming Paradigm for Spatiotemporal Composability</a></b><small>2026-08-13 preprint；Temporal / Spatial Composability、Cordis、HMR。</small></div></div>
+        <div class="source"><span class="source-index">07</span><div><b><a href="https://arxiv.org/html/2606.09498v1">Self-Harness: Harnesses That Improve Themselves</a></b><small>用于澄清“自我改进 harness”算法方向；不是 DeepSeek Harness 项目本身。</small></div></div>
+        <div class="source"><span class="source-index">08</span><div><b>Pi Agent 本地安装文档</b><small>README、docs/extensions.md、docs/sdk.md；用于核对 Pi 的默认工具、Extension、SDK/RPC 与 Session 能力。</small></div></div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="wrap">DeepSeek Harness Research Note · 资料快照 2026-08-14 · 对 Developer Preview 的判断应随版本演进重新验证。</div>
+  </footer>
+</body>
+</html>
