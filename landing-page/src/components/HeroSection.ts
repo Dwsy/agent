@@ -27,9 +27,9 @@ export class HeroSection extends LitElement {
     .description { margin: 0 0 1.75rem; max-width: 52ch; color: #a1a1aa; font-size: 1rem; line-height: 1.7; }
     .actions { display: flex; gap: 0.75rem; flex-wrap: wrap; }
     .action { display: inline-flex; align-items: center; min-height: 2.75rem; padding: 0 1rem; border: 1px solid #3f3f46; color: #d4d4d8; text-decoration: none; font-size: 0.82rem; font-weight: 600; }
-    .action.primary { background: #10b981; border-color: #10b981; color: #07110d; }
+    .action.primary { background: #047857; border-color: #047857; color: #ffffff; }
     .action:hover { border-color: #71717a; color: #fafafa; }
-    .action.primary:hover { background: #34d399; color: #07110d; }
+    .action.primary:hover { background: #065f46; border-color: #065f46; color: #ffffff; }
     .action:focus-visible { outline: 2px solid #10b981; outline-offset: 3px; }
     .main-foot { margin-top: auto; padding-top: 1.5rem; display: flex; gap: 1.5rem; border-top: 1px solid #27272a; color: #52525b; font: 0.68rem/1.4 'JetBrains Mono', monospace; }
     .main-foot strong { display: block; color: #a1a1aa; font-weight: 500; margin-bottom: 0.2rem; }
@@ -76,26 +76,24 @@ export class HeroSection extends LitElement {
       .action:hover { color: #18181b; border-color: #a1a1aa; }
       .main-foot { border-color: #e4e4e7; color: #71717a; }
       .main-foot strong { color: #3f3f46; }
-      .context { background: #f0fdf4; border-color: #bbf7d0; }
-      .trace { background: #eff6ff; border-color: #bfdbfe; }
-      .gapp { background: #ecfdf5; border-color: #a7f3d0; }
+      .context, .trace, .role, .gateway, .extensions, .companions { background: #ffffff; border-color: #e4e4e7; }
+      .context, .role { box-shadow: inset 3px 0 0 #10b981; }
+      .trace, .gateway { box-shadow: inset 3px 0 0 #a1a1aa; }
+      .extensions, .companions { box-shadow: inset 3px 0 0 #34d399; }
+      .gapp { background: #fafafa; border-color: #d4d4d8; }
       .gapp-copy .eyebrow { color: #047857; }
-      .gapp-copy h2 { color: #064e3b; }
-      .gapp-copy p { color: #475569; }
-      .gapp-stage { background: #ffffff; border-color: #a7f3d0; }
-      .gapp-nav { border-color: #d1fae5; color: #64748b; }
+      .gapp-copy h2 { color: #18181b; }
+      .gapp-copy p { color: #52525b; }
+      .gapp-stage { background: #ffffff; border-color: #d4d4d8; }
+      .gapp-nav { border-color: #e4e4e7; color: #71717a; }
       .gapp-nav strong { color: #047857; }
-      .gapp-node { background: #f8fafc; border-color: #dbe4ea; color: #64748b; }
-      .gapp-node.hot { background: #d1fae5; border-color: #6ee7b7; color: #065f46; }
-      .evidence { background: #eff6ff; border-color: #bfdbfe; }
-      .evidence-label { color: #2563eb; }
-      .evidence-step { border-color: #bfdbfe; }
-      .evidence-step strong { color: #1e3a8a; }
-      .evidence-step span { color: #64748b; }
-      .role { background: #fff7ed; border-color: #fed7aa; }
-      .gateway { background: #f5f3ff; border-color: #ddd6fe; }
-      .extensions { background: #f0fdfa; border-color: #99f6e4; }
-      .companions { background: #fdf4ff; border-color: #f5d0fe; }
+      .gapp-node { background: #fafafa; border-color: #e4e4e7; color: #71717a; }
+      .gapp-node.hot { background: #ecfdf5; border-color: #6ee7b7; color: #065f46; }
+      .evidence { background: #f7f7f5; border-color: #d4d4d8; }
+      .evidence-label { color: #047857; }
+      .evidence-step { border-color: #d4d4d8; }
+      .evidence-step strong { color: #27272a; }
+      .evidence-step span { color: #71717a; }
       .feature h2, .mini strong { color: #18181b; }
       .feature p, .mini span, .eyebrow { color: #52525b; }
       .token { color: #475569; border-color: #cbd5e1; }
@@ -139,11 +137,11 @@ export class HeroSection extends LitElement {
       <section class="hero" id="features">
         <div class="bento">
           <article class="tile main">
-            <div class="badge">${zh ? "可编程 Agent Runtime" : "Programmable agent runtime"}</div>
-            <h1>${zh ? html`把 AI 编程变成 <span class="accent">可编程系统</span>` : html`Make AI coding a <span class="accent">programmable system</span>`}</h1>
-            <p class="description">${zh ? "不是聊天壳。Pi 把真实代码检索、可恢复上下文、角色长期记忆、原生 GAPP、Provider 可观测性与 Gateway/RPC 编排放进同一个运行时。" : "Not a chat shell. Pi puts real code retrieval, recoverable context, durable role memory, native GAPPs, provider observability, and Gateway/RPC orchestration in one runtime."}</p>
+            <div class="badge">${zh ? "PI ENGINEERING WORKBENCH" : "PI ENGINEERING WORKBENCH"}</div>
+            <h1>${zh ? html`为真实软件工程打造的 <span class="accent">Pi 工作台</span>` : html`A <span class="accent">Pi workbench</span> for real software engineering`}</h1>
+            <p class="description">${zh ? "这是我们围绕 Pi Core 构建的一套工程工作环境：它先读懂真实代码，再管理长会话上下文与角色记忆；需要时生成 GAPP 界面、切换 Provider、通过 Gateway/RPC 分发，并用测试、diff 与工作树状态完成交付。" : "An engineering environment built around Pi Core: understand the real code first, preserve long-running context and role memory, generate GAPP interfaces when useful, route across providers and Gateway/RPC, then close the loop with tests, diff, and worktree state."}</p>
             <div class="actions"><a class="action primary" href="https://github.com/Dwsy/agent" target="_blank" rel="noopener">${zh ? "开始使用" : "Get started"} ↗</a><a class="action" href="https://github.com/Dwsy/agent#readme" target="_blank" rel="noopener">${zh ? "阅读文档" : "Read docs"}</a></div>
-            <div class="main-foot"><div><strong>Context</strong>tag · checkout · compact</div><div><strong>Protocol</strong>L1–L4 complexity routing</div><div><strong>Verify</strong>test · diff · worktree</div></div>
+            <div class="main-foot"><div><strong>${zh ? "读懂项目" : "Understand the project"}</strong>${zh ? "语义检索 · AST · callers" : "semantic search · AST · callers"}</div><div><strong>${zh ? "保持连续" : "Keep continuity"}</strong>${zh ? "context · role memory · compact" : "context · role memory · compact"}</div><div><strong>${zh ? "交付证据" : "Ship evidence"}</strong>${zh ? "test · diff · worktree" : "test · diff · worktree"}</div></div>
           </article>
 
           <article class="tile feature context"><div><div class="eyebrow">01 / Context</div><h2>${zh ? "上下文像 Git 一样可操作" : "Operate context like Git"}</h2><p>${zh ? "给关键语义状态打 tag、查看 history、checkout 回任意 checkpoint；长会话 compact 后仍保留任务 handoff。" : "Tag semantic states, inspect history, checkout any checkpoint, and keep the task handoff intact after long-session compaction."}</p></div><div class="tokens"><span class="token hot">tag</span><span class="token">checkout</span><span class="token">history</span><span class="token">compact</span></div></article>
