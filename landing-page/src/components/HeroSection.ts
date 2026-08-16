@@ -1,439 +1,129 @@
-import { html, LitElement, css } from "lit";
+import { css, html, LitElement } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { i18n, type Locale } from "../i18n/i18n-manager";
 
-/**
- * Hero Section - Split Screen Asymmetric Layout
- * DESIGN_VARIANCE: 8 - Asymmetric, left-aligned content
- * MOTION_INTENSITY: 6 - Spring physics, staggered reveals
- * VISUAL_DENSITY: 4 - Gallery mode, generous whitespace
- */
 @customElement("hero-section")
 export class HeroSection extends LitElement {
   static styles = css`
-    :host {
-      display: block;
-      width: 100%;
-    }
+    *, *::before, *::after { box-sizing: border-box; }
+    :host { display: block; width: 100%; }
+    .hero { min-height: calc(100dvh - 4.5rem); padding: 1.25rem 1.5rem 2rem; background: #09090b; }
+    .bento { max-width: 1200px; height: calc(100dvh - 7.25rem); min-height: 650px; max-height: 820px; margin: 0 auto; display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); grid-template-rows: repeat(6, minmax(0, 1fr)); gap: 0.75rem; }
+    .tile { min-width: 0; overflow: hidden; border: 1px solid #27272a; background: #111113; }
+    .main { grid-column: 1 / 8; grid-row: 1 / 6; padding: clamp(2rem, 4vw, 4rem); display: flex; flex-direction: column; justify-content: center; background: #0c0c0e; }
+    .terminal { grid-column: 8 / 13; grid-row: 1 / 4; background: #151517; display: flex; flex-direction: column; }
+    .context { grid-column: 8 / 11; grid-row: 4 / 6; }
+    .trace { grid-column: 11 / 13; grid-row: 4 / 6; }
+    .role { grid-column: 1 / 4; grid-row: 6; }
+    .gateway { grid-column: 4 / 7; grid-row: 6; }
+    .extensions { grid-column: 7 / 10; grid-row: 6; }
+    .companions { grid-column: 10 / 13; grid-row: 6; }
 
-    .hero {
-      min-height: 100dvh;
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 4rem;
-      align-items: center;
-      padding: 3.5rem 4rem 4rem;
-      position: relative;
-      overflow: hidden;
-    }
+    .badge { display: inline-flex; align-items: center; gap: 0.5rem; width: fit-content; margin-bottom: 1.4rem; color: #34d399; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; }
+    .badge::before { content: ''; width: 1.5rem; height: 1px; background: #10b981; }
+    h1 { margin: 0 0 1.25rem; color: #fafafa; font-size: clamp(3rem, 5.5vw, 5.25rem); line-height: 0.98; letter-spacing: -0.055em; font-weight: 650; max-width: 10ch; }
+    h1 .accent { color: #10b981; }
+    .description { margin: 0 0 1.75rem; max-width: 52ch; color: #a1a1aa; font-size: 1rem; line-height: 1.7; }
+    .actions { display: flex; gap: 0.75rem; flex-wrap: wrap; }
+    .action { display: inline-flex; align-items: center; min-height: 2.75rem; padding: 0 1rem; border: 1px solid #3f3f46; color: #d4d4d8; text-decoration: none; font-size: 0.82rem; font-weight: 600; }
+    .action.primary { background: #10b981; border-color: #10b981; color: #07110d; }
+    .action:hover { border-color: #71717a; color: #fafafa; }
+    .action.primary:hover { background: #34d399; color: #07110d; }
+    .action:focus-visible { outline: 2px solid #10b981; outline-offset: 3px; }
+    .main-foot { margin-top: auto; padding-top: 1.5rem; display: flex; gap: 1.5rem; border-top: 1px solid #27272a; color: #52525b; font: 0.68rem/1.4 'JetBrains Mono', monospace; }
+    .main-foot strong { display: block; color: #a1a1aa; font-weight: 500; margin-bottom: 0.2rem; }
 
-    /* Background - Subtle Grid + Gradient */
-    .hero::before {
-      content: '';
-      position: absolute;
-      inset: 0;
-      background:
-        radial-gradient(ellipse 80% 50% at 20% 40%, rgba(16, 185, 129, 0.08) 0%, transparent 50%),
-        radial-gradient(ellipse 60% 40% at 80% 60%, rgba(16, 185, 129, 0.05) 0%, transparent 50%);
-      pointer-events: none;
-    }
+    .terminal-head { display: flex; align-items: center; gap: 0.45rem; padding: 0.8rem 1rem; border-bottom: 1px solid #27272a; color: #52525b; font: 0.68rem/1 'JetBrains Mono', monospace; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; } .red { background: #ef4444; } .yellow { background: #eab308; } .green { background: #22c55e; }
+    .terminal-title { margin-left: 0.35rem; }
+    .terminal-body { flex: 1; padding: 1rem 1.1rem; display: flex; flex-direction: column; justify-content: center; color: #71717a; font: 0.72rem/1.65 'JetBrains Mono', monospace; }
+    .command { color: #f4f4f5; } .prompt { color: #10b981; } .ok { color: #34d399; }
+    .gapp-line { margin-top: 0.8rem; padding-top: 0.8rem; border-top: 1px solid #27272a; }
 
-    .hero::after {
-      content: '';
-      position: absolute;
-      inset: 0;
-      background: linear-gradient(180deg, transparent 0%, rgba(9, 9, 11, 0.18) 100%);
-      pointer-events: none;
-    }
+    .feature { padding: 1.15rem; display: flex; flex-direction: column; justify-content: space-between; }
+    .eyebrow { color: #52525b; font: 0.62rem/1 'JetBrains Mono', monospace; letter-spacing: 0.06em; text-transform: uppercase; }
+    .feature h2 { margin: 0.65rem 0 0.4rem; color: #f4f4f5; font-size: 1rem; line-height: 1.15; font-weight: 600; letter-spacing: -0.015em; }
+    .feature p { margin: 0; color: #71717a; font-size: 0.72rem; line-height: 1.5; }
+    .tokens { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.8rem; }
+    .token { color: #71717a; font: 0.61rem/1 'JetBrains Mono', monospace; border-bottom: 1px solid #3f3f46; padding-bottom: 0.2rem; }
+    .token.hot { color: #34d399; border-color: rgba(52,211,153,0.5); }
 
-    /* Left Content - Asymmetric Alignment */
-    .content {
-      position: relative;
-      z-index: 1;
-      padding-left: 5vw;
-      max-width: 640px;
-    }
+    .mini { padding: 0.8rem 0.9rem; display: flex; flex-direction: column; justify-content: center; }
+    .mini strong { color: #e4e4e7; font-size: 0.78rem; font-weight: 600; margin-bottom: 0.3rem; }
+    .mini span { color: #52525b; font-size: 0.64rem; line-height: 1.4; }
+    .mini .mark { color: #10b981; font: 0.58rem/1 'JetBrains Mono', monospace; margin-bottom: 0.45rem; text-transform: uppercase; letter-spacing: 0.05em; }
 
-    /* Status Badge */
-    .badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.5rem;
-      padding: 0.5rem 1rem;
-      background: rgba(16, 185, 129, 0.1);
-      border: 1px solid rgba(16, 185, 129, 0.2);
-      border-radius: 9999px;
-      color: #34d399;
-      font-size: 0.75rem;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      margin-bottom: 2rem;
-      width: fit-content;
-    }
-
-    .badge-dot {
-      width: 6px;
-      height: 6px;
-      background: #10b981;
-      border-radius: 50%;
-      animation: pulse-dot 2s ease-in-out infinite;
-    }
-
-    @keyframes pulse-dot {
-      0%, 100% { opacity: 1; transform: scale(1); }
-      50% { opacity: 0.6; transform: scale(0.8); }
-    }
-
-    /* Typography - Geist, Tight Tracking */
-    h1 {
-      font-size: clamp(2.75rem, 5vw, 4.5rem);
-      font-weight: 600;
-      line-height: 1.05;
-      margin-bottom: 1.5rem;
-      color: #fafafa;
-      letter-spacing: -0.03em;
-    }
-
-    h1 .accent {
-      color: #10b981;
-      font-weight: 700;
-    }
-
-    .description {
-      font-size: 1.125rem;
-      line-height: 1.7;
-      color: #a1a1aa;
-      max-width: 480px;
-      margin-bottom: 2.5rem;
-    }
-
-    /* CTA Group */
-    .cta-group {
-      display: flex;
-      gap: 1rem;
-      align-items: center;
-      margin-bottom: 3rem;
-    }
-
-    .cta-primary {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.5rem;
-      padding: 0.875rem 1.75rem;
-      background: #10b981;
-      color: #09090b;
-      font-weight: 600;
-      font-size: 0.9375rem;
-      border-radius: 0.625rem;
-      text-decoration: none;
-      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-      box-shadow: 0 4px 20px rgba(16, 185, 129, 0.3);
-    }
-
-    .cta-primary:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 8px 30px rgba(16, 185, 129, 0.4);
-    }
-
-    .cta-primary:active {
-      transform: translateY(0) scale(0.98);
-    }
-
-    .cta-secondary {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.5rem;
-      padding: 0.875rem 1.5rem;
-      background: transparent;
-      color: #a1a1aa;
-      font-weight: 500;
-      font-size: 0.9375rem;
-      border: 1px solid #3f3f46;
-      border-radius: 0.625rem;
-      text-decoration: none;
-      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-    }
-
-    .cta-secondary:hover {
-      border-color: #52525b;
-      color: #fafafa;
-      background: rgba(255, 255, 255, 0.03);
-    }
-
-    /* Stats Row */
-    .stats {
-      display: flex;
-      gap: 3rem;
-      padding-top: 2rem;
-      border-top: 1px solid #27272a;
-    }
-
-    .stat {
-      display: flex;
-      flex-direction: column;
-      gap: 0.25rem;
-    }
-
-    .stat-value {
-      font-size: 1.75rem;
-      font-weight: 700;
-      color: #fafafa;
-      letter-spacing: -0.02em;
-    }
-
-    .stat-label {
-      font-size: 0.8125rem;
-      color: #71717a;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-    }
-
-    /* Right Side - Visual */
-    .visual {
-      position: relative;
-      z-index: 1;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding-right: 2rem;
-    }
-
-    .terminal {
-      width: 100%;
-      max-width: 520px;
-      background: #18181b;
-      border: 1px solid #27272a;
-      border-radius: 1rem;
-      overflow: hidden;
-      box-shadow:
-        0 40px 80px -20px rgba(0, 0, 0, 0.5),
-        0 0 0 1px rgba(255, 255, 255, 0.03);
-      animation: float 6s ease-in-out infinite;
-    }
-
-    @keyframes float {
-      0%, 100% { transform: translateY(0) rotate(0deg); }
-      50% { transform: translateY(-12px) rotate(0.5deg); }
-    }
-
-    .terminal-header {
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-      padding: 0.875rem 1rem;
-      background: #27272a;
-      border-bottom: 1px solid #3f3f46;
-    }
-
-    .terminal-dot {
-      width: 10px;
-      height: 10px;
-      border-radius: 50%;
-    }
-
-    .terminal-dot.red { background: #ef4444; }
-    .terminal-dot.yellow { background: #eab308; }
-    .terminal-dot.green { background: #22c55e; }
-
-    .terminal-title {
-      margin-left: 0.5rem;
-      font-size: 0.75rem;
-      color: #71717a;
-      font-family: 'JetBrains Mono', monospace;
-    }
-
-    .terminal-body {
-      padding: 1.25rem;
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 0.8125rem;
-      line-height: 1.7;
-      color: #a1a1aa;
-    }
-
-    .terminal-line {
-      display: flex;
-      gap: 0.75rem;
-    }
-
-    .terminal-prompt {
-      color: #10b981;
-      flex-shrink: 0;
-    }
-
-    .terminal-cursor {
-      display: inline-block;
-      width: 8px;
-      height: 1.2em;
-      background: #10b981;
-      animation: blink 1s step-end infinite;
-      vertical-align: text-bottom;
-      margin-left: 2px;
-    }
-
-    @keyframes blink {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0; }
-    }
-
-    .terminal-command {
-      color: #fafafa;
-    }
-
-    .terminal-output {
-      color: #71717a;
-      margin: 0.5rem 0 1rem 1.5rem;
-    }
-
-    /* Mobile Override - Single Column */
     @media (prefers-color-scheme: light) {
-      .hero::before, .hero::after { background: none; }
-      h1, .stat-value { color: #18181b; }
-      .description, .stat-label { color: #52525b; }
-      .stats { border-top-color: #e4e4e7; }
-      .cta-secondary { color: #3f3f46; border-color: #d4d4d8; background: #ffffff; }
-      .cta-secondary:hover { color: #18181b; border-color: #a1a1aa; background: #fafafa; }
+      .hero { background: #ffffff; }
+      .tile { border-color: #e4e4e7; background: #fafafa; }
+      .main { background: #ffffff; }
+      h1 { color: #18181b; }
+      .description { color: #52525b; }
+      .action { color: #3f3f46; border-color: #d4d4d8; background: #ffffff; }
+      .action:hover { color: #18181b; border-color: #a1a1aa; }
+      .main-foot { border-color: #e4e4e7; color: #71717a; }
+      .main-foot strong { color: #3f3f46; }
+      .terminal { background: #151517; border-color: #27272a; }
+      .feature h2, .mini strong { color: #18181b; }
+      .feature p, .mini span, .eyebrow { color: #71717a; }
+      .token { color: #52525b; border-color: #d4d4d8; }
+      .token.hot, .mini .mark { color: #047857; border-color: rgba(4,120,87,0.35); }
     }
 
-    @media (max-width: 1024px) {
-      .hero {
-        grid-template-columns: 1fr;
-        gap: 3rem;
-        padding: 3rem 1.5rem 4rem;
-      }
-
-      .content {
-        padding-left: 0;
-        max-width: 100%;
-      }
-
-      .visual {
-        padding-right: 0;
-        order: -1;
-      }
-
-      .terminal {
-        max-width: 100%;
-      }
-
-      .stats {
-        gap: 2rem;
-      }
+    @media (max-width: 1000px) {
+      .hero { min-height: auto; }
+      .bento { height: auto; min-height: 0; max-height: none; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: auto; }
+      .main, .terminal, .context, .trace, .role, .gateway, .extensions, .companions { grid-column: auto; grid-row: auto; }
+      .main { grid-column: 1 / -1; min-height: 32rem; }
+      .terminal { min-height: 18rem; }
+      .context, .trace { min-height: 14rem; }
+      .role, .gateway, .extensions, .companions { min-height: 8rem; }
     }
 
     @media (max-width: 640px) {
-      h1 {
-        font-size: 2.25rem;
-      }
-
-      .description {
-        font-size: 1rem;
-      }
-
-      .cta-group {
-        flex-direction: column;
-        align-items: stretch;
-      }
-
-      .stats {
-        flex-direction: column;
-        gap: 1.5rem;
-      }
+      .hero { padding: 0.75rem 1rem 1.5rem; }
+      .bento { grid-template-columns: 1fr; gap: 0.6rem; }
+      .main { min-height: 30rem; padding: 2rem 1.5rem; }
+      h1 { font-size: clamp(2.75rem, 14vw, 4rem); }
+      .terminal, .context, .trace, .role, .gateway, .extensions, .companions { grid-column: 1; min-height: auto; }
+      .terminal { min-height: 17rem; }
+      .feature { min-height: 12rem; }
+      .mini { min-height: 7rem; }
+      .main-foot { gap: 0.75rem; flex-wrap: wrap; }
     }
   `;
 
   @state() private locale: Locale = i18n.getCurrentLocale();
-  private _unsub?: () => void;
-
-  connectedCallback() {
-    super.connectedCallback();
-    this._unsub = i18n.subscribe(() => {
-      this.locale = i18n.getCurrentLocale();
-    });
-  }
-
-  disconnectedCallback() {
-    super.disconnectedCallback();
-    this._unsub?.();
-  }
-
-  private t(key: string) {
-    return i18n.t(key);
-  }
+  private unsubscribe?: () => void;
+  connectedCallback() { super.connectedCallback(); this.unsubscribe = i18n.subscribe(() => { this.locale = i18n.getCurrentLocale(); }); }
+  disconnectedCallback() { super.disconnectedCallback(); this.unsubscribe?.(); }
 
   render() {
-    const f = i18n.t.bind(i18n);
-
+    const zh = this.locale === "zh-CN";
     return html`
       <section class="hero" id="features">
-        <div class="content">
-          <div class="badge">
-            <span class="badge-dot"></span>
-            ${f('hero.badge')}
-          </div>
+        <div class="bento">
+          <article class="tile main">
+            <div class="badge">${zh ? "可编程 Agent Runtime" : "Programmable agent runtime"}</div>
+            <h1>${zh ? html`把 AI 编程变成 <span class="accent">可编程系统</span>` : html`Make AI coding a <span class="accent">programmable system</span>`}</h1>
+            <p class="description">${zh ? "不是聊天壳。Pi 把真实代码检索、可恢复上下文、角色长期记忆、原生 GAPP、Provider 可观测性与 Gateway/RPC 编排放进同一个运行时。" : "Not a chat shell. Pi puts real code retrieval, recoverable context, durable role memory, native GAPPs, provider observability, and Gateway/RPC orchestration in one runtime."}</p>
+            <div class="actions"><a class="action primary" href="https://github.com/Dwsy/agent" target="_blank" rel="noopener">${zh ? "开始使用" : "Get started"} ↗</a><a class="action" href="https://github.com/Dwsy/agent#readme" target="_blank" rel="noopener">${zh ? "阅读文档" : "Read docs"}</a></div>
+            <div class="main-foot"><div><strong>Context</strong>tag · checkout · compact</div><div><strong>Protocol</strong>L1–L4 complexity routing</div><div><strong>Verify</strong>test · diff · worktree</div></div>
+          </article>
 
-          <h1>
-            ${f('hero.title.part1')}
-            <span class="accent">${f('hero.title.accent')}</span>
-            ${f('hero.title.part2')}
-          </h1>
+          <article class="tile terminal">
+            <div class="terminal-head"><span class="dot red"></span><span class="dot yellow"></span><span class="dot green"></span><span class="terminal-title">pi-agent</span></div>
+            <div class="terminal-body"><div><span class="prompt">$</span> <span class="command">pi "trace the real flow, then fix it"</span></div><div>retrieving symbols + callers...</div><div>checkpointing context...</div><div>applying surgical edit + verification...</div><div class="ok">evidence attached · worktree clean</div><div class="gapp-line"><span class="prompt">$</span> <span class="command">pi /gapp open dyncode-project-map</span></div></div>
+          </article>
 
-          <p class="description">${f('hero.description')}</p>
+          <article class="tile feature context"><div><div class="eyebrow">01 / Context</div><h2>${zh ? "上下文像 Git 一样可操作" : "Operate context like Git"}</h2><p>${zh ? "保存语义节点，长会话 compact 后仍能恢复 handoff。" : "Save semantic states and recover the handoff after compaction."}</p></div><div class="tokens"><span class="token hot">tag</span><span class="token">checkout</span><span class="token">history</span><span class="token">compact</span></div></article>
 
-          <div class="cta-group">
-            <a href="https://github.com/Dwsy/agent" class="cta-primary" target="_blank" rel="noopener">
-              ${f('hero.cta.primary')}
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M5 12h14M12 5l7 7-7 7"/>
-              </svg>
-            </a>
-            <a href="#gateway" class="cta-secondary">
-              ${f('hero.cta.secondary')}
-            </a>
-          </div>
+          <article class="tile feature trace"><div><div class="eyebrow">02 / Observe</div><h2>Provider Trace</h2><p>${zh ? "请求、响应与工程验证留在同一条证据链。" : "Requests, responses, and verification stay on one evidence path."}</p></div><div class="tokens"><span class="token hot">trace</span><span class="token">insights</span><span class="token">verify</span></div></article>
 
-          <div class="stats">
-            <div class="stat">
-              <span class="stat-value">Context</span>
-              <span class="stat-label">${f('hero.stats.commands')}</span>
-            </div>
-            <div class="stat">
-              <span class="stat-value">GAPP</span>
-              <span class="stat-label">${f('hero.stats.extensions')}</span>
-            </div>
-            <div class="stat">
-              <span class="stat-value">Trace</span>
-              <span class="stat-label">${f('hero.stats.productivity')}</span>
-            </div>
-          </div>
-        </div>
-
-        <div class="visual">
-          <div class="terminal">
-            <div class="terminal-header">
-              <span class="terminal-dot red"></span>
-              <span class="terminal-dot yellow"></span>
-              <span class="terminal-dot green"></span>
-              <span class="terminal-title">pi-agent</span>
-            </div>
-            <div class="terminal-body">
-              <div class="terminal-line">
-                <span class="terminal-prompt">$</span>
-                <span class="terminal-command">pi "trace the real flow, then fix it"</span>
-              </div>
-              <div class="terminal-output">
-                retrieving symbols + callers...<br>
-                checkpointing context...<br>
-                applying surgical edit + verification...<br>
-                <span style="color: #10b981;">evidence attached · worktree clean</span>
-              </div>
-              <div class="terminal-line">
-                <span class="terminal-prompt">$</span>
-                <span class="terminal-command">pi /gapp open dyncode-project-map</span>
-                <span class="terminal-cursor"></span>
-              </div>
-            </div>
-          </div>
+          <article class="tile mini role"><div class="mark">Memory</div><strong>${zh ? "角色长期记忆" : "Durable role memory"}</strong><span>role mapping · vector recall · viewer</span></article>
+          <article class="tile mini gateway"><div class="mark">Gateway</div><strong>Gateway / RPC</strong><span>session routing · worker pool · offline-safe</span></article>
+          <article class="tile mini extensions"><div class="mark">Extend</div><strong>${zh ? "扩展 / Skill / GAPP" : "Extensions / Skills / GAPP"}</strong><span>ace · AST · browser · diagnose · custom UI</span></article>
+          <article class="tile mini companions"><div class="mark">Companion</div><strong>grok-pi-tui + PSM</strong><span>${zh ? "原生终端体验 · 跨会话连续性" : "native terminal · session continuity"}</span></article>
         </div>
       </section>
     `;
