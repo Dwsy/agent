@@ -42,7 +42,7 @@
 	url = https://github.com/Dwsy/pi-provider-trace.git
 [submodule "extensions/fast-context-mcp"]
 	path = extensions/fast-context-mcp
-	url = https://github.com/SammySnake-d/fast-context-mcp.git
+	url = https://github.com/Dwsy/fast-context-mcp.git
 [submodule "extensions/kilo-pi-provider"]
 	path = extensions/kilo-pi-provider
 	url = https://github.com/mrexodia/kilo-pi-provider.git
