@@ -40,7 +40,7 @@ export function readLongTermMemoryBlock(rolePath: string, roleName: string): str
   const lines: string[] = [
     "### Long-Term Memory",
     "",
-    "Every entry carries [id:...] — pass that id to the memory tool to update/delete/reinforce it directly.",
+    "Every entry carries [id:...] — pass that id to role_exec update_*/delete_*/reinforce ops directly.",
     "",
   ];
 
@@ -90,14 +90,14 @@ export function buildPendingReviewBlock(rolePath: string, maxItems = 8): string 
     `### Pending Memories Awaiting Review (${items.length})`,
     "",
     "Background extraction produced these unverified candidates. When convenient (not mid-task), review them:",
-    "keep → memory({ action: \"promote_pending\", id }) · drop → memory({ action: \"discard_pending\", id }). Batch via ids: [...]. Unreviewed items expire after a few days.",
+    "keep → role_exec({ op: \"promote_pending\", args: { id } }) · drop → role_exec({ op: \"discard_pending\", args: { id } }). Batch via args.ids. Unreviewed items expire after a few days.",
     "",
   ];
   for (const item of items.slice(0, maxItems)) {
     lines.push(`- [id:${item.id}] [${item.source}] ${item.text}`);
   }
   if (items.length > maxItems) {
-    lines.push(`- … ${items.length - maxItems} more — memory({ action: "read", section: "pending" })`);
+    lines.push(`- … ${items.length - maxItems} more — role_exec({ op: "read", args: { section: "pending" } })`);
   }
   return lines.join("\n");
 }
@@ -215,5 +215,5 @@ export function loadMemoryOnDemand(
 }
 
 export function buildMemoryEditInstruction(rolePath: string): string {
-  return `## 🧠 Memory Edit Spec\n\nPrefer the \`memory\` tool for all edits — it handles ids, dedupe, tiers, git commits, and vector index sync automatically. Injected memory entries carry [id:...]; pass that id straight to update_*/delete_*/reinforce/promote_pending.\n\nDirect file editing (${memoryFilePath(rolePath)}) is a fallback for bulk restructuring only. If you do edit the file, follow this format exactly:\n\n1) Learning sections\n- # Learnings (High Priority)  -> used >= 3\n- # Learnings (Normal)         -> used 1-2\n- # Learnings (New)            -> used = 0\n- Learning line format: - [Nx] concise text\n\n2) Preference sections\n- # Preferences: Communication | Code | Tools | Workflow | General\n- Preference line format: - concise text\n\n3) Event section\n- # Events\n- Event format:\n  ## [YYYY-MM-DD] Title\n  Details...\n\nRules:\n- Keep items durable and reusable across sessions.\n- Avoid one-off tasks and noisy logs.\n- Do not delete valid memory entries unless clearly duplicated.\n- If file looks malformed, normalize to canonical heading structure.\n- Never use free-form paragraphs under learning/preference sections; use bullet lines.\n- Keep learning/preference lines under 120 chars when possible.\n- After a direct file edit, run memory({ action: "repair" }) to normalize, then memory({ action: "vector_rebuild" }) if vector memory is enabled.`;
+  return `## 🧠 Memory Edit Spec\n\nPrefer \`role_exec\` ops for all edits — they handle ids, dedupe, tiers, git commits, and vector index sync automatically. Injected memory entries carry [id:...]; pass that id straight to update_*/delete_*/reinforce/promote_pending.\n\nDirect file editing (${memoryFilePath(rolePath)}) is a fallback for bulk restructuring only. If you do edit the file, follow this format exactly:\n\n1) Learning sections\n- # Learnings (High Priority)  -> used >= 3\n- # Learnings (Normal)         -> used 1-2\n- # Learnings (New)            -> used = 0\n- Learning line format: - [Nx] concise text\n\n2) Preference sections\n- # Preferences: Communication | Code | Tools | Workflow | General\n- Preference line format: - concise text\n\n3) Event section\n- # Events\n- Event format:\n  ## [YYYY-MM-DD] Title\n  Details...\n\nRules:\n- Keep items durable and reusable across sessions.\n- Avoid one-off tasks and noisy logs.\n- Do not delete valid memory entries unless clearly duplicated.\n- If file looks malformed, normalize to canonical heading structure.\n- Never use free-form paragraphs under learning/preference sections; use bullet lines.\n- Keep learning/preference lines under 120 chars when possible.\n- After a direct file edit, run role_exec({ op: "repair" }) to normalize, then role_exec({ op: "vector_rebuild" }) if vector memory is enabled.`;
 }

@@ -12,10 +12,10 @@ You have access to a role-based persistent memory system. Use manual writes sele
 
 | Tool | Purpose |
 |------|---------|
-| `memory({ action: "add_learning", content: "..." })` | Save a durable insight. LLM auto-extracts tags. Auto-deduplicates. |
-| `memory({ action: "add_preference", content: "...", category: "..." })` | Save a user preference. Goes directly to consolidated. |
-| `memory({ action: "search", query: "..." })` | Check if similar memory already exists |
-| `memory({ action: "reinforce", content: "..." })` | Increment `[Nx]` usage count for existing learning |
+| `role_exec({ op: "add_learning", args: { content: "..." } })` | Save a durable insight. LLM auto-extracts tags. Auto-deduplicates. |
+| `role_exec({ op: "add_preference", args: { content: "...", category: "..." } })` | Save a user preference. Goes directly to consolidated. |
+| `role_search({ query: "..." })` | Check if similar memory already exists |
+| `role_exec({ op: "reinforce", args: { content: "..." } })` | Increment `[Nx]` usage count for existing learning |
 
 ## Process
 
@@ -32,7 +32,7 @@ You have access to a role-based persistent memory system. Use manual writes sele
 ### Write
 
 ```
-memory({ action: "add_learning", content: "MyBatis-Plus getOne needs .last('LIMIT 1') to avoid TooManyResultsException" })
+role_exec({ op: "add_learning", args: { content: "MyBatis-Plus getOne needs .last('LIMIT 1') to avoid TooManyResultsException" } })
 ```
 
 LLM auto-extracts tags (e.g., `mybatis`, `gotcha`). No manual tagging.
@@ -40,13 +40,13 @@ LLM auto-extracts tags (e.g., `mybatis`, `gotcha`). No manual tagging.
 ### Preferences
 
 ```
-memory({ action: "add_preference", content: "用户偏好中文沟通，技术术语可保留英文", category: "Communication" })
+role_exec({ op: "add_preference", args: { content: "用户偏好中文沟通，技术术语可保留英文", category: "Communication" } })
 ```
 
 ### Reinforce (when you USE an existing memory)
 
 ```
-memory({ action: "reinforce", content: "安全删除原则" })
+role_exec({ op: "reinforce", args: { content: "安全删除原则" } })
 → "Reinforced [abc123] -> 6x"
 ```
 
@@ -112,10 +112,10 @@ The pending layer filters noise. Only memories proven useful by actual usage sur
 
 ```
 ✅ Good:
-memory({ action: "add_learning", content: "MyBatis-Plus getOne needs .last('LIMIT 1')" })
+role_exec({ op: "add_learning", args: { content: "MyBatis-Plus getOne needs .last('LIMIT 1')" } })
 
 ✅ Good (reinforce):
-memory({ action: "reinforce", content: "安全删除原则" })
+role_exec({ op: "reinforce", args: { content: "安全删除原则" } })
 
 ❌ Bad: "The user asked me to fix a bug" — too generic
 ❌ Bad: "Error at /src/index.ts:42" — copy-paste, no insight

@@ -10,7 +10,7 @@ index.ts (装配层 / composition root, ~90L)
 runtime/ (编排实现, 16 模块, ~3,000L)
   事件: lifecycle / injection / compaction
   调度: auto-memory / role-activation / external-readonly
-  工具: tool-memory / tool-knowledge / tool-role-info
+  工具: tool-search + tool-exec (注册) → tool-memory / tool-knowledge / tool-role-info (executor)
   命令: commands-memory / commands-kb / commands-role
   支撑: context / ui / messages / fs-utils
     ↓
@@ -70,9 +70,11 @@ runtime/ (编排实现, 16 模块, ~3,000L)
 | `ui.ts` | ~150 | TUI 可用性判断、notify、角色选择 UI |
 | `messages.ts` | ~25 | 消息数组工具 |
 | `fs-utils.ts` | ~65 | 路径规范化、角色目录内安全路径解析 |
-| `tool-memory.ts` | ~530 | `memory` 工具（20 个 action，含 read / pending 审阅 / event 改删） |
-| `tool-knowledge.ts` | ~190 | `knowledge` 工具 |
-| `tool-role-info.ts` | ~60 | `role_info` 工具（只列目录，不读内容） |
+| `tool-search.ts` | ~90 | `role_search` 工具（记忆+知识统一检索） |
+| `tool-exec.ts` | ~160 | `role_exec` 工具（OP_CATALOG + 分发 + help 按需目录） |
+| `tool-memory.ts` | ~510 | memory op executor（20 个 op，含 read / pending 审阅 / event 改删） |
+| `tool-knowledge.ts` | ~170 | knowledge op executor（kb_list/kb_read/kb_write + search） |
+| `tool-role-info.ts` | ~50 | role_info executor（只列目录，不读内容） |
 | `commands-memory.ts` | ~530 | `/memories` `/memory-*` 全家桶 |
 | `commands-kb.ts` | ~80 | `/kb` |
 | `commands-role.ts` | ~280 | `/role` |
@@ -197,15 +199,18 @@ L1 原始: daily/YYYY-MM-DD.md (LESSON/PREFERENCE/EVENT)
 
 ## Tool API
 
-三个工具，注册在 `runtime/tool-*.ts`：
+渐进式两工具（progressive disclosure）：schema 极简常驻，细节按需加载。
 
 ```typescript
-memory({ action: "read|add_learning|add_preference|add_event|update_*|delete_*|promote_pending|discard_pending|reinforce|search|list|consolidate|repair|llm_tidy|vector_rebuild|vector_stats" })
-knowledge({ action: "list|search|read|write" })
-role_info({ path, recursive })   // 只列角色目录结构；旧的 role_read/write/list/search 已删除
+role_search({ query, scope?: "all|memory|knowledge", limit? })   // 统一检索：记忆全层(混合)+知识库，结果带 [id:...]
+role_exec({ op, args? })                                          // 所有操作：op 分发
+role_exec({ op: "help" })                                         // 按需加载操作目录（分组 op + 参数规范）
+role_exec({ op: "help", args: { topic: "edit_spec" } })           // 直接编辑记忆文件的格式规范
 ```
 
-自主编辑设计：注入的记忆块每条带 `[id:...]`（结构化渲染，不再 dump 原文件），模型看到问题条目可直接改删；`read` 提供全量带 id 视图（section 过滤）；后台/压缩提取的 pending 候选注入待审块，由模型 `promote_pending` / `discard_pending`（支持 ids 批量）裁决。所有变更同步向量索引并写审计日志。
+op 目录（单一事实源 `runtime/tool-exec.ts` 的 `OP_CATALOG`，help 文本与分发集合都由它派生）：memory 读（read/list）、memory 写（add_*/update_*/delete_*/reinforce）、pending 审阅（promote_pending/discard_pending，支持 ids 批量）、知识库（kb_list/kb_read/kb_write，惰性加载 knowledge.ts）、维护（consolidate/repair/llm_tidy/vector_*）、role_info。
+
+自主编辑设计：注入的记忆块每条带 `[id:...]`（结构化渲染，不再 dump 原文件），模型看到问题条目可直接改删；`read` 提供全量带 id 视图（section 过滤）；后台/压缩提取的 pending 候选注入待审块，由模型裁决。所有变更同步向量索引并写审计日志。
 
 ## 新增文件 (all-MiniLM-L6-v2 Integration)
 

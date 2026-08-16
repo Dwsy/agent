@@ -8,7 +8,6 @@ import { join } from "node:path";
 import { config } from "../config.ts";
 import { log } from "../logger.ts";
 import {
-  buildMemoryEditInstruction,
   buildPendingReviewBlock,
   loadHighPriorityMemories,
   loadMemoryOnDemand,
@@ -23,46 +22,18 @@ import { getLastUserText } from "./messages.ts";
 import { autoRepairRoleMemory } from "./role-activation.ts";
 
 function buildFileLocationInstruction(currentRolePath: string): string {
-  const today = new Date().toISOString().split("T")[0];
-  return `## 📁 FILE LOCATIONS
+  return `## 🧠 ROLE & MEMORY
 
-IMPORTANT: All persona files are stored in the role directory:
-**${currentRolePath}**
+Role directory: ${currentRolePath} (core/*.md = persona; memory/consolidated.md + memory/daily/ = memory). Do not mechanically read role files for greetings or normal replies.
 
-Structured paths (v2):
-- identity → ${currentRolePath}/core/identity.md
-- user → ${currentRolePath}/core/user.md
-- soul → ${currentRolePath}/core/soul.md
-- constraints → ${currentRolePath}/core/constraints.md
-- memory consolidated → ${currentRolePath}/memory/consolidated.md
-- daily memories → ${currentRolePath}/memory/daily/${today}.md
+You own this role's memory — background extraction is only a safety net. Two tools:
+- \`role_search({ query, scope? })\` — search memory + knowledge when prior cross-session context could change your answer. Not for greetings or self-contained tasks.
+- \`role_exec({ op, args })\` — all operations: add_learning / add_preference / add_event / update_* / delete_* / promote_pending / discard_pending / reinforce / read / kb_* … Run \`role_exec({ op: "help" })\` for the full catalog and argument specs.
 
-Use these paths only when you need to inspect or edit on-disk state.
-They are not a mandatory startup checklist, and you should not mechanically read role files for greetings or normal replies.
-
-## 🧠 MEMORY (YOU OWN IT)
-
-You are the primary editor of this role's memory. Background extraction and compaction are only a safety net for what you miss — do not rely on them. Manage memory proactively with the \`memory\` tool, in the natural flow of the conversation.
-
-**Recall** — \`memory({ action: "search", query })\` when prior cross-session context could change your answer; \`memory({ action: "read", section })\` for a full ID-annotated view. Don't search mechanically on greetings or self-contained tasks.
-
-**Write immediately when it happens** (don't defer to background extraction):
-- Durable lesson, non-obvious insight, hard-won fix → \`add_learning\`
-- Stable user preference or working convention you observed → \`add_preference\`
-- Milestone, decision, or notable episode → \`add_event\`
-Skip trivial, one-off, task-local noise. Test: "would I want to know this in the next session?"
-
-**Curate on sight** — injected memory entries carry \`[id:...]\`; act the moment you notice a problem:
-- Outdated or wrong entry → \`update_learning\` / \`update_preference\` / \`update_event\` with its id
-- Duplicate or obsolete entry → \`delete_*\` (never delete preferences without user confirmation)
-- An entry proved genuinely useful this session → \`reinforce\`
-- Pending candidates shown below → review with \`promote_pending\` / \`discard_pending\` (batch via \`ids\`)
-
-Fixing a wrong memory you just noticed is part of answering well — do it inline, no permission needed. Do NOT write mechanical end-of-task reflections.
-
-Bundled skills may guide this behavior (for example: memory-recall, memory-retro, memory-organize, memory-best-practices).
-
-${buildMemoryEditInstruction(currentRolePath)}`;
+Protocol:
+- Write durable insights the moment they occur (test: useful next session?); skip task-local noise; no mechanical end-of-task reflections.
+- Injected memory entries carry \`[id:...]\` — fix wrong/stale entries on sight by passing that id to update_*/delete_*; \`reinforce\` entries that proved useful. Never delete preferences without user confirmation.
+- Pending candidates (if shown below) → review with promote_pending / discard_pending.`;
 }
 
 function buildMemoryPrompt(rt: Runtime, event: any): string {

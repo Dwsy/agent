@@ -1,7 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { getLanguageFromPath, getMarkdownTheme, highlightCode } from "@earendil-works/pi-coding-agent";
 import { Box, Markdown, Spacer, Text } from "@earendil-works/pi-tui";
-import { homedir } from "node:os";
 
 type ThemeLike = {
   fg: (color: any, text: string) => string;
@@ -30,12 +29,6 @@ type ToolRenderFactory = {
   call: (args: Record<string, unknown> | undefined, theme: ThemeLike, context?: ToolRenderContext) => string;
   result: (result: ToolResultLike, options: ToolRenderOptions, theme: ThemeLike, context?: ToolRenderContext) => string | undefined;
 };
-
-function shortenPath(path: unknown, fallback = "."): string {
-  if (typeof path !== "string" || !path.trim()) return fallback;
-  const home = homedir();
-  return path.startsWith(home) ? `~${path.slice(home.length)}` : path;
-}
 
 function textValue(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value : undefined;
@@ -163,50 +156,6 @@ function createMessageBoxRenderer(title: string) {
   };
 }
 
-function formatActionCall(toolName: string, args: Record<string, unknown> | undefined, theme: ThemeLike, extra?: string): string {
-  const action = textValue(args?.action) || "run";
-  return `${theme.fg("toolTitle", theme.bold(toolName))} ${theme.fg("accent", action)}${extra ? ` ${theme.fg("muted", extra)}` : ""}`;
-}
-
-function createActionToolRenderers(toolName: string, options?: {
-  callExtra?: (args: Record<string, unknown> | undefined) => string | undefined;
-  resultWarning?: (result: ToolResultLike) => string | undefined;
-  collapsedLines?: number;
-}) {
-  return createTextToolRenderers({
-    call(args, theme) {
-      return formatActionCall(toolName, args, theme, options?.callExtra?.(args));
-    },
-    result(result, renderOptions, theme) {
-      const warning = options?.resultWarning?.(result);
-      if (result.isError) {
-        return formatSimpleResult(extractText(result), { ...renderOptions, expanded: true }, theme, {
-          color: "error",
-          warning,
-          collapsedLines: options?.collapsedLines,
-        });
-      }
-      return formatSimpleResult(extractText(result), renderOptions, theme, {
-        warning,
-        collapsedLines: options?.collapsedLines ?? 16,
-      });
-    },
-  });
-}
-
-export const roleInfoToolRenderers = createTextToolRenderers({
-  call(_args, theme) {
-    return `${theme.fg("toolTitle", theme.bold("role_info"))} ${theme.fg("muted", "get role directory structure")}`;
-  },
-  result(result, options, theme) {
-    const details = result.details || {};
-    const count = typeof details.count === "number" ? `${details.count} entries` : undefined;
-    const base = textValue(details.base);
-    const warning = [count, base ? `base ${base}` : undefined].filter(Boolean).join(" · ");
-    return formatSimpleResult(extractText(result), options, theme, { collapsedLines: 20, warning: warning || undefined });
-  },
-});
-
 type MemorySearchMatchLike = {
   kind?: string;
   id?: string;
@@ -269,25 +218,48 @@ function formatMemorySearchResult(result: ToolResultLike, options: ToolRenderOpt
   return text;
 }
 
-export const memoryToolRenderers = createTextToolRenderers({
+export const roleSearchToolRenderers = createTextToolRenderers({
   call(args, theme) {
     const a = args || {};
-    const extra = textValue(a.query)
-      ? `query=${JSON.stringify(a.query)}`
-      : textValue(a.id)
-        ? `id=${a.id}`
-        : textValue(a.category)
-          ? `category=${a.category}`
-          : undefined;
-    return formatActionCall("memory", args, theme, extra);
+    const scope = textValue(a.scope);
+    const extra = [
+      textValue(a.query) ? JSON.stringify(a.query) : undefined,
+      scope && scope !== "all" ? `scope=${scope}` : undefined,
+    ].filter(Boolean).join(" ");
+    return `${theme.fg("toolTitle", theme.bold("role_search"))}${extra ? ` ${theme.fg("muted", extra)}` : ""}`;
   },
-  result(result, renderOptions, theme, context) {
-    const action = textValue(context?.args?.action);
-    if (action === "search") {
-      return formatMemorySearchResult(result, renderOptions, theme);
-    }
-    const warning = typeof result.details?.count === "number" ? `${result.details.count} results` : undefined;
-    if (result.isError) {
+  result(result, renderOptions, theme) {
+    return formatMemorySearchResult(result, renderOptions, theme);
+  },
+});
+
+/** Compact one-liner for role_exec args: first meaningful key, truncated. */
+function roleExecCallExtra(args: Record<string, unknown> | undefined): string | undefined {
+  const a = (args?.args && typeof args.args === "object" ? args.args : {}) as Record<string, unknown>;
+  for (const key of ["id", "ids", "section", "path", "title", "query", "category", "content", "topic"]) {
+    const value = a[key];
+    if (value === undefined || value === null) continue;
+    const text = Array.isArray(value) ? value.join(",") : String(value);
+    if (!text.trim()) continue;
+    return `${key}=${text.length > 60 ? `${text.slice(0, 60)}…` : text}`;
+  }
+  return undefined;
+}
+
+export const roleExecToolRenderers = createTextToolRenderers({
+  call(args, theme) {
+    const op = textValue(args?.op) || "run";
+    const extra = roleExecCallExtra(args);
+    return `${theme.fg("toolTitle", theme.bold("role_exec"))} ${theme.fg("accent", op)}${extra ? ` ${theme.fg("muted", extra)}` : ""}`;
+  },
+  result(result, renderOptions, theme) {
+    const details = result.details || {};
+    const warning = [
+      typeof details.count === "number" ? `${details.count} results` : undefined,
+      typeof details.totalEntries === "number" ? `${details.totalEntries} entries` : undefined,
+      typeof details.base === "string" && details.base ? `base ${details.base}` : undefined,
+    ].filter(Boolean).join(" · ") || undefined;
+    if (result.isError || details.error === true) {
       return formatSimpleResult(extractText(result), { ...renderOptions, expanded: true }, theme, {
         color: "error",
         warning,
@@ -297,24 +269,6 @@ export const memoryToolRenderers = createTextToolRenderers({
       warning,
       collapsedLines: 16,
     });
-  },
-});
-
-export const knowledgeToolRenderers = createActionToolRenderers("knowledge", {
-  callExtra(args) {
-    const a = args || {};
-    return textValue(a.path)
-      ? shortenPath(a.path)
-      : textValue(a.query)
-        ? JSON.stringify(a.query)
-        : textValue(a.category)
-          ? `category=${a.category}`
-          : undefined;
-  },
-  resultWarning(result) {
-    const count = typeof result.details?.count === "number" ? `${result.details.count} results` : undefined;
-    const totalEntries = typeof result.details?.totalEntries === "number" ? `${result.details.totalEntries} entries` : undefined;
-    return [count, totalEntries].filter(Boolean).join(" · ") || undefined;
   },
 });
 

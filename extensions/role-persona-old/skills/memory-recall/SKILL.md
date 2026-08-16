@@ -19,17 +19,17 @@ Knowledge      → docs/knowledge/ (reusable patterns, architecture decisions)
 
 | Tool | Purpose |
 |------|---------|
-| `memory({ action: "search", query: "<text>" })` | Search all layers. Auto-reinforces high-score matches (≥0.5). Auto-promotes relevant pending memories. |
-| `memory({ action: "list" })` | List all consolidated memories, detect issues |
-| `role_info` | List the active role directory structure; does not read file contents |
-| `knowledge({ action: "search", query: "<text>" })` | Search knowledge base |
+| `role_search({ query: "<text>" })` | Search all layers. Auto-reinforces high-score matches (≥0.5). Auto-promotes relevant pending memories. |
+| `role_exec({ op: "list" })` | List all consolidated memories, detect issues |
+| `role_exec({ op: "role_info" })` | List the active role directory structure; does not read file contents |
+| `role_search({ query: "<text>", scope: "knowledge" })` | Search knowledge base |
 
 ## Process
 
 ### Step 1: Targeted search
 
 ```
-memory({ action: "search", query: "<user topic or key concept>" })
+role_search({ query: "<user topic or key concept>" })
 ```
 
 The search automatically:
@@ -43,7 +43,7 @@ The search automatically:
 
 If search returns few results:
 ```
-memory({ action: "list" })
+role_exec({ op: "list" })
 ```
 Focus on `High Priority [3x]+` — these are battle-tested.
 
@@ -56,7 +56,7 @@ Focus on `High Priority [3x]+` — these are battle-tested.
 
 For technical tasks:
 ```
-knowledge({ action: "search", query: "<topic>" })
+role_search({ query: "<topic>", scope: "knowledge" })
 ```
 
 ### Step 5: Summarize and proceed
@@ -104,7 +104,7 @@ Each learning has LLM-auto-extracted tags. Search uses them:
 
 ## Important
 
-- Start with targeted `memory({ action: "search", query: "..." })` only when prior context is materially relevant; search may reinforce or promote matches
+- Start with targeted `role_search({ query: "..." })` only when prior context is materially relevant; search may reinforce or promote matches
 - High Priority `[3x]+` are most valuable — read first
 - User references past work → search for related keywords
 - Nothing found → proceed without memory

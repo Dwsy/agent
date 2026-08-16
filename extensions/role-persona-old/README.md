@@ -343,30 +343,36 @@ live 模式下 learning / preference / event / daily 都能在详情面板里改
 
 ## 工具 API
 
-### `memory`
+渐进式两工具设计:schema 只有 `role_search({ query, scope?, limit? })` 和 `role_exec({ op, args })`,详细的操作目录与参数规范不常驻上下文,通过 `role_exec({ op: "help" })` 按需加载。旧的 `memory` / `knowledge` / `role_info` 三工具已删除。
 
-模型是记忆的第一编辑者:注入到上下文的每条记忆都带 `[id:...]`,模型看到过时/错误条目可直接用该 id 改删,不需要先 search 一轮。后台提取只是安全网。
+模型是记忆的第一编辑者:注入到上下文的每条记忆都带 `[id:...]`,看到过时/错误条目直接用该 id 改删,不需要先 search 一轮。后台提取只是安全网。
 
-常用 actions:
+### `role_search`
+
+统一检索记忆(全层,向量可用时混合检索,高分命中自动 reinforce/promote)与知识库:
 
 ```ts
-memory({ action: "read", section: "pending" })   // 全量带 id 视图: all|learnings|preferences|events|pending
-memory({ action: "search", query: "pending verification" })
-memory({ action: "list" })
-memory({ action: "add_learning", content: "声明完成前验证铁律" })
-memory({ action: "add_preference", category: "Workflow", content: "先检索后修改" })
-memory({ action: "add_event", category: "标题", content: "正文" })
-memory({ action: "update_learning", id: "a1b2c3d4e5", content: "新表述" })
-memory({ action: "update_event", id: "...", category: "新标题", date: "2026-08-13" })
-memory({ action: "delete_event", id: "..." })
-memory({ action: "promote_pending", ids: ["...", "..."] })   // 审阅后台提取的候选
-memory({ action: "discard_pending", id: "..." })
-memory({ action: "reinforce", content: "声明完成前验证铁律" })
-memory({ action: "consolidate" })
-memory({ action: "repair" })
-memory({ action: "llm_tidy" })
-memory({ action: "vector_rebuild" })
-memory({ action: "vector_stats" })
+role_search({ query: "pending verification" })
+role_search({ query: "clean architecture", scope: "knowledge" })   // scope: all|memory|knowledge
+```
+
+### `role_exec`
+
+所有操作走 op 分发,`help` 返回完整目录:
+
+```ts
+role_exec({ op: "help" })                                          // 按需加载操作目录
+role_exec({ op: "help", args: { topic: "edit_spec" } })            // 直接编辑文件的格式规范
+role_exec({ op: "read", args: { section: "pending" } })            // 全量带 id 视图
+role_exec({ op: "add_learning", args: { content: "声明完成前验证铁律" } })
+role_exec({ op: "add_preference", args: { content: "先检索后修改", category: "Workflow" } })
+role_exec({ op: "update_learning", args: { id: "a1b2c3d4e5", content: "新表述" } })
+role_exec({ op: "update_event", args: { id: "...", category: "新标题", date: "2026-08-13" } })
+role_exec({ op: "promote_pending", args: { ids: ["...", "..."] } })  // 审阅后台提取的候选
+role_exec({ op: "kb_read", args: { path: "design-systems/glassmorphism.md" } })
+role_exec({ op: "kb_write", args: { title: "RRF Hybrid Search", category: "retrieval", content: "..." } })
+role_exec({ op: "role_info", args: { path: "core", recursive: true } })
+role_exec({ op: "llm_tidy" })   // consolidate / repair / vector_rebuild / vector_stats 同理
 ```
 
 能力覆盖:
@@ -374,25 +380,9 @@ memory({ action: "vector_stats" })
 - learning / preference / event 全量增删改查(events 精确 id 匹配)
 - read 带 id 全量视图 + section 过滤
 - pending 候选人工审阅:promote / discard,支持 ids 批量
-- search + auto-reinforce + pending auto-promote
+- 知识库 kb_list / kb_read / kb_write
 - 结构修复、规则去重、LLM 整理、向量索引重建/状态查看
 - 所有变更走 Git 提交与 JSONL 审计,向量索引自动同步
-
-### `role_info`
-
-旧的 `role_read` / `role_write` / `role_list` / `role_search` 已经删掉了。现在只有一个 `role_info`，只列角色目录结构、不读内容——读写请直接用标准文件工具，记忆和知识走 `memory` / `knowledge`。
-
-```ts
-role_info({ path: "core", recursive: true })
-```
-
-### `knowledge`
-
-```ts
-knowledge({ action: "search", query: "clean architecture", scope: "fullstack" })
-knowledge({ action: "read", path: "design-systems/glassmorphism.md" })
-knowledge({ action: "write", title: "RRF Hybrid Search", category: "retrieval", content: "..." })
-```
 
 ## 命令
 

@@ -22,8 +22,8 @@ A quality standard for writing high-quality memories that compound in value.
 
 | Trigger | Effect |
 |---------|--------|
-| `memory({ action: "reinforce", content: "..." })` | Manual +1 |
-| `memory({ action: "search", query: "..." })` score ≥0.5 | Auto-reinforce +1 |
+| `role_exec({ op: "reinforce", args: { content: "..." } })` | Manual +1 |
+| `role_search({ query: "..." })` score ≥0.5 | Auto-reinforce +1 |
 | Pending auto-promote (search ≥0.5) | Moves to consolidated at [0x] |
 
 **Reinforce ≠ Promote:**
@@ -128,11 +128,11 @@ Use `consolidate` for routine maintenance. Use `llm_tidy` for deep cleanup.
 ## Quick Reference
 
 ```
-Add learning:     memory({ action: "add_learning", content: "..." })
-Add preference:   memory({ action: "add_preference", content: "...", category: "..." })
-Reinforce:        memory({ action: "reinforce", content: "..." })
-Search:           memory({ action: "search", query: "..." })
-List:             memory({ action: "list" })
-Consolidate:      memory({ action: "consolidate" })
-LLM tidy:         memory({ action: "llm_tidy" })
+Add learning:     role_exec({ op: "add_learning", args: { content: "..." } })
+Add preference:   role_exec({ op: "add_preference", args: { content: "...", category: "..." } })
+Reinforce:        role_exec({ op: "reinforce", args: { content: "..." } })
+Search:           role_search({ query: "..." })
+List:             role_exec({ op: "list" })
+Consolidate:      role_exec({ op: "consolidate" })
+LLM tidy:         role_exec({ op: "llm_tidy" })
 ```

@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Changed (工具重构为渐进式两工具，降低常驻 token)
+- **`memory`(20 action) / `knowledge`(4 action) / `role_info` 三工具合并为 `role_search` + `role_exec`**：工具 schema 从三份长描述 + 大参数枚举缩到「search 三参数、exec 两参数」，每轮请求的常驻工具定义 token 大幅下降；详细操作目录与参数规范不再常驻，`role_exec({ op: "help" })` 按需加载（`args.topic: "edit_spec"` 返回直接编辑文件的格式规范）
+- **`role_search`**：唯一检索入口，覆盖记忆全层（向量可用时混合检索，保留 auto-reinforce / pending auto-promote）+ 知识库（`scope: all|memory|knowledge`），结果统一带 `[id:...]`
+- **`role_exec`**：`{ op, args }` 分发到原有 executor；`OP_CATALOG` 是 help 文本与分发集合的单一事实源，未知 op 返回错误 + 完整目录便于自纠；kb_* 惰性加载 `knowledge.ts`
+- **系统提示注入瘦身**：原每轮注入 FILE LOCATIONS（14 行路径清单）+ MEMORY 协议（20 行）+ Memory Edit Spec（25 行）≈ 60 行，压缩为一个 ~12 行的 ROLE & MEMORY 块；Edit Spec 移入 help 按需加载
+- 原 `tool-memory / tool-knowledge / tool-role-info` 降级为纯 executor 函数（`executeMemoryOp` / `executeKnowledgeOp` / `executeRoleInfo`），注册逻辑收进 `tool-search.ts` / `tool-exec.ts`；TUI 渲染器同步替换为 role_search（结构化命中列表）与 role_exec（op + 关键参数一行摘要）
+- 打包 skills（memory-recall / memory-retro / memory-organize / memory-best-practices）内的调用示例全部迁移到新语法
+- 测试：新增 `tool-exec.test.ts`（目录↔分发一致性、read 分发、未知 op 自纠、help/edit_spec 按需加载、无角色 fail-fast），125 tests 全绿
+
 ### Added (模型自主编辑记忆)
 - **注入的记忆全部带 id**：`readLongTermMemoryBlock` 不再 dump `consolidated.md` 原文，改为结构化渲染，每条 learning / preference / event 前缀 `[id:...]`（High Priority 块同样带 id）。模型在上下文里看到过时或错误的条目，直接拿 id 调 `update_*` / `delete_*` / `reinforce`，省掉先 search 定位的一轮往返；顺带不再把 frontmatter 与机器元数据注释泄进提示词
 - **pending 候选进入模型视野**：后台提取 / 压缩抢救的条目此前只能等搜索命中自动晋升或 7 天过期，模型完全不可见。现在注入「Pending Memories Awaiting Review」块（最多列 8 条,带 id），新增 `promote_pending` / `discard_pending` 动作（`ids` 批量），晋升同步向量索引，全部写审计日志

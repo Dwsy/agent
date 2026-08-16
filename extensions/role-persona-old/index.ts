@@ -35,7 +35,9 @@
  *   auto-memory.ts      auto-memory checkpoint scheduling and flush
  *   role-activation.ts  role activation flow
  *   external-readonly.ts optional external readonly memory service
- *   tool-*.ts           memory / knowledge / role_info tools
+ *   tool-search.ts      role_search tool (unified memory + knowledge retrieval)
+ *   tool-exec.ts        role_exec tool (op dispatch + on-demand help catalog)
+ *   tool-*.ts           op executors (memory / knowledge / role_info)
  *   commands-*.ts       memory / kb / role slash commands
  */
 
@@ -47,9 +49,8 @@ import { registerLifecycle } from "./runtime/lifecycle.ts";
 import { registerKbCommand } from "./runtime/commands-kb.ts";
 import { registerMemoryCommands } from "./runtime/commands-memory.ts";
 import { registerRoleCommand } from "./runtime/commands-role.ts";
-import { registerKnowledgeTool } from "./runtime/tool-knowledge.ts";
-import { registerMemoryTool } from "./runtime/tool-memory.ts";
-import { registerRoleInfoTool } from "./runtime/tool-role-info.ts";
+import { registerRoleExecTool } from "./runtime/tool-exec.ts";
+import { registerRoleSearchTool } from "./runtime/tool-search.ts";
 import { registerRoleMessageRenderers } from "./tui-renderers.ts";
 
 export default function rolePersonaExtension(pi: ExtensionAPI) {
@@ -78,10 +79,9 @@ export default function rolePersonaExtension(pi: ExtensionAPI) {
   registerLifecycle(rt, compaction);
   registerInjection(rt);
 
-  // Tools
-  registerKnowledgeTool(rt);
-  registerMemoryTool(rt);
-  registerRoleInfoTool(rt);
+  // Tools: progressive disclosure — one search, one exec (details via op "help")
+  registerRoleSearchTool(rt);
+  registerRoleExecTool(rt);
 
   // Commands
   registerMemoryCommands(rt);

@@ -20,22 +20,22 @@ daily/*.md       ← L1: raw session logs
 
 | Tool | Purpose |
 |------|---------|
-| `memory({ action: "list" })` | List all memories, detect structural issues |
-| `memory({ action: "consolidate" })` | Rule-based dedup: exact + Jaccard similarity. Safe, never deletes unique entries. |
-| `memory({ action: "repair" })` | Fix markdown structure issues |
-| `memory({ action: "llm_tidy" })` | LLM-guided: rewrites verbose, detects contradictions, suggests deletions |
-| `memory({ action: "search", query: "..." })` | Search with auto-reinforce (≥0.5 → used+1) |
-| `memory({ action: "reinforce", content: "..." })` | Increment `[Nx]` usage count |
-| `memory({ action: "delete_learning", content: "..." })` | Remove stale entry |
-| `memory({ action: "update_learning", id/query, content })` | Rewrite entry |
-| `role_info` | List role paths only; use memory actions for memory changes |
+| `role_exec({ op: "list" })` | List all memories, detect structural issues |
+| `role_exec({ op: "consolidate" })` | Rule-based dedup: exact + Jaccard similarity. Safe, never deletes unique entries. |
+| `role_exec({ op: "repair" })` | Fix markdown structure issues |
+| `role_exec({ op: "llm_tidy" })` | LLM-guided: rewrites verbose, detects contradictions, suggests deletions |
+| `role_search({ query: "..." })` | Search with auto-reinforce (≥0.5 → used+1) |
+| `role_exec({ op: "reinforce", args: { content: "..." } })` | Increment `[Nx]` usage count |
+| `role_exec({ op: "delete_learning", args: { content: "..." } })` | Remove stale entry |
+| `role_exec({ op: "update_learning", args: { id/query, content } })` | Rewrite entry |
+| `role_exec({ op: "role_info" })` | List role paths only; use memory ops for memory changes |
 
 ## Process
 
 ### Step 1: Assess
 
 ```
-memory({ action: "list" })
+role_exec({ op: "list" })
 ```
 
 Look for:
@@ -46,7 +46,7 @@ Look for:
 ### Step 2: Repair (if needed)
 
 ```
-memory({ action: "repair" })
+role_exec({ op: "repair" })
 ```
 
 Fixes: malformed headings, missing sections, stray lines. Safe, rule-based.
@@ -54,7 +54,7 @@ Fixes: malformed headings, missing sections, stray lines. Safe, rule-based.
 ### Step 3: Consolidate (dedup)
 
 ```
-memory({ action: "consolidate" })
+role_exec({ op: "consolidate" })
 ```
 
 **Rule-based, NOT LLM:**
@@ -68,7 +68,7 @@ memory({ action: "consolidate" })
 ### Step 4: LLM Tidy (deep cleanup)
 
 ```
-memory({ action: "llm_tidy" })
+role_exec({ op: "llm_tidy" })
 ```
 
 LLM produces a plan:
@@ -92,7 +92,7 @@ Pending entries that survive 7+ days without use are auto-expired. Manual promot
 
 For insights used in this session:
 ```
-memory({ action: "reinforce", content: "<text>" })
+role_exec({ op: "reinforce", args: { content: "<text>" } })
 ```
 
 Moves memories toward High Priority `[3x]+`.
@@ -101,7 +101,7 @@ Moves memories toward High Priority `[3x]+`.
 
 For provably outdated entries:
 ```
-memory({ action: "delete_learning", content: "<text>" })
+role_exec({ op: "delete_learning", args: { content: "<text>" } })
 ```
 
 **Rules:**
