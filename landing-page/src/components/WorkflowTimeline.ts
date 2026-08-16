@@ -323,17 +323,17 @@ export class WorkflowTimeline extends LitElement {
 
     const phases = [
       { num: '01', title: f('workflow.phases.0.title'), desc: f('workflow.phases.0.desc'), tools: ['ace', 'rg', 'ast-grep'] },
-      { num: '02', title: f('workflow.phases.1.title'), desc: f('workflow.phases.1.desc'), tools: ['scout', 'planner'] },
-      { num: '03', title: f('workflow.phases.2.title'), desc: f('workflow.phases.2.desc'), tools: ['Gemini', 'diff'] },
-      { num: '04', title: f('workflow.phases.3.title'), desc: f('workflow.phases.3.desc'), tools: ['edit', 'test'] },
-      { num: '05', title: f('workflow.phases.4.title'), desc: f('workflow.phases.4.desc'), tools: ['Codex', 'verify'] },
+      { num: '02', title: f('workflow.phases.1.title'), desc: f('workflow.phases.1.desc'), tools: ['callers', 'constraints'] },
+      { num: '03', title: f('workflow.phases.2.title'), desc: f('workflow.phases.2.desc'), tools: ['tag', 'compact'] },
+      { num: '04', title: f('workflow.phases.3.title'), desc: f('workflow.phases.3.desc'), tools: ['edit', 'gapp'] },
+      { num: '05', title: f('workflow.phases.4.title'), desc: f('workflow.phases.4.desc'), tools: ['test', 'diff'] },
     ];
 
     return html`
       <section class="section" id="workflow">
         <div class="inner">
           <div class="header">
-            <span class="label">${isZh ? '工作流管线' : 'Workflow Pipeline'}</span>
+            <span class="label">${isZh ? '工程闭环' : 'Engineering Loop'}</span>
             <h2 class="title">${f('workflow.title')}</h2>
             <p class="subtitle">${f('workflow.subtitle')}</p>
           </div>

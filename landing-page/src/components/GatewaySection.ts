@@ -133,20 +133,20 @@ export class GatewaySection extends LitElement {
 
           <div class="features">
             <div class="feature">
-              <div class="feature-value">65+</div>
-              <div class="feature-label">${isZh ? '模块' : 'Modules'}</div>
+              <div class="feature-value">RPC</div>
+              <div class="feature-label">${isZh ? '进程池与会话路由' : 'Worker pool + session routing'}</div>
             </div>
             <div class="feature">
-              <div class="feature-value">16</div>
-              <div class="feature-label">${isZh ? '生命周期钩子' : 'Lifecycle Hooks'}</div>
+              <div class="feature-value">WS</div>
+              <div class="feature-label">${isZh ? 'WebSocket / HTTP 接入' : 'WebSocket / HTTP access'}</div>
             </div>
             <div class="feature">
-              <div class="feature-value">3</div>
-              <div class="feature-label">${isZh ? '通道' : 'Channels'}</div>
+              <div class="feature-value">PLUGIN</div>
+              <div class="feature-label">${isZh ? '可编程消息管线' : 'Programmable message pipeline'}</div>
             </div>
             <div class="feature">
-              <div class="feature-value">&lt;10ms</div>
-              <div class="feature-label">${isZh ? '延迟' : 'Latency'}</div>
+              <div class="feature-value">OFFLINE</div>
+              <div class="feature-label">${isZh ? 'Worker 启动不依赖网络' : 'Network-safe worker startup'}</div>
             </div>
           </div>
         </div>

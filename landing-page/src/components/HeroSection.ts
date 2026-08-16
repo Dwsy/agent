@@ -388,15 +388,15 @@ export class HeroSection extends LitElement {
 
           <div class="stats">
             <div class="stat">
-              <span class="stat-value">50+</span>
+              <span class="stat-value">Context</span>
               <span class="stat-label">${f('hero.stats.commands')}</span>
             </div>
             <div class="stat">
-              <span class="stat-value">20+</span>
+              <span class="stat-value">GAPP</span>
               <span class="stat-label">${f('hero.stats.extensions')}</span>
             </div>
             <div class="stat">
-              <span class="stat-value">10x</span>
+              <span class="stat-value">Trace</span>
               <span class="stat-label">${f('hero.stats.productivity')}</span>
             </div>
           </div>
@@ -413,17 +413,17 @@ export class HeroSection extends LitElement {
             <div class="terminal-body">
               <div class="terminal-line">
                 <span class="terminal-prompt">$</span>
-                <span class="terminal-command">pi "Create a React app"</span>
+                <span class="terminal-command">pi "trace the real flow, then fix it"</span>
               </div>
               <div class="terminal-output">
-                Analyzing requirements...<br>
-                Creating project structure...<br>
-                Installing dependencies...<br>
-                <span style="color: #10b981;">Done in 3.2s</span>
+                retrieving symbols + callers...<br>
+                checkpointing context...<br>
+                applying surgical edit + verification...<br>
+                <span style="color: #10b981;">evidence attached · worktree clean</span>
               </div>
               <div class="terminal-line">
                 <span class="terminal-prompt">$</span>
-                <span class="terminal-command">pi /research "AI trends 2025"</span>
+                <span class="terminal-command">pi /gapp open dyncode-project-map</span>
                 <span class="terminal-cursor"></span>
               </div>
             </div>

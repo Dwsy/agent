@@ -3,10 +3,10 @@ import { customElement, state } from "lit/decorators.js";
 import { i18n, type Locale } from "../i18n/i18n-manager";
 
 /**
- * Memory System Section - Visualizing the 3-Layer Memory Stack
- * L3: Runtime (memoryLog + vector + tag)
- * L2: Consolidated (structured markdown)
- * L1: Daily (raw logs)
+ * Context + Memory Section
+ * Session context: tag / checkout / compact
+ * Role memory: workspace mapping + vector recall + viewer
+ * Promotion path: daily → pending → consolidated / knowledge
  */
 @customElement("memory-section")
 export class MemorySection extends LitElement {
@@ -264,80 +264,72 @@ export class MemorySection extends LitElement {
         <div class="inner">
           <div class="header">
             <div class="header-left">
-              <span class="label">${isZh ? '记忆架构' : 'Memory System'}</span>
-              <h2 class="title">${isZh ? '三层记忆栈' : '3-Layer Memory Stack'}</h2>
+              <span class="label">${isZh ? '上下文与记忆' : 'Context + Memory'}</span>
+              <h2 class="title">${isZh ? '会话可恢复，经验可沉淀' : 'Recover sessions. Accumulate knowledge.'}</h2>
               <p class="subtitle">${isZh 
-                ? 'L3 运行时向量检索 + L2 结构化合并 + L1 原始日志。记忆塑造智能。' 
-                : 'L3 runtime vector search + L2 structured consolidation + L1 raw logs. Memory shapes intelligence.'}</p>
+                ? 'Pi 把短期上下文管理和长期角色记忆分开：会话用 tag / checkout / compact 控制，经验沿 daily → pending → consolidated / knowledge 逐步沉淀。'
+                : 'Pi separates short-term context control from durable role memory: tag / checkout / compact for sessions, and daily → pending → consolidated / knowledge for promoted experience.'}</p>
             </div>
           </div>
 
           <div class="memory-stack">
-            <!-- L3: Runtime -->
+            <!-- Session Context -->
             <div class="memory-layer">
-              <span class="layer-badge">L3</span>
+              <span class="layer-badge">CTX</span>
               <div class="layer-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" /></svg></div>
-              <h3 class="layer-title">${isZh ? '运行时记忆' : 'Runtime Memory'}</h3>
+              <h3 class="layer-title">${isZh ? '会话上下文' : 'Session Context'}</h3>
               <p class="layer-desc">${isZh 
-                ? '实时向量检索、标签索引、每日日志。毫秒级语义搜索。' 
-                : 'Real-time vector retrieval, tag indexing, daily logs. Millisecond semantic search.'}</p>
+                ? '像 Git 一样给关键上下文打 tag、查看历史、checkout 语义节点，并在长会话中结构化 compact。'
+                : 'Treat context like Git: tag important states, inspect history, checkout semantic points, and compact long sessions without losing the handoff.'}</p>
               <div class="layer-tech">
-                <span class="tech-tag">LanceDB</span>
-                <span class="tech-tag">768-dim</span>
-                <span class="tech-tag">BM25</span>
+                <span class="tech-tag">tag</span>
+                <span class="tech-tag">checkout</span>
+                <span class="tech-tag">compact</span>
               </div>
               <div class="vector-demo">
-                <div class="vector-query">> query: "auth patterns"</div>
-                <div class="vector-result">
-                  <span>auth.ts</span>
-                  <div class="similarity-bar"><div class="similarity-fill" style="width: 94%"></div></div>
-                  <span>0.94</span>
-                </div>
-                <div class="vector-result">
-                  <span>middleware.ts</span>
-                  <div class="similarity-bar"><div class="similarity-fill" style="width: 87%"></div></div>
-                  <span>0.87</span>
-                </div>
+                <div class="vector-query">context log --recent</div>
+                <div class="vector-result" style="color: #52525b;">release-ready · verified</div>
+                <div class="vector-result" style="color: #52525b;">root-cause · callers mapped</div>
               </div>
             </div>
 
-            <!-- L2: Consolidated -->
+            <!-- Role Memory -->
             <div class="memory-layer">
-              <span class="layer-badge">L2</span>
+              <span class="layer-badge">ROLE</span>
               <div class="layer-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg></div>
-              <h3 class="layer-title">${isZh ? '结构化记忆' : 'Consolidated Memory'}</h3>
+              <h3 class="layer-title">${isZh ? '角色记忆' : 'Role Memory'}</h3>
               <p class="layer-desc">${isZh 
-                ? '自动提取关键经验，去重降噪，合并为持久知识。跨会话可用。' 
-                : 'Auto-extract key learnings, dedupe noise, merge into persistent knowledge. Cross-session durable.'}</p>
+                ? '工作目录自动映射角色；identity、约束、工具偏好与记忆按角色隔离，支持向量召回和独立 viewer。'
+                : 'Workspace paths map to roles automatically; identity, constraints, tool habits, and memory stay role-scoped with vector recall and a dedicated viewer.'}</p>
               <div class="layer-tech">
-                <span class="tech-tag">Markdown</span>
-                <span class="tech-tag">LLM Extraction</span>
-                <span class="tech-tag">7-day Cycle</span>
+                <span class="tech-tag">Role Mapping</span>
+                <span class="tech-tag">LanceDB</span>
+                <span class="tech-tag">Viewer</span>
               </div>
               <div class="vector-demo">
-                <div class="vector-query"># Learnings (High Priority)</div>
-                <div class="vector-result" style="color: #52525b;">- [3x] Retrieve before modify</div>
-                <div class="vector-result" style="color: #52525b;">- [3x] Unified Diff protocol</div>
+                <div class="vector-query">memory.search("deployment")</div>
+                <div class="vector-result" style="color: #52525b;">role → global → project knowledge</div>
+                <div class="vector-result" style="color: #52525b;">private context stays role-scoped</div>
               </div>
             </div>
 
-            <!-- L1: Daily -->
+            <!-- Knowledge Promotion -->
             <div class="memory-layer">
-              <span class="layer-badge">L1</span>
+              <span class="layer-badge">KB</span>
               <div class="layer-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div>
-              <h3 class="layer-title">${isZh ? '原始日志' : 'Raw Logs'}</h3>
+              <h3 class="layer-title">${isZh ? '知识晋升' : 'Knowledge Promotion'}</h3>
               <p class="layer-desc">${isZh 
-                ? '每日完整会话记录，原始思考链，失败经验。回溯的根基。' 
-                : 'Daily complete session transcripts, raw thought chains, failures. Foundation for recall.'}</p>
+                ? '会话残留先进入 daily，候选经验进入 pending，稳定规则再晋升为 consolidated 指针或共享 knowledge。'
+                : 'Session residue lands in daily, candidates move through pending, and stable rules promote into consolidated pointers or shared knowledge.'}</p>
               <div class="layer-tech">
-                <span class="tech-tag">Daily.md</span>
-                <span class="tech-tag">JSONL</span>
-                <span class="tech-tag">Immutable</span>
+                <span class="tech-tag">daily</span>
+                <span class="tech-tag">pending</span>
+                <span class="tech-tag">knowledge</span>
               </div>
               <div class="vector-demo">
-                <div class="vector-query">2026-02-24.md</div>
-                <div class="vector-result" style="color: #52525b;">- [14:32] Context retrieval</div>
-                <div class="vector-result" style="color: #52525b;">- [15:45] Subagent dispatch</div>
+                <div class="vector-query">daily → pending → knowledge</div>
+                <div class="vector-result" style="color: #52525b;">one rule · one pointer · reusable body</div>
+                <div class="vector-result" style="color: #52525b;">noise stays out of durable memory</div>
               </div>
             </div>
           </div>

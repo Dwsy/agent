@@ -15,51 +15,51 @@ export default {
     cta: "开始使用",
   },
   hero: {
-    badge: "v2.0 现已发布",
+    badge: "持续进化的 Pi Runtime",
     title: {
-      part1: "真正可用的",
-      accent: "AI 工程师",
+      part1: "把 AI 编程变成",
+      accent: "可编程系统",
       part2: ""
     },
-    description: "不再当 AI 的保姆。Pi 处理上下文检索、并行子代理、安全审计和多通道部署 — 你专注于架构，而非提示词工程。",
+    description: "Pi 不只是聊天窗口：它把代码检索、上下文 checkpoint、角色记忆、原生 GAPP 界面、Provider 可观测性和 Gateway 编排放进同一个可扩展运行时。",
     cta: {
       primary: "开始使用",
       secondary: "阅读文档"
     },
     stats: {
-      commands: "内置命令",
-      extensions: "扩展插件",
-      productivity: "效率提升"
+      commands: "持久上下文",
+      extensions: "原生生成式 UI",
+      productivity: "端到端可观测"
     }
   },
   features: {
-    label: "核心架构",
-    title: "编排，不只是对话",
-    subtitle: "从语义代码搜索到多代理协作，从安全审计到生产部署。",
+    label: "运行时能力",
+    title: "从上下文到交付，一条可观察链路",
+    subtitle: "检索真实代码路径，保存可恢复上下文，用扩展和 GAPP 增强交互，并把验证证据留在同一会话里。",
     workflow: {
-      title: "五阶段工作流",
-      desc: "强制管线：上下文检索 → 分析 → 原型 → 实施 → 审计。没有捷径，没有幻觉编辑。",
+      title: "证据驱动工作流",
+      desc: "先定位真实实现，再形成计划、执行最小修改、运行验证并交付证据；流程随任务复杂度伸缩，而不是固定阶段表演。",
       features: [
-        "黄金法则：先检索再修改",
-        "Unified Diff 隔离",
-        "强制交付前审查",
-        "L1-L4 复杂度路由"
+        "先读真实调用链，再动代码",
+        "checkpoint / compact 保留关键上下文",
+        "测试、diff、状态一起验证",
+        "工具与扩展按任务动态组合"
       ],
       metrics: {
-        tasks: "任务",
-        success: "成功率",
-        active: "活跃"
+        tasks: "上下文标记",
+        success: "工作树状态",
+        active: "Provider 追踪"
       }
     },
     skills: {
-      title: "42 技能",
-      desc: "语义搜索、AST 操作、系统设计、Office 自动化。",
-      tags: ["ace-tool", "ast-grep", "codemap", "web-fetch", "+38 更多"]
+      title: "按需技能与工具",
+      desc: "语义检索、AST、浏览器、设计、诊断、文档与自动化能力按任务加载。",
+      tags: ["ace-tool", "ast-grep", "codemap", "web-browser", "diagnose"]
     },
     subagents: {
-      title: "25+ 代理",
-      desc: "通过 Crew 协议协调的专用代理。",
-      agents: ["侦察", "规划", "执行", "审查", "视觉", "研究", "API测试", "安全", "简化", "代码图", "头脑风暴", "系统设计"]
+      title: "角色与长期记忆",
+      desc: "角色配置、记忆检索与 viewer 贯穿会话，而不是每次从零开始。",
+      agents: ["角色", "记忆", "召回", "整理", "导出", "Viewer", "标签", "向量", "场景", "提示", "服务", "适配"]
     },
     search: {
       title: "代码搜索",
@@ -74,8 +74,8 @@ export default {
   },
   gateway: {
     label: "网关",
-    title: "进程编排器",
-    subtitle: "管理 AI 代理池并路由消息。通道无关、插件优先、纵深安全。",
+    title: "把 Pi 运行时分发到更多入口",
+    subtitle: "Gateway 用 RPC worker pool、会话路由和插件管线把同一套 Pi 能力接到 Web、API 与消息通道，同时保持 worker 启动可控。",
     layers: {
       channels: { title: "通道", desc: "Telegram · Discord · WebChat · API" },
       pipeline: { title: "管线", desc: "分发 → 去重 → 解析 → 处理" },
@@ -86,14 +86,14 @@ export default {
   },
   workflow: {
     label: "工作流",
-    title: "五阶段强制管线",
-    subtitle: "每个任务都经过检索、分析、原型、实施和审计。质量源于设计。",
+    title: "证据驱动的工程闭环",
+    subtitle: "不是固定五阶段，而是围绕真实代码、可恢复上下文和可复现验证形成闭环。",
     phases: [
-      { num: "01", title: "检索", desc: "语义搜索、精确匹配、语法结构" },
-      { num: "02", title: "分析", desc: "侦察派发、策略选择" },
-      { num: "03", title: "原型", desc: "外部模型 diff、内部重构" },
-      { num: "04", title: "实施", desc: "精准编辑、依赖检查" },
-      { num: "05", title: "审计", desc: "Codex 审查、测试验证" }
+      { num: "01", title: "定位", desc: "语义检索、精确匹配、调用链" },
+      { num: "02", title: "建模", desc: "理解约束、选择最小改动面" },
+      { num: "03", title: "保存", desc: "checkpoint、tag、compact 关键上下文" },
+      { num: "04", title: "执行", desc: "精准编辑、扩展工具、GAPP 交互" },
+      { num: "05", title: "验证", desc: "测试、diff、状态与可观测证据" }
     ]
   },
   extensions: {
@@ -108,24 +108,24 @@ export default {
   },
   comparison: {
     label: "对比",
-    title: "不是又一个包装器",
-    subtitle: "为严肃工程而生，非玩具项目。",
+    title: "不把 Agent 当一次性聊天",
+    subtitle: "Pi 的差异在运行时：上下文能恢复、能力能扩展、行为能观察、界面能生成。",
     headers: {
       feature: "能力",
       pi: "Pi Agent",
       others: "典型工具"
     },
     rows: [
-      { feature: "多阶段工作流", pi: "5 个强制阶段", others: "单步执行" },
-      { feature: "上下文检索", pi: "语义 + 精确 + AST", others: "基础搜索" },
-      { feature: "安全模型", pi: "五层防御", others: "最小化" },
-      { feature: "子代理系统", pi: "Crew 网格协议", others: "无" },
-      { feature: "网关", pi: "多通道 + RPC", others: "单一接口" }
+      { feature: "上下文生命周期", pi: "checkpoint + tag + compact", others: "会话即上下文" },
+      { feature: "代码定位", pi: "语义 + 精确 + AST", others: "基础搜索" },
+      { feature: "交互表面", pi: "TUI + Web + GAPP", others: "单一聊天界面" },
+      { feature: "长期记忆", pi: "角色记忆 + 检索 + viewer", others: "临时提示词" },
+      { feature: "可观测与分发", pi: "Provider Trace + Gateway/RPC", others: "单一接口" }
     ]
   },
   cta: {
-    title: "准备更快交付？",
-    subtitle: "加入那些不再当 AI 保姆、开始真正架构的工程师。",
+    title: "把你的 Pi 变成自己的工程系统",
+    subtitle: "从一个可工作的 coding agent 开始，再按项目需要接入记忆、GAPP、可观测性与网关。",
     button: "开始使用"
   },
   footer: {

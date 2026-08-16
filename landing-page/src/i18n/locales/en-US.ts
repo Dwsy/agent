@@ -15,51 +15,51 @@ export default {
     cta: "Get Started",
   },
   hero: {
-    badge: "Now in v2.0",
+    badge: "Pi Runtime, continuously evolving",
     title: {
-      part1: "The ",
-      accent: "AI Engineer",
-      part2: " You Actually Want"
+      part1: "Make AI coding a ",
+      accent: "programmable system",
+      part2: ""
     },
-    description: "Stop babysitting AI agents. Pi handles context retrieval, parallel subagents, security audits, and multi-channel deployment — so you focus on architecture, not prompting.",
+    description: "Pi is more than a chat surface: code retrieval, context checkpoints, role memory, native GAPP interfaces, provider observability, and gateway orchestration live in one extensible runtime.",
     cta: {
       primary: "Get Started",
       secondary: "Read Docs"
     },
     stats: {
-      commands: "Built-in Commands",
-      extensions: "Extensions",
-      productivity: "Faster Delivery"
+      commands: "Persistent Context",
+      extensions: "Native Generative UI",
+      productivity: "End-to-end Observability"
     }
   },
   features: {
-    label: "Core Architecture",
-    title: "Orchestration, Not Just Chat",
-    subtitle: "From semantic code search to multi-agent crews, from security audits to production deployment.",
+    label: "Runtime Capabilities",
+    title: "One observable path from context to delivery",
+    subtitle: "Trace real code paths, preserve recoverable context, extend the runtime with tools and GAPPs, and keep verification evidence in the same session.",
     workflow: {
-      title: "5-Phase Workflow",
-      desc: "Mandatory pipeline: Context Retrieval → Analysis → Prototyping → Implementation → Audit. No shortcuts, no hallucinated edits.",
+      title: "Evidence-driven workflow",
+      desc: "Locate the real implementation, model constraints, make the smallest change, verify it, and ship evidence. The loop scales with the task instead of enforcing ceremony.",
       features: [
-        "Golden Rule: retrieve before modify",
-        "Unified Diff isolation",
-        "Forced pre-delivery review",
-        "L1-L4 complexity routing"
+        "Read the real call path before editing",
+        "Checkpoint / compact critical context",
+        "Verify tests, diff, and worktree state together",
+        "Compose tools and extensions per task"
       ],
       metrics: {
-        tasks: "Tasks",
-        success: "Success",
-        active: "Active"
+        tasks: "Context Tag",
+        success: "Worktree State",
+        active: "Provider Trace"
       }
     },
     skills: {
-      title: "42 Skills",
-      desc: "Semantic search, AST manipulation, system design, Office automation.",
-      tags: ["ace-tool", "ast-grep", "codemap", "web-fetch", "+38 more"]
+      title: "On-demand skills & tools",
+      desc: "Semantic retrieval, AST, browser, design, diagnosis, docs, and automation capabilities load for the task at hand.",
+      tags: ["ace-tool", "ast-grep", "codemap", "web-browser", "diagnose"]
     },
     subagents: {
-      title: "25+ Agents",
-      desc: "Specialized agents coordinated via Crew protocol.",
-      agents: ["scout", "planner", "worker", "reviewer", "vision", "researcher", "api-tester", "security", "simplifier", "codemap", "brainstormer", "system-design"]
+      title: "Roles & durable memory",
+      desc: "Role configuration, memory retrieval, and a viewer carry knowledge across sessions instead of starting from zero.",
+      agents: ["role", "memory", "recall", "organize", "export", "viewer", "tags", "vector", "scenarios", "prompt", "service", "adapter"]
     },
     search: {
       title: "Code Search",
@@ -74,8 +74,8 @@ export default {
   },
   gateway: {
     label: "Gateway",
-    title: "Process Orchestrator",
-    subtitle: "Manage AI agent pools and route messages. Channel-agnostic, plugin-first, security-in-depth.",
+    title: "Distribute the Pi runtime beyond the terminal",
+    subtitle: "Gateway uses an RPC worker pool, session routing, and a programmable plugin pipeline to expose the same Pi capabilities through Web, APIs, and messaging channels.",
     layers: {
       channels: { title: "Channels", desc: "Telegram · Discord · WebChat · API" },
       pipeline: { title: "Pipeline", desc: "Dispatch → Dedup → Resolve → Process" },
@@ -86,14 +86,14 @@ export default {
   },
   workflow: {
     label: "Workflow",
-    title: "5-Phase Mandatory Pipeline",
-    subtitle: "Every task goes through retrieval, analysis, prototyping, implementation, and audit. Quality by design.",
+    title: "An evidence-driven engineering loop",
+    subtitle: "Not a mandatory five-step ritual: a loop around real code, recoverable context, precise edits, and reproducible verification.",
     phases: [
-      { num: "01", title: "Retrieve", desc: "Semantic search, exact match, syntax structure" },
-      { num: "02", title: "Analyze", desc: "Scout dispatch, strategy selection" },
-      { num: "03", title: "Prototype", desc: "External model diff, internal refactor" },
-      { num: "04", title: "Implement", desc: "Surgical edits, dependency checks" },
-      { num: "05", title: "Audit", desc: "Codex review, test verification" }
+      { num: "01", title: "Locate", desc: "Semantic retrieval, exact match, call paths" },
+      { num: "02", title: "Model", desc: "Understand constraints, choose the smallest surface" },
+      { num: "03", title: "Preserve", desc: "Checkpoint, tag, and compact critical context" },
+      { num: "04", title: "Execute", desc: "Surgical edits, extension tools, GAPP interaction" },
+      { num: "05", title: "Verify", desc: "Tests, diff, state, and observable evidence" }
     ]
   },
   extensions: {
@@ -108,24 +108,24 @@ export default {
   },
   comparison: {
     label: "Comparison",
-    title: "Not Another Wrapper",
-    subtitle: "Purpose-built for serious engineering, not toy projects.",
+    title: "An agent runtime, not disposable chat",
+    subtitle: "Pi differs at the runtime layer: context can recover, capabilities can extend, behavior can be observed, and interfaces can be generated.",
     headers: {
       feature: "Capability",
       pi: "Pi Agent",
       others: "Typical Tools"
     },
     rows: [
-      { feature: "Multi-phase workflow", pi: "5 mandatory phases", others: "Single-step" },
-      { feature: "Context retrieval", pi: "Semantic + exact + AST", others: "Basic search" },
-      { feature: "Security model", pi: "5-layer defense", others: "Minimal" },
-      { feature: "Subagent system", pi: "Crew mesh protocol", others: "None" },
-      { feature: "Gateway", pi: "Multi-channel + RPC", others: "Single interface" }
+      { feature: "Context lifecycle", pi: "checkpoint + tag + compact", others: "session-only context" },
+      { feature: "Code location", pi: "semantic + exact + AST", others: "basic search" },
+      { feature: "Interaction surface", pi: "TUI + Web + GAPP", others: "single chat surface" },
+      { feature: "Durable memory", pi: "role memory + retrieval + viewer", others: "temporary prompts" },
+      { feature: "Observe & distribute", pi: "Provider Trace + Gateway/RPC", others: "single interface" }
     ]
   },
   cta: {
-    title: "Ready to Ship Faster?",
-    subtitle: "Join the engineers who stopped babysitting AI and started architecting.",
+    title: "Turn Pi into your engineering system",
+    subtitle: "Start with a working coding agent, then add memory, GAPPs, observability, and gateway capabilities as your project needs them.",
     button: "Get Started"
   },
   footer: {

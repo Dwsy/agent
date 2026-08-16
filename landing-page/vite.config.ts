@@ -8,7 +8,8 @@ export default defineConfig({
   base: "/agent/",
   build: {
     outDir: "../docs",
-    emptyOutDir: true,
+    // docs/ also stores project documentation; never wipe it during a landing-page build.
+    emptyOutDir: false,
     rollupOptions: {
       input: {
         main: "./index.html"

@@ -332,14 +332,14 @@ export class TechSpecs extends LitElement {
       skills: { 
         zh: '技能系统', 
         en: 'Skills', 
-        descZh: '42+ 可复用技能单元', 
-        descEn: '42+ reusable capability units' 
+        descZh: '按任务加载检索、诊断、浏览器与设计能力',
+        descEn: 'Load retrieval, diagnosis, browser, and design capabilities per task'
       },
       subagents: { 
-        zh: '子代理网格', 
-        en: 'Subagents', 
-        descZh: '25+ 专用代理通过 Crew 协议协调', 
-        descEn: '25+ specialized agents coordinated via Crew protocol' 
+        zh: 'GAPP 交互面',
+        en: 'GAPP Surfaces',
+        descZh: 'Agent 原生创建和驱动可交互 UI',
+        descEn: 'Agent-native interactive UI created and driven at runtime'
       },
       gateway: { 
         zh: '网关', 
@@ -360,10 +360,10 @@ export class TechSpecs extends LitElement {
         descEn: 'Telegram / Discord / WebChat / API' 
       },
       memory: { 
-        zh: '记忆系统', 
-        en: 'Memory', 
-        descZh: '三层记忆栈：L3 运行时 + L2 合并 + L1 日志', 
-        descEn: '3-layer memory: L3 runtime + L2 consolidated + L1 logs' 
+        zh: '上下文与记忆',
+        en: 'Context + Memory',
+        descZh: 'checkpoint / compact 与角色长期记忆协同',
+        descEn: 'Context checkpoints and compaction paired with durable role memory'
       },
     };
     
@@ -394,10 +394,10 @@ export class TechSpecs extends LitElement {
                 <span class="spec-title">${isZh ? '运行时' : 'Runtime'}</span>
               </div>
               <div class="spec-list">
-                <div class="spec-item"><span class="spec-label">${isZh ? '语言' : 'Language'}</span><span class="spec-value">TypeScript 5.3</span></div>
-                <div class="spec-item"><span class="spec-label">${isZh ? '引擎' : 'Engine'}</span><span class="spec-value">Node.js 20+</span></div>
-                <div class="spec-item"><span class="spec-label">${isZh ? '打包' : 'Bundler'}</span><span class="spec-value">Vite 5</span></div>
-                <div class="spec-item"><span class="spec-label">TUI</span><span class="spec-value highlight">React + Ink</span></div>
+                <div class="spec-item"><span class="spec-label">${isZh ? '扩展' : 'Extensions'}</span><span class="spec-value">TypeScript API</span></div>
+                <div class="spec-item"><span class="spec-label">${isZh ? '运行' : 'Runtime'}</span><span class="spec-value">Bun + Node compatible</span></div>
+                <div class="spec-item"><span class="spec-label">${isZh ? '上下文' : 'Context'}</span><span class="spec-value">tag · checkout · compact</span></div>
+                <div class="spec-item"><span class="spec-label">UI</span><span class="spec-value highlight">TUI · Web · GAPP</span></div>
               </div>
             </div>
 
@@ -408,10 +408,10 @@ export class TechSpecs extends LitElement {
                 <span class="spec-title">${isZh ? '网关' : 'Gateway'}</span>
               </div>
               <div class="spec-list">
-                <div class="spec-item"><span class="spec-label">${isZh ? '协议' : 'Protocol'}</span><span class="spec-value">WebSocket + HTTP/2</span></div>
-                <div class="spec-item"><span class="spec-label">${isZh ? '并发' : 'Concurrency'}</span><span class="spec-value highlight">1000+ sessions</span></div>
-                <div class="spec-item"><span class="spec-label">${isZh ? '延迟' : 'Latency'}</span><span class="spec-value">&lt; 10ms p99</span></div>
-                <div class="spec-item"><span class="spec-label">RPC</span><span class="spec-value">JSON-RPC 2.0</span></div>
+                <div class="spec-item"><span class="spec-label">${isZh ? '协议' : 'Protocol'}</span><span class="spec-value">WebSocket · HTTP</span></div>
+                <div class="spec-item"><span class="spec-label">${isZh ? '路由' : 'Routing'}</span><span class="spec-value highlight">Session-aware</span></div>
+                <div class="spec-item"><span class="spec-label">${isZh ? '进程' : 'Workers'}</span><span class="spec-value">RPC Pool</span></div>
+                <div class="spec-item"><span class="spec-label">${isZh ? '启动' : 'Startup'}</span><span class="spec-value">Offline-safe</span></div>
               </div>
             </div>
 
@@ -422,10 +422,10 @@ export class TechSpecs extends LitElement {
                 <span class="spec-title">${isZh ? '记忆' : 'Memory'}</span>
               </div>
               <div class="spec-list">
-                <div class="spec-item"><span class="spec-label">${isZh ? '向量维度' : 'Vector Dim'}</span><span class="spec-value">768 (Gemma)</span></div>
-                <div class="spec-item"><span class="spec-label">${isZh ? '检索' : 'Retrieval'}</span><span class="spec-value highlight">Vector + BM25</span></div>
+                <div class="spec-item"><span class="spec-label">${isZh ? '会话' : 'Session'}</span><span class="spec-value">checkpoint + compact</span></div>
+                <div class="spec-item"><span class="spec-label">${isZh ? '召回' : 'Recall'}</span><span class="spec-value highlight">Vector + structured memory</span></div>
                 <div class="spec-item"><span class="spec-label">${isZh ? '数据库' : 'Database'}</span><span class="spec-value">LanceDB</span></div>
-                <div class="spec-item"><span class="spec-label">${isZh ? '存储' : 'Storage'}</span><span class="spec-value">Markdown + SQLite</span></div>
+                <div class="spec-item"><span class="spec-label">${isZh ? '查看' : 'Viewer'}</span><span class="spec-value">Role memory viewer</span></div>
               </div>
             </div>
 
@@ -501,7 +501,7 @@ export class TechSpecs extends LitElement {
                 x="150" y="230" width="80" height="40" rx="6" 
                 @mouseenter="${() => this._handleNodeHover('subagents')}" 
                 @mouseleave="${this._handleNodeLeave}" />
-              <text class="arch-label" x="190" y="255">Subagents</text>
+              <text class="arch-label" x="190" y="255">GAPP</text>
 
               <!-- Core Node -->
               <rect class="arch-node ${this.activeNode === 'core' ? 'active' : ''}" 
@@ -534,7 +534,7 @@ export class TechSpecs extends LitElement {
                 x="360" y="290" width="80" height="40" rx="6" 
                 @mouseenter="${() => this._handleNodeHover('memory')}" 
                 @mouseleave="${this._handleNodeLeave}" />
-              <text class="arch-label" x="400" y="315">Memory</text>
+              <text class="arch-label" x="400" y="315">Context</text>
 
               <!-- Data Packets -->
               <circle class="data-packet" cx="290" cy="130" r="4">

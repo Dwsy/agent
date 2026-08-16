@@ -444,8 +444,8 @@ export class BentoGrid extends LitElement {
     const f = (key: string) => i18n.t(key);
     const isZh = i18n.getCurrentLocale() === 'zh-CN';
     const agents = isZh 
-      ? ['侦察', '规划', '执行', '审查', '视觉', '研究', 'API测', '安全', '简化', '码图', '脑暴', '系统']
-      : ['SC', 'PL', 'WR', 'RV', 'VS', 'RS', 'AP', 'SE', 'SI', 'CM', 'BR', 'SD'];
+      ? ['角色', '记忆', '召回', '整理', '标签', '向量', 'Viewer', '服务', '适配', '导出', '场景', '提示']
+      : ['ROLE', 'MEM', 'RECALL', 'ORG', 'TAG', 'VEC', 'VIEW', 'SVC', 'ADAPT', 'EXP', 'SCN', 'PROMPT'];
 
     return html`
       <section class="section" id="features">
@@ -458,16 +458,16 @@ export class BentoGrid extends LitElement {
             </div>
             <div class="header-right">
               <div class="stat-block">
-                <div class="stat-value">42</div>
-                <div class="stat-label">${isZh ? '技能' : 'Skills'}</div>
+                <div class="stat-value">CTX</div>
+                <div class="stat-label">${isZh ? '可恢复上下文' : 'Recoverable Context'}</div>
               </div>
               <div class="stat-block">
-                <div class="stat-value">25+</div>
-                <div class="stat-label">${isZh ? '代理' : 'Agents'}</div>
+                <div class="stat-value">UI</div>
+                <div class="stat-label">${isZh ? 'GAPP 原生界面' : 'Native GAPP'}</div>
               </div>
               <div class="stat-block">
-                <div class="stat-value">5</div>
-                <div class="stat-label">${isZh ? '阶段' : 'Phases'}</div>
+                <div class="stat-value">OBS</div>
+                <div class="stat-label">${isZh ? 'Provider 可观测' : 'Provider Trace'}</div>
               </div>
             </div>
           </div>
@@ -490,15 +490,15 @@ export class BentoGrid extends LitElement {
                 </div>
                 <div class="status-metrics">
                   <div class="metric">
-                    <span class="metric-value">2.4k</span>
+                    <span class="metric-value">tag</span>
                     <span class="metric-label">${f('features.workflow.metrics.tasks')}</span>
                   </div>
                   <div class="metric">
-                    <span class="metric-value">98.7%</span>
+                    <span class="metric-value">clean</span>
                     <span class="metric-label">${f('features.workflow.metrics.success')}</span>
                   </div>
                   <div class="metric">
-                    <span class="metric-value">142</span>
+                    <span class="metric-value">trace</span>
                     <span class="metric-label">${f('features.workflow.metrics.active')}</span>
                   </div>
                 </div>

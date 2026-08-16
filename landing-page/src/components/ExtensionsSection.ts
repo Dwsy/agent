@@ -372,21 +372,15 @@ export class ExtensionsSection extends LitElement {
     const f = i18n.t.bind(i18n);
     const isZh = i18n.getCurrentLocale() === 'zh-CN';
 
-    const commands = isZh 
-      ? ['/research', '/scout', '/plan', '/work', '/review', '/brainstorm']
-      : ['/research', '/scout', '/plan', '/work', '/review', '/brainstorm'];
+    const commands = ['/context', '/gapp', '/insights', '/role', '/trace', '/plan'];
 
-    const tools = isZh
-      ? ['web-fetch', 'ast-grep', 'ace-tool', 'codemap', 'send-request', 'tmux']
-      : ['web-fetch', 'ast-grep', 'ace-tool', 'codemap', 'send-request', 'tmux'];
+    const tools = ['ace-tool', 'ast-grep', 'codemap', 'web-browser', 'diagnose', 'impeccable'];
 
     const gateways = isZh
       ? ['Telegram', 'Discord', 'WebChat', 'API', 'Cron', 'Webhook']
       : ['Telegram', 'Discord', 'WebChat', 'API', 'Cron', 'Webhook'];
 
-    const gallery = isZh
-      ? ['git-commit', 'notify', 'continue', 'handoff', 'hash-trigger', 'pi-messenger']
-      : ['git-commit', 'notify', 'continue', 'handoff', 'hash-trigger', 'pi-messenger'];
+    const gallery = ['pi-context', 'role-persona', 'gapp', 'provider-trace', 'rtk-optimizer', 'session-explorer'];
 
     return html`
       <section class="section" id="extensions">
@@ -405,20 +399,20 @@ export class ExtensionsSection extends LitElement {
           <!-- Stats Bar -->
           <div class="stats-bar">
             <div class="stat">
-              <span class="stat-value">26+</span>
-              <span class="stat-label">${isZh ? '内置扩展' : 'Built-in'}</span>
+              <span class="stat-value">API</span>
+              <span class="stat-label">${isZh ? '扩展生命周期' : 'Extension Lifecycle'}</span>
             </div>
             <div class="stat">
-              <span class="stat-value">42</span>
-              <span class="stat-label">${isZh ? '技能' : 'Skills'}</span>
+              <span class="stat-value">SKILL</span>
+              <span class="stat-label">${isZh ? '按需能力' : 'On-demand Capabilities'}</span>
             </div>
             <div class="stat">
-              <span class="stat-value">16</span>
-              <span class="stat-label">${isZh ? '网关钩子' : 'Hooks'}</span>
+              <span class="stat-value">GAPP</span>
+              <span class="stat-label">${isZh ? '原生交互面' : 'Native Surfaces'}</span>
             </div>
             <div class="stat">
-              <span class="stat-value">0</span>
-              <span class="stat-label">${isZh ? '配置复杂度' : 'Config Complexity'}</span>
+              <span class="stat-value">RPC</span>
+              <span class="stat-label">${isZh ? '多通道分发' : 'Multi-channel Delivery'}</span>
             </div>
           </div>
 
@@ -429,7 +423,7 @@ export class ExtensionsSection extends LitElement {
               <div class="category-header">
                 <div class="category-icon">/</div>
                 <span class="category-title">${isZh ? '斜杠命令' : 'Slash Commands'}</span>
-                <span class="category-count">15</span>
+                <span class="category-count">CLI</span>
               </div>
               <p class="category-desc">${isZh 
                 ? '交互式命令系统。支持参数补全、历史记录、上下文感知。' 
@@ -449,7 +443,7 @@ export class ExtensionsSection extends LitElement {
               <div class="category-header">
                 <div class="category-icon">T</div>
                 <span class="category-title">${isZh ? '工具技能' : 'Tool Skills'}</span>
-                <span class="category-count">42</span>
+                <span class="category-count">LOAD</span>
               </div>
               <p class="category-desc">${isZh 
                 ? '可复用的能力单元。每个技能都是独立的 npm 包，按需加载。' 
@@ -469,7 +463,7 @@ export class ExtensionsSection extends LitElement {
               <div class="category-header">
                 <div class="category-icon">G</div>
                 <span class="category-title">${isZh ? '网关插件' : 'Gateway Plugins'}</span>
-                <span class="category-count">8</span>
+                <span class="category-count">RPC</span>
               </div>
               <p class="category-desc">${isZh 
                 ? '多通道接入。16 个生命周期钩子，消息管道可编程。' 
