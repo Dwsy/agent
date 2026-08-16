@@ -4,7 +4,8 @@ import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import { registerGappTools, type GappToolContext } from "./tools.js";
 import { registerGappCommand } from "./commands.js";
-import { getGappPromptAppendix } from "./prompt.js";
+import { buildGappSystemPrompt, buildGappContextDiff, createGappContextSnapshot, type GappContextSnapshot } from "./prompt.js";
+import { listOnlineGapps } from "./storage.js";
 import { startGappHostServer, stopGappHostServer, getHostRole, getBoundPort } from "./host-server.js";
 import {
   setAgentBridge,
@@ -129,11 +130,24 @@ export function registerGapp(pi: ExtensionAPI, ctx: GappToolContext) {
     return { skillPaths: [GENERATIVE_BRIDGE_SKILL_DIR] };
   });
 
+  const initialMarkerType = "gapp-context-initial-v1";
+  const stateMarkerType = "gapp-context-state-v1";
+  let frozenAppendix = "";
+  let lastSnapshot: GappContextSnapshot | null = null;
+
+  pi.on("session_start", async (_event, sessionCtx) => {
+    const entries = sessionCtx.sessionManager.getEntries();
+    const initial = [...entries].reverse().find((entry: any) => entry.type === "custom" && entry.customType === initialMarkerType) as any;
+    const state = [...entries].reverse().find((entry: any) => entry.type === "custom" && entry.customType === stateMarkerType) as any;
+    frozenAppendix = typeof initial?.data?.appendix === "string" ? initial.data.appendix : "";
+    lastSnapshot = (state?.data?.snapshot || initial?.data?.snapshot || null) as GappContextSnapshot | null;
+  });
+
   pi.on("before_agent_start", async (event, ctx) => {
     try {
+      const online = await listOnlineGapps(ctx.cwd || process.cwd());
       const lives = listLiveApps();
-      // Progressive: appendix gets live ids only (no tool catalogs — agent uses gapp_list_tools).
-      const appendix = await getGappPromptAppendix(ctx.cwd || process.cwd(), {
+      const extras = {
         liveApps: lives.map((a) => ({
           id: a.appId,
           name: a.appId,
@@ -146,10 +160,26 @@ export function registerGapp(pi: ExtensionAPI, ctx: GappToolContext) {
           port: getBoundPort(),
           protocolVersion: GAPP_PROTOCOL_VERSION,
         },
-      });
-      return { systemPrompt: `${event.systemPrompt}\n\n${appendix}` };
+      };
+      const currentSnapshot = createGappContextSnapshot(online, extras);
+      if (!frozenAppendix) {
+        frozenAppendix = buildGappSystemPrompt(online, extras);
+        lastSnapshot = currentSnapshot;
+        pi.appendEntry(initialMarkerType, { appendix: frozenAppendix, snapshot: currentSnapshot });
+        return { systemPrompt: `${event.systemPrompt}\n\n${frozenAppendix}` };
+      }
+      const diff = lastSnapshot ? buildGappContextDiff(lastSnapshot, currentSnapshot) : "";
+      if (diff) {
+        lastSnapshot = currentSnapshot;
+        pi.appendEntry(stateMarkerType, { snapshot: currentSnapshot });
+        return {
+          systemPrompt: `${event.systemPrompt}\n\n${frozenAppendix}`,
+          message: { customType: "gapp-context-diff", content: diff, display: false },
+        };
+      }
+      return { systemPrompt: `${event.systemPrompt}\n\n${frozenAppendix}` };
     } catch {
-      return;
+      return frozenAppendix ? { systemPrompt: `${event.systemPrompt}\n\n${frozenAppendix}` } : undefined;
     }
   });
 }

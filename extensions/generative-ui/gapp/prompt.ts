@@ -22,13 +22,73 @@ export interface GappPromptExtras {
   };
 }
 
+export interface GappContextSnapshot {
+  online: Array<{ id: string; name: string; description: string; scope: string; instances: string }>;
+  live: Array<{ id: string; name: string; scope: string }>;
+  host: { base: string; role: string; port: number; protocolVersion: string };
+}
+
+export function createGappContextSnapshot(
+  online: GappMeta[],
+  extras: GappPromptExtras = {},
+): GappContextSnapshot {
+  return {
+    online: [...online]
+      .map((m) => ({
+        id: m.id,
+        name: m.name || m.id,
+        description: m.description || "",
+        scope: m.scope || "",
+        instances: m.instances === "multi" ? "multi" : "single",
+      }))
+      .sort((a, b) => a.id.localeCompare(b.id) || a.scope.localeCompare(b.scope)),
+    live: [...(extras.liveApps || [])]
+      .map((a) => ({ id: a.id, name: a.name || a.id, scope: a.scope || "" }))
+      .sort((a, b) => a.id.localeCompare(b.id) || a.scope.localeCompare(b.scope)),
+    host: {
+      base: extras.host?.base || "",
+      role: extras.host?.role || "",
+      port: extras.host?.port || 0,
+      protocolVersion: extras.host?.protocolVersion || "",
+    },
+  };
+}
+
+export function buildGappContextDiff(previous: GappContextSnapshot, current: GappContextSnapshot): string {
+  const keyOf = (item: { id: string; scope: string }) => `${item.scope}\0${item.id}`;
+  const previousOnline = new Map(previous.online.map((item) => [keyOf(item), item]));
+  const currentOnline = new Map(current.online.map((item) => [keyOf(item), item]));
+  const added = current.online.filter((item) => !previousOnline.has(keyOf(item)));
+  const removed = previous.online.filter((item) => !currentOnline.has(keyOf(item)));
+  const changed = current.online.filter((item) => {
+    const before = previousOnline.get(keyOf(item));
+    return before && JSON.stringify(before) !== JSON.stringify(item);
+  });
+  const previousLive = new Set(previous.live.map(keyOf));
+  const currentLive = new Set(current.live.map(keyOf));
+  const opened = current.live.filter((item) => !previousLive.has(keyOf(item)));
+  const closed = previous.live.filter((item) => !currentLive.has(keyOf(item)));
+  const hostChanged = JSON.stringify(previous.host) !== JSON.stringify(current.host);
+  if (!added.length && !removed.length && !changed.length && !opened.length && !closed.length && !hostChanged) return "";
+  const lines = ["[GAPP context update]"];
+  if (added.length) lines.push(`online added: ${added.map((item) => item.id).join(", ")}`);
+  if (removed.length) lines.push(`online removed: ${removed.map((item) => item.id).join(", ")}`);
+  if (changed.length) lines.push(`online metadata changed: ${changed.map((item) => item.id).join(", ")}`);
+  if (opened.length) lines.push(`live opened: ${opened.map((item) => item.id).join(", ")}`);
+  if (closed.length) lines.push(`live closed: ${closed.map((item) => item.id).join(", ")}`);
+  if (hostChanged) lines.push(`host changed: ${current.host.base || "(default)"} role=${current.host.role || "?"} protocol=${current.host.protocolVersion || "?"}`);
+  lines.push("Use the existing GAPP tools to fetch current details when needed.");
+  return lines.join("\n");
+}
+
 function formatOnlineBlock(online: GappMeta[], lang: GappLang): string {
   if (online.length === 0) {
     return lang === "zh"
       ? "（无 enabled GAPP。需要时 `gapp_upsert` 创建，或 `gapp_list` 看全部。）"
       : "(No enabled GAPPs. `gapp_upsert` to create, or `gapp_list` for all.)";
   }
-  return online
+  return [...online]
+    .sort((a, b) => a.id.localeCompare(b.id))
     .map((m, i) => {
       const inst = m.instances === "multi" ? "multi" : "single";
       const desc = m.description ? ` — ${m.description}` : "";
@@ -40,7 +100,8 @@ function formatOnlineBlock(online: GappMeta[], lang: GappLang): string {
 /** Live windows only — ids, not tool catalogs (fetch via gapp_list_tools). */
 function formatLiveIdsBlock(liveApps: LiveAppPromptInfo[], lang: GappLang): string {
   if (!liveApps.length) return "";
-  const ids = liveApps
+  const ids = [...liveApps]
+    .sort((a, b) => a.id.localeCompare(b.id))
     .map((a) => {
       const label = a.name && a.name !== a.id ? `${a.id} (${a.name})` : a.id;
       const scope = a.scope ? ` [${a.scope}]` : "";
