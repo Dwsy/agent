@@ -21,37 +21,36 @@ export class Navbar extends LitElement {
   static styles = css`
     :host {
       display: block;
-      position: fixed;
-      top: 1rem;
-      left: 50%;
-      transform: translateX(-50%);
+      position: sticky;
+      top: 0;
       z-index: 1000;
-      width: calc(100% - 2rem);
-      max-width: 1200px;
+      width: 100%;
+      padding: 0.75rem 1.5rem;
+      background: rgba(9, 9, 11, 0.72);
+      backdrop-filter: blur(18px) saturate(140%);
+      -webkit-backdrop-filter: blur(18px) saturate(140%);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
     }
 
     .nav {
+      position: relative;
+      max-width: 1200px;
+      margin: 0 auto;
       display: flex;
       justify-content: space-between;
       align-items: center;
       padding: 0.625rem 1rem;
-      background: rgba(24, 24, 27, 0.7);
-      backdrop-filter: blur(20px) saturate(180%);
-      -webkit-backdrop-filter: blur(20px) saturate(180%);
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      border-radius: 1rem;
-      box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.05),
-        0 20px 40px -15px rgba(0, 0, 0, 0.3);
+      background: transparent;
+      border: 0;
+      border-radius: 0;
+      box-shadow: none;
       transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
     }
 
     :host([scrolled]) .nav {
-      background: rgba(24, 24, 27, 0.9);
-      border-color: rgba(255, 255, 255, 0.12);
-      box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.08),
-        0 25px 50px -12px rgba(0, 0, 0, 0.4);
+      background: transparent;
+      border-color: transparent;
+      box-shadow: none;
     }
 
     /* Logo - Minimal */
@@ -98,14 +97,13 @@ export class Navbar extends LitElement {
       transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
     }
 
-    .link:hover {
-      color: #fafafa;
-      background: rgba(255, 255, 255, 0.05);
-    }
+    .link:hover { color: #fafafa; }
 
     .link[active] {
-      color: #10b981;
-      background: rgba(16, 185, 129, 0.1);
+      color: #fafafa;
+      background: transparent;
+      box-shadow: inset 0 -1px #10b981;
+      border-radius: 0;
     }
 
     /* Actions */
@@ -227,16 +225,20 @@ export class Navbar extends LitElement {
 
     /* Responsive */
     @media (prefers-color-scheme: light) {
-      .nav { background: rgba(255, 255, 255, 0.82); border-color: rgba(24, 24, 27, 0.1); box-shadow: 0 18px 40px -24px rgba(24,24,27,0.28); }
-      :host([scrolled]) .nav { background: rgba(255,255,255,0.94); border-color: rgba(24,24,27,0.12); box-shadow: 0 18px 40px -24px rgba(24,24,27,0.32); }
+      :host { background: rgba(255,255,255,0.9); border-bottom-color: #e4e4e7; }
+      .nav { background: transparent; border-color: transparent; box-shadow: none; }
+      :host([scrolled]) .nav { background: transparent; border-color: transparent; box-shadow: none; }
       .logo-text { color: #18181b; }
-      .link { color: #52525b; }
-      .link:hover { color: #18181b; background: rgba(24,24,27,0.05); }
-      .link[active] { color: #047857; background: rgba(16,185,129,0.09); }
+      .link { color: #71717a; }
+      .link:hover { color: #18181b; background: transparent; }
+      .link[active] { color: #18181b; background: transparent; box-shadow: inset 0 -1px #059669; }
       .lang-btn { color: #52525b; border-color: #d4d4d8; }
       .lang-btn:hover { color: #18181b; border-color: #a1a1aa; }
       .gh-btn { color: #52525b; }
-      .gh-btn:hover { color: #18181b; background: rgba(24,24,27,0.05); }
+      .gh-btn:hover { color: #18181b; background: transparent; }
+      .burger { color: #52525b; }
+      .mobile { background: rgba(255,255,255,0.98); border-color: #e4e4e7; box-shadow: 0 18px 40px -24px rgba(24,24,27,0.28); }
+      .m-link { color: #52525b; }
     }
 
     @media (max-width: 768px) {

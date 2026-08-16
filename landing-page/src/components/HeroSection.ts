@@ -22,7 +22,7 @@ export class HeroSection extends LitElement {
       grid-template-columns: 1fr 1fr;
       gap: 4rem;
       align-items: center;
-      padding: 6rem 4rem 4rem;
+      padding: 3.5rem 4rem 4rem;
       position: relative;
       overflow: hidden;
     }
@@ -287,24 +287,19 @@ export class HeroSection extends LitElement {
 
     /* Mobile Override - Single Column */
     @media (prefers-color-scheme: light) {
-      .hero::before {
-        background:
-          radial-gradient(ellipse 80% 50% at 20% 40%, rgba(16, 185, 129, 0.09) 0%, transparent 52%),
-          radial-gradient(ellipse 60% 40% at 80% 60%, rgba(16, 185, 129, 0.04) 0%, transparent 52%);
-      }
-      .hero::after { background: linear-gradient(180deg, transparent 0%, rgba(248, 250, 252, 0.35) 100%); }
-      .title, .stat-value { color: #18181b; }
+      .hero::before, .hero::after { background: none; }
+      h1, .stat-value { color: #18181b; }
       .description, .stat-label { color: #52525b; }
       .stats { border-top-color: #e4e4e7; }
-      .secondary-cta { color: #3f3f46; border-color: #d4d4d8; background: rgba(255,255,255,0.72); }
-      .secondary-cta:hover { color: #18181b; border-color: #a1a1aa; }
+      .cta-secondary { color: #3f3f46; border-color: #d4d4d8; background: #ffffff; }
+      .cta-secondary:hover { color: #18181b; border-color: #a1a1aa; background: #fafafa; }
     }
 
     @media (max-width: 1024px) {
       .hero {
         grid-template-columns: 1fr;
         gap: 3rem;
-        padding: 6rem 1.5rem 4rem;
+        padding: 3rem 1.5rem 4rem;
       }
 
       .content {

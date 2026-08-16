@@ -382,7 +382,7 @@ export class BentoGrid extends LitElement {
 
     /* Responsive */
     @media (prefers-color-scheme: light) {
-      .section { background: #f8fafc; }
+      .section { background: #ffffff; }
       .title, .card-title, .stat-value { color: #18181b; }
       .subtitle, .card-desc, .feature, .metric-label { color: #52525b; }
       .card { background: #ffffff; border-color: #e4e4e7; box-shadow: 0 16px 40px -34px rgba(24,24,27,0.35); }

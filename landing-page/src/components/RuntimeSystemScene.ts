@@ -33,12 +33,12 @@ export class RuntimeSystemScene extends LitElement {
     .flow-step strong { display: block; color: #d4d4d8; margin-bottom: 0.25rem; font-size: 0.75rem; }
 
     @media (prefers-color-scheme: light) {
-      .scene { background: #f8fafc; }
+      .scene { background: #f7f7f5; }
       h2, .body h3 { color: #18181b; }
       .lead, .body p, .principle { color: #52525b; }
       .principle, .system, .body { border-color: #e4e4e7; }
       .principle strong, .flow-step strong { color: #27272a; }
-      .module::before { background: #f8fafc; border-color: #a1a1aa; }
+      .module::before { background: #f7f7f5; border-color: #a1a1aa; }
       .token { background: #ffffff; border-color: #e4e4e7; color: #52525b; }
       .token.green { color: #047857; background: rgba(16,185,129,0.06); border-color: rgba(16,185,129,0.18); }
       .flow-step { border-color: #d4d4d8; color: #71717a; }

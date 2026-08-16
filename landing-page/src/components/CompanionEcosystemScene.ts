@@ -36,11 +36,11 @@ export class CompanionEcosystemScene extends LitElement {
     .boundary strong { color: #a1a1aa; font-weight: 600; }
 
     @media (prefers-color-scheme: light) {
-      .scene { background: #f4f4f5; border-color: #e4e4e7; }
+      .scene { background: #ffffff; border-color: #e4e4e7; }
       h2, .lane h3 { color: #18181b; }
       .intro p, .lane p { color: #52525b; }
       .map { border-color: #d4d4d8; }
-      .core { box-shadow: 0 0 0 10px #f4f4f5; }
+      .core { box-shadow: 0 0 0 10px #ffffff; }
       .lane + .lane, .boundary { border-color: #e4e4e7; }
       .lane::before { border-color: #a1a1aa; }
       .lane-name, .boundary strong { color: #3f3f46; }

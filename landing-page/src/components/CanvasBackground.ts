@@ -23,7 +23,7 @@ export class CanvasBackground extends LitElement {
     }
 
     @media (prefers-color-scheme: light) {
-      canvas { opacity: 0.14; }
+      canvas { opacity: 0; }
     }
   `;
 

@@ -30,7 +30,7 @@ export class ExtendAndProveScene extends LitElement {
     .proof-row:last-child .proof-cell { border-bottom: 0; }
     .proof-note { padding: 1.25rem; border-top: 1px solid #27272a; color: #52525b; font-size: 0.72rem; line-height: 1.6; }
     @media (prefers-color-scheme: light) {
-      .scene { background: #f8fafc; }
+      .scene { background: #f7f7f5; }
       h2, .extension h3 { color: #18181b; }
       .head p, .extension > p { color: #52525b; }
       .extension { background: #ffffff; border-color: #e4e4e7; }
