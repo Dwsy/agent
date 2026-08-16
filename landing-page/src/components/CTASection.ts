@@ -78,6 +78,13 @@ export class CTASection extends LitElement {
       background: radial-gradient(circle, rgba(16, 185, 129, 0.08) 0%, transparent 70%);
       pointer-events: none;
     }
+
+    @media (prefers-color-scheme: light) {
+      .section { background: #f8fafc; }
+      .title { color: #18181b; }
+      .subtitle { color: #52525b; }
+      .section::before { background: radial-gradient(circle, rgba(16, 185, 129, 0.1) 0%, transparent 70%); }
+    }
   `;
 
   @state() private locale: Locale = i18n.getCurrentLocale();

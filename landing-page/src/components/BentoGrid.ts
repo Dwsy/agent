@@ -381,6 +381,19 @@ export class BentoGrid extends LitElement {
     }
 
     /* Responsive */
+    @media (prefers-color-scheme: light) {
+      .section { background: #f8fafc; }
+      .title, .card-title, .stat-value { color: #18181b; }
+      .subtitle, .card-desc, .feature, .metric-label { color: #52525b; }
+      .card { background: #ffffff; border-color: #e4e4e7; box-shadow: 0 16px 40px -34px rgba(24,24,27,0.35); }
+      .card:hover { border-color: #d4d4d8; }
+      .skill-tag, .agent-cell { background: #f4f4f5; border-color: #e4e4e7; color: #52525b; }
+      .agent-cell.active { background: rgba(16,185,129,0.1); color: #047857; }
+      .status-widget { background: rgba(16,185,129,0.06); border-color: rgba(16,185,129,0.14); }
+      .status-text { color: #047857; }
+      .metric-value { color: #18181b; }
+    }
+
     @media (max-width: 1024px) {
       .header {
         grid-template-columns: 1fr;

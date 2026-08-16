@@ -32,6 +32,17 @@ export class RuntimeSystemScene extends LitElement {
     .flow-step { padding: 0.75rem; border-top: 1px solid #3f3f46; color: #71717a; font-size: 0.7rem; line-height: 1.45; }
     .flow-step strong { display: block; color: #d4d4d8; margin-bottom: 0.25rem; font-size: 0.75rem; }
 
+    @media (prefers-color-scheme: light) {
+      .scene { background: #f8fafc; }
+      h2, .body h3 { color: #18181b; }
+      .lead, .body p, .principle { color: #52525b; }
+      .principle, .system, .body { border-color: #e4e4e7; }
+      .principle strong, .flow-step strong { color: #27272a; }
+      .module::before { background: #f8fafc; border-color: #a1a1aa; }
+      .token { background: #ffffff; border-color: #e4e4e7; color: #52525b; }
+      .token.green { color: #047857; background: rgba(16,185,129,0.06); border-color: rgba(16,185,129,0.18); }
+      .flow-step { border-color: #d4d4d8; color: #71717a; }
+    }
     @media (max-width: 900px) { .inner { grid-template-columns: 1fr; gap: 3rem; } .intro { position: static; } }
     @media (max-width: 640px) { .scene { padding: 5rem 1rem; } .module { grid-template-columns: 1fr; gap: 0.75rem; padding-left: 1.5rem; } .flow { grid-template-columns: 1fr 1fr; } }
   `;

@@ -21,6 +21,10 @@ export class CanvasBackground extends LitElement {
       height: 100%;
       opacity: 0.4;
     }
+
+    @media (prefers-color-scheme: light) {
+      canvas { opacity: 0.14; }
+    }
   `;
 
   private canvas?: HTMLCanvasElement;

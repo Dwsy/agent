@@ -29,6 +29,20 @@ export class ExtendAndProveScene extends LitElement {
     .proof-cell.pi { color: #34d399; }
     .proof-row:last-child .proof-cell { border-bottom: 0; }
     .proof-note { padding: 1.25rem; border-top: 1px solid #27272a; color: #52525b; font-size: 0.72rem; line-height: 1.6; }
+    @media (prefers-color-scheme: light) {
+      .scene { background: #f8fafc; }
+      h2, .extension h3 { color: #18181b; }
+      .head p, .extension > p { color: #52525b; }
+      .extension { background: #ffffff; border-color: #e4e4e7; }
+      .resource { border-color: #e4e4e7; color: #52525b; background: #fafafa; }
+      .resource.hot { color: #047857; border-color: rgba(16,185,129,0.18); background: rgba(16,185,129,0.06); }
+      .proof { background: #ffffff; border-color: #e4e4e7; }
+      .proof-head { background: #f4f4f5; }
+      .proof-cell { border-color: #e4e4e7; color: #52525b; }
+      .proof-head .proof-cell { color: #71717a; }
+      .proof-cell.pi { color: #047857; }
+      .proof-note { border-color: #e4e4e7; color: #71717a; }
+    }
     @media (max-width: 900px) { .layout { grid-template-columns: 1fr; } }
     @media (max-width: 640px) { .scene { padding: 5rem 1rem; } .proof { overflow-x: auto; } .proof-head, .proof-row { min-width: 640px; } }
   `;

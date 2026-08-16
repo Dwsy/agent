@@ -226,6 +226,19 @@ export class Navbar extends LitElement {
     }
 
     /* Responsive */
+    @media (prefers-color-scheme: light) {
+      .nav { background: rgba(255, 255, 255, 0.82); border-color: rgba(24, 24, 27, 0.1); box-shadow: 0 18px 40px -24px rgba(24,24,27,0.28); }
+      :host([scrolled]) .nav { background: rgba(255,255,255,0.94); border-color: rgba(24,24,27,0.12); box-shadow: 0 18px 40px -24px rgba(24,24,27,0.32); }
+      .logo-text { color: #18181b; }
+      .link { color: #52525b; }
+      .link:hover { color: #18181b; background: rgba(24,24,27,0.05); }
+      .link[active] { color: #047857; background: rgba(16,185,129,0.09); }
+      .lang-btn { color: #52525b; border-color: #d4d4d8; }
+      .lang-btn:hover { color: #18181b; border-color: #a1a1aa; }
+      .gh-btn { color: #52525b; }
+      .gh-btn:hover { color: #18181b; background: rgba(24,24,27,0.05); }
+    }
+
     @media (max-width: 768px) {
       .links, .cta { display: none; }
       .burger { display: block; }

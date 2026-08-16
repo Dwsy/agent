@@ -6,35 +6,54 @@ import { i18n, type Locale } from "../i18n/i18n-manager";
 export class CompanionEcosystemScene extends LitElement {
   static styles = css`
     :host { display: block; width: 100%; }
-    .scene { padding: 7rem 1.5rem; background: #0c0c0e; border-top: 1px solid #18181b; border-bottom: 1px solid #18181b; }
-    .inner { max-width: 1200px; margin: 0 auto; }
-    .head { display: grid; grid-template-columns: 0.8fr 1.2fr; gap: 4rem; align-items: end; margin-bottom: 4rem; }
-    .kicker { color: #a1a1aa; font-size: 0.75rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; }
-    h2 { margin: 0; color: #fafafa; font-size: clamp(2.25rem, 4.5vw, 3.75rem); line-height: 1.02; letter-spacing: -0.04em; font-weight: 600; }
-    .head p { margin: 0; color: #71717a; line-height: 1.75; max-width: 58ch; }
-    .products { display: grid; grid-template-columns: 1.1fr 0.9fr; gap: 1rem; }
-    .product { min-height: 32rem; padding: 2rem; border: 1px solid #27272a; border-radius: 1.25rem; background: #111113; display: flex; flex-direction: column; overflow: hidden; }
-    .product.grok { background: linear-gradient(145deg, rgba(249,115,22,0.08), transparent 42%), #111113; }
-    .product.psm { background: linear-gradient(145deg, rgba(96,165,250,0.08), transparent 42%), #111113; }
-    .product-label { font: 0.6875rem/1 'JetBrains Mono', monospace; letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 2.5rem; }
-    .grok .product-label { color: #fb923c; } .psm .product-label { color: #93c5fd; }
-    .product h3 { margin: 0 0 0.9rem; color: #fafafa; font-size: 1.75rem; font-weight: 600; letter-spacing: -0.02em; }
-    .product p { margin: 0 0 1.5rem; color: #a1a1aa; line-height: 1.7; font-size: 0.9375rem; }
-    .diagram { margin-top: auto; padding-top: 2rem; border-top: 1px solid #27272a; }
-    .bridge { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.5rem; align-items: stretch; }
-    .bridge-node { min-height: 5rem; padding: 0.7rem; border: 1px solid #2f2f33; border-radius: 0.6rem; color: #d4d4d8; font-size: 0.7rem; line-height: 1.45; display: flex; flex-direction: column; justify-content: center; }
-    .bridge-node span { color: #52525b; margin-top: 0.2rem; }
-    .sources { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 1rem; }
-    .source { padding: 0.35rem 0.55rem; border: 1px solid #2f2f33; border-radius: 0.35rem; color: #71717a; font: 0.65rem/1 'JetBrains Mono', monospace; }
-    .psm-flow { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.5rem; }
-    .psm-step { padding: 0.7rem; border-top: 1px solid #3f3f46; color: #71717a; font-size: 0.7rem; }
-    .psm-step strong { display: block; color: #d4d4d8; margin-bottom: 0.25rem; }
-    .actions { display: flex; gap: 0.6rem; flex-wrap: wrap; margin-top: 1.5rem; }
-    a { color: #d4d4d8; text-decoration: none; padding: 0.65rem 0.85rem; border: 1px solid #3f3f46; border-radius: 0.5rem; font-size: 0.8rem; font-weight: 600; }
-    a:hover { border-color: #71717a; color: #fafafa; }
-    a:focus-visible { outline: 2px solid #a1a1aa; outline-offset: 3px; }
-    @media (max-width: 900px) { .head, .products { grid-template-columns: 1fr; } .product { min-height: auto; } }
-    @media (max-width: 640px) { .scene { padding: 5rem 1rem; } .bridge, .psm-flow { grid-template-columns: 1fr 1fr; } }
+    .scene { padding: 8rem 1.5rem; background: #0c0c0e; border-block: 1px solid #18181b; }
+    .inner { max-width: 1200px; margin: 0 auto; display: grid; grid-template-columns: 0.72fr 1.28fr; gap: 5rem; }
+    .intro { align-self: start; position: sticky; top: 7rem; }
+    .kicker { color: #71717a; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 1rem; }
+    h2 { margin: 0 0 1.25rem; color: #fafafa; font-size: clamp(2.25rem, 4.5vw, 3.7rem); line-height: 1.03; letter-spacing: -0.04em; font-weight: 600; }
+    .intro p { margin: 0; color: #71717a; line-height: 1.75; max-width: 44ch; }
+
+    .map { position: relative; border-left: 1px solid #3f3f46; }
+    .core { position: absolute; left: 0; top: 50%; transform: translate(-50%, -50%); width: 5.25rem; height: 5.25rem; display: grid; place-items: center; border-radius: 50%; background: #10b981; color: #07110d; font-size: 0.8rem; font-weight: 700; text-align: center; box-shadow: 0 0 0 10px #0c0c0e; z-index: 2; }
+    .lane { position: relative; padding: 0 0 3.25rem 4rem; }
+    .lane + .lane { padding-top: 3.25rem; border-top: 1px solid #27272a; }
+    .lane::before { content: ''; position: absolute; left: 0; top: 2.25rem; width: 2.5rem; border-top: 1px solid #3f3f46; }
+    .lane + .lane::before { top: 5.5rem; }
+    .lane-meta { display: flex; justify-content: space-between; gap: 1rem; align-items: baseline; margin-bottom: 0.85rem; }
+    .lane-name { color: #d4d4d8; font: 0.7rem/1 'JetBrains Mono', monospace; letter-spacing: 0.05em; text-transform: uppercase; }
+    .lane-role { color: #52525b; font-size: 0.72rem; }
+    .lane h3 { margin: 0 0 0.8rem; color: #fafafa; font-size: 1.65rem; font-weight: 600; letter-spacing: -0.02em; }
+    .lane p { margin: 0 0 1.25rem; color: #a1a1aa; font-size: 0.92rem; line-height: 1.7; max-width: 62ch; }
+    .capabilities { display: flex; flex-wrap: wrap; gap: 0.45rem; margin-bottom: 1.25rem; }
+    .cap { padding: 0.35rem 0; margin-right: 0.75rem; color: #71717a; font: 0.67rem/1.2 'JetBrains Mono', monospace; border-bottom: 1px solid #3f3f46; }
+    .cap.orange { color: #fb923c; border-color: rgba(249,115,22,0.45); }
+    .cap.blue { color: #93c5fd; border-color: rgba(96,165,250,0.45); }
+    .links { display: flex; gap: 1rem; flex-wrap: wrap; }
+    a { color: #a1a1aa; text-decoration: none; font-size: 0.78rem; font-weight: 600; }
+    a:hover { color: #fafafa; }
+    a:focus-visible { outline: 2px solid #10b981; outline-offset: 4px; }
+    .boundary { margin-top: 3.25rem; padding: 1.25rem 0 0 4rem; border-top: 1px solid #27272a; color: #52525b; font-size: 0.75rem; line-height: 1.65; }
+    .boundary strong { color: #a1a1aa; font-weight: 600; }
+
+    @media (prefers-color-scheme: light) {
+      .scene { background: #f4f4f5; border-color: #e4e4e7; }
+      h2, .lane h3 { color: #18181b; }
+      .intro p, .lane p { color: #52525b; }
+      .map { border-color: #d4d4d8; }
+      .core { box-shadow: 0 0 0 10px #f4f4f5; }
+      .lane + .lane, .boundary { border-color: #e4e4e7; }
+      .lane::before { border-color: #a1a1aa; }
+      .lane-name, .boundary strong { color: #3f3f46; }
+      .lane-role, .boundary { color: #71717a; }
+      .cap { color: #52525b; border-color: #d4d4d8; }
+      .cap.orange { color: #c2410c; border-color: rgba(194,65,12,0.35); }
+      .cap.blue { color: #1d4ed8; border-color: rgba(29,78,216,0.3); }
+      a { color: #52525b; }
+      a:hover { color: #18181b; }
+    }
+
+    @media (max-width: 900px) { .inner { grid-template-columns: 1fr; gap: 3rem; } .intro { position: static; } }
+    @media (max-width: 640px) { .scene { padding: 5rem 1rem; } .map { margin-left: 1rem; } .core { top: 0; transform: translate(-50%, -35%); width: 4.25rem; height: 4.25rem; } .lane { padding-left: 2.5rem; } .lane::before { width: 1.5rem; } .boundary { padding-left: 2.5rem; } }
   `;
 
   @state() private locale: Locale = i18n.getCurrentLocale();
@@ -47,10 +66,32 @@ export class CompanionEcosystemScene extends LitElement {
     return html`
       <section class="scene" id="ecosystem">
         <div class="inner">
-          <div class="head"><div><div class="kicker">${zh ? "COMPANION ECOSYSTEM" : "COMPANION ECOSYSTEM"}</div><h2>${zh ? "Pi 保持核心，体验和连续性向外扩展" : "Keep Pi at the core. Extend experience and continuity."}</h2></div><p>${zh ? "两款配套产品都不接管 Agent：grok-pi-tui 把 Pi 投射到 Grok Build 原生 Pager；Pi Session Manager 则管理 Agent 留下的 session 历史、结构和恢复入口。" : "Neither companion takes over the agent. grok-pi-tui projects Pi into Grok Build's native Pager; Pi Session Manager manages the session history, structure, and resume paths agents leave behind."}</p></div>
-          <div class="products">
-            <article class="product grok"><div class="product-label">grok-pi-tui · remote TUI bridge</div><h3>${zh ? "Pi Runtime × Grok Pager" : "Pi Runtime × Grok Pager"}</h3><p>${zh ? "Pi 继续拥有模型、Provider、工具、扩展、Skill、Session 与执行；Grok Pager 成为唯一终端 UI，负责输入、Markdown、Tool Card、Diff、Dialog 与 Scrollback。" : "Pi keeps models, providers, tools, extensions, skills, sessions, and execution; Grok Pager becomes the only terminal UI for input, Markdown, tool cards, diffs, dialogs, and scrollback."}</p><div class="diagram"><div class="bridge"><div class="bridge-node">Grok Pager<span>native TUI</span></div><div class="bridge-node">ACP<span>interaction</span></div><div class="bridge-node">pi-grok-adapter<span>JSONL RPC ↔ ACP</span></div><div class="bridge-node">Pi Core<span>agent runtime</span></div></div><div class="actions"><a href="https://github.com/Dwsy/grok-pi-tui" target="_blank" rel="noopener">GitHub ↗</a><a href="https://dwsy.github.io/grok-pi-tui/" target="_blank" rel="noopener">${zh ? "项目主页 ↗" : "Project site ↗"}</a></div></div></article>
-            <article class="product psm"><div class="product-label">pi-session-manager · local-first workbench</div><h3>${zh ? "Session 不再是一次性聊天记录" : "Sessions stop being disposable chat logs"}</h3><p>${zh ? "跨 Agent 索引、搜索、树与 Kanban、Branch Atlas、Tool Trace、token/cost 统计，以及 resume / convert / export。管理 Agent 周围的工作，而不是替代 Agent。" : "Cross-agent indexing, search, trees and Kanban, Branch Atlas, tool traces, token/cost stats, plus resume / convert / export. It manages the work around the agent, not the agent itself."}</p><div class="diagram"><div class="sources">${["Pi","Claude Code","Codex","OpenCode","Gemini CLI","Cursor","Antigravity"].map(s => html`<span class="source">${s}</span>`)}</div><div class="psm-flow"><div class="psm-step"><strong>Index</strong>scan</div><div class="psm-step"><strong>Understand</strong>tree · trace</div><div class="psm-step"><strong>Organize</strong>search · kanban</div><div class="psm-step"><strong>Resume</strong>export · continue</div></div><div class="actions"><a href="https://github.com/Dwsy/pi-session-manager" target="_blank" rel="noopener">GitHub ↗</a><a href="https://dwsy.github.io/pi-session-manager/" target="_blank" rel="noopener">${zh ? "文档 / Demo ↗" : "Docs / demo ↗"}</a></div></div></article>
+          <div class="intro">
+            <div class="kicker">COMPANION ECOSYSTEM</div>
+            <h2>${zh ? "核心保持单一，边界向外延伸" : "One core. Clear extensions around it."}</h2>
+            <p>${zh ? "Pi 仍然是 Agent Runtime。配套产品只在明确边界上增强它：一个负责终端交互，一个负责跨会话连续性。" : "Pi remains the agent runtime. Companion products extend it only at explicit boundaries: one owns terminal interaction, the other owns cross-session continuity."}</p>
+          </div>
+
+          <div class="map">
+            <div class="core">Pi<br>Core</div>
+
+            <article class="lane">
+              <div class="lane-meta"><span class="lane-name">grok-pi-tui</span><span class="lane-role">${zh ? "交互面" : "interaction surface"}</span></div>
+              <h3>${zh ? "把 Pi 投射到 Grok Build 原生 Pager" : "Project Pi into Grok Build's native Pager"}</h3>
+              <p>${zh ? "Pi 保留模型、Provider、工具、扩展、Skill、Session 与执行；Grok Pager 成为唯一终端 UI。Remote TUI bridge 只连接能力，不再制造第二套界面。" : "Pi keeps models, providers, tools, extensions, skills, sessions, and execution; Grok Pager becomes the only terminal UI. The Remote TUI bridge connects capabilities without inventing a second interface."}</p>
+              <div class="capabilities"><span class="cap orange">Pager</span><span class="cap">ACP</span><span class="cap">JSONL RPC</span><span class="cap">Tool cards</span><span class="cap">Diffs</span><span class="cap">Dialogs</span></div>
+              <div class="links"><a href="https://github.com/Dwsy/grok-pi-tui" target="_blank" rel="noopener">GitHub ↗</a><a href="https://dwsy.github.io/grok-pi-tui/" target="_blank" rel="noopener">${zh ? "项目主页 ↗" : "Project site ↗"}</a></div>
+            </article>
+
+            <article class="lane">
+              <div class="lane-meta"><span class="lane-name">pi-session-manager</span><span class="lane-role">${zh ? "连续性层" : "continuity layer"}</span></div>
+              <h3>${zh ? "把 Agent 留下的 Session 变成工程资产" : "Turn agent sessions into engineering artifacts"}</h3>
+              <p>${zh ? "本地索引 Pi 与其他 coding agent 的历史，重建树、Branch Atlas、Tool Trace 和 compaction context，再通过搜索、Kanban、resume / convert / export 把工作继续下去。" : "Index Pi and other coding-agent histories locally, reconstruct trees, Branch Atlas, tool traces, and compaction context, then continue work through search, Kanban, resume / convert / export."}</p>
+              <div class="capabilities"><span class="cap blue">local-first</span><span class="cap">Pi</span><span class="cap">Claude Code</span><span class="cap">Codex</span><span class="cap">Gemini CLI</span><span class="cap">Cursor</span><span class="cap">Antigravity</span></div>
+              <div class="links"><a href="https://github.com/Dwsy/pi-session-manager" target="_blank" rel="noopener">GitHub ↗</a><a href="https://dwsy.github.io/pi-session-manager/" target="_blank" rel="noopener">${zh ? "文档 / Demo ↗" : "Docs / demo ↗"}</a></div>
+            </article>
+
+            <div class="boundary"><strong>${zh ? "边界原则：" : "Boundary principle: "}</strong>${zh ? "grok-pi-tui 不接管 Agent Runtime；Pi Session Manager 不变成 Agent GUI。两者都围绕 Pi 工作，而不是把 Pi 包进新的黑盒。" : "grok-pi-tui does not take over the agent runtime; Pi Session Manager does not become an agent GUI. Both work around Pi instead of wrapping it in a new black box."}</div>
           </div>
         </div>
       </section>

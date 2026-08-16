@@ -72,6 +72,13 @@ export class Footer extends LitElement {
       color: #fafafa;
     }
 
+    @media (prefers-color-scheme: light) {
+      .footer { background: #f8fafc; border-top-color: #e4e4e7; }
+      .brand-text { color: #18181b; }
+      .tagline, .link { color: #71717a; }
+      .link:hover { color: #18181b; }
+    }
+
     @media (max-width: 640px) {
       .inner {
         flex-direction: column;
