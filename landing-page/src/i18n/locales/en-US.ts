@@ -7,6 +7,8 @@ export default {
   navbar: {
     links: {
       features: "Features",
+      runtime: "Runtime",
+      ecosystem: "Ecosystem",
       gateway: "Gateway",
       workflow: "Workflow",
       extensions: "Extensions",

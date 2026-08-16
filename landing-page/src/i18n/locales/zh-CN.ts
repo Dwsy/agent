@@ -7,6 +7,8 @@ export default {
   navbar: {
     links: {
       features: "功能",
+      runtime: "运行时",
+      ecosystem: "生态",
       gateway: "网关",
       workflow: "工作流",
       extensions: "扩展",

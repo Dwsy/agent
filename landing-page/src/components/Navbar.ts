@@ -4,8 +4,8 @@ import { i18n, type Locale } from '../i18n/i18n-manager';
 
 const NAV_SECTIONS = [
   { key: 'features', id: 'features' },
-  { key: 'gateway', id: 'gateway' },
-  { key: 'workflow', id: 'workflow' },
+  { key: 'runtime', id: 'runtime' },
+  { key: 'ecosystem', id: 'ecosystem' },
   { key: 'extensions', id: 'extensions' },
   { key: 'comparison', id: 'comparison' },
 ] as const;
