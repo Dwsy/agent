@@ -76,10 +76,29 @@ export class HeroSection extends LitElement {
       .action:hover { color: #18181b; border-color: #a1a1aa; }
       .main-foot { border-color: #e4e4e7; color: #71717a; }
       .main-foot strong { color: #3f3f46; }
-      .gapp, .evidence { background: #151517; border-color: #27272a; }
+      .context { background: #f0fdf4; border-color: #bbf7d0; }
+      .trace { background: #eff6ff; border-color: #bfdbfe; }
+      .gapp { background: #ecfdf5; border-color: #a7f3d0; }
+      .gapp-copy .eyebrow { color: #047857; }
+      .gapp-copy h2 { color: #064e3b; }
+      .gapp-copy p { color: #475569; }
+      .gapp-stage { background: #ffffff; border-color: #a7f3d0; }
+      .gapp-nav { border-color: #d1fae5; color: #64748b; }
+      .gapp-nav strong { color: #047857; }
+      .gapp-node { background: #f8fafc; border-color: #dbe4ea; color: #64748b; }
+      .gapp-node.hot { background: #d1fae5; border-color: #6ee7b7; color: #065f46; }
+      .evidence { background: #eff6ff; border-color: #bfdbfe; }
+      .evidence-label { color: #2563eb; }
+      .evidence-step { border-color: #bfdbfe; }
+      .evidence-step strong { color: #1e3a8a; }
+      .evidence-step span { color: #64748b; }
+      .role { background: #fff7ed; border-color: #fed7aa; }
+      .gateway { background: #f5f3ff; border-color: #ddd6fe; }
+      .extensions { background: #f0fdfa; border-color: #99f6e4; }
+      .companions { background: #fdf4ff; border-color: #f5d0fe; }
       .feature h2, .mini strong { color: #18181b; }
-      .feature p, .mini span, .eyebrow { color: #71717a; }
-      .token { color: #52525b; border-color: #d4d4d8; }
+      .feature p, .mini span, .eyebrow { color: #52525b; }
+      .token { color: #475569; border-color: #cbd5e1; }
       .token.hot, .mini .mark { color: #047857; border-color: rgba(4,120,87,0.35); }
     }
 
@@ -127,18 +146,18 @@ export class HeroSection extends LitElement {
             <div class="main-foot"><div><strong>Context</strong>tag · checkout · compact</div><div><strong>Protocol</strong>L1–L4 complexity routing</div><div><strong>Verify</strong>test · diff · worktree</div></div>
           </article>
 
-          <article class="tile feature context"><div><div class="eyebrow">01 / Context</div><h2>${zh ? "上下文像 Git 一样可操作" : "Operate context like Git"}</h2><p>${zh ? "保存语义节点，长会话 compact 后仍能恢复 handoff。" : "Save semantic states and recover the handoff after compaction."}</p></div><div class="tokens"><span class="token hot">tag</span><span class="token">checkout</span><span class="token">history</span><span class="token">compact</span></div></article>
+          <article class="tile feature context"><div><div class="eyebrow">01 / Context</div><h2>${zh ? "上下文像 Git 一样可操作" : "Operate context like Git"}</h2><p>${zh ? "给关键语义状态打 tag、查看 history、checkout 回任意 checkpoint；长会话 compact 后仍保留任务 handoff。" : "Tag semantic states, inspect history, checkout any checkpoint, and keep the task handoff intact after long-session compaction."}</p></div><div class="tokens"><span class="token hot">tag</span><span class="token">checkout</span><span class="token">history</span><span class="token">compact</span></div></article>
 
-          <article class="tile feature trace"><div><div class="eyebrow">02 / Observe</div><h2>Provider Trace</h2><p>${zh ? "请求、响应与工程验证留在同一条证据链。" : "Requests, responses, and verification stay on one evidence path."}</p></div><div class="tokens"><span class="token hot">trace</span><span class="token">insights</span><span class="token">verify</span></div></article>
+          <article class="tile feature trace"><div><div class="eyebrow">02 / Observe</div><h2>Provider Trace</h2><p>${zh ? "观察 provider 请求/响应、模型路由与失败链路，再把测试、diff、worktree 状态接到同一条证据链。" : "Inspect provider requests/responses, model routing, and failure paths, then connect tests, diff, and worktree state to the same evidence trail."}</p></div><div class="tokens"><span class="token hot">trace</span><span class="token">insights</span><span class="token">verify</span></div></article>
 
           <article class="tile gapp"><div class="gapp-copy"><div><div class="eyebrow">03 / Native UI</div><h2>${zh ? "GAPP：Agent 原生生成交互界面" : "GAPP: agent-native interactive UI"}</h2><p>${zh ? "不是把结果塞回聊天气泡；项目图、diff、状态和操作可以直接成为会话的一部分。" : "Not another chat bubble. Project maps, diffs, live state, and actions can become part of the session itself."}</p></div><div class="tokens"><span class="token hot">project map</span><span class="token">diff</span><span class="token">live state</span></div></div><div class="gapp-stage"><div class="gapp-nav"><strong>PROJECT MAP</strong>src/<br>extensions/<br>gateway/<br>roles/</div><div class="gapp-canvas"><div class="gapp-node hot">context<br>checkpoint</div><div class="gapp-node">provider<br>trace</div><div class="gapp-node">role<br>memory</div><div class="gapp-node hot">gateway<br>RPC</div></div></div></article>
 
           <article class="tile evidence"><div class="evidence-label">Evidence rail</div><div class="evidence-flow"><div class="evidence-step"><strong>Locate</strong><span>semantic · AST</span></div><div class="evidence-step"><strong>Model</strong><span>callers · constraints</span></div><div class="evidence-step"><strong>Preserve</strong><span>tag · compact</span></div><div class="evidence-step"><strong>Execute</strong><span>edit · GAPP</span></div><div class="evidence-step"><strong>Verify</strong><span>test · diff · state</span></div></div></article>
 
-          <article class="tile mini role"><div class="mark">Memory</div><strong>${zh ? "角色长期记忆" : "Durable role memory"}</strong><span>role mapping · vector recall · viewer</span></article>
-          <article class="tile mini gateway"><div class="mark">Gateway</div><strong>Gateway / RPC</strong><span>session routing · worker pool · offline-safe</span></article>
-          <article class="tile mini extensions"><div class="mark">Extend</div><strong>${zh ? "扩展 / Skill / GAPP" : "Extensions / Skills / GAPP"}</strong><span>ace · AST · browser · diagnose · custom UI</span></article>
-          <article class="tile mini companions"><div class="mark">Companion</div><strong>grok-pi-tui + PSM</strong><span>${zh ? "原生终端体验 · 跨会话连续性" : "native terminal · session continuity"}</span></article>
+          <article class="tile mini role"><div class="mark">Memory</div><strong>${zh ? "角色长期记忆" : "Durable role memory"}</strong><span>${zh ? "workspace→role · daily→pending→knowledge · 向量召回 · viewer" : "workspace→role · daily→pending→knowledge · vector recall · viewer"}</span></article>
+          <article class="tile mini gateway"><div class="mark">Gateway</div><strong>Gateway / RPC</strong><span>${zh ? "session-aware routing · RPC worker pool · WebSocket/HTTP · offline-safe" : "session-aware routing · RPC worker pool · WebSocket/HTTP · offline-safe"}</span></article>
+          <article class="tile mini extensions"><div class="mark">Extend</div><strong>${zh ? "扩展 / Skill / GAPP" : "Extensions / Skills / GAPP"}</strong><span>${zh ? "ace-tool · AST · browser · diagnose · 自定义工具与交互面" : "ace-tool · AST · browser · diagnose · custom tools and UI surfaces"}</span></article>
+          <article class="tile mini companions"><div class="mark">Companion</div><strong>grok-pi-tui + PSM</strong><span>${zh ? "Grok Pager 原生终端 · Session 搜索/树/Kanban · resume/export" : "Grok Pager native TUI · session search/tree/Kanban · resume/export"}</span></article>
         </div>
       </section>
     `;
