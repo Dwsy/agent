@@ -484,7 +484,9 @@ export class RpcPool {
       signature: profile.signature,
       hardSignature: profile.hardSignature,
       softResources: profile.softResources,
-      env: profile.env,
+      // Gateway RPC workers must not perform package/model-catalog network work at startup.
+      // Concurrent package installs from multiple workers can overwhelm small hosts.
+      env: { ...profile.env, PI_OFFLINE: "1" },
       args: extraArgs.length > 0 ? extraArgs : undefined,
     };
 
@@ -588,7 +590,8 @@ export class RpcPool {
       signature: profile.signature,
       hardSignature: profile.hardSignature,
       softResources: profile.softResources,
-      env: profile.env,
+      // Keep fallback workers offline at startup for the same reason as the primary path.
+      env: { ...profile.env, PI_OFFLINE: "1" },
       args: extraArgs.length > 0 ? extraArgs : undefined,
     };
 
