@@ -126,6 +126,21 @@ runTest("compound find and search shell flows bypass rewrites when RTK parity is
 	}
 });
 
+runTest("rg stays native while grep still rewrites through RTK", () => {
+	const config = cloneDefaultConfig();
+	const rgCommand = "command -v rg; rg -n TODO src extensions";
+	const rgDecision = computeRewriteDecision(rgCommand, config);
+
+	assert.equal(rgDecision.changed, false);
+	assert.equal(rgDecision.rewrittenCommand, rgCommand);
+	assert.equal(rgDecision.reason, "no_match");
+
+	const grepDecision = computeRewriteDecision("grep -n TODO README.md", config);
+	assert.equal(grepDecision.changed, true);
+	assert.equal(grepDecision.rule?.id, "grep");
+	assert.equal(grepDecision.rewrittenCommand, "rtk grep -n TODO README.md");
+});
+
 runTest("formatting-sensitive ls flows bypass rewrites", () => {
 	const config = cloneDefaultConfig();
 	const auditedCommands = ["ls -la", "ls -l src | grep command-rewriter"];

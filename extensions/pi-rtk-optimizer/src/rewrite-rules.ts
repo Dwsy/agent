@@ -78,7 +78,7 @@ export const RTK_REWRITE_RULES: RtkRewriteRule[] = [
 		replacement: "rtk read $2 --max-lines $1",
 		description: "tail --lines=N <file>",
 	},
-	{ id: "grep", category: "filesystem", matcher: /^(rg|grep)\s+/, replacement: "rtk grep ", description: "rg/grep" },
+	{ id: "grep", category: "filesystem", matcher: /^grep\s+/, replacement: "rtk grep ", description: "grep" },
 	{ id: "ls", category: "filesystem", matcher: /^ls\b/, replacement: "rtk ls", description: "ls" },
 	{ id: "tree", category: "filesystem", matcher: /^tree\b/, replacement: "rtk tree", description: "tree" },
 	{ id: "find", category: "filesystem", matcher: /^find\s+/, replacement: "rtk find ", description: "find" },
