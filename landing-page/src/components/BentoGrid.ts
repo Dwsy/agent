@@ -359,7 +359,7 @@ export class BentoGrid extends LitElement {
     }
 
     .agent-cell {
-      aspect-ratio: 1;
+      min-height: 2.5rem;
       background: rgba(255, 255, 255, 0.03);
       border-radius: 0.5rem;
       display: grid;

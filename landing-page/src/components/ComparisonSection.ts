@@ -24,7 +24,7 @@ export class ComparisonSection extends LitElement {
       margin: 0 auto;
     }
 
-    .header {
+    .section-header {
       margin-bottom: 4rem;
       max-width: 480px;
     }
@@ -154,7 +154,7 @@ export class ComparisonSection extends LitElement {
     return html`
       <section class="section" id="comparison">
         <div class="inner">
-          <div class="header">
+          <div class="section-header">
             <span class="label">${f('comparison.label')}</span>
             <h2 class="title">${f('comparison.title')}</h2>
             <p class="subtitle">${f('comparison.subtitle')}</p>
