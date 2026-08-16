@@ -24,7 +24,7 @@
 	url = https://github.com/w-winter/dot314.git
 [submodule "extensions/pi-context"]
 	path = extensions/pi-context
-	url = https://github.com/ttttmr/pi-context.git
+	url = https://github.com/Dwsy/pi-context.git
 
 [submodule "extensions/pi-files-widget"]
 	path = extensions/pi-files-widget
