@@ -36,9 +36,9 @@ export default async function (pi: ExtensionAPI) {
   // ── Shared state ──────────────────────────────────────────────────────
 
   const toolCtx: ToolContext = {
-    hasSeenReadMe: false,
     streaming: null,
     activeWindows: [],
+    lastVisualPlan: null,
   };
 
   // ── Streaming: intercept show_widget / show_canvas calls mid-generation ──

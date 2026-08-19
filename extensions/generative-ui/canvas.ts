@@ -8,93 +8,13 @@ import { cssVariables } from "./svg-styles.js";
 import { WIDGET_CSP, WIDGET_UI_KIT_CSS, WIDGET_UI_KIT_RESOURCES } from "./widget-ui-kit.js";
 import { THEME_VARS_SCRIPT, WIDGET_EVENTS_SCRIPT } from "./html-helpers.js";
 import { REACT_UMD_JS, REACT_DOM_UMD_JS } from "./vendor-react.js";
+import { CANVAS_SDK_SOURCE } from "./canvas-sdk-source.js";
 
 export const CANVAS_ALLOWED_IMPORTS = ["react", "react-dom", "react-dom/client", "@gen-ui/canvas"];
 
 // CJS shims: esbuild interop exposes module.exports as both default and named exports.
 const REACT_SHIM = "module.exports = window.React;";
 const REACT_DOM_SHIM = "module.exports = window.ReactDOM;";
-
-const SDK_SOURCE = `
-import React, { useEffect, useState } from "react";
-
-/** Resolved host theme tokens; re-resolves when the system scheme flips. */
-export function useHostTheme() {
-  const [theme, setTheme] = useState(() => window._themeVars());
-  useEffect(() => {
-    const mq = matchMedia("(prefers-color-scheme: dark)");
-    const onChange = () => setTheme(window._themeVars());
-    mq.addEventListener("change", onChange);
-    return () => mq.removeEventListener("change", onChange);
-  }, []);
-  return theme;
-}
-
-/** Send structured data back to the agent (settles interactive canvases). */
-export function sendToAgent(data) { return window.sendWidgetEvent(data); }
-export function sendPrompt(prompt) { return window.sendPrompt(prompt); }
-export function sendAnnotation(targetId, comment, stateId) { return window.sendAnnotation(targetId, comment, stateId); }
-
-const h = React.createElement;
-
-/** Flat rounded container with an optional small title. */
-export function Card({ title, children }) {
-  return h("div", {
-    style: {
-      border: "1px solid var(--color-border-tertiary)",
-      borderRadius: 8,
-      padding: 16,
-    },
-  },
-    title != null && h("div", {
-      style: { fontSize: 13, color: "var(--color-text-secondary)", marginBottom: 8 },
-    }, title),
-    children,
-  );
-}
-
-/** Metric block: small label, prominent value, optional hint below. */
-export function Stat({ label, value, hint }) {
-  return h("div", null,
-    h("div", { style: { fontSize: 12, color: "var(--color-text-secondary)" } }, label),
-    h("div", { style: { fontSize: 22, fontWeight: 600, color: "var(--color-text-primary)" } }, value),
-    hint != null && h("div", { style: { fontSize: 12, color: "var(--color-text-tertiary)" } }, hint),
-  );
-}
-
-/** Minimal table: columns = [{ key, label, align?, render? }], rows = objects. */
-export function DataTable({ columns, rows }) {
-  const cellStyle = (col, header) => ({
-    padding: "6px 8px",
-    textAlign: col.align === "right" ? "right" : "left",
-    ...(col.align === "right" && !header ? { fontVariantNumeric: "tabular-nums" } : {}),
-  });
-  return h("table", { style: { borderCollapse: "collapse", width: "100%" } },
-    h("thead", null, h("tr", null,
-      columns.map((col) => h("th", {
-        key: col.key,
-        style: {
-          ...cellStyle(col, true),
-          color: "var(--color-text-secondary)",
-          fontWeight: 500,
-          borderBottom: "1px solid var(--color-border-tertiary)",
-        },
-      }, col.label)),
-    )),
-    h("tbody", null,
-      rows.map((row, i) => h("tr", { key: i },
-        columns.map((col) => h("td", {
-          key: col.key,
-          style: {
-            ...cellStyle(col, false),
-            borderBottom: "1px solid var(--color-border-tertiary)",
-          },
-        }, col.render ? col.render(row) : row[col.key])),
-      )),
-    ),
-  );
-}
-`;
 
 const ENTRY_SOURCE = `
 import React from "react";
@@ -151,7 +71,7 @@ function canvasPlugin(tsx: string) {
         if (args.path === "__entry__") return { contents: ENTRY_SOURCE, loader: "js" };
         if (args.path === "__canvas__") return { contents: tsx, loader: "tsx" };
         if (args.path === "react") return { contents: REACT_SHIM, loader: "js" };
-        if (args.path === "@gen-ui/canvas") return { contents: SDK_SOURCE, loader: "js" };
+        if (args.path === "@gen-ui/canvas") return { contents: CANVAS_SDK_SOURCE, loader: "js" };
         return { contents: REACT_DOM_SHIM, loader: "js" };
       });
     },
@@ -231,7 +151,97 @@ const escapeScript = (js: string) => js.replace(/<\/script>/gi, "<\\/script>");
 const CANVAS_REACT_SCRIPTS = `<script>${escapeScript(REACT_UMD_JS)}</script>
 <script>${escapeScript(REACT_DOM_UMD_JS)}</script>`;
 
-function shellDocument(bodyScript: string): string {
+// Safe bridge for sandboxed gallery iframes. The child never receives same-origin
+// access; the gallery only proxies Canvas state and its current light/dark theme.
+const CANVAS_HOST_BRIDGE_SCRIPT = `(function() {
+  var FLAG = '__generativeUICanvasHost';
+  var pending = Object.create(null);
+  var seq = 0;
+  var inHost = window.parent !== window;
+
+  function post(message) {
+    if (!inHost) return false;
+    try {
+      message[FLAG] = true;
+      window.parent.postMessage(message, '*');
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function applyTheme(dark) {
+    dark = !!dark;
+    window.__hostDarkMode = dark;
+    var vars = dark ? {
+      '--color-text-primary': '#e0e0e0', '--color-text-secondary': '#a0a0a0', '--color-text-tertiary': '#707070',
+      '--color-text-info': '#85B7EB', '--color-text-danger': '#F09595', '--color-text-success': '#97C459', '--color-text-warning': '#EF9F27',
+      '--color-background-primary': '#1a1a1a', '--color-background-secondary': '#2a2a2a', '--color-background-tertiary': '#111111',
+      '--color-background-info': '#0C447C', '--color-background-danger': '#791F1F', '--color-background-success': '#27500A', '--color-background-warning': '#633806',
+      '--color-border-primary': 'rgba(255,255,255,0.4)', '--color-border-secondary': 'rgba(255,255,255,0.3)', '--color-border-tertiary': 'rgba(255,255,255,0.15)',
+      '--color-border-info': '#85B7EB', '--color-border-success': '#97C459', '--color-border-danger': '#F09595', '--chart-tick': '#A0A0A0', '--chart-grid': 'rgba(255,255,255,0.08)'
+    } : {
+      '--color-text-primary': '#1a1a1a', '--color-text-secondary': '#5f5e5a', '--color-text-tertiary': '#888780',
+      '--color-text-info': '#185FA5', '--color-text-danger': '#A32D2D', '--color-text-success': '#3B6D11', '--color-text-warning': '#854F0B',
+      '--color-background-primary': '#ffffff', '--color-background-secondary': '#f1efe8', '--color-background-tertiary': '#e8e6de',
+      '--color-background-info': '#E6F1FB', '--color-background-danger': '#FCEBEB', '--color-background-success': '#EAF3DE', '--color-background-warning': '#FAEEDA',
+      '--color-border-primary': 'rgba(0,0,0,0.4)', '--color-border-secondary': 'rgba(0,0,0,0.3)', '--color-border-tertiary': 'rgba(0,0,0,0.15)',
+      '--color-border-info': '#185FA5', '--color-border-success': '#3B6D11', '--color-border-danger': '#A32D2D', '--chart-tick': '#636366', '--chart-grid': 'rgba(0,0,0,0.06)'
+    };
+    var root = document.documentElement;
+    root.style.colorScheme = dark ? 'dark' : 'light';
+    Object.keys(vars).forEach(function(name) { root.style.setProperty(name, vars[name]); });
+    if (document.body) {
+      document.body.style.background = vars['--color-background-primary'];
+      document.body.style.color = vars['--color-text-primary'];
+    }
+    try { window.dispatchEvent(new Event('gen-ui-canvas-theme-change')); } catch (_) {}
+  }
+
+  window.__canvasHostBridge = {
+    isAvailable: function() { return inHost; },
+    requestState: function(key) {
+      if (!inHost) return Promise.resolve({ found: false });
+      return new Promise(function(resolve) {
+        var requestId = 'state-' + (++seq) + '-' + Date.now().toString(36);
+        pending[requestId] = resolve;
+        if (!post({ type: 'state-get', requestId: requestId, key: String(key) })) {
+          delete pending[requestId];
+          resolve({ found: false });
+          return;
+        }
+        setTimeout(function() {
+          if (!pending[requestId]) return;
+          delete pending[requestId];
+          resolve({ found: false });
+        }, 1500);
+      });
+    },
+    setState: function(key, value) {
+      return post({ type: 'state-set', key: String(key), value: value });
+    }
+  };
+
+  window.addEventListener('message', function(event) {
+    if (event.source !== window.parent) return;
+    var data = event.data;
+    if (!data || data[FLAG] !== true) return;
+    if (data.type === 'theme' && typeof data.dark === 'boolean') {
+      applyTheme(data.dark);
+      return;
+    }
+    if (data.type === 'state-value' && typeof data.requestId === 'string') {
+      var resolve = pending[data.requestId];
+      if (!resolve) return;
+      delete pending[data.requestId];
+      resolve({ found: data.found === true, value: data.value });
+    }
+  });
+
+  if (inHost) post({ type: 'ready' });
+})();`;
+
+function shellDocument(bodyScript: string, canvasId?: string, groundingFooter = ""): string {
   const vars = cssVariables();
   return `<!DOCTYPE html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
@@ -243,11 +253,13 @@ ${vars}
 body{margin:0;padding:1rem;font-family:var(--font-sans);background:var(--color-background-primary);color:var(--color-text-primary);}
 ${WIDGET_UI_KIT_CSS}
 </style>
-</head><body><div id="canvas-root"></div>
+</head><body><div id="canvas-root"></div><div id="genui-grounding">${groundingFooter}</div>
 ${CANVAS_REACT_SCRIPTS}
 <script>
 ${THEME_VARS_SCRIPT}
 ${WIDGET_EVENTS_SCRIPT}
+${canvasId ? `window.__canvasId = ${JSON.stringify(canvasId)};` : ""}
+${CANVAS_HOST_BRIDGE_SCRIPT}
 </script>
 ${WIDGET_UI_KIT_RESOURCES}
 ${bodyScript}
@@ -260,6 +272,6 @@ export function canvasShellHTML(): string {
 }
 
 /** Self-contained saved document with the compiled bundle inline. */
-export function canvasDocumentHTML(compiledJs: string): string {
-  return shellDocument(`<script>${compiledJs.replace(/<\/script>/gi, "<\\/script>")}</script>`);
+export function canvasDocumentHTML(compiledJs: string, canvasId?: string, groundingFooter = ""): string {
+  return shellDocument(`<script>${compiledJs.replace(/<\/script>/gi, "<\\/script>")}</script>`, canvasId, groundingFooter);
 }

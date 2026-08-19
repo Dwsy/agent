@@ -2,8 +2,11 @@
 
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { connect } from "node:net";
-import { readFile, writeFile, unlink, mkdir } from "node:fs/promises";
-import { join } from "node:path";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { readFile, writeFile, unlink, mkdir, mkdtemp, rename, rm, stat } from "node:fs/promises";
+import { basename, join } from "node:path";
+import { tmpdir } from "node:os";
 import type { WidgetRecord } from "./storage.js";
 import {
   appendWidgetEvent,
@@ -18,6 +21,56 @@ import {
 import { detectDarkMode, openInBrowser } from "./html-helpers.js";
 
 const lockFile = () => join(widgetsDir(), ".gallery-lock");
+const thumbnailDir = () => join(widgetsDir(), ".gallery-thumbnails");
+const execFileAsync = promisify(execFile);
+const thumbnailJobs = new Map<string, Promise<string | null>>();
+const THUMBNAIL_SIZE = 480;
+const THUMBNAIL_WEBP_QUALITY = 58;
+
+export async function generateThumbnail(file: string, force = false): Promise<string | null> {
+  const source = join(widgetsDir(), file);
+  const cache = join(thumbnailDir(), file + ".webp");
+  try {
+    await stat(source);
+    const cacheStat = await stat(cache).catch(() => null);
+    if (cacheStat && !force) return cache;
+  } catch {
+    return null;
+  }
+
+  const existing = thumbnailJobs.get(file);
+  if (existing) return existing;
+
+  const job = (async () => {
+    await mkdir(thumbnailDir(), { recursive: true });
+    const work = await mkdtemp(join(tmpdir(), "widget-thumb-"));
+    try {
+      await execFileAsync("/usr/bin/qlmanage", ["-t", "-s", String(THUMBNAIL_SIZE), "-o", work, source]);
+      const png = join(work, basename(source) + ".png");
+      const staged = join(work, "thumbnail.webp");
+      await execFileAsync("cwebp", [
+        "-quiet",
+        "-q", String(THUMBNAIL_WEBP_QUALITY),
+        "-m", "4",
+        png,
+        "-o", staged,
+      ]);
+      await rename(staged, cache);
+      return cache;
+    } catch {
+      return null;
+    } finally {
+      await rm(work, { recursive: true, force: true }).catch(() => {});
+    }
+  })();
+
+  thumbnailJobs.set(file, job);
+  try {
+    return await job;
+  } finally {
+    thumbnailJobs.delete(file);
+  }
+}
 
 function escapeHtml(value: string): string {
   return value
@@ -57,7 +110,7 @@ async function readJsonBody(req: IncomingMessage): Promise<any> {
   return JSON.parse(Buffer.concat(chunks).toString("utf-8"));
 }
 
-function buildCard(w: WidgetRecord, i: number): string {
+function buildCard(w: WidgetRecord, i: number, previewVersion: string): string {
   const archived = Boolean(w.archivedAt);
   const eventCount = w.events?.length ?? (w.interactionData === undefined ? 0 : 1);
   const meta = (w.kind === "canvas" ? "canvas \u00b7 " : "")
@@ -71,10 +124,12 @@ function buildCard(w: WidgetRecord, i: number): string {
 
   return '<div class="card' + (archived ? ' archived' : '') + '" data-idx="' + i + '" data-file="' + escapeHtml(w.file) + '"' + cwdAttr + ' data-archived="' + (archived ? "1" : "0") + '">'
     + '<label class="select-box" title="Select"><input type="checkbox" data-select-file="' + escapeHtml(w.file) + '"><span></span></label>'
-    + '<div class="card-preview" data-src="/widget/' + encodeURIComponent(w.file) + '">'
+    + '<div class="card-preview">'
+    + '<img class="preview-thumb" loading="lazy" decoding="async" src="/thumbnail/' + encodeURIComponent(w.file) + '?v=' + encodeURIComponent(previewVersion) + '" alt="" onload="this.classList.add(\'loaded\')">'
     + '<div class="skeleton"></div>'
     + '<div class="preview-placeholder"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></div>'
     + '<div class="card-actions">'
+    + '<button class="card-action" data-action="refresh-preview" title="Refresh preview"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8.1 8.1 0 1 0 2 5"/><path d="M20 4v7h-7"/></svg></button>'
     + '<button class="card-action" data-action="open" title="Open in new window"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17L17 7"/><path d="M7 7h10v10"/></svg></button>'
     + '<button class="card-action" data-action="copy" title="Copy link"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>'
     + '<button class="card-action" data-action="rename" title="Rename"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>'
@@ -88,7 +143,11 @@ async function buildGalleryHTML(projectCwd?: string): Promise<string> {
   const dark = detectDarkMode();
   const sorted = (await loadWidgetIndex()).sort((a, b) => b.timestamp.localeCompare(a.timestamp));
   const effectiveProjectCwd = projectCwd || sorted.find((w) => !w.archivedAt)?.cwd || sorted[0]?.cwd || "";
-  const cards = sorted.map((w, i) => buildCard(w, i)).join("\n");
+  const previewVersions = await Promise.all(sorted.map(async (w) => {
+    try { return String((await stat(join(thumbnailDir(), w.file + ".webp"))).mtimeMs); }
+    catch { return "0"; }
+  }));
+  const cards = sorted.map((w, i) => buildCard(w, i, previewVersions[i])).join("\n");
   const activeCount = sorted.filter((w) => !w.archivedAt).length;
   const archivedCount = sorted.length - activeCount;
 
@@ -144,12 +203,12 @@ button,input,select{font:inherit}
 .select-box input:checked+span{background:var(--accent);border-color:var(--accent)}
 .select-box input:checked+span::after{content:"";position:absolute;left:8px;top:5px;width:7px;height:12px;border:solid white;border-width:0 2px 2px 0;transform:rotate(45deg)}
 .card-preview{overflow:hidden;position:relative;background:var(--code-bg);height:var(--ph,200px)}
-.card-preview iframe{border:none;transform-origin:top left;pointer-events:none;opacity:0;transition:opacity .4s ease}
-.card-preview iframe.loaded{opacity:1}
-.card-preview iframe.loaded~.preview-placeholder{display:none}
+.preview-thumb{width:100%;height:100%;display:block;object-fit:cover;object-position:top center;opacity:0;transition:opacity .2s ease}
+.preview-thumb.loaded{opacity:1}
+.preview-thumb.loaded~.preview-placeholder{display:none}
 .preview-placeholder{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--muted);background:var(--code-bg)}
 .skeleton{position:absolute;inset:0;background:var(--skeleton-base);opacity:1;transition:opacity .3s;z-index:1}
-.card-preview iframe.loaded~.skeleton{opacity:0;pointer-events:none}
+.preview-thumb.loaded~.skeleton{opacity:0;pointer-events:none}
 .card-actions{position:absolute;top:8px;right:8px;display:flex;gap:4px;opacity:0;transform:translateY(-4px);transition:all .2s;z-index:2}
 .card:hover .card-actions{opacity:1;transform:translateY(0)}
 .card-action{width:28px;height:28px;border-radius:6px;border:1px solid var(--border);background:var(--card-bg);color:var(--muted);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:.15s;backdrop-filter:blur(8px)}
@@ -213,15 +272,77 @@ var selectedFiles = new Set();
 var sourceCache = {};
 var sourceKeys = [];
 var projectCwd = ${projectCwdJSON};
-var previewObserver = null;
-var loadQueue = [];
-var activeLoads = 0;
-var MAX_CONCURRENT = 6;
 var GRID_GAP = 19;
 var MIN_CARD_W = 300;
 var teleportedIframe = null;
 var teleportedFrom = null;
 var teleportedOrigStyle = {};
+var CANVAS_HOST_FLAG = "__generativeUICanvasHost";
+var CANVAS_STATE_PREFIX = "__gen_ui_gallery_canvas_state_v1__:";
+
+function canvasStateNamespace(w) {
+  if (w && typeof w.canvasStateId === "string" && w.canvasStateId) return w.canvasStateId;
+  return ((w && w.cwd) || "gallery") + "::" + ((w && (w.id || w.file)) || "canvas");
+}
+
+function canvasStateStorageKey(w, key) {
+  return CANVAS_STATE_PREFIX + canvasStateNamespace(w) + ":" + key;
+}
+
+function galleryThemeIsDark() {
+  return document.body.getAttribute("data-theme") === "dark";
+}
+
+function postCanvasTheme(target) {
+  if (!target || typeof target.postMessage !== "function") return;
+  target.postMessage({ __generativeUICanvasHost: true, type: "theme", dark: galleryThemeIsDark() }, "*");
+}
+
+function broadcastCanvasTheme() {
+  document.querySelectorAll("iframe").forEach(function(frame) {
+    if (frame.contentWindow) postCanvasTheme(frame.contentWindow);
+  });
+}
+
+function handleCanvasHostMessage(event) {
+  var data = event.data;
+  var file = fileForMessageSource(event.source);
+  if (!file) return;
+  var w = getWidgetByFile(file);
+  if (!w || w.kind !== "canvas") return;
+
+  if (data.type === "ready") {
+    postCanvasTheme(event.source);
+    return;
+  }
+
+  var key = typeof data.key === "string" ? data.key : "";
+  if (!key || key.length > 256) return;
+
+  if (data.type === "state-get") {
+    var requestId = typeof data.requestId === "string" ? data.requestId : "";
+    if (!requestId || requestId.length > 160) return;
+    var found = false;
+    var value;
+    try {
+      var raw = localStorage.getItem(canvasStateStorageKey(w, key));
+      if (raw !== null) {
+        value = JSON.parse(raw);
+        found = true;
+      }
+    } catch (_) {}
+    event.source.postMessage({ __generativeUICanvasHost: true, type: "state-value", requestId: requestId, key: key, found: found, value: value }, "*");
+    return;
+  }
+
+  if (data.type === "state-set") {
+    try {
+      var serialized = JSON.stringify(data.value);
+      if (typeof serialized !== "string" || serialized.length > 262144) return;
+      localStorage.setItem(canvasStateStorageKey(w, key), serialized);
+    } catch (_) {}
+  }
+}
 
 function showToast(msg) {
   var t = document.getElementById("toast");
@@ -305,74 +426,6 @@ function fileForMessageSource(source) {
   return "";
 }
 
-function createPreviewIframe(card) {
-  var preview = card.querySelector(".card-preview");
-  if (!preview || preview.querySelector("iframe")) return;
-  var w = getWidgetByFile(card.dataset.file);
-  if (!w) return;
-  var iframe = document.createElement("iframe");
-  iframe.setAttribute("sandbox", "allow-scripts");
-  iframe.setAttribute("allow", "unload");
-  iframe.dataset.src = preview.dataset.src;
-  var colW = parseFloat(card.style.width) || preview.clientWidth || w.width;
-  var scale = colW / w.width;
-  iframe.style.width = w.width + "px";
-  iframe.style.height = w.height + "px";
-  iframe.style.transform = "scale(" + scale + ")";
-  iframe.onload = function() {
-    iframe.classList.add("loaded");
-    activeLoads--;
-    processQueue();
-  };
-  iframe.onerror = function() {
-    activeLoads--;
-    processQueue();
-  };
-  preview.insertBefore(iframe, preview.firstChild);
-  activeLoads++;
-  iframe.src = iframe.dataset.src;
-}
-
-function destroyPreviewIframe(card) {
-  if (currentFile && card.dataset.file === currentFile) return;
-  var iframe = card.querySelector(".card-preview iframe");
-  if (!iframe) return;
-  iframe.onload = null;
-  iframe.onerror = null;
-  iframe.src = "about:blank";
-  iframe.remove();
-}
-
-function processQueue() {
-  while (activeLoads < MAX_CONCURRENT && loadQueue.length) {
-    var card = loadQueue.shift();
-    if (!card || card.style.display === "none") continue;
-    if (card.querySelector(".card-preview iframe")) continue;
-    createPreviewIframe(card);
-  }
-}
-
-function observeCards() {
-  if (previewObserver) previewObserver.disconnect();
-  loadQueue = [];
-  previewObserver = new IntersectionObserver(function(entries) {
-    entries.forEach(function(entry) {
-      var card = entry.target;
-      if (entry.isIntersecting) {
-        clearTimeout(card._unloadTimer);
-        if (!card.querySelector(".card-preview iframe")) {
-          loadQueue.push(card);
-          processQueue();
-        }
-      } else {
-        clearTimeout(card._unloadTimer);
-        card._unloadTimer = setTimeout(function() { destroyPreviewIframe(card); }, 900);
-      }
-    });
-  }, { rootMargin: "900px 0px" });
-  document.querySelectorAll(".card").forEach(function(card) { previewObserver.observe(card); });
-}
-
 function layoutMasonry(instant) {
   var grid = document.getElementById("grid");
   var cs = getComputedStyle(grid);
@@ -395,13 +448,6 @@ function layoutMasonry(instant) {
     ph = Math.max(80, Math.min(ph, 420));
     card.style.width = colW + "px";
     card.querySelector(".card-preview").style.setProperty("--ph", ph + "px");
-    var iframe = card.querySelector("iframe");
-    if (iframe) {
-      var scale = colW / w.width;
-      iframe.style.width = w.width + "px";
-      iframe.style.height = w.height + "px";
-      iframe.style.transform = "scale(" + scale + ")";
-    }
     card.style.left = minC * (colW + GRID_GAP) + "px";
     card.style.top = colH[minC] + "px";
     colH[minC] += card.offsetHeight + GRID_GAP;
@@ -439,14 +485,12 @@ function filterCards() {
     var matchPath = !currentPath || (w.cwd && w.cwd === currentPath);
     var show = matchArchive && matchSearch && matchScope && matchPath;
     c.style.display = show ? "" : "none";
-    if (!show) destroyPreviewIframe(c);
     if (show) visible++;
   });
   document.getElementById("empty-msg").style.display = visible === 0 ? "" : "none";
   document.getElementById("grid").style.display = visible === 0 ? "none" : "";
   document.querySelector(".count").textContent = visible + " widget" + (visible !== 1 ? "s" : "");
   layoutMasonry(false);
-  if (previewObserver) observeCards();
 }
 
 async function api(path, body) {
@@ -498,30 +542,14 @@ function openModal(w) {
   var archiveBtn = document.getElementById("btn-archive");
   archiveBtn.textContent = w.archivedAt ? "Restore" : "Archive";
   archiveBtn.dataset.archived = w.archivedAt ? "1" : "0";
-  var card = Array.prototype.slice.call(document.querySelectorAll(".card")).filter(function(c) { return c.dataset.file === w.file; })[0];
-  var iframe = card ? card.querySelector("iframe") : null;
-  if (iframe) {
-    teleportedOrigStyle = {
-      width: iframe.style.width,
-      height: iframe.style.height,
-      transform: iframe.style.transform,
-      position: iframe.style.position,
-      left: iframe.style.left,
-      top: iframe.style.top
-    };
-    teleportedIframe = iframe;
-    teleportedFrom = card;
-    document.getElementById("modal-body").insertBefore(iframe, document.getElementById("source-code"));
-  } else {
-    iframe = document.createElement("iframe");
-    iframe.setAttribute("sandbox", "allow-scripts");
-    iframe.setAttribute("allow", "unload");
-    iframe.src = "/widget/" + encodeURIComponent(w.file);
-    iframe.style.cssText = "width:100%;height:100%;border:none";
-    document.getElementById("modal-body").insertBefore(iframe, document.getElementById("source-code"));
-    teleportedIframe = iframe;
-    teleportedFrom = null;
-  }
+  var iframe = document.createElement("iframe");
+  iframe.setAttribute("sandbox", "allow-scripts");
+  iframe.setAttribute("allow", "unload");
+  iframe.src = "/widget/" + encodeURIComponent(w.file);
+  iframe.style.cssText = "width:100%;height:100%;border:none";
+  document.getElementById("modal-body").insertBefore(iframe, document.getElementById("source-code"));
+  teleportedIframe = iframe;
+  teleportedFrom = null;
   var modal = document.getElementById("modal");
   modal.style.width = Math.min(Math.max(w.width + 40, 500), window.innerWidth * .95) + "px";
   modal.style.height = Math.min(Math.max(w.height + 120, 400), window.innerHeight * .95) + "px";
@@ -600,6 +628,10 @@ function setTab(name) {
 }
 
 window.addEventListener("message", function(e) {
+  if (e.data && e.data[CANVAS_HOST_FLAG] === true) {
+    handleCanvasHostMessage(e);
+    return;
+  }
   if (!e.data || e.data.__generativeUIWidgetEvent !== true) return;
   var file = fileForMessageSource(e.source);
   if (!file) return;
@@ -652,6 +684,7 @@ document.getElementById("theme-toggle").addEventListener("click", function() {
   localStorage.setItem("gallery-theme", next);
   var link = document.getElementById("hljs-theme");
   if (link) link.href = "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/" + (next === "dark" ? "github-dark" : "github") + ".min.css";
+  broadcastCanvasTheme();
 });
 var savedTheme = localStorage.getItem("gallery-theme");
 if (savedTheme) document.body.setAttribute("data-theme", savedTheme);
@@ -669,7 +702,15 @@ document.getElementById("grid").addEventListener("click", function(e) {
     e.stopPropagation();
     var card = action.closest(".card");
     var file = card.dataset.file;
-    if (action.dataset.action === "open") window.open("/widget/" + encodeURIComponent(file), "_blank");
+    if (action.dataset.action === "refresh-preview") {
+      var img = card.querySelector(".preview-thumb");
+      if (img) {
+        img.classList.remove("loaded");
+        img.src = "/thumbnail/" + encodeURIComponent(file) + "?refresh=1&v=" + Date.now();
+        showToast("Refreshing preview…");
+      }
+    }
+    else if (action.dataset.action === "open") window.open("/widget/" + encodeURIComponent(file), "_blank");
     else if (action.dataset.action === "copy") navigator.clipboard.writeText(window.location.origin + "/widget/" + encodeURIComponent(file)).then(function() { showToast("Link copied"); });
     else if (action.dataset.action === "rename") renameFile(file).catch(function(err) { showToast(err.message); });
     else if (action.dataset.action === "archive") archiveFiles([file], true).catch(function(err) { showToast(err.message); });
@@ -753,7 +794,6 @@ new ResizeObserver(function() {
 
 layoutMasonry(true);
 filterCards();
-observeCards();
 `;
 
   const emptyStateSVG = '<svg width="120" height="120" viewBox="0 0 120 120" fill="none"><rect x="10" y="10" width="40" height="40" rx="8" stroke="currentColor" stroke-width="2" stroke-dasharray="4 4"/><rect x="70" y="10" width="40" height="40" rx="8" stroke="currentColor" stroke-width="2" stroke-dasharray="4 4"/><rect x="10" y="70" width="40" height="40" rx="8" stroke="currentColor" stroke-width="2" stroke-dasharray="4 4"/><rect x="70" y="70" width="40" height="40" rx="8" stroke="currentColor" stroke-width="2" stroke-dasharray="4 4"/><circle cx="60" cy="60" r="20" stroke="currentColor" stroke-width="2"/><path d="M74 74L88 88" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>';
@@ -838,6 +878,7 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL): P
     const body = await readJsonBody(req);
     const files = Array.isArray(body.files) ? body.files.filter((v: unknown) => typeof v === "string") : [];
     const deleted = await deleteWidgets(files);
+    await Promise.all(files.map((file: string) => unlink(join(thumbnailDir(), file + ".webp")).catch(() => {})));
     sendJson(res, 200, { ok: true, deleted });
     return true;
   }
@@ -870,6 +911,24 @@ function startGalleryServer(): Server {
         } else {
           res.writeHead(404);
           res.end("Not found");
+        }
+        return;
+      }
+
+      if (req.method === "GET" && url.pathname.startsWith("/thumbnail/")) {
+        const file = safeFileSegment(url.pathname.slice("/thumbnail/".length));
+        const thumbnail = file ? await generateThumbnail(file, url.searchParams.get("refresh") === "1") : null;
+        if (thumbnail) {
+          const bytes = await readFile(thumbnail);
+          res.writeHead(200, {
+            "Content-Type": "image/webp",
+            "Cache-Control": "public, max-age=31536000, immutable",
+            "Content-Length": String(bytes.length),
+          });
+          res.end(bytes);
+        } else {
+          res.writeHead(404);
+          res.end("Thumbnail unavailable");
         }
         return;
       }

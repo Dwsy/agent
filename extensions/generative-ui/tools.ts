@@ -2,58 +2,49 @@
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
-import { StringEnum } from "@earendil-works/pi-ai";
 import { Text } from "@earendil-works/pi-tui";
 import { join } from "node:path";
-import { getGuidelines, AVAILABLE_MODULES } from "./guidelines.js";
+import { AVAILABLE_MODULES } from "./guidelines.js";
 import { TEMPLATE_IDS } from "./templates/index.js";
+import { planVisualGuidance } from "./visual-plan.js";
 import { appendWidgetEvent, type WidgetRecord, widgetsDir, saveWidget, loadActiveWidgetIndex, loadWidgetIndex, loadWidgetHtml } from "./storage.js";
 import { shellHTML, wrapHTML, escapeJS, timestamp, openWindow } from "./html-helpers.js";
 import { transpileCanvas, validateCanvasCode, canvasShellHTML, canvasDocumentHTML, CANVAS_ALLOWED_IMPORTS } from "./canvas.js";
+import { GROUNDING_SOURCE_KINDS, GROUNDING_STATUSES, groundingFooterHTML, validateGroundingDeclaration } from "./grounding.js";
+import { validateWidgetCode } from "./widget-validation.js";
 
-const MAX_WIDGET_CODE_BYTES = 2 * 1024 * 1024;
-const ALLOWED_RESOURCE_HOSTS = new Set([
-  "cdnjs.cloudflare.com",
-  "cdn.jsdelivr.net",
-  "esm.sh",
-  "fonts.bunny.net",
-  "fonts.googleapis.com",
-  "fonts.gstatic.com",
-  "unpkg.com",
-]);
-
-function validateWidgetCode(code: string, interactive = false): void {
-  if (Buffer.byteLength(code, "utf8") > MAX_WIDGET_CODE_BYTES) {
-    throw new Error("widget_code must be smaller than 2 MB. Aggregate or downsample inline data.");
-  }
-  if (/<!doctype|<\/?(?:html|head|body)\b/i.test(code)) {
-    throw new Error("widget_code must be an HTML fragment without DOCTYPE, html, head, or body tags.");
-  }
-  if (/\b(?:fetch|XMLHttpRequest|WebSocket)\s*(?:\(|=|new\b)/i.test(code)) {
-    throw new Error("widget_code cannot use fetch, XMLHttpRequest, or WebSocket. Keep widget data inline.");
-  }
-  for (const match of code.matchAll(/<(?:script|link|img|audio|video|source)\b[^>]*?\b(?:src|href)\s*=\s*["']([^"']+)["']/gi)) {
-    const source = match[1];
-    if (source.startsWith("data:") || source.startsWith("blob:") || !/^https?:\/\//i.test(source)) continue;
-    let host: string;
-    try {
-      host = new URL(source).hostname;
-    } catch {
-      throw new Error("widget_code contains an invalid external resource URL.");
-    }
-    if (!ALLOWED_RESOURCE_HOSTS.has(host)) {
-      throw new Error("External widget resources must use an approved CDN host.");
-    }
-  }
-  if (interactive && !/(?:window\.glimpse\.send|sendWidgetEvent|sendPrompt|sendAnnotation)\s*\(/.test(code)) {
-    throw new Error("interactive widgets must send a choice or follow-up request through the widget event bridge.");
-  }
+function stringEnum(values: readonly string[], options: Record<string, unknown> = {}) {
+  return Type.Unsafe({ type: "string", enum: [...values], ...options });
 }
 
+const GROUNDING_SCHEMA = Type.Object({
+  status: stringEnum(GROUNDING_STATUSES, {
+    description: "Use grounded for factual/evidence-based visuals. Use not_applicable only for creative, hypothetical, or purely structural visuals with no factual claims.",
+  }),
+  evidence_scope: Type.String({
+    description: "For grounded visuals: concise evidence/time scope. For not_applicable: explain why factual provenance does not apply.",
+  }),
+  sources: Type.Optional(Type.Array(Type.Object({
+    label: Type.String({ description: "Human-readable source label shown in the host-owned provenance footer." }),
+    kind: stringEnum(GROUNDING_SOURCE_KINDS, { description: "Where this evidence came from." }),
+    locator: Type.String({ description: "Required concrete source identity: absolute http(s) URL for web evidence, or a file/code/conversation/dataset locator for other kinds." }),
+    as_of: Type.Optional(Type.String({ description: "Optional source timestamp/recency label, especially for current or time-sensitive facts." })),
+  }), { description: "Required and non-empty when status=grounded; omit when status=not_applicable." })),
+});
+
 export interface ToolContext {
-  hasSeenReadMe: boolean;
   streaming: StreamingWidget | null;
   activeWindows: any[];
+  /** Latest request-first visual plan, consumed by the next matching render. */
+  lastVisualPlan?: {
+    route: string | null;
+    target: "markdown" | "show_widget" | "show_canvas";
+    research: string | null;
+  } | null;
+}
+
+export interface ToolRuntimeDeps {
+  openWindow: typeof openWindow;
 }
 
 export interface StreamingWidget {
@@ -81,6 +72,7 @@ interface PresentWindowOptions {
   /** JS evaluated in the window once it is ready. */
   activationCode: string;
   details: Record<string, unknown>;
+  openWindowFn: typeof openWindow;
 }
 
 /** Open (or adopt the streaming preview) window, activate content, and wire
@@ -95,7 +87,7 @@ function presentWindow(opts: PresentWindowOptions): Promise<any> | any {
     windowReady = ctx.streaming.ready;
     ctx.streaming = null;
   } else {
-    win = openWindow(opts.shell, {
+    win = opts.openWindowFn(opts.shell, {
       width: opts.width,
       height: opts.height,
       title,
@@ -149,7 +141,11 @@ function presentWindow(opts: PresentWindowOptions): Promise<any> | any {
       };
 
       win.on("message", (data: unknown) => {
-        const settlesTool = !resolved && !settling;
+        const isCanvasAction = noun === "Canvas"
+          && !!data
+          && typeof data === "object"
+          && (data as { type?: unknown }).type === "canvas_action";
+        const settlesTool = !isCanvasAction && !resolved && !settling;
         if (settlesTool) {
           settling = true;
           messageData = data;
@@ -184,36 +180,60 @@ function presentWindow(opts: PresentWindowOptions): Promise<any> | any {
   };
 }
 
-export function registerTools(pi: ExtensionAPI, ctx: ToolContext) {
+const NON_FACTUAL_ROUTE_IDS = new Set(["illustration", "ui-mockup", "interactive-explainer"]);
+
+function enforceGroundingForPlan(
+  grounding: ReturnType<typeof validateGroundingDeclaration>,
+  ctx: ToolContext,
+  target: "show_widget" | "show_canvas",
+): void {
+  const plan = ctx.lastVisualPlan;
+  if (!plan || plan.target !== target || grounding.status === "grounded") return;
+  if (plan.research === "required") {
+    throw new Error("This routed visual requires factual retrieval, so grounding.status must be grounded with concrete provenance sources.");
+  }
+  if (plan.route && !NON_FACTUAL_ROUTE_IDS.has(plan.route)) {
+    throw new Error(`Visual route ${plan.route} is evidence/structure-bearing; use grounded provenance (conversation/file/code/web/data) instead of not_applicable.`);
+  }
+}
+
+export function registerTools(
+  pi: ExtensionAPI,
+  ctx: ToolContext,
+  deps: ToolRuntimeDeps = { openWindow },
+) {
   // ── read_me tool ─────────────────────────────────────────────────────────
 
   pi.registerTool({
     name: "visualize_read_me",
     label: "Read Guidelines",
     description:
-      "Returns design guidelines for show_widget (CSS patterns, colors, typography, layout rules, examples). " +
-      "Call once before your first show_widget call. Do NOT mention this call to the user — it is an internal setup step.",
-    promptSnippet: "Load design guidelines before creating widgets. Call silently before first show_widget use.",
+      "Routes a natural-language visual goal to the right medium, representation, UI/UX style, content anatomy, research policy, guidance modules, and one relevant skeleton. " +
+      "Pass request by default; modules/templates are optional expert overrides. This is an internal planning step and should not be mentioned to the user.",
+    promptSnippet: "Route the user's visual goal automatically before rendering: choose medium/style/content/research and load one matching skeleton.",
     promptGuidelines: [
-      "Call visualize_read_me once before your first show_widget call to load design guidelines.",
-      "Do NOT mention the read_me call to the user — call it silently, then proceed directly to building the widget.",
-      "Pick the modules that match your use case: interactive, chart, mockup, art, diagram, runtime, canvas (React components via show_canvas).",
-      "Guidelines include a catalog of ready-made HTML fragments (flow-steps, flow-mermaid, architecture-cards, metric-chart, compare-cards, contact-card). Prefer these over multi-color SVG flow boxes.",
-      "Template bodies are on-demand: first call modules only (catalog). When ready to build, re-call with templates: [\"flow-mermaid\"] (or multiple ids / \"all\") to load full HTML skeletons.",
-      "Theme: always use host CSS variables (var(--color-text-*), var(--color-background-*), var(--color-border-*)). Never hardcode light-only hex. Chart.js/Mermaid must read computed CSS vars or window._themeVars() so light/dark both work.",
+      "For a substantial visual request, call visualize_read_me once with request set to the user's actual goal. Do not ask the user to choose Canvas vs Widget, visual style, modules, or templates.",
+      "Respect the returned target. If it is markdown, answer in normal text instead of forcing a visual tool.",
+      "Respect the returned retrieval policy. When required, or when if_missing facts are not already grounded, use the available search/file/code/data tools before rendering. Never copy demo values from a skeleton into a factual artifact.",
+      "Automatic routing expands one most-relevant skeleton in the same call. Use modules/templates only as an expert override when the representation is already known.",
+      "Treat the route content plan as a minimum completeness contract: context, dominant artifact, evidence/detail, source/recency, and action only when actually needed.",
+      "Theme: always use host CSS variables or @gen-ui/canvas tokens for UI chrome. Never bake one light/dark palette.",
     ],
     parameters: Type.Object({
-      modules: Type.Array(
-        StringEnum(AVAILABLE_MODULES as readonly string[]),
-        { description: "Which module(s) to load. Pick all that fit." }
-      ),
+      request: Type.Optional(Type.String({
+        description: "The user's natural-language goal/request. Preferred default: pass it directly so the router chooses target, style, research policy, modules, and one template automatically.",
+      })),
+      modules: Type.Optional(Type.Array(
+        stringEnum(AVAILABLE_MODULES as readonly string[]),
+        { description: "Expert override only. Omit when request is supplied; the router chooses modules automatically." }
+      )),
       templates: Type.Optional(
         Type.Array(
           Type.String({ description: "Template id (flow-steps, flow-mermaid, …) or \"all\"." }),
           {
             description:
               "Optional fragment bodies to expand. Omit for catalog-only (token-light). " +
-              "Pass ids like [\"flow-mermaid\"] or [\"all\"] when you need full HTML skeletons. " +
+              "Pass ids like [\"flow-mermaid\"], [\"canvas-dashboard\"], or [\"all\"] when you need full skeletons. " +
               "Known ids: " + TEMPLATE_IDS.join(", ") + ".",
           }
         )
@@ -221,25 +241,33 @@ export function registerTools(pi: ExtensionAPI, ctx: ToolContext) {
     }),
 
     async execute(_toolCallId, params) {
-      ctx.hasSeenReadMe = true;
-      const content = getGuidelines(params.modules, { templates: params.templates });
+      const plan = planVisualGuidance(params);
+      ctx.lastVisualPlan = {
+        route: plan.details.route,
+        target: plan.details.target,
+        research: plan.details.research,
+      };
       return {
-        content: [{ type: "text" as const, text: content }],
-        details: { modules: params.modules, templates: params.templates ?? [] },
+        content: [{ type: "text" as const, text: plan.content }],
+        details: plan.details,
       };
     },
 
     renderCall(args: any, theme: any) {
       const mods = (args.modules ?? []).join(", ");
       const tpls = (args.templates ?? []).join(", ");
-      let text = theme.fg("toolTitle", theme.bold("read_me ")) + theme.fg("muted", mods);
+      const auto = typeof args.request === "string" && args.request.trim();
+      let text = theme.fg("toolTitle", theme.bold("read_me "));
+      text += theme.fg("muted", auto ? "auto-route" : (mods || "core"));
       if (tpls) text += theme.fg("dim", " templates:" + tpls);
       return new Text(text, 0, 0);
     },
 
-    renderResult(_result: any, { isPartial }: any, theme: any) {
-      if (isPartial) return new Text(theme.fg("warning", "Loading guidelines..."), 0, 0);
-      return new Text(theme.fg("dim", "Guidelines loaded"), 0, 0);
+    renderResult(result: any, { isPartial }: any, theme: any) {
+      if (isPartial) return new Text(theme.fg("warning", "Routing visual..."), 0, 0);
+      const details = result.details ?? {};
+      const route = details.route ? " " + details.route + " → " + details.target : "";
+      return new Text(theme.fg("dim", "Visual route loaded" + route), 0, 0);
     },
   });
 
@@ -252,12 +280,11 @@ export function registerTools(pi: ExtensionAPI, ctx: ToolContext) {
       "Show visual content — SVG graphics, diagrams, charts, or interactive HTML widgets — in a native macOS window. " +
       "Use for flowcharts, dashboards, forms, calculators, data tables, games, illustrations, or any visual content. " +
       "The HTML is rendered in a native WKWebView with full CSS/JS support including Canvas and CDN libraries. " +
-      "The page gets a window.glimpse.send(data) bridge to send JSON data back to the agent. " +
-      "IMPORTANT: Call visualize_read_me once before your first show_widget call.",
+      "The page gets a window.glimpse.send(data) bridge to send JSON data back to the agent.",
     promptSnippet: "Render interactive HTML/SVG widgets in a native macOS window (WKWebView). Supports full CSS, JS, Canvas, Chart.js.",
     promptGuidelines: [
       "Create a widget only when it materially improves understanding or a decision; keep the visual to one dominant view.",
-      "Always call visualize_read_me first to load design guidelines, then set i_have_seen_read_me: true.",
+      "For a substantial visual request, first call visualize_read_me with request set to the user's goal and follow its target/style/content/research route. Do not ask the user to choose a representation. Manual modules/templates are expert overrides only.",
       "For static labeled-node diagrams, prefer the Mermaid template over hand-positioned SVG; use HTML/SVG for spatial, dynamic, or adjustable visuals.",
       "The widget opens in a native macOS window — it has full browser capabilities (Canvas, JS, CDN libraries).",
       "Structure HTML as fragments: no DOCTYPE/<html>/<head>/<body>. Style first, then HTML, then scripts.",
@@ -268,6 +295,7 @@ export function registerTools(pi: ExtensionAPI, ctx: ToolContext) {
       "The page has window.glimpse.send(data) to return a choice or follow-up request to the agent. Use it only when the agent needs that result.",
       "The host already provides data-tooltip support backed by Floating UI and global Lucide icons; use data-tooltip/data-lucide instead of loading either library yourself.",
       "Keep data inline and widgets below 2 MB. Do not use fetch, XMLHttpRequest, WebSocket, or unapproved external resources.",
+      "Every render must include the grounding declaration. Factual/evidence-based artifacts use status=grounded with structured sources; creative/hypothetical artifacts may use not_applicable with a reason. The host renders grounded provenance visibly and persists the declaration.",
       "For feedback-addressable UI, give stable elements data-spec-id attributes and call sendAnnotation(targetId, comment, stateId?) to persist structured feedback.",
       "Keep widgets focused and appropriately sized. Default is 800x600 but adjust to fit content.",
       "For SVG: start code with <svg> tag, it will be auto-detected.",
@@ -275,9 +303,9 @@ export function registerTools(pi: ExtensionAPI, ctx: ToolContext) {
       "Be concise in your responses",
     ],
     parameters: Type.Object({
-      i_have_seen_read_me: Type.Boolean({
-        description: "Confirm you have already called visualize_read_me in this conversation.",
-      }),
+      i_have_seen_read_me: Type.Optional(Type.Boolean({
+        description: "Optional compatibility flag. Set true when visualize_read_me was used; substantial visual requests should normally be routed first with its request parameter.",
+      })),
       title: Type.String({
         description: "Short snake_case identifier for this widget (used as window title and saved filename).",
       }),
@@ -286,6 +314,7 @@ export function registerTools(pi: ExtensionAPI, ctx: ToolContext) {
           "HTML or SVG code to render. For SVG: raw SVG starting with <svg>. " +
           "For HTML: raw content fragment, no DOCTYPE/<html>/<head>/<body>.",
       }),
+      grounding: GROUNDING_SCHEMA,
       width: Type.Optional(Type.Number({ description: "Window width in pixels. Default: 800." })),
       height: Type.Optional(Type.Number({ description: "Window height in pixels. Default: 600." })),
       floating: Type.Optional(Type.Boolean({ description: "Keep window always on top. Default: false." })),
@@ -298,16 +327,12 @@ export function registerTools(pi: ExtensionAPI, ctx: ToolContext) {
     }),
 
     async execute(_toolCallId, params) {
-      // Enforced against actual tool usage, not the model's self-report.
-      if (!ctx.hasSeenReadMe) {
-        throw new Error("You must call visualize_read_me before show_widget. Call it now, then retry.");
-      }
-      if (!params.i_have_seen_read_me) {
-        throw new Error("Set i_have_seen_read_me: true after calling visualize_read_me.");
-      }
-
       const code = params.widget_code;
       validateWidgetCode(code, params.interactive ?? false);
+      const grounding = validateGroundingDeclaration(params.grounding);
+      enforceGroundingForPlan(grounding, ctx, "show_widget");
+      const provenanceFooter = groundingFooterHTML(grounding);
+      const renderedCode = code + provenanceFooter;
       const isSVG = code.trimStart().startsWith("<svg");
       const title = params.title.replace(/_/g, " ");
       const width = params.width ?? 800;
@@ -317,7 +342,7 @@ export function registerTools(pi: ExtensionAPI, ctx: ToolContext) {
       const filename = ts + "_" + safeTitle + ".html";
       const fullPath = join(widgetsDir(), filename);
 
-      const fullHTML = wrapHTML(code, isSVG);
+      const fullHTML = wrapHTML(renderedCode, isSVG);
       const cwd = process.cwd();
       const record: WidgetRecord = {
         id: ts + "_" + safeTitle,
@@ -328,10 +353,11 @@ export function registerTools(pi: ExtensionAPI, ctx: ToolContext) {
         height,
         isSVG,
         cwd,
+        grounding,
       };
       await saveWidget(record, fullHTML);
 
-      return presentWindow({
+      const result = presentWindow({
         ctx,
         interactive: params.interactive ?? false,
         noun: "Widget",
@@ -343,9 +369,12 @@ export function registerTools(pi: ExtensionAPI, ctx: ToolContext) {
         floating: params.floating ?? false,
         shell: shellHTML(),
         streamingKind: "widget",
-        activationCode: "window._setContent('" + escapeJS(code) + "'); window._runScripts();",
-        details: { title: params.title, width, height, isSVG, savedFile: filename, fullPath },
+        activationCode: "window._setContent('" + escapeJS(renderedCode) + "'); window._runScripts();",
+        details: { title: params.title, width, height, isSVG, savedFile: filename, fullPath, grounding },
+        openWindowFn: deps.openWindow,
       });
+      if (ctx.lastVisualPlan?.target === "show_widget") ctx.lastVisualPlan = null;
+      return result;
     },
 
     renderCall(args: any, theme: any) {
@@ -383,23 +412,27 @@ export function registerTools(pi: ExtensionAPI, ctx: ToolContext) {
       "Use for analytical artifacts: metrics breakdowns, audits and reviews with categorized findings, " +
       "data tables, timelines, interactive explorations — anything with component state or rich composition. " +
       "For single static SVG/HTML visuals prefer show_widget. " +
-      "IMPORTANT: Call visualize_read_me (module \"canvas\") once before your first show_canvas call.",
+      "For substantial visual requests, use visualize_read_me({request: ...}) first so the Agent—not the user—chooses Canvas vs Widget, style, content plan, retrieval policy, and skeleton.",
     promptSnippet: "Render a React component (TSX, compiled host-side) in a native macOS window.",
     promptGuidelines: [
-      "Use show_canvas when the output is a standalone analytical artifact (analyses, audits, structured findings, data-heavy tables, interactive explorations). Use show_widget for single static SVG/HTML visuals.",
-      "Call visualize_read_me with the \"canvas\" module first, then set i_have_seen_read_me: true.",
+      "Use show_canvas when the routed output is a standalone analytical artifact (analyses, audits, structured findings, data-heavy tables, interactive explorations). Do not choose Canvas merely because data is present: prefer a smaller medium when Markdown, a static widget, or Mermaid is sufficient.",
+      "For substantial visual requests, call visualize_read_me with request set to the user's goal and follow its route. Do not ask the user to choose Canvas/Widget/style/modules/templates; manual module overrides are only for known expert cases.",
       "canvas_code is one TSX file that default-exports the top-level component. Allowed imports: " + CANVAS_ALLOWED_IMPORTS.join(", ") + ". Everything else must be inline.",
       "Embed all data inline. No fetch, XMLHttpRequest, or WebSocket.",
+      "Every render must include the grounding declaration. Factual/evidence-based artifacts use status=grounded with structured sources; creative/hypothetical artifacts may use not_applicable with a reason. The host renders grounded provenance visibly and persists the declaration.",
       "Take all colors from useHostTheme() (@gen-ui/canvas) or host CSS variables so light/dark both work. Never hardcode light-only hex.",
       "No slop: no gradients, no emojis as icons, no box-shadows, no rainbow coloring, no walls of identical cards, no empty placeholder sections.",
+      "Choose the smallest composition that works. The first render must be useful; do not invent controls, KPI/status panels, filters, search, or reset UI unless they materially serve the request.",
+      "Keep presentation-only interactions local. Use agent-return actions only when the agent must continue from a selection or explicit follow-up.",
+      "Use @gen-ui/canvas theme/state hooks rather than direct parent/localStorage assumptions so saved canvases run unchanged in the sandboxed gallery WebUI as well as native windows.",
       "Every chart/table must be self-describing: specific title, axis labels with units, legend for multiple series, source caption.",
       "Set interactive=true ONLY when the component must return data the agent needs to continue; call sendToAgent(data) from @gen-ui/canvas to settle it.",
       "Compile errors are returned verbatim — fix the TSX and retry.",
     ],
     parameters: Type.Object({
-      i_have_seen_read_me: Type.Boolean({
-        description: "Confirm you have already called visualize_read_me in this conversation.",
-      }),
+      i_have_seen_read_me: Type.Optional(Type.Boolean({
+        description: "Optional. Set true if you called visualize_read_me (canvas module) for design guidelines.",
+      })),
       title: Type.String({
         description: "Short snake_case identifier for this canvas (used as window title and saved filename).",
       }),
@@ -408,6 +441,7 @@ export function registerTools(pi: ExtensionAPI, ctx: ToolContext) {
           "TSX source for a single-file React component. Must default-export the top-level component. " +
           "Allowed imports: " + CANVAS_ALLOWED_IMPORTS.join(", ") + ".",
       }),
+      grounding: GROUNDING_SCHEMA,
       width: Type.Optional(Type.Number({ description: "Window width in pixels. Default: 900." })),
       height: Type.Optional(Type.Number({ description: "Window height in pixels. Default: 640." })),
       floating: Type.Optional(Type.Boolean({ description: "Keep window always on top. Default: false." })),
@@ -419,12 +453,11 @@ export function registerTools(pi: ExtensionAPI, ctx: ToolContext) {
     }),
 
     async execute(_toolCallId, params) {
-      if (!ctx.hasSeenReadMe) {
-        throw new Error("You must call visualize_read_me before show_canvas. Call it now (include the \"canvas\" module), then retry.");
-      }
-
       const code = params.canvas_code;
       validateCanvasCode(code, params.interactive ?? false);
+      const grounding = validateGroundingDeclaration(params.grounding);
+      enforceGroundingForPlan(grounding, ctx, "show_canvas");
+      const provenanceFooter = groundingFooterHTML(grounding);
       const compiled = await transpileCanvas(code);
 
       const title = params.title.replace(/_/g, " ");
@@ -432,6 +465,7 @@ export function registerTools(pi: ExtensionAPI, ctx: ToolContext) {
       const height = params.height ?? 640;
       const ts = timestamp();
       const safeTitle = params.title.replace(/[^a-zA-Z0-9_-]/g, "_");
+      const canvasStateId = process.cwd() + "::" + safeTitle;
       const filename = ts + "_" + safeTitle + ".html";
       const sourceFile = ts + "_" + safeTitle + ".tsx";
       const fullPath = join(widgetsDir(), filename);
@@ -446,11 +480,13 @@ export function registerTools(pi: ExtensionAPI, ctx: ToolContext) {
         isSVG: false,
         kind: "canvas",
         sourceFile,
+        canvasStateId,
         cwd: process.cwd(),
+        grounding,
       };
-      await saveWidget(record, canvasDocumentHTML(compiled), code);
+      await saveWidget(record, canvasDocumentHTML(compiled, canvasStateId, provenanceFooter), code);
 
-      return presentWindow({
+      const result = presentWindow({
         ctx,
         interactive: params.interactive ?? false,
         noun: "Canvas",
@@ -462,9 +498,12 @@ export function registerTools(pi: ExtensionAPI, ctx: ToolContext) {
         floating: params.floating ?? false,
         shell: canvasShellHTML(),
         streamingKind: "canvas",
-        activationCode: compiled,
-        details: { title: params.title, width, height, kind: "canvas", savedFile: filename, sourceFile, fullPath },
+        activationCode: "window.__canvasId = " + JSON.stringify(canvasStateId) + ";\ndocument.getElementById('genui-grounding').innerHTML = " + JSON.stringify(provenanceFooter) + ";\n" + compiled,
+        details: { title: params.title, width, height, kind: "canvas", savedFile: filename, sourceFile, fullPath, canvasStateId, grounding },
+        openWindowFn: deps.openWindow,
       });
+      if (ctx.lastVisualPlan?.target === "show_canvas") ctx.lastVisualPlan = null;
+      return result;
     },
 
     renderCall(args: any, theme: any) {
@@ -568,7 +607,7 @@ export function registerTools(pi: ExtensionAPI, ctx: ToolContext) {
         const height = record?.height ?? 600;
         const isSVG = record?.isSVG ?? false;
 
-        const win = openWindow(html, { width, height, title, noDock: true });
+        const win = deps.openWindow(html, { width, height, title, noDock: true });
         ctx.activeWindows.push(win);
         win.on("message", (data: unknown) => {
           void appendWidgetEvent(params.filename!, data).catch(() => {});

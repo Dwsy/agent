@@ -126,6 +126,17 @@ test("gallery renders persisted feedback without HTML injection", () => {
   assert.doesNotMatch(src, /comment\.innerHTML = event\.comment/);
 });
 
+test("gallery hosts Canvas state/theme without weakening iframe sandbox", () => {
+  const src = readFileSync(join(root, "gallery.ts"), "utf8");
+  assert.match(src, /iframe\.setAttribute\("sandbox", "allow-scripts"\)/);
+  assert.doesNotMatch(src, /sandbox", "allow-scripts allow-same-origin/);
+  assert.match(src, /__generativeUICanvasHost/);
+  assert.match(src, /handleCanvasHostMessage/);
+  assert.match(src, /w\.kind !== "canvas"/);
+  assert.match(src, /CANVAS_STATE_PREFIX/);
+  assert.match(src, /broadcastCanvasTheme\(\)/);
+});
+
 test("streaming preview defers widget scripts until message handlers exist", () => {
   const index = readFileSync(join(root, "index.ts"), "utf8");
   const tools = readFileSync(join(root, "tools.ts"), "utf8");
@@ -137,19 +148,33 @@ test("streaming preview defers widget scripts until message handlers exist", () 
 
 test("visualization prompts require focused, local, accessible interaction", () => {
   const tools = readFileSync(join(root, "tools.ts"), "utf8");
+  const widgetValidation = readFileSync(join(root, "widget-validation.ts"), "utf8");
+  const grounding = readFileSync(join(root, "grounding.ts"), "utf8");
   const guidelines = readFileSync(join(root, "guidelines.ts"), "utf8");
 
   assert.match(tools, /materially improves understanding or a decision/);
   assert.match(tools, /never invent filter, search, reset, dashboard, or KPI panels/);
   assert.match(tools, /semantic HTML and native controls/);
+  assert.match(tools, /Do not choose Canvas merely because data is present/);
+  assert.match(tools, /request set to the user's actual goal/);
+  assert.match(tools, /Do not ask the user to choose Canvas vs Widget/);
+  assert.match(tools, /Respect the returned retrieval policy/);
+  assert.match(tools, /Never copy demo values from a skeleton/);
+  assert.match(tools, /The first render must be useful/);
+  assert.match(tools, /Keep presentation-only interactions local/);
   assert.match(tools, /validateWidgetCode\(code, params\.interactive \?\? false\)/);
-  assert.match(tools, /MAX_WIDGET_CODE_BYTES/);
-  assert.match(tools, /fetch, XMLHttpRequest, or WebSocket/);
-  assert.match(tools, /ALLOWED_RESOURCE_HOSTS/);
-  assert.match(tools, /fonts\.googleapis\.com/);
+  assert.match(tools, /grounding: GROUNDING_SCHEMA/);
+  assert.match(tools, /validateGroundingDeclaration\(params\.grounding\)/);
+  assert.match(tools, /groundingFooterHTML\(grounding\)/);
+  assert.match(widgetValidation, /MAX_WIDGET_CODE_BYTES/);
+  assert.match(widgetValidation, /fetch, XMLHttpRequest, or WebSocket/);
+  assert.match(widgetValidation, /ALLOWED_RESOURCE_HOSTS/);
+  assert.match(widgetValidation, /fonts\.googleapis\.com/);
+  assert.match(grounding, /grounded visual renders require at least one provenance source/);
+  assert.match(grounding, /data-genui-provenance="grounded"/);
   assert.match(tools, /data-tooltip support backed by Floating UI/);
-  assert.match(tools, /script\|link\|img\|audio\|video\|source/);
-  assert.match(tools, /interactive widgets must send a choice/);
+  assert.match(widgetValidation, /script\|link\|img\|audio\|video\|source/);
+  assert.match(widgetValidation, /interactive widgets must send a choice/);
   assert.match(guidelines, /Use the smallest medium that fits: Mermaid/);
   assert.match(guidelines, /Interaction budget/);
   assert.match(guidelines, /support 320px-wide windows/);
@@ -158,6 +183,11 @@ test("visualization prompts require focused, local, accessible interaction", () 
   assert.match(guidelines, /interactive: true/);
   assert.match(guidelines, /Resolve colors from/);
   assert.match(guidelines, /built-in tooltip, icon, CDN, and widget-host contract/);
+  assert.match(guidelines, /smallest composition that materially improves/);
+  assert.match(guidelines, /self-contained analytical artifact/);
+  assert.match(guidelines, /h1 = 24px\/30px/);
+  assert.match(guidelines, /4\/8\/12\/16\/24\/32px spacing rhythm/);
+  assert.match(guidelines, /remain readable down to roughly 320px/);
   assert.match(guidelines, /const WIDGET_RUNTIME/);
   assert.match(guidelines, /Never load Lucide or Floating UI yourself/);
 });
@@ -190,6 +220,33 @@ test("template catalog filters by module", async () => {
   assert.doesNotMatch(chart, /flow-steps/);
 });
 
+test("canvas template catalog is progressive and TSX-aware", async () => {
+  const rt = await loadRuntime();
+  if (!rt) {
+    const src = readFileSync(join(root, "templates/index.ts"), "utf8");
+    assert.match(src, /canvas-dashboard/);
+    assert.match(src, /canvas-brief/);
+    assert.match(src, /format: "tsx"/);
+    assert.match(src, /target: "show_canvas"/);
+    return;
+  }
+
+  const catalog = rt.templates.getTemplatesSection(["canvas"]);
+  assert.match(catalog, /canvas-brief/);
+  assert.match(catalog, /canvas-dashboard/);
+  assert.match(catalog, /canvas-charts/);
+  assert.match(catalog, /show_canvas/);
+  assert.match(catalog, /tsx/);
+  assert.doesNotMatch(catalog, /Service throughput/);
+
+  const expanded = rt.templates.getTemplatesSection(["canvas"], {
+    includeBodies: ["canvas-dashboard"],
+  });
+  assert.match(expanded, /```tsx/);
+  assert.match(expanded, /Service throughput/);
+  assert.doesNotMatch(expanded, /Traffic and reliability/);
+});
+
 test("getGuidelines catalog-only by default; expands templates on request", async () => {
   const rt = await loadRuntime();
   if (!rt) return;
@@ -205,6 +262,25 @@ test("getGuidelines catalog-only by default; expands templates on request", asyn
   });
   assert.match(heavy, /flow-svg-/);
   assert.match(heavy, /getPropertyValue/);
+  assert.ok(heavy.length > light.length);
+});
+
+test("canvas guidelines stay catalog-first and expand one skeleton on demand", async () => {
+  const rt = await loadRuntime();
+  if (!rt) return;
+
+  const light = rt.guidelines.getGuidelines(["canvas"]);
+  assert.match(light, /Cursor-compatible SDK catalog/);
+  assert.match(light, /canvas-dashboard/);
+  assert.doesNotMatch(light, /Service throughput/);
+  assert.doesNotMatch(light, /Traffic and reliability/);
+
+  const heavy = rt.guidelines.getGuidelines(["canvas"], {
+    templates: ["canvas-dashboard"],
+  });
+  assert.match(heavy, /```tsx/);
+  assert.match(heavy, /Service throughput/);
+  assert.doesNotMatch(heavy, /Traffic and reliability/);
   assert.ok(heavy.length > light.length);
 });
 

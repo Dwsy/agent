@@ -5,11 +5,12 @@
   },
   "scripts": {
     "gapp:tui": "bun gapp/cli.ts",
-    "test": "node --test psm-renderer/index.test.mjs theme-templates.test.mjs storage.test.mjs && bun test canvas.test.mjs gapp/storage.test.mjs gapp/host.test.mjs gapp/tui.test.mjs gapp/subagent.test.mjs"
+    "test": "node --test psm-renderer/index.test.mjs theme-templates.test.mjs storage.test.mjs && bun test canvas.test.mjs grounding.test.mjs render-boundary.test.mjs widget-validation.test.mjs routing.test.mjs visual-plan.test.mjs gapp/storage.test.mjs gapp/host.test.mjs gapp/tui.test.mjs gapp/subagent.test.mjs && bun test gapp/mcp-inspector.test.ts && bun test gapp/ngrok-inspector.test.ts"
   },
   "dependencies": {
     "@earendil-works/pi-tui": "0.82.1",
     "@modelcontextprotocol/sdk": "^1.29.0",
+    "@sinclair/typebox": "0.34.49",
     "esbuild": "^0.28.2"
   },
   "psm": {

@@ -17,6 +17,10 @@ export interface TemplateMeta {
   title: string;
   useWhen: string;
   modules: readonly string[];
+  /** Source format for the expanded body. Defaults to HTML for legacy widget templates. */
+  format?: "html" | "tsx";
+  /** Rendering tool this skeleton targets. Defaults to show_widget. */
+  target?: "show_widget" | "show_canvas";
 }
 
 export const TEMPLATE_CATALOG: readonly TemplateMeta[] = [
@@ -42,6 +46,13 @@ export const TEMPLATE_CATALOG: readonly TemplateMeta[] = [
     modules: ["diagram", "mockup"],
   },
   {
+    id: "timeline-roadmap",
+    file: "timeline-roadmap.html.frag",
+    title: "Timeline / roadmap",
+    useWhen: "Chronological milestones, phased roadmaps, release history, or implementation stages.",
+    modules: ["diagram", "mockup"],
+  },
+  {
     id: "metric-chart",
     file: "metric-chart.html.frag",
     title: "Metrics + Chart.js",
@@ -61,6 +72,60 @@ export const TEMPLATE_CATALOG: readonly TemplateMeta[] = [
     title: "Data record card",
     useWhen: "Bounded object: contact, receipt, profile. Sit on secondary pad.",
     modules: ["mockup"],
+  },
+  {
+    id: "canvas-brief",
+    file: "canvas-brief.tsx.frag",
+    title: "Canvas evidence brief",
+    useWhen: "Complete analytical brief with scope, takeaway, evidence, findings, caveat, and source/recency context.",
+    modules: ["canvas"],
+    format: "tsx",
+    target: "show_canvas",
+  },
+  {
+    id: "canvas-dashboard",
+    file: "canvas-dashboard.tsx.frag",
+    title: "Canvas analytical dashboard",
+    useWhen: "Open analytical layout with headings, supporting stats, and a data table.",
+    modules: ["canvas"],
+    format: "tsx",
+    target: "show_canvas",
+  },
+  {
+    id: "canvas-charts",
+    file: "canvas-charts.tsx.frag",
+    title: "Canvas charts",
+    useWhen: "Bar/line/pie charts with built-in SVG primitives and no external chart library.",
+    modules: ["canvas"],
+    format: "tsx",
+    target: "show_canvas",
+  },
+  {
+    id: "canvas-form-state",
+    file: "canvas-form-state.tsx.frag",
+    title: "Canvas form + persistent state",
+    useWhen: "Interactive controls whose values should survive canvas reloads.",
+    modules: ["canvas"],
+    format: "tsx",
+    target: "show_canvas",
+  },
+  {
+    id: "canvas-diff",
+    file: "canvas-diff.tsx.frag",
+    title: "Canvas diff review",
+    useWhen: "File-level diff review using Card, DiffStats, and DiffView.",
+    modules: ["canvas"],
+    format: "tsx",
+    target: "show_canvas",
+  },
+  {
+    id: "canvas-todo",
+    file: "canvas-todo.tsx.frag",
+    title: "Canvas todo + host action",
+    useWhen: "Task/status UI with local state and structured host actions.",
+    modules: ["canvas"],
+    format: "tsx",
+    target: "show_canvas",
   },
 ] as const;
 
@@ -107,25 +172,24 @@ export function getTemplatesSection(
 
   let out = `## Ready-made fragments
 
-Copy a fragment as the skeleton for \`show_widget\`. Replace labels/data; keep structure, spacing, and neutral borders.
-These are **HTML fragments** (no DOCTYPE/\`<html>\`/\`<body>\`). Prefer them over inventing multi-color SVG flow boxes.
+Pick a catalog entry as the skeleton for its target rendering tool. Bodies are omitted by default and expanded only when requested.
+Widget entries are HTML fragments (no DOCTYPE/\`<html>\`/\`<body>\`); Canvas entries are single-file TSX for \`show_canvas\`.
 
 **Theme contract (required):**
-- Surfaces/text/borders use host CSS variables only (\`--color-text-*\`, \`--color-background-*\`, \`--color-border-*\`).
-- Never hardcode \`#fff\` / \`#333\` / light-only grays — both light and dark must work.
-- Chart.js / Mermaid: resolve colors from \`getComputedStyle\` or \`window._themeVars()\` at runtime (\`text\`, \`textSecondary\`, \`textInfo\`, \`chartTick\`, \`chartGrid\`, …).
-- Outer container stays transparent; host provides page background.
+- \`show_widget\`: use host CSS variables only for UI chrome; Chart.js/Mermaid resolve computed CSS vars at runtime.
+- \`show_canvas\`: prefer \`@gen-ui/canvas\` primitives and \`useHostTheme()\`; do not hardcode a single light/dark palette.
+- Outer container stays transparent; the host provides the page/window background.
 
-| id | Use when |
-|---|---|
+| id | target | format | Use when |
+|---|---|---|---|
 `;
 
   for (const t of items) {
-    out += `| \`${t.id}\` | ${t.useWhen} |\n`;
+    out += `| \`${t.id}\` | \`${t.target ?? "show_widget"}\` | \`${t.format ?? "html"}\` | ${t.useWhen} |\n`;
   }
 
-  out += `\n**How to use:** pick the closest id → call \`visualize_read_me\` again with \`templates: ["${items[0]?.id ?? "flow-steps"}"]\` (or multiple ids) to load full HTML → paste into \`show_widget\` → swap copy/data.\n`;
-  out += `Default response is **catalog only** (token-light). Pass \`templates: ["all"]\` only when you need every body.\n`;
+  out += `\n**How to use:** pick the closest id → call \`visualize_read_me\` again with \`templates: ["${items[0]?.id ?? "flow-steps"}"]\` (or multiple ids) → paste the expanded skeleton into its target tool → swap copy/data.\n`;
+  out += `Default response is **catalog only** (token-light). Pass \`templates: ["all"]\` only when you truly need every body.\n`;
 
   if (bodies.length === 0) {
     out += `\n_No template bodies expanded. Re-call with \`templates: ["<id>"]\` to load a skeleton._\n`;
@@ -134,7 +198,7 @@ These are **HTML fragments** (no DOCTYPE/\`<html>\`/\`<body>\`). Prefer them ove
 
   for (const t of bodies) {
     const body = loadTemplate(t.id);
-    out += `\n### ${t.title} (\`${t.id}\`)\n${t.useWhen}\n\n\`\`\`html\n${body}\n\`\`\`\n`;
+    out += `\n### ${t.title} (\`${t.id}\`)\n${t.useWhen}\n\n\`\`\`${t.format ?? "html"}\n${body}\n\`\`\`\n`;
   }
 
   return out;

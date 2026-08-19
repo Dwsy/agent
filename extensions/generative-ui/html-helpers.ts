@@ -144,7 +144,7 @@ export function wrapHTML(code: string, isSVG = false): string {
   const themeScript = `<script>${THEME_VARS_SCRIPT}\n${WIDGET_EVENTS_SCRIPT}</script>`;
   if (isSVG) {
     return `<!DOCTYPE html><html><head><meta charset="utf-8">${themeMeta}<style>${vars}${SVG_STYLES}${WIDGET_UI_KIT_CSS}</style></head>
-<body style="margin:0;display:flex;align-items:center;justify-content:center;min-height:100vh;background:var(--color-background-primary);color:var(--color-text-primary);">
+<body style="margin:0;padding:1rem;display:flex;flex-direction:column;gap:12px;align-items:center;justify-content:center;min-height:100vh;background:var(--color-background-primary);color:var(--color-text-primary);">
 ${themeScript}${WIDGET_UI_KIT_RESOURCES}${code}</body></html>`;
   }
   return `<!DOCTYPE html><html><head><meta charset="utf-8">

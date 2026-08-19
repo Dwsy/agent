@@ -6,6 +6,7 @@ import { pathToFileURL } from "node:url";
 import test from "node:test";
 
 const root = import.meta.dirname;
+const agentRoot = join(root, "../../..");
 const load = (name) => import(pathToFileURL(join(root, name)).href + `?t=${Date.now()}-${Math.random()}`);
 
 async function withTempStores(t) {
@@ -199,7 +200,7 @@ test("TUI picker only lists apps that provide tui.mjs", async (t) => {
 
 test("demo kanban module renders wide and narrow application layouts", async () => {
   const factoryModule = await import(
-    pathToFileURL("/Users/dengwenyu/.pi/agent/.pi/gapp/demo-kanban/tui.mjs").href + `?t=${Date.now()}`
+    pathToFileURL(join(agentRoot, ".pi/gapp/demo-kanban/tui.mjs")).href + `?t=${Date.now()}`
   );
   const state = {
     boardTitle: "TUI Board",
@@ -236,7 +237,7 @@ test("demo kanban module renders wide and narrow application layouts", async () 
 
 test("demo kanban exposes one shared tool implementation and typed client", async () => {
   const module = await import(
-    pathToFileURL("/Users/dengwenyu/.pi/agent/.pi/gapp/demo-kanban/tools.mjs").href + `?t=${Date.now()}`
+    pathToFileURL(join(agentRoot, ".pi/gapp/demo-kanban/tools.mjs")).href + `?t=${Date.now()}`
   );
   const context = {
     app: { name: "Shared Board" },

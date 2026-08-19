@@ -154,9 +154,9 @@ TUI 内调用工具固定 `openIfNeeded: false`，不会为了执行操作意外
 cd extensions/generative-ui
 pnpm install
 
-./gapp/cli.ts demo-kanban --cwd /Users/dengwenyu/.pi/agent
+./gapp/cli.ts demo-kanban --cwd /path/to/agent
 # 或
-pnpm gapp:tui demo-kanban --cwd /Users/dengwenyu/.pi/agent
+pnpm gapp:tui demo-kanban --cwd /path/to/agent
 ```
 
 安装或链接该 package 后会暴露 `gapp-tui` bin。

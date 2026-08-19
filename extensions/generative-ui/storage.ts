@@ -3,6 +3,7 @@
 import { mkdir, writeFile, readFile, readdir, rename, rmdir, unlink } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
+import type { GroundingDeclaration } from "./grounding.js";
 
 function defaultWidgetsDir(): string {
   return join(process.env.HOME || "~", ".pi/widgets");
@@ -53,7 +54,11 @@ export interface WidgetRecord {
   kind?: "widget" | "canvas";
   /** Canvas TSX source filename (sibling of the compiled html). */
   sourceFile?: string;
+  /** Stable Canvas state namespace shared by native windows and the gallery host bridge. */
+  canvasStateId?: string;
   cwd?: string;
+  /** Host-validated evidence provenance for new renders; absent on legacy records. */
+  grounding?: GroundingDeclaration;
   /** Last interaction retained for compatibility with existing widget indexes. */
   interactionData?: unknown;
   events?: WidgetEvent[];

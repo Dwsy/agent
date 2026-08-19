@@ -14,6 +14,7 @@ Call read_me again with the modules parameter to load detailed guidance:
 - \`chart\` — charts and data analysis (includes Chart.js)
 - \`art\` — illustration and generative art
 - \`runtime\` — built-in tooltip, icon, CDN, and widget-host contract
+- \`canvas\` — Cursor-compatible React Canvas SDK; compact catalog first, TSX skeletons expanded through \`templates\` only when needed
 Pick the closest fit. The module includes all relevant design guidance.
 
 **Complexity budget — hard limits:**
@@ -35,7 +36,7 @@ These rules apply to ALL use cases.
 - **Seamless**: Users shouldn't notice where claude.ai ends and your widget begins.
 - **Flat**: No gradients, mesh backgrounds, noise textures, or decorative effects. Clean flat surfaces.
 - **Compact**: One dominant visual first. Do not add KPI rows, fact grids, toolbars, or summary cards unless the user explicitly asks for them or changing metrics are central.
-- **Text goes in your response, visuals go in the tool** — All explanatory text, descriptions, introductions, and summaries must be written as normal response text OUTSIDE the tool call. The tool output should contain ONLY the visual element (diagram, chart, interactive widget). Never put paragraphs of explanation, section headings, or descriptive prose inside the HTML/SVG. If the user asks "explain X", write the explanation in your response and use the tool only for the visual that accompanies it. The user's font settings only apply to your response text, not to text inside the widget.
+- **Keep chat prose and artifact content distinct** — For a pure diagram/chart that accompanies an explanation, keep narrative prose in the response and the tool focused on the visual. For a self-contained analytical artifact (audit, report, review, evidence brief, record, comparison), the artifact itself MUST include the concise context needed to stand alone: title, scope/time range, evidence labels, findings/takeaway, caveat when material, and source/recency. Do not duplicate long chat prose inside the artifact, but do not strip away evidence just to keep it visually sparse.
 
 ### Streaming
 Output streams token-by-token. Structure code so useful content appears early.
@@ -51,17 +52,17 @@ Output streams token-by-token. Structure code so useful content appears early.
 - No emoji — use CSS shapes or SVG paths
 - No gradients, drop shadows, blur, glow, or neon effects
 - No dark/colored backgrounds on outer containers (transparent only — host provides the bg)
-- **Typography**: The default font is Anthropic Sans. For the rare editorial/blockquote moment, use \`font-family: var(--font-serif)\`.
-- **Headings**: h1 = 22px, h2 = 18px, h3 = 16px — all \`font-weight: 500\`. Heading color is pre-set to \`var(--color-text-primary)\` — don't override it. Body text = 16px, weight 400, \`line-height: 1.7\`. **Two weights only: 400 regular, 500 bold.** Never use 600 or 700 — they look heavy against the host UI.
+- **Typography**: Use the host font tokens (\`var(--font-sans)\`, \`var(--font-mono)\`, and rarely \`var(--font-serif)\`) so Widget and Canvas feel like one system.
+- **Type scale (shared with Canvas)**: h1 = 24px/30px, h2 = 18px/24px, h3 = 16px/22px, body = 14px/20px, metadata/small = 12px/16px. Use 400 for body and 500 for Widget headings/labels; avoid arbitrary intermediate sizes. Canvas primitives own their host-appropriate heading weight.
 - **Sentence case** always. Never Title Case, never ALL CAPS. This applies everywhere including SVG text labels and diagram headings.
 - **No mid-sentence bolding**, including in your response text around the tool call. Entity names, class names, function names go in \`code style\` not **bold**. Bold is for headings and labels only.
 - The widget container is \`display: block; width: 100%\`. Your HTML fills it naturally — no wrapper div needed. Just start with your content directly. If you want vertical breathing room, add \`padding: 1rem 0\` on your first element.
 - Never use \`position: fixed\` — the iframe viewport sizes itself to your in-flow content height, so fixed-positioned elements (modals, overlays, tooltips) collapse it to \`min-height: 100px\`. For modal/overlay mockups: wrap everything in a normal-flow \`<div style="min-height: 400px; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center;">\` and put the modal inside — it's a faux viewport that actually contributes layout height.
 - No DOCTYPE, \`<html>\`, \`<head>\`, or \`<body>\` — just content fragments.
 - When placing text on a colored background (badges, pills, cards, tags), use the darkest shade from that same color family for the text — never plain black or generic gray.
-- **Corners**: use \`border-radius: var(--border-radius-md)\` (or \`-lg\` for cards) in HTML. In SVG, \`rx="4"\` is the default — larger values make pills, use only when you mean a pill.
+- **Spacing/radius contract**: use a 4/8/12/16/24/32px spacing rhythm. Prefer 8px small gaps, 12–16px component internals, 24px major section separation. Use \`border-radius: var(--border-radius-md)\` (8px) or \`-lg\` (12px) only for actual grouped surfaces. In SVG, \`rx="4"\` is the default; larger values imply a pill.
 - **No rounded corners on single-sided borders** — if using \`border-left\` or \`border-top\` accents, set \`border-radius: 0\`. Rounded corners only work with full borders on all sides.
-- **No titles or prose inside the tool output** — see Philosophy above.
+- **No redundant prose inside pure visuals** — diagrams/charts should not repeat the surrounding chat explanation. Self-contained analytical artifacts are different: include the structured title/scope/evidence/findings/source needed to understand them without the chat.
 - **Icon sizing**: When using emoji or inline SVG icons, explicitly set \`font-size: 16px\` for emoji or \`width: 16px; height: 16px\` for SVG icons. Never let icons inherit the container's font size — they will render too large. For larger decorative icons, use 24px max.
 - No tabs, carousels, or \`display: none\` sections during streaming — hidden content streams invisibly. Show all content stacked vertically. (Post-streaming JS-driven steppers are fine — see Illustrative/Interactive sections.)
 - No nested scrolling — auto-fit height.
@@ -863,68 +864,43 @@ Use \`imagine_html\`. Wrap the entire thing in a single raised card. All content
 
 const CANVAS_GUIDE = `## Canvas (React components via show_canvas)
 
-A canvas is ONE TSX file that default-exports the top-level component. It is compiled host-side (esbuild) and rendered with React 18 in a native window.
+A canvas is one TSX file that default-exports the top-level component. It is compiled host-side with esbuild and rendered with vendored React 18 in a native window.
 
-**When to use canvas vs widget.** Use show_canvas for standalone analytical artifacts: metrics breakdowns, audits/reviews with categorized findings, data-heavy tables, timelines, interactive explorations, anything needing component state or rich composition. Use show_widget for single static SVG/HTML visuals and Mermaid diagrams.
+**Use canvas when** the result is a standalone analytical artifact, structured review, data-heavy table, stateful exploration, or composed React UI. Prefer show_widget for a single static SVG/HTML visual or Mermaid diagram.
 
 **Hard rules**
-- Allowed imports: \`react\`, \`react-dom/client\`, \`@gen-ui/canvas\`. Nothing else — no npm packages, no relative imports, no Node built-ins.
-- Embed all data inline. No fetch / XMLHttpRequest / WebSocket (CSP blocks them anyway).
-- Default-export the component: \`export default function Report() { ... }\`.
-- Runtime errors render in-window and are reported back as \`{ type: "canvas_error" }\` events; compile errors fail the tool call with esbuild diagnostics — fix and retry.
+- Allowed imports: \`react\`, \`react-dom\`, \`react-dom/client\`, \`@gen-ui/canvas\`. No other npm packages, relative imports, or Node built-ins.
+- Keep data inline. No fetch / XMLHttpRequest / WebSocket.
+- Default-export the top-level component.
+- Prefer built-in SDK primitives and \`useHostTheme()\` over hand-rolled chrome or a single hardcoded theme.
+- Runtime errors render in-window and emit \`{ type: "canvas_error" }\`; compile errors return esbuild diagnostics.
 
-**SDK (@gen-ui/canvas)**
-\`\`\`tsx
-import { useHostTheme, sendToAgent, sendPrompt, sendAnnotation } from "@gen-ui/canvas";
+**Cursor-compatible SDK catalog**
+- Theme/state/actions: \`useHostTheme\`, \`useCanvasState\`, \`useCanvasAction\`. Pi extensions: \`sendToAgent\`, \`sendPrompt\`, \`sendAnnotation\`.
+- Layout/typography: \`Stack\`, \`Row\`, \`Grid\`, \`Spacer\`, \`Divider\`, \`H1\`, \`H2\`, \`H3\`, \`Text\`, \`Code\`, \`Link\`, \`mergeStyle\`.
+- Surfaces/actions/feedback: \`Card\`, \`CardHeader\`, \`CardBody\`, \`Button\`, \`Pill\`, \`Stat\`, \`Callout\`, \`Table\` (plus legacy \`DataTable\`).
+- Forms: \`TextInput\`, \`TextArea\`, \`Checkbox\`, \`Toggle\`, \`Select\`, \`IconButton\`.
+- Analysis/data: \`BarChart\`, \`LineChart\`, \`PieChart\`, \`DiffView\`, \`DiffStats\`, \`TodoList\`, \`TodoListCard\`, \`UsageBar\`, \`Swatch\`, \`CollapsibleSection\`, \`computeDAGLayout\`.
+- Tokens: \`useHostTheme()\` returns Cursor-style top-level \`text/bg/fill/stroke/accent/diff/category\` groups plus \`kind\`, \`tokens\`, and \`palette\`.
 
-const theme = useHostTheme();
-// { dark, text, textSecondary, textTertiary, textInfo, textSuccess, textWarning,
-//   textDanger, bg, bgSecondary, bgTertiary, border, borderSecondary,
-//   chartTick, chartGrid, fontSans }
-\`\`\`
-- All colors from \`useHostTheme()\` tokens or CSS \`var(--color-*)\` — the hook re-resolves when the system scheme flips, so light/dark both work. No hardcoded light-only hex.
-- \`sendToAgent(data)\` returns structured data to the agent (settles interactive canvases). \`sendPrompt(text)\` requests a follow-up. \`sendAnnotation(targetId, comment)\` records feedback on elements with \`data-spec-id\`.
-- Base components (flat, theme-aware — prefer these over hand-rolled equivalents):
-  - \`<Card title?>{children}</Card>\` — rounded bordered container for grouping a section.
-  - \`<Stat label value hint? />\` — one metric: small label, prominent value, optional hint.
-  - \`<DataTable columns rows />\` — minimal table; \`columns: { key, label, align?: "right", render?: (row) => node }[]\`, right-aligned columns get tabular-nums; \`render\` overrides the cell content.
-- The shell provides data-tooltip (Floating UI) and data-lucide icons — use those instead of loading libraries.
+**Pi host adapters**
+- \`useCanvasState(key, defaultValue)\` persists JSON state per canvas: native windows use WebView storage; the gallery keeps its strict sandbox and proxies state through a restricted parent bridge. If storage is unavailable it safely falls back to React state.
+- \`useHostTheme()\` follows both native/system appearance and the gallery WebUI light/dark toggle. Use SDK theme/state hooks instead of reading \`parent\` or \`localStorage\` directly so the same Canvas works in both hosts.
+- \`useCanvasAction()\` emits \`{ type: "canvas_action", action }\` through the Pi widget event bridge. It does not depend on Cursor IDE private APIs.
+- \`sendToAgent(data)\` settles an interactive canvas; \`sendPrompt(text)\` requests a follow-up; \`sendAnnotation(...)\` records targeted feedback.
 
-**Design: flat, minimal, purposeful**
-- Visual hierarchy: one thing stands out. Primary content gets space, size, and accent; supporting content stays compact and neutral.
-- Forbidden slop: gradients; emojis as icons/bullets/status; box-shadows; a different color on every element; walls of identical cards; giant text above 24px; decorative colored borders; empty placeholder sections ("No data", "TODO"). If a section has no real data, omit it.
-- Label every plot: specific title (not "Metrics"), axis labels with units, legend when multiple series, source + time range caption. Say so when a value is transformed (mean, p95, normalized).
-- Tables: right-align numerics, tabular-nums, subtle row separators using \`theme.border\`.
+**Design baseline**
+- Choose the smallest composition that materially improves the decision or explanation. The first render must already be useful; do not invent controls, KPI/status panels, or secondary fact grids just to fill space.
+- Keep presentation-only interaction local to the Canvas. Use agent bridges only when the agent genuinely needs the selected data or a requested follow-up.
+- For named numeric data, start with the plot or table and put important values/takeaways on the visual itself. Add summary stats only when changing metrics are central.
+- One dominant artifact; supporting stats remain compact. Avoid walls of cards, and keep charts/tables open rather than wrapping every section in Card.
+- Make side-by-side layouts wrap or stack and remain readable down to roughly 320px. Avoid fixed outer widths and internal scrolling except when a table genuinely cannot fit.
+- No gradients, box-shadows, decorative rainbow color, emoji decoration, giant headings, or empty placeholder sections.
+- Charts/tables must be self-describing: specific title, units, multi-series legend, source/time-range caption when applicable.
+- Right-align numeric table columns and use tabular numerals; use semantic controls and preserve native keyboard/focus behavior.
 
-**Skeleton**
-\`\`\`tsx
-import React, { useState } from "react";
-import { useHostTheme, DataTable } from "@gen-ui/canvas";
-
-const FINDINGS = [
-  { id: "F1", severity: "high", title: "Unauthenticated control plane", detail: "..." },
-];
-
-export default function SecurityReview() {
-  const theme = useHostTheme();
-  const [selected, setSelected] = useState<string | null>(null);
-  return (
-    <div style={{ fontFamily: theme.fontSans, color: theme.text }}>
-      <h1 style={{ fontSize: 20, margin: "0 0 4px" }}>Security review — gapp host</h1>
-      <p style={{ color: theme.textSecondary, margin: "0 0 12px" }}>3 findings · source: code review · 2026-08-11</p>
-      <DataTable
-        columns={[
-          { key: "id", label: "ID" },
-          { key: "severity", label: "Severity" },
-          { key: "title", label: "Finding", render: (r) => <a onClick={() => setSelected(r.id)}>{r.title}</a> },
-        ]}
-        rows={FINDINGS}
-      />
-      {/* ... */}
-    </div>
-  );
-}
-\`\`\``;
+**Progressive disclosure**
+This module intentionally stops at the capability catalog. Use the Ready-made fragments catalog below, then re-call \`visualize_read_me\` with only the TSX skeleton you need: \`canvas-dashboard\`, \`canvas-charts\`, \`canvas-form-state\`, \`canvas-diff\`, or \`canvas-todo\`.`;
 
 const MODULE_SECTIONS: Record<string, string[]> = {
   runtime: [WIDGET_RUNTIME],
@@ -933,7 +909,7 @@ const MODULE_SECTIONS: Record<string, string[]> = {
   interactive: [UI_COMPONENTS, COLOR_PALETTE],
   chart: [UI_COMPONENTS, COLOR_PALETTE, CHARTS_CHART_JS],
   diagram: [COLOR_PALETTE, SVG_SETUP, DIAGRAM_TYPES],
-  canvas: [CANVAS_GUIDE, COLOR_PALETTE],
+  canvas: [CANVAS_GUIDE],
 };
 
 export function getGuidelines(
