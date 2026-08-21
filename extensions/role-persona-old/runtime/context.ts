@@ -56,6 +56,10 @@ export interface RuntimeState {
   memoryCheckpointFrame: number;
   /** 标记是否是第一条用户消息 */
   isFirstUserMessage: boolean;
+  /** 会话级快照：role/core 只在 role 激活时读取，避免会中修改改变 system prompt */
+  rolePromptSnapshot: string | null;
+  /** 会话级快照：memory 只在 role 激活时读取，避免会中修改改变 system prompt */
+  memoryPromptSnapshot: string | null;
   /** 会话级缓存：该 rolePath 的 missing summary 已生成过 */
   dailySummaryEnsuredFor: string | null;
   memoryDistillMode: MemoryDistillMode | null;
@@ -94,6 +98,8 @@ export function createRuntime(pi: ExtensionAPI, indexModuleUrl: string): Runtime
       memoryCheckpointSpinner: null,
       memoryCheckpointFrame: 0,
       isFirstUserMessage: true,
+      rolePromptSnapshot: null,
+      memoryPromptSnapshot: null,
       dailySummaryEnsuredFor: null,
       memoryDistillMode: null,
       memoryLog: [],

@@ -18,8 +18,6 @@ import {
 import { config } from "../config.ts";
 import {
   flushAutoMemory,
-  scheduleAutoMemoryFlush,
-  shouldFlushAutoMemory,
   stopMemoryCheckpointSpinner,
 } from "./auto-memory.ts";
 import type { CompactionIntegration } from "./compaction.ts";
@@ -61,6 +59,8 @@ export function registerLifecycle(rt: Runtime, compaction: CompactionIntegration
 
     // Reset first message flag for on-demand memory search
     state.isFirstUserMessage = true;
+    state.rolePromptSnapshot = null;
+    state.memoryPromptSnapshot = null;
     state.dailySummaryEnsuredFor = null;
 
     // Discover project-level knowledge base (docs/knowledge/)
@@ -101,7 +101,10 @@ export function registerLifecycle(rt: Runtime, compaction: CompactionIntegration
     };
   });
 
-  // 3. Smart auto-memory checkpoints (not every turn)
+  // 3. During the session, only retain the latest conversation for shutdown extraction.
+  // Persisting auto-memory here would mutate the role files while the active session
+  // is still using its startup memory snapshot, so automatic writes are deferred to
+  // compaction or session_shutdown boundaries.
   pi.on("agent_end", async (event, ctx) => {
     const { state } = rt;
     if (!state.currentRole || !state.currentRolePath) return;
@@ -112,18 +115,11 @@ export function registerLifecycle(rt: Runtime, compaction: CompactionIntegration
     }
 
     if (!config.autoMemory.enabled) return;
-
     state.autoMemoryPendingTurns += 1;
     state.autoMemoryLastMessages = event.messages;
-
-    const decision = shouldFlushAutoMemory(rt, event.messages);
-    if (!decision.should) return;
-
-    // Non-blocking checkpoint: run in background, don't hold the turn.
-    scheduleAutoMemoryFlush(rt, event.messages, ctx, decision.reason);
   });
 
-  // 4. Flush on session shutdown if there are pending turns (best-effort, bounded wait)
+  // 4. Persist automatic memory only at the session boundary (best-effort, bounded wait)
   pi.on("session_shutdown", async (_event, ctx) => {
     const { state } = rt;
     if (config.autoMemory.enabled && state.autoMemoryPendingTurns > 0 && state.autoMemoryLastMessages) {

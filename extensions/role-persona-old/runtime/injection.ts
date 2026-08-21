@@ -9,17 +9,14 @@ import { config } from "../config.ts";
 import { log } from "../logger.ts";
 import {
   buildPendingReviewBlock,
-  loadHighPriorityMemories,
   loadMemoryOnDemand,
   readDailyMemoryBlocks,
   readLongTermMemoryBlock,
 } from "../memory-md.ts";
 import { autoRecall, isVectorActive } from "../memory-vector.ts";
-import { isFirstRun, loadRolePrompts } from "../role-store.ts";
+import { isFirstRun } from "../role-store.ts";
 import type { Runtime } from "./context.ts";
 import { buildExternalReadonlyPrompt, isExternalReadonlyEnabled } from "./external-readonly.ts";
-import { getLastUserText } from "./messages.ts";
-import { autoRepairRoleMemory } from "./role-activation.ts";
 
 function buildFileLocationInstruction(currentRolePath: string): string {
   return `## 🧠 ROLE & MEMORY
@@ -36,41 +33,13 @@ Protocol:
 - Pending candidates (if shown below) → review with promote_pending / discard_pending.`;
 }
 
-function buildMemoryPrompt(rt: Runtime, event: any): string {
+export function buildMemoryPrompt(rt: Runtime): string {
   const { state } = rt;
+  if (state.memoryPromptSnapshot !== null) return state.memoryPromptSnapshot;
+
   const currentRolePath = state.currentRolePath!;
   const currentRole = state.currentRole!;
-
-  // Memory injection strategy:
-  // - On first message: on-demand/high-priority hits + long-term memory + recent daily memory
-  // - Subsequent messages: long-term memory + recent daily memory
-  // Daily memory stays in the system prompt path. If summary generation is enabled,
-  // startup may block while missing summaries are generated, and the user sees the
-  // daily-summary status line during that warmup.
   const memoryBlocks: string[] = [];
-
-  if (config.memory.onDemandSearch.enabled && state.isFirstUserMessage) {
-    const messages = event.messages || [];
-    const lastUserMessage = [...messages].reverse().find((m: any) => m.role === "user");
-    const userQuery = lastUserMessage?.content?.[0]?.text || "";
-
-    if (userQuery) {
-      const onDemand = loadMemoryOnDemand(currentRolePath, currentRole, userQuery, {
-        maxResults: config.memory.onDemandSearch.maxResults,
-        minScore: config.memory.onDemandSearch.minScore,
-        includeHighPriority: config.memory.onDemandSearch.alwaysLoadHighPriority,
-      });
-      if (onDemand.content) {
-        memoryBlocks.push(onDemand.content);
-        log("memory-on-demand", `First message: loaded ${onDemand.matchCount} relevant memories + high priority`);
-      }
-    } else {
-      const highPriority = loadHighPriorityMemories(currentRolePath, currentRole);
-      if (highPriority) memoryBlocks.push(highPriority);
-    }
-
-    state.isFirstUserMessage = false;
-  }
 
   const longTerm = readLongTermMemoryBlock(currentRolePath, currentRole);
   if (longTerm) memoryBlocks.push(longTerm);
@@ -83,17 +52,34 @@ function buildMemoryPrompt(rt: Runtime, event: any): string {
   const pendingReview = buildPendingReviewBlock(currentRolePath);
   if (pendingReview) memoryBlocks.push(pendingReview);
 
-  if (memoryBlocks.length === 0) return "";
-  return `\n\n## Your Memory\n\n${memoryBlocks.join("\n\n---\n\n")}`;
+  state.memoryPromptSnapshot = memoryBlocks.length === 0
+    ? ""
+    : `\n\n## Your Memory\n\n${memoryBlocks.join("\n\n---\n\n")}`;
+  return state.memoryPromptSnapshot;
+}
+
+function buildOnDemandRecallPrompt(rt: Runtime, event: any): string {
+  const { state } = rt;
+  if (!config.memory.onDemandSearch.enabled || !state.isFirstUserMessage) return "";
+  state.isFirstUserMessage = false;
+
+  const userQuery = typeof event.prompt === "string" ? event.prompt : "";
+  if (!userQuery) return "";
+
+  const onDemand = loadMemoryOnDemand(state.currentRolePath!, state.currentRole!, userQuery, {
+    maxResults: config.memory.onDemandSearch.maxResults,
+    minScore: config.memory.onDemandSearch.minScore,
+    includeHighPriority: config.memory.onDemandSearch.alwaysLoadHighPriority,
+  });
+  if (!onDemand.content) return "";
+  log("memory-on-demand", `First message: loaded ${onDemand.matchCount} relevant memories + high priority`);
+  return onDemand.content;
 }
 
 async function buildVectorRecallPrompt(event: any): Promise<string> {
   if (!isVectorActive() || !config.vectorMemory?.autoRecall) return "";
 
-  const messages = event.messages || [];
-  const lastUserMsg = [...messages].reverse().find((m: any) => m.role === "user");
-  const userText = lastUserMsg?.content?.[0]?.text || lastUserMsg?.content || "";
-  const queryText = typeof userText === "string" ? userText : "";
+  const queryText = typeof event.prompt === "string" ? event.prompt : "";
 
   if (queryText.length <= 10) return "";
 
@@ -120,8 +106,6 @@ export function registerInjection(rt: Runtime): void {
     const { state } = rt;
     if (!state.currentRolePath || !state.currentRole) return;
 
-    autoRepairRoleMemory(rt, state.currentRolePath, state.currentRole, ctx, "before_agent_start");
-
     const fileLocationInstruction = buildFileLocationInstruction(state.currentRolePath);
 
     // First run: inject BOOTSTRAP guidance
@@ -134,22 +118,32 @@ export function registerInjection(rt: Runtime): void {
       };
     }
 
-    // Normal operation: inject role prompts
-    const rolePrompt = await loadRolePrompts(state.currentRolePath);
-    const memoryPrompt = buildMemoryPrompt(rt, event as any);
+    // Normal operation: static role/memory snapshots stay in the system prompt.
+    const rolePrompt = state.rolePromptSnapshot || "";
+    const memoryPrompt = buildMemoryPrompt(rt);
+    const onDemandRecallPrompt = buildOnDemandRecallPrompt(rt, event as any);
     const vectorRecallPrompt = await buildVectorRecallPrompt(event as any);
 
     // External readonly memory (optional): inject cross-session hints.
     let externalReadonlyPrompt = "";
     if (isExternalReadonlyEnabled()) {
-      const queryText = getLastUserText((event as any).messages || []);
-      externalReadonlyPrompt = await buildExternalReadonlyPrompt(queryText, ctx.cwd || "");
+      externalReadonlyPrompt = await buildExternalReadonlyPrompt(event.prompt || "", ctx.cwd || "");
     }
 
     const memoryDistillPrompt = buildMemoryDistillPrompt(rt);
+    const dynamicContext = [onDemandRecallPrompt, vectorRecallPrompt, externalReadonlyPrompt, memoryDistillPrompt]
+      .filter(Boolean)
+      .join("\n\n");
 
     return {
-      systemPrompt: `${event.systemPrompt}\n\n${fileLocationInstruction}\n\n${rolePrompt}${memoryPrompt}${vectorRecallPrompt}${externalReadonlyPrompt}${memoryDistillPrompt}`
+      systemPrompt: `${event.systemPrompt}\n\n${fileLocationInstruction}\n\n${rolePrompt}${memoryPrompt}`,
+      ...(dynamicContext ? {
+        message: {
+          customType: "role-persona-context",
+          content: dynamicContext,
+          display: false,
+        },
+      } : {}),
     };
   });
 }

@@ -9,41 +9,7 @@ import { runAutoMemoryExtraction } from "../memory-llm.ts";
 import { readRoleMemory } from "../memory-md.ts";
 import { isVectorActive, queueVectorIndex, replaceVectorIndex } from "../memory-vector.ts";
 import { memLogPush, type Runtime } from "./context.ts";
-import { messageText } from "./messages.ts";
 import { isTuiAvailable } from "./ui.ts";
-
-// Recompiles the force-keywords regex only when the config source string changes,
-// so hot paths reuse the cached RegExp while still honoring reloadConfig().
-let forceKeywordsSource: string | null = null;
-let forceKeywordsRegex: RegExp;
-function autoMemoryForceKeywords(): RegExp {
-  const source = config.advanced.forceKeywords;
-  if (source !== forceKeywordsSource) {
-    forceKeywordsSource = source;
-    forceKeywordsRegex = new RegExp(source, "i");
-  }
-  return forceKeywordsRegex;
-}
-
-export function shouldFlushAutoMemory(rt: Runtime, messages: unknown[]): { should: boolean; reason: string } {
-  const text = messageText(messages);
-  const now = Date.now();
-
-  if (autoMemoryForceKeywords().test(text)) {
-    return { should: true, reason: "keyword" };
-  }
-
-  if (rt.state.autoMemoryPendingTurns >= config.autoMemory.batchTurns) {
-    return { should: true, reason: "batch-5-turns" };
-  }
-
-  const intervalReached = now - rt.state.autoMemoryLastAt >= config.autoMemory.intervalMs;
-  if (intervalReached && rt.state.autoMemoryPendingTurns >= config.autoMemory.minTurns) {
-    return { should: true, reason: "interval-30m" };
-  }
-
-  return { should: false, reason: "defer" };
-}
 
 export function stopMemoryCheckpointSpinner(rt: Runtime): void {
   if (rt.state.memoryCheckpointSpinner) {
@@ -155,17 +121,3 @@ export async function flushAutoMemory(rt: Runtime, messages: unknown[], ctx: Ext
   }
 }
 
-export function scheduleAutoMemoryFlush(rt: Runtime, messages: unknown[], ctx: ExtensionContext, reason: string): void {
-  const { state } = rt;
-  if (!config.autoMemory.enabled) return;
-  state.autoMemoryLastMessages = messages;
-
-  if (state.autoMemoryInFlight || state.autoMemoryBgScheduled) return;
-  state.autoMemoryBgScheduled = true;
-
-  setTimeout(() => {
-    state.autoMemoryBgScheduled = false;
-    const latest = state.autoMemoryLastMessages || messages;
-    void flushAutoMemory(rt, latest, ctx, reason);
-  }, 0);
-}

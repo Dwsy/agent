@@ -14,8 +14,9 @@ import {
   repairRoleMemory,
 } from "../memory-md.ts";
 import { initVectorMemory } from "../memory-vector.ts";
-import { getRoleIdentity } from "../role-store.ts";
+import { getRoleIdentity, loadRolePrompts } from "../role-store.ts";
 import type { Runtime } from "./context.ts";
+import { buildMemoryPrompt } from "./injection.ts";
 import { stopMemoryCheckpointSpinner } from "./auto-memory.ts";
 import { isTuiAvailable, notify } from "./ui.ts";
 
@@ -43,6 +44,8 @@ export async function activateRole(rt: Runtime, roleName: string, rolePath: stri
   state.autoMemoryPendingTurns = 0;
   state.autoMemoryLastFlushLen = 0;
   state.autoMemoryLastMessages = null;
+  state.rolePromptSnapshot = null;
+  state.memoryPromptSnapshot = null;
   stopMemoryCheckpointSpinner(rt);
 
   ensureRoleMemoryFiles(rolePath, roleName);
@@ -109,6 +112,12 @@ export async function activateRole(rt: Runtime, roleName: string, rolePath: stri
       }
     }
   }
+
+  // Freeze all system-prompt inputs after startup maintenance has completed.
+  // before_agent_start runs for every user prompt, so it must consume these
+  // immutable session snapshots instead of re-reading role/memory files.
+  state.rolePromptSnapshot = loadRolePrompts(rolePath);
+  state.memoryPromptSnapshot = buildMemoryPrompt(rt);
 
   if (isTuiAvailable(ctx)) {
     const identity = getRoleIdentity(rolePath);
