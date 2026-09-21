@@ -1,5 +1,4 @@
-import { dirname, join } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { AssistantMessageComponent, initTheme } from "@earendil-works/pi-coding-agent";
 import type { AssistantMessage, ThinkingContent } from "@earendil-works/pi-ai";
 import { Markdown, Spacer, Text } from "@earendil-works/pi-tui";
 import { decrementPatchRefCount, getPatchCleanup, getPatchInstallPromise, incrementPatchRefCount, setPatchCleanup, setPatchInstallPromise } from "./state.js";
@@ -79,18 +78,6 @@ function fallbackToOriginalUpdateContent(
 	}
 }
 
-function getPackageRoot(packageName: string): string {
-	const entryUrl = import.meta.resolve(packageName);
-	const entryPath = fileURLToPath(entryUrl);
-	return dirname(dirname(entryPath));
-}
-
-async function importInternalModule<TModule>(packageName: string, relativePath: string): Promise<TModule> {
-	const packageRoot = getPackageRoot(packageName);
-	const moduleUrl = pathToFileURL(join(packageRoot, relativePath)).href;
-	return (await import(moduleUrl)) as TModule;
-}
-
 function hasVisibleThinking(content: ThinkingContent): boolean {
 	return content.redacted === true || content.thinking.trim().length > 0;
 }
@@ -118,20 +105,14 @@ function hasVisibleThinkingContent(message: AssistantMessage): boolean {
 }
 
 async function installPatch(): Promise<() => void> {
-	const [{ AssistantMessageComponent: rawAssistantMessageComponent }, { theme: rawTheme }] = await Promise.all([
-		importInternalModule<{ AssistantMessageComponent: unknown }>(
-			"@earendil-works/pi-coding-agent",
-			"dist/modes/interactive/components/assistant-message.js",
-		),
-		importInternalModule<{ theme: unknown }>(
-			"@earendil-works/pi-coding-agent",
-			"dist/modes/interactive/theme/theme.js",
-		),
-	]);
-
-	const AssistantMessageComponent = assertPatchableAssistantMessageComponent(rawAssistantMessageComponent);
+	const patchableAssistantMessageComponent = assertPatchableAssistantMessageComponent(AssistantMessageComponent);
+	let rawTheme = (globalThis as Record<PropertyKey, unknown>)[Symbol.for("@earendil-works/pi-coding-agent:theme")];
+	if (!rawTheme) {
+		initTheme("dark", false);
+		rawTheme = (globalThis as Record<PropertyKey, unknown>)[Symbol.for("@earendil-works/pi-coding-agent:theme")];
+	}
 	const theme = assertThinkingStepsTheme(rawTheme);
-	const prototype = AssistantMessageComponent.prototype;
+	const prototype = patchableAssistantMessageComponent.prototype;
 	const originalUpdateContent = prototype.updateContent;
 	const originalSetHideThinkingBlock = prototype.setHideThinkingBlock;
 	const originalSetHiddenThinkingLabel = prototype.setHiddenThinkingLabel;

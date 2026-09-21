@@ -1,5 +1,5 @@
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { streamOpenAICodexResponses } from "@mariozechner/pi-ai";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { streamOpenAICodexResponses } from "@earendil-works/pi-ai";
 import {
   CODEX_FAST_ENTRY_TYPE,
   CODEX_FAST_EVENT,

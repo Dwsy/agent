@@ -1,6 +1,6 @@
 // Sync Pi session renames to the containing Herdr tab.
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 export default function (pi: ExtensionAPI) {
   const tabId = process.env.HERDR_TAB_ID;
