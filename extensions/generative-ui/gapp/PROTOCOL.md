@@ -18,20 +18,26 @@ MCP-inspired **dynamic tools + generative bridge** for Glimpse-APPs running unde
 
 | Method | Path | 用途 |
 |--------|------|------|
-| GET | `/health` | 存活 / hub 角色 |
+| GET | `/health` | 存活、`daemon/client/hub` 角色、idle / memory 状态 |
 | GET | `/v1/gapp` | 目录：sessions / leases / live apps / path 表 |
 | GET/POST | `/v1/gapp/sessions` | 注册 Pi session |
+| DELETE | `/v1/gapp/sessions/:sessionId` | 注销 Pi session bridge |
 | GET | `/v1/gapp/leases` | 全部租约 |
 | GET/PUT/DELETE | `/v1/gapp/leases/:appId` | 租约查询 / 获取 / 释放（single 互斥） |
 | GET | `/v1/gapp/apps/:appId` | app 摘要 |
-| GET/PUT | `/v1/gapp/apps/:appId/tools` | 工具列表 / live 注册 |
+| POST | `/v1/gapp/apps/:appId/open` | 由 host 打开/重开窗口（外部启动器：Raycast、`gapp` CLI），可带 `scope` / `versionId` |
+| POST | `/v1/gapp/apps/:appId/window` | 窗口控制：`action: "focus" \| "close"`；本进程窗口直控，其他会话经 bridge |
+| GET/PUT/DELETE | `/v1/gapp/apps/:appId/tools` | 工具列表 / live 注册 / 注销 |
 | POST | `/v1/gapp/apps/:appId/call` | 调用工具（live 或 stateOps） |
 | GET/PUT | `/v1/gapp/apps/:appId/state` | 读/写 `state.json` |
 | POST | `/v1/gapp/apps/:appId/events` | 事件；`notifyAgent` → 主会话 |
 | POST | `/v1/gapp/apps/:appId/generate` | 生成：默认并行 subagent；`mode:"agent"` 走主会话 |
 | GET | `/v1/gapp/apps/:appId/generate/:requestId` | 轮询生成结果 |
 
-- 首个 Pi 进程 bind 成为 **hub**；后到进程 probe `/health` 后作 **client**（lease/call 走 HTTP）。
+- Pi 首次加载插件时只负责 detached 启动 **supervisor → daemon**；公共端口由 daemon 持有，不随 Pi 的 `session_shutdown` 退出。
+- 每个 Pi 会话在随机 loopback 端口启动私有 bridge，并向 daemon 注册 `sessionId / pid / cwd / bridgeBase`。live window、原生 RPC、主会话 events 与 `mode:"agent"` generate 才经该 bridge 回到 Pi。
+- daemon 默认在 3 小时无有效调用且没有活动请求 / generate / subagent / **live 窗口**时正常退出；`/health` 与 session heartbeat 不计为调用。正常空闲退出同时结束 supervisor，后续 Host 客户端可按需重新启动。
+- daemon 异常退出或内存保护触发时，supervisor 以退避策略重启；session bridge 映射持久化，因此 daemon 重启后可继续路由仍存活的 Pi 会话。
 - App 内 `GappHost` 同时走 **Glimpse message** + 可选 `fetch(hostBase + path)` 双通道；`requestId` 去重。
 - Base URL：`http://127.0.0.1:54888`（`GAPP_HOST_BASE`）。
 

@@ -164,6 +164,30 @@ test("stale lease is removed without recursive read", async () => {
   }
 });
 
+test("stale lease is removed when pid was reused after lease creation", async () => {
+  if (process.platform === "win32") return;
+  const dir = await mkdtemp(join(tmpdir(), "gapp-reused-pid-lease-"));
+  process.env.GAPP_LEASES_DIR = dir;
+  try {
+    await writeFile(
+      join(dir, "reused.json"),
+      JSON.stringify({
+        appId: "reused",
+        sessionId: "old-session",
+        pid: process.pid,
+        openedAt: "2000-01-01T00:00:00.000Z",
+        instances: "single",
+      }),
+    );
+    const { readLease } = await load("lease.ts");
+    assert.equal(await readLease("reused"), null);
+    await assert.rejects(readFile(join(dir, "reused.json"), "utf8"));
+  } finally {
+    delete process.env.GAPP_LEASES_DIR;
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("host multipath :54888 health + auth + lease + cwd guard", async () => {
   // Use ephemeral port + isolated global dir (token file) for test isolation
   const port = 54888 + Math.floor(Math.random() * 1000) + 100;
@@ -259,5 +283,101 @@ test("host multipath :54888 health + auth + lease + cwd guard", async () => {
     delete process.env.GAPP_LEASES_DIR;
     await rm(globalDir, { recursive: true, force: true });
     await rm(leaseDir, { recursive: true, force: true });
+  }
+});
+
+test("host app open/window routes reject bad input before touching native windows", async () => {
+  const port = 54888 + Math.floor(Math.random() * 1000) + 100;
+  const globalDir = await mkdtemp(join(tmpdir(), "gapp-host-global-"));
+  const leaseDir = await mkdtemp(join(tmpdir(), "gapp-host-leases-"));
+  process.env.GAPP_HOST_PORT = String(port);
+  process.env.GAPP_HOST_BASE = `http://127.0.0.1:${port}`;
+  process.env.GAPP_GLOBAL_DIR = globalDir;
+  process.env.GAPP_LEASES_DIR = leaseDir;
+
+  const { startGappHostServer, stopGappHostServer } = await load("host-server.ts");
+  const { setHostSessionId } = await load("registry.ts");
+  setHostSessionId("test-session");
+  await startGappHostServer({ sessionId: "test-session", port });
+
+  const token = (await readFile(join(globalDir, "host-token"), "utf8")).trim();
+  const auth = { Authorization: `Bearer ${token}` };
+  const post = (path, body) =>
+    fetch(`http://127.0.0.1:${port}${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...auth },
+      body: JSON.stringify(body),
+    });
+
+  try {
+    // Unknown app fails before any native window is spawned.
+    const missing = await post("/v1/gapp/apps/definitely-missing/open", {});
+    assert.equal(missing.status, 404);
+    assert.equal((await missing.json()).error.code, "not_found");
+
+    // Window control validates its action…
+    const badAction = await post("/v1/gapp/apps/definitely-missing/window", { action: "toggle" });
+    assert.equal(badAction.status, 400);
+    assert.equal((await badAction.json()).error.code, "invalid_args");
+
+    // …and refuses apps that hold no live window.
+    const notOpen = await post("/v1/gapp/apps/definitely-missing/window", { action: "focus" });
+    assert.equal(notOpen.status, 404);
+    assert.equal((await notOpen.json()).error.code, "not_open");
+  } finally {
+    await stopGappHostServer();
+    delete process.env.GAPP_HOST_PORT;
+    delete process.env.GAPP_HOST_BASE;
+    delete process.env.GAPP_GLOBAL_DIR;
+    delete process.env.GAPP_LEASES_DIR;
+    await rm(globalDir, { recursive: true, force: true });
+    await rm(leaseDir, { recursive: true, force: true });
+  }
+});
+
+test("Pi session bridge window op focuses and closes the live window", async () => {
+  // Import without cache busting so the bridge and the test share one registry
+  // module instance (the bridge resolves ./registry.js → registry.ts).
+  const registry = await import(pathToFileURL(join(root, "registry.ts")).href);
+  const { startGappSessionBridge, stopGappSessionBridge } = await import(
+    pathToFileURL(join(root, "session-bridge.ts")).href
+  );
+
+  const globalDir = await mkdtemp(join(tmpdir(), "gapp-bridge-global-"));
+  process.env.GAPP_GLOBAL_DIR = globalDir;
+  const appId = "bridge-window-app";
+  const sessionId = "bridge-window-session";
+  const calls = [];
+  const win = { show: () => calls.push("focus"), close: () => calls.push("close") };
+  registry.setHostSessionId(sessionId);
+  registry.registerLiveApp({
+    appId,
+    sessionId,
+    scope: "project",
+    cwd: process.cwd(),
+    instances: "single",
+    win,
+    diskTools: [],
+  });
+
+  let bridge;
+  try {
+    bridge = await startGappSessionBridge(sessionId);
+    const token = (await readFile(join(globalDir, "host-token"), "utf8")).trim();
+    for (const action of ["focus", "close"]) {
+      const res = await fetch(`${bridge.base}/dispatch`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ operation: "window", appId, action }),
+      });
+      assert.equal(res.status, 200);
+      assert.equal((await res.json()).result.action, action);
+    }
+    assert.deepEqual(calls, ["focus", "close"]);
+  } finally {
+    if (bridge) await stopGappSessionBridge();
+    registry.unregisterLiveApp(appId, sessionId, win);
+    delete process.env.GAPP_GLOBAL_DIR;
+    await rm(globalDir, { recursive: true, force: true });
   }
 });

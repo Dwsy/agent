@@ -494,7 +494,7 @@ export async function upsertGapp(input: {
 }
 
 /** Lazy-load portable SDK from local glimpse checkout or node_modules. */
-async function importGappSdk(): Promise<any | null> {
+export async function importGappSdk(): Promise<any | null> {
   const { pathToFileURL } = await import("node:url");
   const { existsSync } = await import("node:fs");
   const { join } = await import("node:path");
@@ -694,8 +694,14 @@ window.__GAPP_HOST__=${JSON.stringify({
       wireSend({ type: "gapp_tools_register", revision: liveRevision, tools: liveTools });
       var base = (window.__GAPP_HOST__ && window.__GAPP_HOST__.hostBase) || "";
       if (base) {
+        var host = window.__GAPP_HOST__ || {};
+        var meta = window.__GAPP_META__ || {};
         hostFetch("PUT", "/v1/gapp/apps/" + encodeURIComponent(window.__GAPP_ID__) + "/tools", {
-          tools: liveTools, revision: liveRevision
+          tools: liveTools,
+          revision: liveRevision,
+          sessionId: host.sessionId,
+          scope: meta.scope,
+          instances: meta.instances
         }).catch(function(){});
       }
       return liveTools;
@@ -704,6 +710,12 @@ window.__GAPP_HOST__=${JSON.stringify({
       liveTools = [];
       liveRevision = 0;
       wireSend({ type: "gapp_tools_unregister" });
+      var host = window.__GAPP_HOST__ || {};
+      if (host.hostBase) {
+        hostFetch("DELETE", "/v1/gapp/apps/" + encodeURIComponent(window.__GAPP_ID__) + "/tools", {
+          sessionId: host.sessionId
+        }).catch(function(){});
+      }
     },
     listTools: function(){ return liveTools.slice(); },
     onToolCall: function(handler){
