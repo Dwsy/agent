@@ -31,4 +31,29 @@ declare module "@earendil-works/pi-ai/compat" {
     errorMessage?: string;
     content: Array<{ type: string; text?: string }>;
   }>;
+
+  export interface RetryPolicy {
+    enabled: boolean;
+    maxRetries: number;
+    baseDelayMs: number;
+    maxAgentDelayMs?: number;
+  }
+
+  export interface RetryCallbacks {
+    onRetryScheduled?(
+      attempt: number,
+      maxAttempts: number,
+      delayMs: number,
+      errorMessage: string,
+    ): void | Promise<void>;
+    onRetryAttemptStart?(): void | Promise<void>;
+    onRetryFinished?(success: boolean, attempt: number, finalError?: string): void | Promise<void>;
+  }
+
+  export function retryAssistantCall<T extends { stopReason?: string; errorMessage?: string }>(
+    produce: () => Promise<T>,
+    policy: RetryPolicy | undefined,
+    signal: AbortSignal | undefined,
+    callbacks?: RetryCallbacks,
+  ): Promise<T>;
 }

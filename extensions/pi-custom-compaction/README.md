@@ -41,6 +41,8 @@ The status widget is **off by default**. The model selector supports fuzzy searc
 
 Both algorithms use Pi's `session_before_compact` hook, so they apply to manual `/compact`, automatic threshold compaction, and overflow recovery.
 
+Both algorithms also share Pi's `retry.*` settings through `retryAssistantCall`: transient provider failures (429/5xx/network/stream drops) retry with exponential backoff and emit a `Compaction retry n/max in Xs` notice per attempt, while deterministic failures (quota/billing exhaustion) fail fast. Only when the retry budget is exhausted does the extension fall back to Pi's default compaction.
+
 ## Role-persona compatibility
 
 Role/persona system-prompt injection runs through `before_agent_start`; Pi compaction calls the model directly with a summarization-only system prompt. The role prompt is therefore not injected into this extension's compaction request.

@@ -1,4 +1,4 @@
-import { complete } from "@earendil-works/pi-ai/compat";
+import { complete, retryAssistantCall, type RetryCallbacks, type RetryPolicy } from "@earendil-works/pi-ai/compat";
 import { compact, convertToLlm, serializeConversation, type CompactionResult, type SessionBeforeCompactEvent } from "@earendil-works/pi-coding-agent";
 import { appendFileDetails, buildStructuredPrompt, getFileDetails, mergeFileDetails, selectSummaryText } from "./structured.js";
 import type { CustomCompactionConfig } from "./types.js";
@@ -22,6 +22,8 @@ export async function compactWithConfiguredAlgorithm(
   auth: { apiKey?: string; headers?: Record<string, string>; env?: Record<string, string> },
   config: CustomCompactionConfig,
   memoryInstructions?: string,
+  retry?: RetryPolicy,
+  callbacks?: RetryCallbacks,
 ): Promise<CompactionResult> {
   if (config.algorithm === "pi-default") {
     const result = await compact(
@@ -34,37 +36,44 @@ export async function compactWithConfiguredAlgorithm(
       "off",
       undefined,
       auth.env,
+      retry,
+      callbacks,
     );
     return withCumulativeFileDetails(result, event);
   }
 
   const messages = [...event.preparation.messagesToSummarize, ...event.preparation.turnPrefixMessages];
   const conversation = serializeConversation(convertToLlm(messages));
-  const response = await complete(
-    model,
-    {
-      systemPrompt: "You are a context checkpoint summarizer. Only output the requested Markdown checkpoint.",
-      messages: [{
-        role: "user",
-        content: [{
-          type: "text",
-          text: buildStructuredPrompt(
-            conversation,
-            event.preparation.previousSummary,
-            event.customInstructions,
-            memoryInstructions,
-          ),
+  const response = await retryAssistantCall(
+    () => complete(
+      model,
+      {
+        systemPrompt: "You are a context checkpoint summarizer. Only output the requested Markdown checkpoint.",
+        messages: [{
+          role: "user",
+          content: [{
+            type: "text",
+            text: buildStructuredPrompt(
+              conversation,
+              event.preparation.previousSummary,
+              event.customInstructions,
+              memoryInstructions,
+            ),
+          }],
+          timestamp: Date.now(),
         }],
-        timestamp: Date.now(),
-      }],
-    },
-    {
-      apiKey: auth.apiKey,
-      headers: auth.headers,
-      env: auth.env,
-      maxTokens: Math.min(config.maxSummaryTokens, model.maxTokens > 0 ? model.maxTokens : config.maxSummaryTokens),
-      signal: event.signal,
-    },
+      },
+      {
+        apiKey: auth.apiKey,
+        headers: auth.headers,
+        env: auth.env,
+        maxTokens: Math.min(config.maxSummaryTokens, model.maxTokens > 0 ? model.maxTokens : config.maxSummaryTokens),
+        signal: event.signal,
+      },
+    ),
+    retry,
+    event.signal,
+    callbacks,
   );
 
   if (response.stopReason === "error") {

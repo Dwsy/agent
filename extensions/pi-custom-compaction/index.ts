@@ -1,10 +1,12 @@
-import type {
-  ExtensionAPI,
-  ExtensionCommandContext,
-  ExtensionContext,
-  SessionBeforeCompactEvent,
+import {
+  SettingsManager,
+  type ExtensionAPI,
+  type ExtensionCommandContext,
+  type ExtensionContext,
+  type SessionBeforeCompactEvent,
 } from "@earendil-works/pi-coding-agent";
 import type { AutocompleteItem } from "@earendil-works/pi-tui";
+import type { RetryCallbacks } from "@earendil-works/pi-ai/compat";
 import { CONFIG_PATH } from "./src/constants.js";
 import { compactWithConfiguredAlgorithm } from "./src/algorithms.js";
 import { loadConfig, saveConfig } from "./src/config.js";
@@ -35,6 +37,14 @@ function configuredModel(ctx: ExtensionContext, config: CustomCompactionConfig) 
   }
 
   return { model };
+}
+
+const ERROR_TEXT_LIMIT = 200;
+
+/** Provider failures can embed whole HTML error pages; keep notices one readable line. */
+function condenseError(message: string): string {
+  const singleLine = message.replace(/\s+/g, " ").trim();
+  return singleLine.length > ERROR_TEXT_LIMIT ? `${singleLine.slice(0, ERROR_TEXT_LIMIT)}…` : singleLine;
 }
 
 function notify(ctx: ExtensionContext, message: string, level: "info" | "warning" | "error"): void {
@@ -107,14 +117,15 @@ export default function customCompactionExtension(pi: ExtensionAPI): void {
     }
 
     const resolved = configuredModel(ctx, config);
-    if (!("model" in resolved)) {
+    if (!resolved.model) {
       if (!event.signal.aborted) {
         notify(ctx, `${resolved.error}; using Pi default compaction.`, "warning");
       }
       return;
     }
+    const model = resolved.model;
 
-    const auth = await ctx.modelRegistry.getApiKeyAndHeaders(resolved.model);
+    const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
     if (!auth.ok) {
       if (!event.signal.aborted) {
         notify(ctx, `Compaction authentication failed: ${auth.error}; using Pi default compaction.`, "warning");
@@ -123,10 +134,26 @@ export default function customCompactionExtension(pi: ExtensionAPI): void {
     }
 
     try {
-      notify(ctx, `Compacting with ${resolved.model.provider}/${resolved.model.id} (${config.algorithm})…`, "info");
+      notify(ctx, `Compacting with ${model.provider}/${model.id} (${config.algorithm})…`, "info");
       const memoryHandoff = roleCompactionMemoryHandoff();
       const memoryInstructions = memoryHandoff?.createInstructions(ctx);
-      const result = await compactWithConfiguredAlgorithm(event, resolved.model, auth, config, memoryInstructions);
+      const headers = auth.headers
+        ? Object.fromEntries(Object.entries(auth.headers).filter((entry): entry is [string, string] => entry[1] !== null))
+        : undefined;
+      const retryCallbacks: RetryCallbacks = {
+        onRetryScheduled: (attempt, maxAttempts, delayMs, errorMessage) => {
+          notify(ctx, `Compaction retry ${attempt}/${maxAttempts} in ${Math.round(delayMs / 1000)}s: ${condenseError(errorMessage)}`, "warning");
+        },
+      };
+      const result = await compactWithConfiguredAlgorithm(
+        event,
+        model,
+        { apiKey: auth.apiKey, headers, env: auth.env },
+        config,
+        memoryInstructions,
+        SettingsManager.create(ctx.cwd).getRetrySettings(),
+        retryCallbacks,
+      );
       const summary = memoryInstructions && memoryHandoff
         ? await memoryHandoff.consumeSummary(result.summary, ctx)
         : result.summary;
@@ -134,7 +161,7 @@ export default function customCompactionExtension(pi: ExtensionAPI): void {
     } catch (error) {
       if (!event.signal.aborted) {
         const message = error instanceof Error ? error.message : String(error);
-        notify(ctx, `Custom compaction failed: ${message}; using Pi default compaction.`, "warning");
+        notify(ctx, `Custom compaction failed: ${condenseError(message)}; using Pi default compaction.`, "warning");
       }
       return;
     }
