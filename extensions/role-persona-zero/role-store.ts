@@ -1,5 +1,6 @@
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync, cpSync } from "node:fs";
-import { join } from "node:path";
+import { execFileSync } from "node:child_process";
+import { basename, dirname, join, resolve } from "node:path";
 import { homedir } from "node:os";
 
 import { ensureRoleMemoryFiles } from "./memory-md.ts";
@@ -395,17 +396,41 @@ function findBestDisabledPath(cwd: string, disabledPaths: string[]): string | nu
   return best;
 }
 
+/**
+ * 链接工作树（git worktree add 创建的目录）归属于主仓库：返回主仓库的工作目录，
+ * 角色映射与禁用均以它为准。主工作树、子目录、非 git 目录原样返回 cwd。
+ */
+export function resolveRoleScopeDir(cwd: string): string {
+  try {
+    const [gitDir, commonDir] = execFileSync(
+      "git",
+      ["-C", cwd, "rev-parse", "--path-format=absolute", "--git-dir", "--git-common-dir"],
+      { encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"] },
+    )
+      .trim()
+      .split("\n");
+    if (gitDir && commonDir && resolve(gitDir) !== resolve(commonDir) && basename(commonDir) === ".git") {
+      return dirname(commonDir);
+    }
+  } catch {
+    // 不是 git 仓库或 git 不可用：沿用 cwd
+  }
+  return cwd;
+}
+
 export function resolveRoleForCwd(cwd: string, config?: RoleConfig): RoleResolution {
   const state = config || loadRoleConfig();
+  // 工作树使用主仓库目录的映射与禁用状态
+  const scope = resolveRoleScopeDir(cwd);
 
   // Explicit mapping has highest priority.
-  const mapped = findBestMappedRole(cwd, state.mappings || {});
+  const mapped = findBestMappedRole(scope, state.mappings || {});
   if (mapped) {
     return { role: mapped.role, source: "mapped", matchedPath: mapped.path };
   }
 
   // Explicitly disabled project skips default role.
-  const disabled = findBestDisabledPath(cwd, state.disabledPaths || []);
+  const disabled = findBestDisabledPath(scope, state.disabledPaths || []);
   if (disabled) {
     return { role: null, source: "disabled", matchedPath: disabled };
   }

@@ -21,6 +21,7 @@ import {
   loadRoleConfig,
   loadRolePrompts,
   resolveRoleForCwd,
+  resolveRoleScopeDir,
   ROLES_DIR,
   saveRoleConfig,
 } from "./role-store.ts";
@@ -578,7 +579,7 @@ async function mapRole(options: RoleControlCenterOptions): Promise<void> {
   if (!selected) return;
 
   const roleConfig = loadRoleConfig();
-  const cwdKey = normalizePath(options.cwd);
+  const cwdKey = normalizePath(resolveRoleScopeDir(options.cwd));
   roleConfig.mappings[cwdKey] = selected;
   roleConfig.disabledPaths = (roleConfig.disabledPaths || []).filter((path) => normalizePath(path) !== cwdKey);
   saveRoleConfig(roleConfig);
@@ -604,7 +605,7 @@ async function createAndMaybeMapRole(options: RoleControlCenterOptions): Promise
   options.notify(`已创建角色：${roleName}`, "success");
   if (await options.ctx.ui.confirm("映射角色", `立即映射当前目录到 ${roleName}？`)) {
     const roleConfig = loadRoleConfig();
-    const cwdKey = normalizePath(options.cwd);
+    const cwdKey = normalizePath(resolveRoleScopeDir(options.cwd));
     roleConfig.mappings[cwdKey] = roleName;
     roleConfig.disabledPaths = (roleConfig.disabledPaths || []).filter((path) => normalizePath(path) !== cwdKey);
     saveRoleConfig(roleConfig);
@@ -628,7 +629,7 @@ async function setDefaultRole(options: RoleControlCenterOptions): Promise<void> 
 async function disableRoleForCwd(options: RoleControlCenterOptions): Promise<void> {
   if (!await options.ctx.ui.confirm("禁用角色", "取消当前目录的精确映射，并禁止继承默认/父目录角色？")) return;
   const roleConfig = loadRoleConfig();
-  const cwdKey = normalizePath(options.cwd);
+  const cwdKey = normalizePath(resolveRoleScopeDir(options.cwd));
   for (const path of Object.keys(roleConfig.mappings || {})) {
     if (normalizePath(path) === cwdKey) delete roleConfig.mappings[path];
   }

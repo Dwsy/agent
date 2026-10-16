@@ -6,6 +6,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
   statSync,
   unlinkSync,
@@ -76,6 +77,7 @@ const {
   loadRolePrompts,
   migrateAllRolesToStructuredLayout,
   resolveRoleForCwd,
+  resolveRoleScopeDir,
   saveRoleConfig,
 } = roleStore;
 
@@ -84,6 +86,67 @@ afterAll(() => {
   if (savedRolesDirEnv === undefined) delete process.env.PI_ROLES_DIR;
   else process.env.PI_ROLES_DIR = savedRolesDirEnv;
   if (savedLegacyRolesDirEnv !== undefined) process.env.PI_AGENT_ROLES_DIR = savedLegacyRolesDirEnv;
+});
+
+/** 创建主仓库与一个链接工作树（含子目录），返回路径；调用方负责清理 base。 */
+function makeRepoWithWorktree(): { base: string; mainDir: string; worktreeDir: string } {
+  const base = realpathSync(mkdtempSync(join(tmpdir(), "rp-worktree-")));
+  const mainDir = join(base, "main");
+  const worktreeDir = join(base, "wt");
+  mkdirSync(mainDir);
+  const git = (...args: string[]) =>
+    execFileSync(
+      "git",
+      ["-C", mainDir, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", ...args],
+      { stdio: "ignore" },
+    );
+  git("init", "-q");
+  git("commit", "-q", "--allow-empty", "-m", "init");
+  git("worktree", "add", "-q", "-b", "feature", worktreeDir);
+  mkdirSync(join(worktreeDir, "src"));
+  return { base, mainDir, worktreeDir };
+}
+
+test("resolveRoleScopeDir maps linked worktrees to the main repository directory", () => {
+  const { base, mainDir, worktreeDir } = makeRepoWithWorktree();
+  try {
+    assert.equal(resolveRoleScopeDir(mainDir), mainDir);
+    assert.equal(resolveRoleScopeDir(worktreeDir), mainDir);
+    assert.equal(resolveRoleScopeDir(join(worktreeDir, "src")), mainDir);
+    // 非 git 目录原样返回
+    assert.equal(resolveRoleScopeDir(base), base);
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test("linked worktrees inherit the main repository's mapping, disabled state and default role", () => {
+  const { base, mainDir, worktreeDir } = makeRepoWithWorktree();
+  try {
+    const mapped = { mappings: { [mainDir]: "alpha" }, defaultRole: DEFAULT_ROLE, disabledPaths: [] };
+    assert.deepEqual(resolveRoleForCwd(worktreeDir, mapped), {
+      role: "alpha",
+      source: "mapped",
+      matchedPath: mainDir,
+    });
+    assert.deepEqual(resolveRoleForCwd(join(worktreeDir, "src"), mapped), {
+      role: "alpha",
+      source: "mapped",
+      matchedPath: mainDir,
+    });
+
+    const disabled = { mappings: {}, defaultRole: DEFAULT_ROLE, disabledPaths: [mainDir] };
+    assert.deepEqual(resolveRoleForCwd(worktreeDir, disabled), {
+      role: null,
+      source: "disabled",
+      matchedPath: mainDir,
+    });
+
+    const unmapped = { mappings: {}, defaultRole: DEFAULT_ROLE, disabledPaths: [] };
+    assert.deepEqual(resolveRoleForCwd(worktreeDir, unmapped), { role: DEFAULT_ROLE, source: "default" });
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+  }
 });
 
 function removeConfigFile(): void {

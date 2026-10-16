@@ -11,6 +11,7 @@ import {
   isRoleDisabledForCwd,
   loadRoleConfig,
   resolveRoleForCwd,
+  resolveRoleScopeDir,
   ROLES_DIR,
   saveRoleConfig,
 } from "../role-store.ts";
@@ -61,6 +62,8 @@ export function registerRoleCommand(rt: Runtime): void {
 
           let info = `## 角色状态\n\n`;
           info += `**当前目录**: ${cwd}\n`;
+          const scopeDir = resolveRoleScopeDir(cwd);
+          if (scopeDir !== cwd) info += `**角色目录**: ${scopeDir}（链接工作树，沿用主仓库的角色）\n`;
           info += `**生效角色**: ${mappedRole || "无"}\n`;
           info += `**来源**: ${resolution.source}${resolution.matchedPath ? ` (${resolution.matchedPath})` : ""}\n`;
           info += `**默认角色**: ${config.defaultRole || DEFAULT_ROLE}\n`;
@@ -127,7 +130,7 @@ export function registerRoleCommand(rt: Runtime): void {
             ? await ctx.ui.confirm("映射", `将当前目录映射到 "${roleName}"?`)
             : true;
           if (shouldMap) {
-            const cwdKey = normalizePath(cwd);
+            const cwdKey = normalizePath(resolveRoleScopeDir(cwd));
             config.mappings[cwdKey] = roleName;
             config.disabledPaths = (config.disabledPaths || []).filter((path) => normalizePath(path) !== cwdKey);
 
@@ -182,7 +185,7 @@ export function registerRoleCommand(rt: Runtime): void {
             return;
           }
 
-          const cwdKey = normalizePath(cwd);
+          const cwdKey = normalizePath(resolveRoleScopeDir(cwd));
           config.mappings[cwdKey] = roleName;
           config.disabledPaths = (config.disabledPaths || []).filter((path) => normalizePath(path) !== cwdKey);
 
@@ -193,7 +196,7 @@ export function registerRoleCommand(rt: Runtime): void {
         }
 
         case "unmap": {
-          const cwdKey = normalizePath(cwd);
+          const cwdKey = normalizePath(resolveRoleScopeDir(cwd));
 
           // 仅移除当前目录的显式映射，不误伤父目录映射
           let removedMapping = false;
