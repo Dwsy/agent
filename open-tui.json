@@ -1,13 +1,18 @@
 {
   "enabled": true,
   "settingsLanguage": "zh",
+  "cursorStyle": "bar",
+  "fullscreen": {
+    "wheelScrollLines": 4
+  },
   "icons": {
     "mode": "nerd"
   },
   "footerSegments": {
     "cwd": true,
+    "sessionName": false,
     "gitBranch": true,
-    "gitStatus": true,
+    "gitStatus": false,
     "gitCommit": false,
     "runtime": false,
     "context": true,

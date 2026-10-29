@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#07111f" />
+  <meta name="description" content="Magic Ruler 3D — 空间折叠益智游戏" />
+  <title>Magic Ruler 3D · 空间折叠实验室</title>
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <div class="aurora aurora-one" aria-hidden="true"></div>
+  <div class="aurora aurora-two" aria-hidden="true"></div>
+  <div class="grain" aria-hidden="true"></div>
+
+  <div class="app-shell">
+    <header class="topbar">
+      <a class="brand" href="./" aria-label="Magic Ruler 3D 首页">
+        <span class="brand-mark">MR</span>
+        <span class="brand-copy">
+          <strong>MAGIC RULER</strong>
+          <small>空间折叠实验室</small>
+        </span>
+      </a>
+      <div class="topbar-meta">
+        <span class="live-dot"></span>
+        <span>ONLINE PUZZLE LAB</span>
+        <button id="reset-progress" class="text-button" type="button">重置进度</button>
+      </div>
+    </header>
+
+    <main class="page-grid">
+      <section class="play-column" aria-label="游戏区域">
+        <div class="eyebrow"><span>01</span> MECHANICAL PUZZLE · 3D</div>
+        <h1>把每一个关节，<br /><em>折进目标形状。</em></h1>
+        <p class="intro">旋转空间中的魔尺，让青色实体与紫色目标轮廓完全重合。拖动舞台查看不同角度，找到每一节正确的折向。</p>
+
+        <section class="stage-card">
+          <div class="stage-topline">
+            <div>
+              <span class="micro-label">CURRENT CHALLENGE</span>
+              <h2><span id="level-number">01</span><span class="slash">/</span> <span id="level-name">初次折叠</span></h2>
+            </div>
+            <div class="legend" aria-label="图例">
+              <span><i class="legend-dot legend-current"></i>你的魔尺</span>
+              <span><i class="legend-dot legend-target"></i>目标轮廓</span>
+            </div>
+          </div>
+
+          <div class="scene-wrap">
+            <canvas id="scene" aria-label="3D 魔尺游戏舞台" tabindex="0"></canvas>
+            <div class="scene-overlay scene-overlay-top">
+              <span id="scene-status" class="status-pill"><i></i>调整中</span>
+              <span class="orbit-hint">拖动旋转 · 滚轮缩放</span>
+            </div>
+            <div class="scene-overlay scene-overlay-bottom">
+              <span id="scene-segment-count">08 SEGMENTS</span>
+              <span class="scene-coordinates">X <b id="coord-x">0.62</b> · Y <b id="coord-y">0.48</b></span>
+            </div>
+            <div id="solve-chip" class="solve-chip" hidden>
+              <span class="solve-check">✓</span>
+              <span>形状已锁定</span>
+            </div>
+          </div>
+
+          <div class="control-dock">
+            <button id="rotate-left" class="control-button" type="button" aria-label="逆时针旋转所选关节">
+              <span class="control-icon">↶</span>
+              <span><small>Q / ←</small><strong>- 90°</strong></span>
+            </button>
+            <div class="joint-readout">
+              <span class="micro-label">SELECTED JOINT</span>
+              <strong id="selected-joint">关节 01</strong>
+              <span id="selected-direction">等待校准</span>
+            </div>
+            <button id="rotate-right" class="control-button control-button-primary" type="button" aria-label="顺时针旋转所选关节">
+              <span><small>E / →</small><strong>+ 90°</strong></span>
+              <span class="control-icon">↷</span>
+            </button>
+          </div>
+        </section>
+
+        <div class="shortcut-bar">
+          <span><kbd>拖动</kbd> 旋转视角</span>
+          <span><kbd>Q</kbd><kbd>E</kbd> 旋转关节</span>
+          <span><kbd>R</kbd> 重置本关</span>
+          <span><kbd>H</kbd> 使用提示</span>
+        </div>
+      </section>
+
+      <aside class="side-column" aria-label="游戏信息">
+        <section class="stats-grid" aria-label="当前统计">
+          <div class="stat-card">
+            <span class="micro-label">MOVES</span>
+            <strong id="move-count">00</strong>
+            <span class="stat-caption">本关步数</span>
+          </div>
+          <div class="stat-card">
+            <span class="micro-label">TIME</span>
+            <strong id="time-count">00:00</strong>
+            <span class="stat-caption">专注时间</span>
+          </div>
+          <div class="stat-card stat-card-wide">
+            <div class="stat-wide-top"><span class="micro-label">JOURNEY SCORE</span><strong id="total-score">0000</strong></div>
+            <div class="progress-track"><span id="journey-progress"></span></div>
+            <span class="stat-caption"><b id="completed-count">0</b> / 9 个关卡已完成</span>
+          </div>
+        </section>
+
+        <section class="info-panel target-panel">
+          <div class="panel-heading">
+            <div>
+              <span class="micro-label">MISSION BRIEF</span>
+              <h3 id="mission-title">校准空间折向</h3>
+            </div>
+            <span id="difficulty-badge" class="difficulty-badge">LEVEL 01</span>
+          </div>
+          <p id="mission-copy">先熟悉关节的四向旋转。紫色虚线是唯一正确的答案。</p>
+          <div class="target-facts">
+            <div><span>关节数量</span><strong id="fact-joints">07</strong></div>
+            <div><span>最佳时间</span><strong id="fact-best">—</strong></div>
+            <div><span>当前匹配</span><strong id="fact-match">0%</strong></div>
+          </div>
+          <button id="hint-button" class="hint-button" type="button"><span>✦</span> 校准一个关节 <small>H</small></button>
+        </section>
+
+        <section class="info-panel levels-panel">
+          <div class="panel-heading levels-heading">
+            <div>
+              <span class="micro-label">THE NINE FOLDS</span>
+              <h3>选择挑战</h3>
+            </div>
+            <span class="level-count">09</span>
+          </div>
+          <div id="level-grid" class="level-grid" aria-label="关卡选择"></div>
+        </section>
+
+        <section class="tip-panel">
+          <span class="tip-icon">i</span>
+          <p><strong>小提示</strong><br />点击实体上的圆环选择关节。每次旋转只改变当前关节，以及它后面的链节。</p>
+        </section>
+      </aside>
+    </main>
+  </div>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <div id="completion-modal" class="modal-backdrop" hidden>
+    <section class="completion-modal" role="dialog" aria-modal="true" aria-labelledby="completion-title">
+      <div class="completion-glow" aria-hidden="true"></div>
+      <span class="completion-kicker">SHAPE LOCKED · LEVEL COMPLETE</span>
+      <div class="completion-icon">✦</div>
+      <h2 id="completion-title">空间折叠完成</h2>
+      <p id="completion-copy">你让每一节都找到了自己的位置。</p>
+      <div class="completion-stats">
+        <div><span>本关得分</span><strong id="round-score">000</strong></div>
+        <div><span>用时</span><strong id="round-time">00:00</strong></div>
+        <div><span>步数</span><strong id="round-moves">00</strong></div>
+      </div>
+      <div class="modal-actions">
+        <button id="stay-button" class="secondary-button" type="button">留在本关</button>
+        <button id="next-button" class="primary-button" type="button">下一关 →</button>
+      </div>
+    </section>
+  </div>
+
+  <script src="./main.js" defer></script>
+</body>
+</html>

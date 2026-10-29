@@ -1,0 +1,512 @@
+{
+  "autocompleteMaxVisible": 20,
+  "compaction": {
+    "enabled": true
+  },
+  "defaultModel": "gpt-5.6-sol",
+  "defaultProvider": "3838",
+  "defaultThinkingLevel": "high",
+  "doubleEscapeAction": "tree",
+  "editorPaddingX": 0,
+  "enableSkillCommands": true,
+  "extensions": [
+    "-extensions/role-persona-old",
+    "+extensions/pi-provider-trace/src/index.ts",
+    "-extensions/custom-footer.ts",
+    "-extensions/continue.ts",
+    "-extensions/pi-interactive-shell",
+    "/Users/dengwenyu/Dev/AI/pi-session-manager/extensions/pi-session-bridge/index.ts",
+    "-extensions/pi-thinking-steps-custom/index.ts",
+    "-extensions/codeisland-pi.ts",
+    "+extensions/goal.ts",
+    "-extensions/token-aware-truncation.ts",
+    "-extensions/session-fork-slim/index.ts",
+    "-extensions/ralph/index.ts",
+    "-extensions/qna.ts",
+    "-extensions/pi-tui-kit/index.ts",
+    "-extensions/pi-theme-studio/extension.ts",
+    "+extensions/pi-insights/src/index.ts",
+    "-extensions/pi-desktop-sdk-compat.ts",
+    "-extensions/pi-desktop-notify-bridge.ts",
+    "-extensions/model-providers/index.ts",
+    "+extensions/loop.ts",
+    "-extensions/handoff.ts",
+    "-extensions/pi-fzf/index.ts",
+    "-extensions/goal/index.ts",
+    "-extensions/pi-xai-oauth/index.ts",
+    "-extensions/ace-tool/index.ts",
+    "-extensions/pi-context/src/index.ts",
+    "-extensions/pi-messenger/index.ts",
+    "-extensions/codex-fast-shared.ts",
+    "-extensions/codex-fast.ts",
+    "-extensions/codebase-memory-mcp/index.ts",
+    "+extensions/token-rate.ts",
+    "-extensions/pi-context/src/context.ts",
+    "/Users/dengwenyu/Dev/AI/pi-session-manager/extensions/resume-x/index.ts",
+    "-extensions/btw.ts",
+    "-extensions/answer.ts",
+    "-extensions/hunk-review/index.ts",
+    "+extensions/herdr-agent-state.ts",
+    "-extensions/dsh-ui-demo.ts",
+    "+extensions/computer-use/index.ts",
+    "-extensions/kilo-pi-provider/kilo.ts"
+  ],
+  "followUpMode": "one-at-a-time",
+  "hideThinkingBlock": false,
+  "httpIdleTimeoutMs": 6000000,
+  "images": {
+    "blockImages": false
+  },
+  "interview": {
+    "theme": {
+      "mode": "auto",
+      "name": "default"
+    },
+    "timeout": 600
+  },
+  "lastChangelogVersion": "0.86.1",
+  "packages": [
+    {
+      "extensions": [
+        "+dist/index.js"
+      ],
+      "source": "npm:@juanibiapina/pi-extension-settings"
+    },
+    {
+      "extensions": [
+        "-dist/index.js"
+      ],
+      "source": "npm:@juanibiapina/pi-files"
+    },
+    {
+      "source": "../../temp/20260723/2/gpi/gptxpi",
+      "extensions": [
+        "+index.ts"
+      ]
+    },
+    "-npm:@marckrenn/pi-sub-core",
+    "-npm:pi-smart-sessions",
+    "-npm:pi-cline-free-models",
+    "-npm:tau-mirror",
+    "-npm:pi-studio",
+    {
+      "extensions": [
+        "-extensions/plan-tracker.ts"
+      ],
+      "skills": [
+        "-skills/brainstorming/SKILL.md",
+        "-skills/dispatching-parallel-agents/SKILL.md",
+        "-skills/executing-plans/SKILL.md",
+        "-skills/finishing-a-development-branch/SKILL.md",
+        "-skills/receiving-code-review/SKILL.md",
+        "-skills/requesting-code-review/SKILL.md",
+        "-skills/subagent-driven-development/SKILL.md",
+        "-skills/systematic-debugging/SKILL.md",
+        "-skills/using-git-worktrees/SKILL.md",
+        "-skills/verification-before-completion/SKILL.md",
+        "-skills/writing-plans/SKILL.md",
+        "-skills/writing-skills/SKILL.md",
+        "-skills/test-driven-development/SKILL.md"
+      ],
+      "source": "git:github.com/coctostan/pi-superpowers"
+    },
+    {
+      "extensions": [
+        "+pi-extension/index.ts"
+      ],
+      "skills": [
+        "+skills/glimpse/SKILL.md"
+      ],
+      "source": "npm:glimpseui"
+    },
+    {
+      "extensions": [
+        "-index.ts"
+      ],
+      "source": "npm:pi-interview"
+    },
+    "-extensions/episodic-memory",
+    {
+      "extensions": [
+        "-index.ts"
+      ],
+      "prompts": [
+        "-examples/prompts/codex-implement-plan.md",
+        "-examples/prompts/codex-review-impl.md",
+        "-examples/prompts/codex-review-plan.md"
+      ],
+      "skills": [
+        "-examples/skills/codex-5-3-prompting/SKILL.md",
+        "-examples/skills/codex-cli/SKILL.md",
+        "-examples/skills/gpt-5-4-prompting/SKILL.md",
+        "-examples/skills/interactive-shell/SKILL.md",
+        "-SKILL.md",
+        "-skills/pi-interactive-shell/SKILL.md"
+      ],
+      "source": "npm:pi-interactive-shell"
+    },
+    {
+      "extensions": [
+        "-index.ts"
+      ],
+      "skills": [
+        "-skills/pi-messenger-crew/SKILL.md"
+      ],
+      "source": "npm:pi-messenger"
+    },
+    "-npm:pi-subagents",
+    {
+      "extensions": [
+        "-extensions/pi-autoresearch/index.ts"
+      ],
+      "skills": [
+        "-skills/autoresearch-finalize/SKILL.md",
+        "-skills/autoresearch-create/SKILL.md",
+        "-skills/autoresearch-hooks/SKILL.md"
+      ],
+      "source": "https://github.com/davebcn87/pi-autoresearch"
+    },
+    "-git:github.com/HazAT/pi-interactive-subagents",
+    "-git:github.com/Michaelliv/pi-generative-ui",
+    {
+      "extensions": [
+        "-src/index.ts"
+      ],
+      "source": "npm:@tintinweb/pi-subagents"
+    },
+    {
+      "extensions": [
+        "-extensions/btw.ts"
+      ],
+      "source": "npm:pi-btw"
+    },
+    {
+      "extensions": [
+        "+index.ts"
+      ],
+      "source": "npm:pi-tool-display"
+    },
+    {
+      "extensions": [
+        "-index.ts"
+      ],
+      "source": "npm:pi-mcp-adapter"
+    },
+    {
+      "extensions": [
+        "+treex.ts"
+      ],
+      "source": "git:github.com/travisp/pi-treex"
+    },
+    "-https://github.com/sodie2323/pi-resource-center",
+    {
+      "extensions": [
+        "-src/index.ts"
+      ],
+      "source": "npm:pi-supervisor"
+    },
+    {
+      "extensions": [
+        "+model-selector-x.ts"
+      ],
+      "source": "pi-model-selector-x/model-selector-x.ts"
+    },
+    "-git:github.com/omerxx/pi-head",
+    {
+      "extensions": [
+        "+src/index.ts"
+      ],
+      "source": "npm:@ff-labs/pi-fff"
+    },
+    "npm:@termdraw/pi",
+    "npm:pi-anycopy",
+    "npm:pi-cache-graph",
+    {
+      "extensions": [
+        "-index.ts"
+      ],
+      "source": "npm:@juicesharp/rpiv-ask-user-question"
+    },
+    {
+      "extensions": [
+        "-extensions/inspect.ts"
+      ],
+      "source": "npm:pi-inspect",
+      "themes": [
+        "-themes/pi-light.json",
+        "-themes/pi-dark.json"
+      ]
+    },
+    {
+      "extensions": [
+        "-review.ts"
+      ],
+      "source": "git:github.com/earendil-works/pi-review"
+    },
+    {
+      "source": "npm:pi-context-prune",
+      "extensions": [
+        "-index.ts"
+      ]
+    },
+    "-npm:pi-goal",
+    {
+      "extensions": [
+        "-src/extension/index.ts",
+        "-index.ts"
+      ],
+      "prompts": [
+        "-prompts/gather-context-and-clarify.md",
+        "-prompts/parallel-cleanup.md",
+        "-prompts/parallel-context-build.md",
+        "-prompts/parallel-handoff-plan.md",
+        "-prompts/parallel-research.md",
+        "-prompts/parallel-review.md",
+        "-prompts/review-loop.md"
+      ],
+      "skills": [
+        "-skills/pi-subagents/SKILL.md"
+      ],
+      "source": "https://github.com/nicobailon/pi-subagents"
+    },
+    {
+      "source": "git:github.com/nicobailon/visual-explainer",
+      "extensions": [
+        "+plugins/visual-explainer/extension.ts"
+      ],
+      "skills": [
+        "+plugins/visual-explainer/SKILL.md"
+      ],
+      "prompts": [
+        "+plugins/visual-explainer/commands/plan-review.md",
+        "+plugins/visual-explainer/commands/generate-web-diagram.md",
+        "+plugins/visual-explainer/commands/generate-visual-plan.md",
+        "+plugins/visual-explainer/commands/generate-slides.md",
+        "+plugins/visual-explainer/commands/fact-check.md",
+        "+plugins/visual-explainer/commands/diff-review.md"
+      ]
+    },
+    {
+      "extensions": [
+        "-extensions/pi-bellwether.ts"
+      ],
+      "skills": [
+        "-skills/pi-bellwether/SKILL.md"
+      ],
+      "source": "git:github.com/joelhooks/pi-bellwether"
+    },
+    {
+      "extensions": [
+        "-src/index.ts"
+      ],
+      "source": "npm:pi-grok-cli"
+    },
+    "-npm:pi-hashline",
+    "-npm:pi-hashline-edit",
+    "npm:pi-tool-stats",
+    "npm:@juicesharp/rpiv-btw",
+    {
+      "extensions": [
+        "-index.ts"
+      ],
+      "source": "npm:@juicesharp/rpiv-todo"
+    },
+    {
+      "source": "npm:pi-context",
+      "skills": [
+        "-skills/context-management/SKILL.md"
+      ]
+    },
+    "npm:@juicesharp/rpiv-i18n",
+    {
+      "extensions": [
+        "-language-learn.ts"
+      ],
+      "source": "npm:pi-language-tutor"
+    },
+    {
+      "extensions": [
+        "-dist/index.js"
+      ],
+      "skills": [
+        "-skills/fabric-advisor/SKILL.md",
+        "-skills/fabric-ambient/SKILL.md",
+        "-skills/fabric-council/SKILL.md",
+        "-skills/fabric-exec/SKILL.md",
+        "-skills/fabric-fusion/SKILL.md",
+        "-skills/fabric-guide/SKILL.md",
+        "-skills/fabric-rlm/SKILL.md",
+        "-skills/fabric-supervisor/SKILL.md",
+        "-skills/fabric-workflow/SKILL.md",
+        "-skills/fabric-swarm/SKILL.md",
+        "-skills/fabric-schema/SKILL.md",
+        "-skills/fabric-spec/SKILL.md"
+      ],
+      "source": "npm:pi-fabric"
+    },
+    {
+      "extensions": [
+        "-src/index.ts"
+      ],
+      "source": "npm:@gotgenes/pi-permission-system"
+    },
+    "git:github.com/otahontas/pi-coding-agent-catppuccin",
+    {
+      "extensions": [
+        "-extensions/open-tui/index.ts"
+      ],
+      "source": "npm:pi-open-tui"
+    },
+    "https://github.com/badlogic/pi-doom.git",
+    "../../Dev/AI/pi-session-manager/extensions/pi-notes"
+  ],
+  "retry": {
+    "enabled": true
+  },
+  "showHardwareCursor": true,
+  "skills": [
+    "-skills/remotion-best-practices/SKILL.md",
+    "-skills/creatorskill/SKILL.md",
+    "-skills/test-skill/SKILL.md",
+    "-skills/tree-view/SKILL.md",
+    "-skills/role-persona/SKILL.md",
+    "-skills/mermaid-flow-image/SKILL.md",
+    "-skills/pluck/SKILL.md",
+    "-skills/pptx/SKILL.md",
+    "-skills/ppocrv5/SKILL.md",
+    "-skills/pdf/SKILL.md",
+    "-skills/xlsx/SKILL.md",
+    "-skills/webapp-testing/SKILL.md",
+    "-skills/web-artifacts-builder/SKILL.md",
+    "-skills/utools-plugin-dev/SKILL.md",
+    "-skills/utools/SKILL.md",
+    "-skills/theme-factory/SKILL.md",
+    "-skills/source-command-enhance/SKILL.md",
+    "-skills/skill-creator/SKILL.md",
+    "-skills/sherpa-onnx-tts/SKILL.md",
+    "-skills/remotion-video/SKILL.md",
+    "-skills/niuma-help/SKILL.md",
+    "-skills/mcp-builder/SKILL.md",
+    "-skills/macos-say/SKILL.md",
+    "-skills/internal-comms/SKILL.md",
+    "-skills/imagemagick-conversion/SKILL.md",
+    "-skills/faster-whisper/SKILL.md",
+    "-skills/docx/SKILL.md",
+    "-skills/doc-coauthoring/SKILL.md",
+    "-skills/design-taste-frontend/SKILL.md",
+    "-skills/deepl/SKILL.md",
+    "-skills/deep-review/SKILL.md",
+    "-skills/data-analysis/SKILL.md",
+    "-skills/acpx/SKILL.md",
+    "-skills/digital-twin/SKILL.md",
+    "-skills/enhanced-markdown/SKILL.md",
+    "-skills/episodic-memory/SKILL.md",
+    "-skills/evolution/SKILL.md",
+    "-skills/jina-reader/SKILL.md",
+    "-skills/macos-osascript/SKILL.md",
+    "-skills/project-planner/SKILL.md",
+    "-skills/ralph-loop-gen/SKILL.md",
+    "-skills/react-best-practices/SKILL.md",
+    "-skills/surge-manager/SKILL.md",
+    "-skills/svg-logo-generator/SKILL.md",
+    "-skills/tmux/SKILL.md",
+    "-skills/algorithmic-art/SKILL.md",
+    "-skills/brand-guidelines/SKILL.md",
+    "-skills/canvas-design/SKILL.md",
+    "-skills/chrome-devtools/SKILL.md",
+    "-skills/goal-prompt-builder/SKILL.md",
+    "-skills/cf-tunnel/SKILL.md",
+    "-skills/codemap/SKILL.md",
+    "-skills/context-management/SKILL.md",
+    "-skills/concept-anatomist/SKILL.md",
+    "-skills/design-patterns-guide/SKILL.md",
+    "-skills/improve-skill/SKILL.md",
+    "-skills/knowledge-base/SKILL.md",
+    "-skills/refactoring-guide/SKILL.md",
+    "-skills/ui-transition-motion/SKILL.md",
+    "-skills/vercel-design/SKILL.md",
+    "-skills/qa/SKILL.md",
+    "-skills/caveman/SKILL.md",
+    "-skills/claude-design/SKILL.md",
+    "-skills/design-an-interface/SKILL.md",
+    "-skills/edit-article/SKILL.md",
+    "+skills/emil-design-eng/SKILL.md",
+    "-skills/frontend-design/SKILL.md",
+    "-skills/frontend-slides/SKILL.md",
+    "+skills/handoff/SKILL.md",
+    "+skills/how-to-code/SKILL.md",
+    "+skills/multi-repo-worktree/SKILL.md",
+    "-skills/tdd/SKILL.md",
+    "-skills/teach/SKILL.md",
+    "+skills/simplify/SKILL.md",
+    "-skills/triage/SKILL.md",
+    "-skills/ubiquitous-language/SKILL.md",
+    "-skills/ast-grep/SKILL.md",
+    "+skills/memory-knowledge-distiller/SKILL.md",
+    "+skills/models-config/SKILL.md",
+    "-skills/output-style-manager/SKILL.md",
+    "-skills/skill-management/SKILL.md",
+    "-skills/system-design/SKILL.md",
+    "-skills/review/SKILL.md",
+    "-skills/grill-for-unknowns/SKILL.md",
+    "-skills/grill-with-docs/SKILL.md",
+    "-skills/loop-me/SKILL.md",
+    "-skills/obsidian-vault/SKILL.md",
+    "-skills/prototype/SKILL.md",
+    "-skills/request-refactor-plan/SKILL.md",
+    "-skills/scaffold-exercises/SKILL.md",
+    "-skills/setup-matt-pocock-skills/SKILL.md",
+    "-skills/to-issues/SKILL.md",
+    "-skills/to-prd/SKILL.md",
+    "-skills/writing-shape/SKILL.md",
+    "-skills/writing-fragments/SKILL.md",
+    "-skills/writing-beats/SKILL.md",
+    "-skills/write-a-skill/SKILL.md",
+    "+skills/mcp-to-skill/SKILL.md",
+    "-skills/sandbox-sdk/SKILL.md",
+    "-skills/agents-sdk/SKILL.md",
+    "-skills/cloudflare/SKILL.md",
+    "-skills/cloudflare-email-service/SKILL.md",
+    "-skills/cloudflare-one/SKILL.md",
+    "-skills/cloudflare-one-migrations/SKILL.md",
+    "-skills/wrangler/SKILL.md",
+    "-skills/web-perf/SKILL.md",
+    "-skills/turnstile-spin/SKILL.md",
+    "-skills/create-colleague/SKILL.md",
+    "+skills/herdr/SKILL.md",
+    "+skills/skills-router/SKILL.md",
+    "-skills/115-server-config/SKILL.md",
+    "-skills/context7/SKILL.md",
+    "-skills/durable-objects/SKILL.md",
+    "-skills/gaokao-question-research/SKILL.md",
+    "-skills/grok-pi-herdr-orchestration/SKILL.md",
+    "-skills/pi-log-analyzer/SKILL.md",
+    "-skills/workers-best-practices/SKILL.md",
+    "-skills/apple-design/SKILL.md",
+    "-skills/cate-theme/SKILL.md",
+    "+skills/diagnose/SKILL.md",
+    "-skills/dyncode-regression/SKILL.md",
+    "-skills/recall/SKILL.md",
+    "-skills/computer-use/SKILL.md"
+  ],
+  "steeringMode": "one-at-a-time",
+  "terminal": {
+    "showTerminalProgress": true
+  },
+  "theme": "dark",
+  "themes": [
+    "+themes/pi-desktop-notion-light.json",
+    "+themes/pi-desktop-catppuccin-dark.json",
+    "+themes/pi-desktop-catppuccin-light.json",
+    "+themes/xcode-dark.json",
+    "+themes/xcode-light.json"
+  ],
+  "transport": "websocket-cached",
+  "fullscreenScrollbar": "auto",
+  "tuiMode": "regular",
+  "markdown": {
+    "mermaid": "streaming"
+  },
+  "defaultProjectTrust": "ask",
+  "fullscreenExitOutput": "resume-hint"
+}

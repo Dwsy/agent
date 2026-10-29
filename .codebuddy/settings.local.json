@@ -1,0 +1,12 @@
+{
+  "enabledMcpjsonServers": [
+    "cloudflare-observability"
+  ],
+  "disabledMcpjsonServers": [
+    "chrome-devtools",
+    "cloudflare",
+    "cloudflare-docs",
+    "cloudflare-bindings",
+    "cloudflare-builds"
+  ]
+}

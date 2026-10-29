@@ -1,0 +1,4917 @@
+{
+  "version": 2,
+  "metricVersion": 3,
+  "actions": [],
+  "quarantined": [],
+  "normalizations": [
+    {
+      "version": 1,
+      "ref": "agents.actorStatus",
+      "baseSchemaDigest": "7717dd85c2e5ff939b47bf9369acc9c59e449e42f2f3bff74058dcd2eea9242d",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "id"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "agents.actors",
+      "baseSchemaDigest": "6afc52232df38df5ba27d5ad411b02106381a778c7cbc5952bbdbd7523ad425c",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "scope"
+        },
+        {
+          "kind": "optional-null",
+          "key": "scope"
+        },
+        {
+          "kind": "enum-form",
+          "key": "scope"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "agents.ask",
+      "baseSchemaDigest": "5048357383154a1bc39ae5a41fce49c8bd9e6def2d854ddfc6ecd652375d5f4e",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "data"
+        },
+        {
+          "kind": "key-form",
+          "key": "id"
+        },
+        {
+          "kind": "key-form",
+          "key": "message"
+        },
+        {
+          "kind": "key-form",
+          "key": "model"
+        },
+        {
+          "kind": "optional-null",
+          "key": "model"
+        },
+        {
+          "kind": "key-form",
+          "key": "thinking"
+        },
+        {
+          "kind": "optional-null",
+          "key": "thinking"
+        },
+        {
+          "kind": "enum-form",
+          "key": "thinking"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "agents.cleanup",
+      "baseSchemaDigest": "7f3a1c3c7cbfa8ba1abddd9bf728f83035f706faa319815af7f78e6dc0ed8392",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "deleteBranch"
+        },
+        {
+          "kind": "optional-null",
+          "key": "deleteBranch"
+        },
+        {
+          "kind": "key-form",
+          "key": "id"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "agents.clearMessages",
+      "baseSchemaDigest": "7717dd85c2e5ff939b47bf9369acc9c59e449e42f2f3bff74058dcd2eea9242d",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "id"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "agents.compact",
+      "baseSchemaDigest": "551ba1825ba8cb1b58400c08e89cafac6420f1e1dddb10ddc14822f94e8a21db",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "id"
+        },
+        {
+          "kind": "key-form",
+          "key": "instructions"
+        },
+        {
+          "kind": "optional-null",
+          "key": "instructions"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "agents.export",
+      "baseSchemaDigest": "ca86bbafab38000939416664144a625f28062423ddc2e098c09a74ba688260da",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "id"
+        },
+        {
+          "kind": "key-form",
+          "key": "overwrite"
+        },
+        {
+          "kind": "optional-null",
+          "key": "overwrite"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "agents.followUp",
+      "baseSchemaDigest": "e4afab74be9656359758e93d50482348d929f6afc336c975ea2b4b0925bf9961",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "data"
+        },
+        {
+          "kind": "key-form",
+          "key": "id"
+        },
+        {
+          "kind": "key-form",
+          "key": "message"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "agents.handoff",
+      "baseSchemaDigest": "d18d534d21ba6440cd2796f94f49fca6b0cbd8916a1f73c48cf37ff65bd4d1e7",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "compact"
+        },
+        {
+          "kind": "optional-null",
+          "key": "compact"
+        },
+        {
+          "kind": "key-form",
+          "key": "extensions"
+        },
+        {
+          "kind": "optional-null",
+          "key": "extensions"
+        },
+        {
+          "kind": "key-form",
+          "key": "kernel"
+        },
+        {
+          "kind": "optional-null",
+          "key": "kernel"
+        },
+        {
+          "kind": "enum-form",
+          "key": "kernel"
+        },
+        {
+          "kind": "key-form",
+          "key": "model"
+        },
+        {
+          "kind": "key-form",
+          "key": "name"
+        },
+        {
+          "kind": "optional-null",
+          "key": "name"
+        },
+        {
+          "kind": "key-form",
+          "key": "recursive"
+        },
+        {
+          "kind": "optional-null",
+          "key": "recursive"
+        },
+        {
+          "kind": "key-form",
+          "key": "schema"
+        },
+        {
+          "kind": "optional-null",
+          "key": "schema"
+        },
+        {
+          "kind": "key-form",
+          "key": "task"
+        },
+        {
+          "kind": "optional-null",
+          "key": "task"
+        },
+        {
+          "kind": "key-form",
+          "key": "thinking"
+        },
+        {
+          "kind": "optional-null",
+          "key": "thinking"
+        },
+        {
+          "kind": "enum-form",
+          "key": "thinking"
+        },
+        {
+          "kind": "key-form",
+          "key": "timeoutMs"
+        },
+        {
+          "kind": "optional-null",
+          "key": "timeoutMs"
+        },
+        {
+          "kind": "numeric-string",
+          "key": "timeoutMs"
+        },
+        {
+          "kind": "key-form",
+          "key": "tools"
+        },
+        {
+          "kind": "optional-null",
+          "key": "tools"
+        },
+        {
+          "kind": "key-form",
+          "key": "transport"
+        },
+        {
+          "kind": "optional-null",
+          "key": "transport"
+        },
+        {
+          "kind": "enum-form",
+          "key": "transport"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "agents.import",
+      "baseSchemaDigest": "be71045355d781eab554f3a0353c9db68df4f14344d2b03ef6a7fb177d486cd6",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "as"
+        },
+        {
+          "kind": "optional-null",
+          "key": "as"
+        },
+        {
+          "kind": "key-form",
+          "key": "id"
+        },
+        {
+          "kind": "optional-null",
+          "key": "id"
+        },
+        {
+          "kind": "key-form",
+          "key": "name"
+        },
+        {
+          "kind": "optional-null",
+          "key": "name"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "agents.join",
+      "baseSchemaDigest": "7717dd85c2e5ff939b47bf9369acc9c59e449e42f2f3bff74058dcd2eea9242d",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "id"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "agents.list",
+      "baseSchemaDigest": "44ff8bdf7ffa89560b98a83f89cb18e2002d82aa52b0e0d1576572ef6478f928",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "scope"
+        },
+        {
+          "kind": "optional-null",
+          "key": "scope"
+        },
+        {
+          "kind": "enum-form",
+          "key": "scope"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "agents.log",
+      "baseSchemaDigest": "7e8ae6507c89251616a981e69a19bb49ce28006950069c54d66bfd532a217666",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "before"
+        },
+        {
+          "kind": "optional-null",
+          "key": "before"
+        },
+        {
+          "kind": "numeric-string",
+          "key": "before"
+        },
+        {
+          "kind": "key-form",
+          "key": "id"
+        },
+        {
+          "kind": "key-form",
+          "key": "lines"
+        },
+        {
+          "kind": "optional-null",
+          "key": "lines"
+        },
+        {
+          "kind": "numeric-string",
+          "key": "lines"
+        },
+        {
+          "kind": "key-form",
+          "key": "runId"
+        },
+        {
+          "kind": "optional-null",
+          "key": "runId"
+        },
+        {
+          "kind": "key-form",
+          "key": "type"
+        },
+        {
+          "kind": "optional-null",
+          "key": "type"
+        },
+        {
+          "kind": "enum-form",
+          "key": "type"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "agents.members",
+      "baseSchemaDigest": "52a4ce118b5010bb3f06541fd49a384f4c96566a7b4882d1859732f8073ba016",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "includeStale"
+        },
+        {
+          "kind": "optional-null",
+          "key": "includeStale"
+        },
+        {
+          "kind": "key-form",
+          "key": "kinds"
+        },
+        {
+          "kind": "optional-null",
+          "key": "kinds"
+        },
+        {
+          "kind": "key-form",
+          "key": "scope"
+        },
+        {
+          "kind": "optional-null",
+          "key": "scope"
+        },
+        {
+          "kind": "enum-form",
+          "key": "scope"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "agents.messages",
+      "baseSchemaDigest": "1d6af265ea01052aa122e8ee83a7bd93d32866efb0e17b8022ea27c8d2847d9a",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "id"
+        },
+        {
+          "kind": "key-form",
+          "key": "limit"
+        },
+        {
+          "kind": "optional-null",
+          "key": "limit"
+        },
+        {
+          "kind": "numeric-string",
+          "key": "limit"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "agents.models",
+      "baseSchemaDigest": "297d67e2c5c62e6d646744c928852bd59f26df8cfc04ccde35dedb79278d35e8",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "refresh"
+        },
+        {
+          "kind": "optional-null",
+          "key": "refresh"
+        },
+        {
+          "kind": "key-form",
+          "key": "runner"
+        },
+        {
+          "kind": "optional-null",
+          "key": "runner"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "agents.remove",
+      "baseSchemaDigest": "5636555487c064e1267dff323a15bd54952aee9ebb13474d332696bb14b1cdfb",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "id"
+        },
+        {
+          "kind": "key-form",
+          "key": "scope"
+        },
+        {
+          "kind": "optional-null",
+          "key": "scope"
+        },
+        {
+          "kind": "enum-form",
+          "key": "scope"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "agents.run",
+      "baseSchemaDigest": "89475bb22291e861056934debbb92f53c6ef46160cbf23c8ba9df8375f3e70c4",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "cwd"
+        },
+        {
+          "kind": "optional-null",
+          "key": "cwd"
+        },
+        {
+          "kind": "key-form",
+          "key": "extensions"
+        },
+        {
+          "kind": "optional-null",
+          "key": "extensions"
+        },
+        {
+          "kind": "key-form",
+          "key": "kernel"
+        },
+        {
+          "kind": "optional-null",
+          "key": "kernel"
+        },
+        {
+          "kind": "enum-form",
+          "key": "kernel"
+        },
+        {
+          "kind": "key-form",
+          "key": "model"
+        },
+        {
+          "kind": "optional-null",
+          "key": "model"
+        },
+        {
+          "kind": "key-form",
+          "key": "name"
+        },
+        {
+          "kind": "optional-null",
+          "key": "name"
+        },
+        {
+          "kind": "key-form",
+          "key": "persistSession"
+        },
+        {
+          "kind": "optional-null",
+          "key": "persistSession"
+        },
+        {
+          "kind": "key-form",
+          "key": "persona"
+        },
+        {
+          "kind": "optional-null",
+          "key": "persona"
+        },
+        {
+          "kind": "key-form",
+          "key": "readOnly"
+        },
+        {
+          "kind": "optional-null",
+          "key": "readOnly"
+        },
+        {
+          "kind": "key-form",
+          "key": "recursive"
+        },
+        {
+          "kind": "optional-null",
+          "key": "recursive"
+        },
+        {
+          "kind": "key-form",
+          "key": "runner"
+        },
+        {
+          "kind": "optional-null",
+          "key": "runner"
+        },
+        {
+          "kind": "key-form",
+          "key": "schema"
+        },
+        {
+          "kind": "optional-null",
+          "key": "schema"
+        },
+        {
+          "kind": "key-form",
+          "key": "scope"
+        },
+        {
+          "kind": "optional-null",
+          "key": "scope"
+        },
+        {
+          "kind": "key-form",
+          "key": "seed"
+        },
+        {
+          "kind": "optional-null",
+          "key": "seed"
+        },
+        {
+          "kind": "enum-form",
+          "key": "seed"
+        },
+        {
+          "kind": "key-form",
+          "key": "seedMessages"
+        },
+        {
+          "kind": "optional-null",
+          "key": "seedMessages"
+        },
+        {
+          "kind": "numeric-string",
+          "key": "seedMessages"
+        },
+        {
+          "kind": "key-form",
+          "key": "shell"
+        },
+        {
+          "kind": "optional-null",
+          "key": "shell"
+        },
+        {
+          "kind": "enum-form",
+          "key": "shell"
+        },
+        {
+          "kind": "key-form",
+          "key": "systemPrompt"
+        },
+        {
+          "kind": "optional-null",
+          "key": "systemPrompt"
+        },
+        {
+          "kind": "key-form",
+          "key": "task"
+        },
+        {
+          "kind": "key-form",
+          "key": "thinking"
+        },
+        {
+          "kind": "optional-null",
+          "key": "thinking"
+        },
+        {
+          "kind": "enum-form",
+          "key": "thinking"
+        },
+        {
+          "kind": "key-form",
+          "key": "thinkingBounds"
+        },
+        {
+          "kind": "optional-null",
+          "key": "thinkingBounds"
+        },
+        {
+          "kind": "key-form",
+          "key": "timeoutMs"
+        },
+        {
+          "kind": "optional-null",
+          "key": "timeoutMs"
+        },
+        {
+          "kind": "numeric-string",
+          "key": "timeoutMs"
+        },
+        {
+          "kind": "key-form",
+          "key": "tools"
+        },
+        {
+          "kind": "optional-null",
+          "key": "tools"
+        },
+        {
+          "kind": "key-form",
+          "key": "transport"
+        },
+        {
+          "kind": "optional-null",
+          "key": "transport"
+        },
+        {
+          "kind": "enum-form",
+          "key": "transport"
+        },
+        {
+          "kind": "key-form",
+          "key": "worktree"
+        },
+        {
+          "kind": "optional-null",
+          "key": "worktree"
+        },
+        {
+          "kind": "key-form",
+          "key": "worktreeSetup"
+        },
+        {
+          "kind": "optional-null",
+          "key": "worktreeSetup"
+        },
+        {
+          "kind": "key-form",
+          "key": "writableRoots"
+        },
+        {
+          "kind": "optional-null",
+          "key": "writableRoots"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "agents.setDeliveryPolicy",
+      "baseSchemaDigest": "3979219c69d25c6110da2289584140a286c16d98d6d138d6621eabf77ef4d5b8",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "delivery"
+        },
+        {
+          "kind": "enum-form",
+          "key": "delivery"
+        },
+        {
+          "kind": "key-form",
+          "key": "id"
+        },
+        {
+          "kind": "key-form",
+          "key": "scope"
+        },
+        {
+          "kind": "optional-null",
+          "key": "scope"
+        },
+        {
+          "kind": "enum-form",
+          "key": "scope"
+        },
+        {
+          "kind": "key-form",
+          "key": "triggerTurn"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "agents.setEvents",
+      "baseSchemaDigest": "843ebd7774fd08fdc721f312b085d16cbd24e50c71a9f21b7c4d5cfe0f140d0f",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "events"
+        },
+        {
+          "kind": "key-form",
+          "key": "id"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "agents.setFollowUpMode",
+      "baseSchemaDigest": "4662325f09c82d4f0dd885bda7d37246e464563a57b01df1b9218d1fea6a0e97",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "id"
+        },
+        {
+          "kind": "key-form",
+          "key": "mode"
+        },
+        {
+          "kind": "enum-form",
+          "key": "mode"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "agents.setInstructions",
+      "baseSchemaDigest": "f0fa3e78c4c690fad70227681983d31d229a693c699211dc6ae0fbd247d5c6d1",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "id"
+        },
+        {
+          "kind": "key-form",
+          "key": "instructions"
+        },
+        {
+          "kind": "key-form",
+          "key": "scope"
+        },
+        {
+          "kind": "optional-null",
+          "key": "scope"
+        },
+        {
+          "kind": "enum-form",
+          "key": "scope"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "agents.setModel",
+      "baseSchemaDigest": "d6b6eb627f7160c70d3665cd796e3b49906cfed489680e00ef0a7ec20831202b",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "id"
+        },
+        {
+          "kind": "key-form",
+          "key": "model"
+        },
+        {
+          "kind": "optional-null",
+          "key": "model"
+        },
+        {
+          "kind": "key-form",
+          "key": "scope"
+        },
+        {
+          "kind": "optional-null",
+          "key": "scope"
+        },
+        {
+          "kind": "enum-form",
+          "key": "scope"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "agents.setSteeringMode",
+      "baseSchemaDigest": "4662325f09c82d4f0dd885bda7d37246e464563a57b01df1b9218d1fea6a0e97",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "id"
+        },
+        {
+          "kind": "key-form",
+          "key": "mode"
+        },
+        {
+          "kind": "enum-form",
+          "key": "mode"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "agents.setThinking",
+      "baseSchemaDigest": "6bf972d7dfe3b5a0a6f8548b30fa6f15d7e7dfe399e73858b795462c50952a9d",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "id"
+        },
+        {
+          "kind": "key-form",
+          "key": "scope"
+        },
+        {
+          "kind": "optional-null",
+          "key": "scope"
+        },
+        {
+          "kind": "enum-form",
+          "key": "scope"
+        },
+        {
+          "kind": "key-form",
+          "key": "thinking"
+        },
+        {
+          "kind": "optional-null",
+          "key": "thinking"
+        },
+        {
+          "kind": "enum-form",
+          "key": "thinking"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "agents.setTools",
+      "baseSchemaDigest": "f8d6e11bd6cb5bd902a60d98353dad3e597a3b23362cc5d73ebefb2afe8163f2",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "id"
+        },
+        {
+          "kind": "key-form",
+          "key": "scope"
+        },
+        {
+          "kind": "optional-null",
+          "key": "scope"
+        },
+        {
+          "kind": "enum-form",
+          "key": "scope"
+        },
+        {
+          "kind": "key-form",
+          "key": "tools"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "agents.spawn",
+      "baseSchemaDigest": "9016a091eb0b90ffaac83f756bf4c01d5b836bb8a6a0fd894257e10b8c76a88d",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "cwd"
+        },
+        {
+          "kind": "optional-null",
+          "key": "cwd"
+        },
+        {
+          "kind": "key-form",
+          "key": "extensions"
+        },
+        {
+          "kind": "optional-null",
+          "key": "extensions"
+        },
+        {
+          "kind": "key-form",
+          "key": "kernel"
+        },
+        {
+          "kind": "optional-null",
+          "key": "kernel"
+        },
+        {
+          "kind": "enum-form",
+          "key": "kernel"
+        },
+        {
+          "kind": "key-form",
+          "key": "model"
+        },
+        {
+          "kind": "optional-null",
+          "key": "model"
+        },
+        {
+          "kind": "key-form",
+          "key": "name"
+        },
+        {
+          "kind": "optional-null",
+          "key": "name"
+        },
+        {
+          "kind": "key-form",
+          "key": "persistSession"
+        },
+        {
+          "kind": "optional-null",
+          "key": "persistSession"
+        },
+        {
+          "kind": "key-form",
+          "key": "persona"
+        },
+        {
+          "kind": "optional-null",
+          "key": "persona"
+        },
+        {
+          "kind": "key-form",
+          "key": "readOnly"
+        },
+        {
+          "kind": "optional-null",
+          "key": "readOnly"
+        },
+        {
+          "kind": "key-form",
+          "key": "recursive"
+        },
+        {
+          "kind": "optional-null",
+          "key": "recursive"
+        },
+        {
+          "kind": "key-form",
+          "key": "residency"
+        },
+        {
+          "kind": "optional-null",
+          "key": "residency"
+        },
+        {
+          "kind": "enum-form",
+          "key": "residency"
+        },
+        {
+          "kind": "key-form",
+          "key": "runner"
+        },
+        {
+          "kind": "optional-null",
+          "key": "runner"
+        },
+        {
+          "kind": "key-form",
+          "key": "schema"
+        },
+        {
+          "kind": "optional-null",
+          "key": "schema"
+        },
+        {
+          "kind": "key-form",
+          "key": "scope"
+        },
+        {
+          "kind": "optional-null",
+          "key": "scope"
+        },
+        {
+          "kind": "key-form",
+          "key": "seed"
+        },
+        {
+          "kind": "optional-null",
+          "key": "seed"
+        },
+        {
+          "kind": "enum-form",
+          "key": "seed"
+        },
+        {
+          "kind": "key-form",
+          "key": "seedMessages"
+        },
+        {
+          "kind": "optional-null",
+          "key": "seedMessages"
+        },
+        {
+          "kind": "numeric-string",
+          "key": "seedMessages"
+        },
+        {
+          "kind": "key-form",
+          "key": "shell"
+        },
+        {
+          "kind": "optional-null",
+          "key": "shell"
+        },
+        {
+          "kind": "enum-form",
+          "key": "shell"
+        },
+        {
+          "kind": "key-form",
+          "key": "systemPrompt"
+        },
+        {
+          "kind": "optional-null",
+          "key": "systemPrompt"
+        },
+        {
+          "kind": "key-form",
+          "key": "task"
+        },
+        {
+          "kind": "key-form",
+          "key": "thinking"
+        },
+        {
+          "kind": "optional-null",
+          "key": "thinking"
+        },
+        {
+          "kind": "enum-form",
+          "key": "thinking"
+        },
+        {
+          "kind": "key-form",
+          "key": "thinkingBounds"
+        },
+        {
+          "kind": "optional-null",
+          "key": "thinkingBounds"
+        },
+        {
+          "kind": "key-form",
+          "key": "timeoutMs"
+        },
+        {
+          "kind": "optional-null",
+          "key": "timeoutMs"
+        },
+        {
+          "kind": "numeric-string",
+          "key": "timeoutMs"
+        },
+        {
+          "kind": "key-form",
+          "key": "tools"
+        },
+        {
+          "kind": "optional-null",
+          "key": "tools"
+        },
+        {
+          "kind": "key-form",
+          "key": "transport"
+        },
+        {
+          "kind": "optional-null",
+          "key": "transport"
+        },
+        {
+          "kind": "enum-form",
+          "key": "transport"
+        },
+        {
+          "kind": "key-form",
+          "key": "worktree"
+        },
+        {
+          "kind": "optional-null",
+          "key": "worktree"
+        },
+        {
+          "kind": "key-form",
+          "key": "worktreeSetup"
+        },
+        {
+          "kind": "optional-null",
+          "key": "worktreeSetup"
+        },
+        {
+          "kind": "key-form",
+          "key": "writableRoots"
+        },
+        {
+          "kind": "optional-null",
+          "key": "writableRoots"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "agents.status",
+      "baseSchemaDigest": "7717dd85c2e5ff939b47bf9369acc9c59e449e42f2f3bff74058dcd2eea9242d",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "id"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "agents.steer",
+      "baseSchemaDigest": "e4afab74be9656359758e93d50482348d929f6afc336c975ea2b4b0925bf9961",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "data"
+        },
+        {
+          "kind": "key-form",
+          "key": "id"
+        },
+        {
+          "kind": "key-form",
+          "key": "message"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "agents.stop",
+      "baseSchemaDigest": "7717dd85c2e5ff939b47bf9369acc9c59e449e42f2f3bff74058dcd2eea9242d",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "id"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "agents.subscribe",
+      "baseSchemaDigest": "3ed4f4a000dcfe2e927075b171d248c2d5e1487ad1d757d8159bc925895fcc8c",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "delivery"
+        },
+        {
+          "kind": "enum-form",
+          "key": "delivery"
+        },
+        {
+          "kind": "key-form",
+          "key": "events"
+        },
+        {
+          "kind": "key-form",
+          "key": "from"
+        },
+        {
+          "kind": "key-form",
+          "key": "once"
+        },
+        {
+          "kind": "optional-null",
+          "key": "once"
+        },
+        {
+          "kind": "key-form",
+          "key": "to"
+        },
+        {
+          "kind": "optional-null",
+          "key": "to"
+        },
+        {
+          "kind": "key-form",
+          "key": "triggerTurn"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "agents.subscriptions",
+      "baseSchemaDigest": "6b94e61df274f117483c206fc44b404be69f43499fb072327edef7b21d0d137d",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "from"
+        },
+        {
+          "kind": "optional-null",
+          "key": "from"
+        },
+        {
+          "kind": "key-form",
+          "key": "to"
+        },
+        {
+          "kind": "optional-null",
+          "key": "to"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "agents.switchModel",
+      "baseSchemaDigest": "0469642625e6f86b4ddd1d193e9f12381222e6e82907f858797106f7eb5b4ef2",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "model"
+        },
+        {
+          "kind": "key-form",
+          "key": "provider"
+        },
+        {
+          "kind": "optional-null",
+          "key": "provider"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "agents.tell",
+      "baseSchemaDigest": "5048357383154a1bc39ae5a41fce49c8bd9e6def2d854ddfc6ecd652375d5f4e",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "data"
+        },
+        {
+          "kind": "key-form",
+          "key": "id"
+        },
+        {
+          "kind": "key-form",
+          "key": "message"
+        },
+        {
+          "kind": "key-form",
+          "key": "model"
+        },
+        {
+          "kind": "optional-null",
+          "key": "model"
+        },
+        {
+          "kind": "key-form",
+          "key": "thinking"
+        },
+        {
+          "kind": "optional-null",
+          "key": "thinking"
+        },
+        {
+          "kind": "enum-form",
+          "key": "thinking"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "agents.unsubscribe",
+      "baseSchemaDigest": "7717dd85c2e5ff939b47bf9369acc9c59e449e42f2f3bff74058dcd2eea9242d",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "id"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "agents.wait",
+      "baseSchemaDigest": "7717dd85c2e5ff939b47bf9369acc9c59e449e42f2f3bff74058dcd2eea9242d",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "id"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "cache.hold",
+      "baseSchemaDigest": "cbeceacb8d6cb7d39b202b215bb85c687baf3cce67778714f0c407ebd735fcf9",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "durationMs"
+        },
+        {
+          "kind": "numeric-string",
+          "key": "durationMs"
+        },
+        {
+          "kind": "key-form",
+          "key": "maxCostUsd"
+        },
+        {
+          "kind": "optional-null",
+          "key": "maxCostUsd"
+        },
+        {
+          "kind": "numeric-string",
+          "key": "maxCostUsd"
+        },
+        {
+          "kind": "key-form",
+          "key": "maxRefreshes"
+        },
+        {
+          "kind": "optional-null",
+          "key": "maxRefreshes"
+        },
+        {
+          "kind": "numeric-string",
+          "key": "maxRefreshes"
+        },
+        {
+          "kind": "key-form",
+          "key": "target"
+        },
+        {
+          "kind": "optional-null",
+          "key": "target"
+        },
+        {
+          "kind": "enum-form",
+          "key": "target"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "cache.lease",
+      "baseSchemaDigest": "cbeceacb8d6cb7d39b202b215bb85c687baf3cce67778714f0c407ebd735fcf9",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "durationMs"
+        },
+        {
+          "kind": "numeric-string",
+          "key": "durationMs"
+        },
+        {
+          "kind": "key-form",
+          "key": "maxCostUsd"
+        },
+        {
+          "kind": "optional-null",
+          "key": "maxCostUsd"
+        },
+        {
+          "kind": "numeric-string",
+          "key": "maxCostUsd"
+        },
+        {
+          "kind": "key-form",
+          "key": "maxRefreshes"
+        },
+        {
+          "kind": "optional-null",
+          "key": "maxRefreshes"
+        },
+        {
+          "kind": "numeric-string",
+          "key": "maxRefreshes"
+        },
+        {
+          "kind": "key-form",
+          "key": "target"
+        },
+        {
+          "kind": "optional-null",
+          "key": "target"
+        },
+        {
+          "kind": "enum-form",
+          "key": "target"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "cache.release",
+      "baseSchemaDigest": "e79226ae1e3807bf3a261c7eb16ec9c3e237dc12c45bd091b28ca093dd044906",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "id"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "cache.status",
+      "baseSchemaDigest": "fdeb5bb807d0e51696643243684e4db4cc81915d545021c8b57540aa641b2232",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "target"
+        },
+        {
+          "kind": "optional-null",
+          "key": "target"
+        },
+        {
+          "kind": "enum-form",
+          "key": "target"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "compact.carry",
+      "baseSchemaDigest": "4c39c9ef4ad2596526055682bd30183d559d5798701320f9082bbfdbac40f330",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "add"
+        },
+        {
+          "kind": "optional-null",
+          "key": "add"
+        },
+        {
+          "kind": "key-form",
+          "key": "clear"
+        },
+        {
+          "kind": "optional-null",
+          "key": "clear"
+        },
+        {
+          "kind": "key-form",
+          "key": "items"
+        },
+        {
+          "kind": "optional-null",
+          "key": "items"
+        },
+        {
+          "kind": "key-form",
+          "key": "remove"
+        },
+        {
+          "kind": "optional-null",
+          "key": "remove"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "compact.request",
+      "baseSchemaDigest": "47e003d3f49b25073678a777b82697716346ac5bda74a3ab7e11fd2cb62cdd72",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "instructions"
+        },
+        {
+          "kind": "optional-null",
+          "key": "instructions"
+        },
+        {
+          "kind": "key-form",
+          "key": "preserve"
+        },
+        {
+          "kind": "optional-null",
+          "key": "preserve"
+        },
+        {
+          "kind": "key-form",
+          "key": "reason"
+        },
+        {
+          "kind": "optional-null",
+          "key": "reason"
+        },
+        {
+          "kind": "key-form",
+          "key": "requestedBy"
+        },
+        {
+          "kind": "optional-null",
+          "key": "requestedBy"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "components.apply",
+      "baseSchemaDigest": "fc1e427bb1a40f3526e0ee43ac7eb207e836cbea5a1896a1f24291788946c410",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "entries"
+        },
+        {
+          "kind": "optional-null",
+          "key": "entries"
+        },
+        {
+          "kind": "key-form",
+          "key": "expectedRevision"
+        },
+        {
+          "kind": "key-form",
+          "key": "remove"
+        },
+        {
+          "kind": "optional-null",
+          "key": "remove"
+        },
+        {
+          "kind": "key-form",
+          "key": "reset"
+        },
+        {
+          "kind": "optional-null",
+          "key": "reset"
+        },
+        {
+          "kind": "key-form",
+          "key": "scope"
+        },
+        {
+          "kind": "optional-null",
+          "key": "scope"
+        },
+        {
+          "kind": "enum-form",
+          "key": "scope"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "components.describe",
+      "baseSchemaDigest": "ddb13b3021025038dbea4c494f3862b9e1919961644d3ced437b0e878265b83d",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "component"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "components.plan",
+      "baseSchemaDigest": "cad6d2f2b228e17931e582fa5f9e41638b31c5c7c88cb1420773fcf946d6d8d4",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "entries"
+        },
+        {
+          "kind": "optional-null",
+          "key": "entries"
+        },
+        {
+          "kind": "key-form",
+          "key": "remove"
+        },
+        {
+          "kind": "optional-null",
+          "key": "remove"
+        },
+        {
+          "kind": "key-form",
+          "key": "reset"
+        },
+        {
+          "kind": "optional-null",
+          "key": "reset"
+        },
+        {
+          "kind": "key-form",
+          "key": "scope"
+        },
+        {
+          "kind": "optional-null",
+          "key": "scope"
+        },
+        {
+          "kind": "enum-form",
+          "key": "scope"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "components.reload",
+      "baseSchemaDigest": "da3e60deb37e974996a373ef60a318267dde932aff6a78514d17b5dd99123d1e",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "id"
+        },
+        {
+          "kind": "optional-null",
+          "key": "id"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "components.status",
+      "baseSchemaDigest": "edf9aab1fda640465c91e2a89ac6059b04e1f643957c3dd8e010e8075b5c5f95",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "id"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "decisions.answer",
+      "baseSchemaDigest": "d34a2fcaab7b65d710111f29510187fe58b4872067032b539cad6948be2efcee",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "id"
+        },
+        {
+          "kind": "key-form",
+          "key": "optionId"
+        },
+        {
+          "kind": "optional-null",
+          "key": "optionId"
+        },
+        {
+          "kind": "key-form",
+          "key": "text"
+        },
+        {
+          "kind": "optional-null",
+          "key": "text"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "decisions.cancel",
+      "baseSchemaDigest": "9ce8ee750f2a313e26744d89a56504f51c1bbe150825f4c8d55f54d73d0fe1ea",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "id"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "decisions.escalate",
+      "baseSchemaDigest": "a5473891c1dc6ecc5825a00019f1f948e9bd5c86a77434f7359a34d43c08c479",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "id"
+        },
+        {
+          "kind": "key-form",
+          "key": "reason"
+        },
+        {
+          "kind": "optional-null",
+          "key": "reason"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "decisions.list",
+      "baseSchemaDigest": "0d3120397cad10122339b33bcb0e039d9819790762288c6dd27ed55984ef3e57",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "holder"
+        },
+        {
+          "kind": "optional-null",
+          "key": "holder"
+        },
+        {
+          "kind": "key-form",
+          "key": "limit"
+        },
+        {
+          "kind": "optional-null",
+          "key": "limit"
+        },
+        {
+          "kind": "numeric-string",
+          "key": "limit"
+        },
+        {
+          "kind": "key-form",
+          "key": "status"
+        },
+        {
+          "kind": "optional-null",
+          "key": "status"
+        },
+        {
+          "kind": "enum-form",
+          "key": "status"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "decisions.raise",
+      "baseSchemaDigest": "d0e74c70a4a0c7d875dea63a45c520028c334853f88fb6155d2b01f55b8dc517",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "body"
+        },
+        {
+          "kind": "optional-null",
+          "key": "body"
+        },
+        {
+          "kind": "key-form",
+          "key": "deadline"
+        },
+        {
+          "kind": "optional-null",
+          "key": "deadline"
+        },
+        {
+          "kind": "numeric-string",
+          "key": "deadline"
+        },
+        {
+          "kind": "key-form",
+          "key": "defaultOptionId"
+        },
+        {
+          "kind": "optional-null",
+          "key": "defaultOptionId"
+        },
+        {
+          "kind": "key-form",
+          "key": "escalation"
+        },
+        {
+          "kind": "optional-null",
+          "key": "escalation"
+        },
+        {
+          "kind": "key-form",
+          "key": "holder"
+        },
+        {
+          "kind": "optional-null",
+          "key": "holder"
+        },
+        {
+          "kind": "key-form",
+          "key": "input"
+        },
+        {
+          "kind": "optional-null",
+          "key": "input"
+        },
+        {
+          "kind": "enum-form",
+          "key": "input"
+        },
+        {
+          "kind": "key-form",
+          "key": "kind"
+        },
+        {
+          "kind": "optional-null",
+          "key": "kind"
+        },
+        {
+          "kind": "enum-form",
+          "key": "kind"
+        },
+        {
+          "kind": "key-form",
+          "key": "onExpire"
+        },
+        {
+          "kind": "optional-null",
+          "key": "onExpire"
+        },
+        {
+          "kind": "enum-form",
+          "key": "onExpire"
+        },
+        {
+          "kind": "key-form",
+          "key": "options"
+        },
+        {
+          "kind": "optional-null",
+          "key": "options"
+        },
+        {
+          "kind": "key-form",
+          "key": "timeoutMs"
+        },
+        {
+          "kind": "optional-null",
+          "key": "timeoutMs"
+        },
+        {
+          "kind": "numeric-string",
+          "key": "timeoutMs"
+        },
+        {
+          "kind": "key-form",
+          "key": "title"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "decisions.wait",
+      "baseSchemaDigest": "9026e20245148285ccccec69c883bc247d76217744dade9da37d3e7d2bcb963c",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "id"
+        },
+        {
+          "kind": "key-form",
+          "key": "timeoutMs"
+        },
+        {
+          "kind": "optional-null",
+          "key": "timeoutMs"
+        },
+        {
+          "kind": "numeric-string",
+          "key": "timeoutMs"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "extensions.visual_explainer",
+      "baseSchemaDigest": "12a72c93fd50df3ad698385c5df6e14fbcdece2d25d437f6056bc18d785ca87c",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "action"
+        },
+        {
+          "kind": "enum-form",
+          "key": "action"
+        },
+        {
+          "kind": "key-form",
+          "key": "audience"
+        },
+        {
+          "kind": "optional-null",
+          "key": "audience"
+        },
+        {
+          "kind": "key-form",
+          "key": "filename"
+        },
+        {
+          "kind": "optional-null",
+          "key": "filename"
+        },
+        {
+          "kind": "key-form",
+          "key": "files"
+        },
+        {
+          "kind": "optional-null",
+          "key": "files"
+        },
+        {
+          "kind": "key-form",
+          "key": "goal"
+        },
+        {
+          "kind": "optional-null",
+          "key": "goal"
+        },
+        {
+          "kind": "key-form",
+          "key": "html"
+        },
+        {
+          "kind": "optional-null",
+          "key": "html"
+        },
+        {
+          "kind": "key-form",
+          "key": "open"
+        },
+        {
+          "kind": "optional-null",
+          "key": "open"
+        },
+        {
+          "kind": "key-form",
+          "key": "preferSubagent"
+        },
+        {
+          "kind": "optional-null",
+          "key": "preferSubagent"
+        },
+        {
+          "kind": "key-form",
+          "key": "spec"
+        },
+        {
+          "kind": "optional-null",
+          "key": "spec"
+        },
+        {
+          "kind": "key-form",
+          "key": "topic"
+        },
+        {
+          "kind": "optional-null",
+          "key": "topic"
+        },
+        {
+          "kind": "key-form",
+          "key": "viewer"
+        },
+        {
+          "kind": "optional-null",
+          "key": "viewer"
+        },
+        {
+          "kind": "enum-form",
+          "key": "viewer"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "jev.advise",
+      "baseSchemaDigest": "b67dd028f5ce0173aea6f0d1a1982474c1cf188b5ebf5fd5673d5516239f5b17",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "eventId"
+        },
+        {
+          "kind": "key-form",
+          "key": "id"
+        },
+        {
+          "kind": "key-form",
+          "key": "message"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "jev.evaluate",
+      "baseSchemaDigest": "cb262d9151b7056cde0d5781e0a6af924eb06595f59e622dbdfb4a74af76ab1e",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "model"
+        },
+        {
+          "kind": "optional-null",
+          "key": "model"
+        },
+        {
+          "kind": "key-form",
+          "key": "questions"
+        },
+        {
+          "kind": "key-form",
+          "key": "state"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "jev.join",
+      "baseSchemaDigest": "e79226ae1e3807bf3a261c7eb16ec9c3e237dc12c45bd091b28ca093dd044906",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "id"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "jev.run",
+      "baseSchemaDigest": "4e58beb6efd1c2420ecbc158aa88e668b493e94d59d735f2fc6f9b0e9572ad2a",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "input"
+        },
+        {
+          "kind": "key-form",
+          "key": "observe"
+        },
+        {
+          "kind": "optional-null",
+          "key": "observe"
+        },
+        {
+          "kind": "key-form",
+          "key": "program"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "jev.spawn",
+      "baseSchemaDigest": "4e58beb6efd1c2420ecbc158aa88e668b493e94d59d735f2fc6f9b0e9572ad2a",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "input"
+        },
+        {
+          "kind": "key-form",
+          "key": "observe"
+        },
+        {
+          "kind": "optional-null",
+          "key": "observe"
+        },
+        {
+          "kind": "key-form",
+          "key": "program"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "jev.status",
+      "baseSchemaDigest": "102c9e7ffedac35bf177db8ed0c4c5c0f689714a2f38b55c66bf6b2198a0b2f5",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "after"
+        },
+        {
+          "kind": "optional-null",
+          "key": "after"
+        },
+        {
+          "kind": "numeric-string",
+          "key": "after"
+        },
+        {
+          "kind": "key-form",
+          "key": "id"
+        },
+        {
+          "kind": "optional-null",
+          "key": "id"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "jev.stop",
+      "baseSchemaDigest": "e79226ae1e3807bf3a261c7eb16ec9c3e237dc12c45bd091b28ca093dd044906",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "id"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "jev.wait",
+      "baseSchemaDigest": "e79226ae1e3807bf3a261c7eb16ec9c3e237dc12c45bd091b28ca093dd044906",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "id"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "mcp.$call",
+      "baseSchemaDigest": "572d24473c6ad7b92d3655cc931982431f1a7d5600e613a8d259fc2176e94150",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "args"
+        },
+        {
+          "kind": "optional-null",
+          "key": "args"
+        },
+        {
+          "kind": "key-form",
+          "key": "server"
+        },
+        {
+          "kind": "key-form",
+          "key": "tool"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "mcp.$register",
+      "baseSchemaDigest": "4eaa6275690ad1cf15d1889ebe36b4929cd99bb918940355385ff9039a9914e1",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "args"
+        },
+        {
+          "kind": "optional-null",
+          "key": "args"
+        },
+        {
+          "kind": "key-form",
+          "key": "baseUrl"
+        },
+        {
+          "kind": "optional-null",
+          "key": "baseUrl"
+        },
+        {
+          "kind": "key-form",
+          "key": "command"
+        },
+        {
+          "kind": "optional-null",
+          "key": "command"
+        },
+        {
+          "kind": "key-form",
+          "key": "cwd"
+        },
+        {
+          "kind": "optional-null",
+          "key": "cwd"
+        },
+        {
+          "kind": "key-form",
+          "key": "description"
+        },
+        {
+          "kind": "optional-null",
+          "key": "description"
+        },
+        {
+          "kind": "key-form",
+          "key": "env"
+        },
+        {
+          "kind": "optional-null",
+          "key": "env"
+        },
+        {
+          "kind": "key-form",
+          "key": "headers"
+        },
+        {
+          "kind": "optional-null",
+          "key": "headers"
+        },
+        {
+          "kind": "key-form",
+          "key": "name"
+        },
+        {
+          "kind": "key-form",
+          "key": "overwrite"
+        },
+        {
+          "kind": "optional-null",
+          "key": "overwrite"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "mcp.node_repl.js",
+      "baseSchemaDigest": "53b190f8fa83aadf2fb59ea2cc3bb624c7c66a3baf7c77d294c611a87213701f",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "code"
+        },
+        {
+          "kind": "key-form",
+          "key": "timeout_ms"
+        },
+        {
+          "kind": "optional-null",
+          "key": "timeout_ms"
+        },
+        {
+          "kind": "numeric-string",
+          "key": "timeout_ms"
+        },
+        {
+          "kind": "key-form",
+          "key": "title"
+        },
+        {
+          "kind": "optional-null",
+          "key": "title"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "mcp.node_repl.js_add_node_module_dir",
+      "baseSchemaDigest": "13c026eade989d3fd2eb14929855e866aee1fd7f16cb09f3f32ac91bc8ee8806",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "path"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "mcp.node_repl.turn_ended",
+      "baseSchemaDigest": "aa9bbc2ac60f9bfdc8e70e0dd451304bde647bcac92f14586eb3fa4fd90ddc0d",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "hook_event_name"
+        },
+        {
+          "kind": "key-form",
+          "key": "session_id"
+        },
+        {
+          "kind": "key-form",
+          "key": "turn_id"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "memory.expand",
+      "baseSchemaDigest": "6f4ec77c36da29e5029a3dd9146c309703a5d33405ae16e89c1df3270d51e4f7",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "after"
+        },
+        {
+          "kind": "optional-null",
+          "key": "after"
+        },
+        {
+          "kind": "numeric-string",
+          "key": "after"
+        },
+        {
+          "kind": "key-form",
+          "key": "before"
+        },
+        {
+          "kind": "optional-null",
+          "key": "before"
+        },
+        {
+          "kind": "numeric-string",
+          "key": "before"
+        },
+        {
+          "kind": "key-form",
+          "key": "branches"
+        },
+        {
+          "kind": "optional-null",
+          "key": "branches"
+        },
+        {
+          "kind": "enum-form",
+          "key": "branches"
+        },
+        {
+          "kind": "key-form",
+          "key": "entryIds"
+        },
+        {
+          "kind": "optional-null",
+          "key": "entryIds"
+        },
+        {
+          "kind": "key-form",
+          "key": "entryOffset"
+        },
+        {
+          "kind": "optional-null",
+          "key": "entryOffset"
+        },
+        {
+          "kind": "numeric-string",
+          "key": "entryOffset"
+        },
+        {
+          "kind": "key-form",
+          "key": "entryRange"
+        },
+        {
+          "kind": "optional-null",
+          "key": "entryRange"
+        },
+        {
+          "kind": "key-form",
+          "key": "expectedLineageFingerprint"
+        },
+        {
+          "kind": "optional-null",
+          "key": "expectedLineageFingerprint"
+        },
+        {
+          "kind": "key-form",
+          "key": "expectedSourceHash"
+        },
+        {
+          "kind": "optional-null",
+          "key": "expectedSourceHash"
+        },
+        {
+          "kind": "key-form",
+          "key": "indices"
+        },
+        {
+          "kind": "optional-null",
+          "key": "indices"
+        },
+        {
+          "kind": "key-form",
+          "key": "maxChars"
+        },
+        {
+          "kind": "optional-null",
+          "key": "maxChars"
+        },
+        {
+          "kind": "numeric-string",
+          "key": "maxChars"
+        },
+        {
+          "kind": "key-form",
+          "key": "maxEntries"
+        },
+        {
+          "kind": "optional-null",
+          "key": "maxEntries"
+        },
+        {
+          "kind": "numeric-string",
+          "key": "maxEntries"
+        },
+        {
+          "kind": "key-form",
+          "key": "operationAddresses"
+        },
+        {
+          "kind": "optional-null",
+          "key": "operationAddresses"
+        },
+        {
+          "kind": "key-form",
+          "key": "session"
+        },
+        {
+          "kind": "key-form",
+          "key": "source"
+        },
+        {
+          "kind": "optional-null",
+          "key": "source"
+        },
+        {
+          "kind": "key-form",
+          "key": "textOffset"
+        },
+        {
+          "kind": "optional-null",
+          "key": "textOffset"
+        },
+        {
+          "kind": "numeric-string",
+          "key": "textOffset"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "memory.recall",
+      "baseSchemaDigest": "557e69ec8eea87655624505cebad23257de9d4be31252f5074257fcc374edb79",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "action"
+        },
+        {
+          "kind": "optional-null",
+          "key": "action"
+        },
+        {
+          "kind": "key-form",
+          "key": "branches"
+        },
+        {
+          "kind": "optional-null",
+          "key": "branches"
+        },
+        {
+          "kind": "enum-form",
+          "key": "branches"
+        },
+        {
+          "kind": "key-form",
+          "key": "entryRange"
+        },
+        {
+          "kind": "optional-null",
+          "key": "entryRange"
+        },
+        {
+          "kind": "key-form",
+          "key": "expectedLineageFingerprint"
+        },
+        {
+          "kind": "optional-null",
+          "key": "expectedLineageFingerprint"
+        },
+        {
+          "kind": "key-form",
+          "key": "expectedSourceHash"
+        },
+        {
+          "kind": "optional-null",
+          "key": "expectedSourceHash"
+        },
+        {
+          "kind": "key-form",
+          "key": "offset"
+        },
+        {
+          "kind": "optional-null",
+          "key": "offset"
+        },
+        {
+          "kind": "numeric-string",
+          "key": "offset"
+        },
+        {
+          "kind": "key-form",
+          "key": "outcome"
+        },
+        {
+          "kind": "optional-null",
+          "key": "outcome"
+        },
+        {
+          "kind": "enum-form",
+          "key": "outcome"
+        },
+        {
+          "kind": "key-form",
+          "key": "pageSize"
+        },
+        {
+          "kind": "optional-null",
+          "key": "pageSize"
+        },
+        {
+          "kind": "numeric-string",
+          "key": "pageSize"
+        },
+        {
+          "kind": "key-form",
+          "key": "provider"
+        },
+        {
+          "kind": "optional-null",
+          "key": "provider"
+        },
+        {
+          "kind": "key-form",
+          "key": "query"
+        },
+        {
+          "kind": "optional-null",
+          "key": "query"
+        },
+        {
+          "kind": "key-form",
+          "key": "queryMatch"
+        },
+        {
+          "kind": "optional-null",
+          "key": "queryMatch"
+        },
+        {
+          "kind": "enum-form",
+          "key": "queryMatch"
+        },
+        {
+          "kind": "key-form",
+          "key": "queryMode"
+        },
+        {
+          "kind": "optional-null",
+          "key": "queryMode"
+        },
+        {
+          "kind": "enum-form",
+          "key": "queryMode"
+        },
+        {
+          "kind": "key-form",
+          "key": "ref"
+        },
+        {
+          "kind": "optional-null",
+          "key": "ref"
+        },
+        {
+          "kind": "key-form",
+          "key": "role"
+        },
+        {
+          "kind": "optional-null",
+          "key": "role"
+        },
+        {
+          "kind": "enum-form",
+          "key": "role"
+        },
+        {
+          "kind": "key-form",
+          "key": "scope"
+        },
+        {
+          "kind": "optional-null",
+          "key": "scope"
+        },
+        {
+          "kind": "key-form",
+          "key": "since"
+        },
+        {
+          "kind": "optional-null",
+          "key": "since"
+        },
+        {
+          "kind": "numeric-string",
+          "key": "since"
+        },
+        {
+          "kind": "key-form",
+          "key": "snippetChars"
+        },
+        {
+          "kind": "optional-null",
+          "key": "snippetChars"
+        },
+        {
+          "kind": "numeric-string",
+          "key": "snippetChars"
+        },
+        {
+          "kind": "key-form",
+          "key": "source"
+        },
+        {
+          "kind": "optional-null",
+          "key": "source"
+        },
+        {
+          "kind": "key-form",
+          "key": "tool"
+        },
+        {
+          "kind": "optional-null",
+          "key": "tool"
+        },
+        {
+          "kind": "key-form",
+          "key": "until"
+        },
+        {
+          "kind": "optional-null",
+          "key": "until"
+        },
+        {
+          "kind": "numeric-string",
+          "key": "until"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "memory.sessions",
+      "baseSchemaDigest": "031f4658403890978c7c9020836b394f8cc46117da4d552645ced7d5e55fc9f3",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "branches"
+        },
+        {
+          "kind": "optional-null",
+          "key": "branches"
+        },
+        {
+          "kind": "enum-form",
+          "key": "branches"
+        },
+        {
+          "kind": "key-form",
+          "key": "limit"
+        },
+        {
+          "kind": "optional-null",
+          "key": "limit"
+        },
+        {
+          "kind": "numeric-string",
+          "key": "limit"
+        },
+        {
+          "kind": "key-form",
+          "key": "scope"
+        },
+        {
+          "kind": "optional-null",
+          "key": "scope"
+        },
+        {
+          "kind": "key-form",
+          "key": "source"
+        },
+        {
+          "kind": "optional-null",
+          "key": "source"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "mesh.delete",
+      "baseSchemaDigest": "328ebf253a5d1a9cc42fe2d21a2d939dfe5c658032d40c98b954634b9bbd0035",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "ifVersion"
+        },
+        {
+          "kind": "optional-null",
+          "key": "ifVersion"
+        },
+        {
+          "kind": "numeric-string",
+          "key": "ifVersion"
+        },
+        {
+          "kind": "key-form",
+          "key": "key"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "mesh.get",
+      "baseSchemaDigest": "673957d8495ab1abc9fe59e5c14179fdb14e45af68f636ff52db653221562195",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "key"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "mesh.grant",
+      "baseSchemaDigest": "f8d354d69931bc571beb03cfcd1b88aa49578e847b15f2f338b1b776a0a7686f",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "kind"
+        },
+        {
+          "kind": "optional-null",
+          "key": "kind"
+        },
+        {
+          "kind": "key-form",
+          "key": "topic"
+        },
+        {
+          "kind": "key-form",
+          "key": "ttlMs"
+        },
+        {
+          "kind": "numeric-string",
+          "key": "ttlMs"
+        },
+        {
+          "kind": "key-form",
+          "key": "uses"
+        },
+        {
+          "kind": "optional-null",
+          "key": "uses"
+        },
+        {
+          "kind": "numeric-string",
+          "key": "uses"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "mesh.list",
+      "baseSchemaDigest": "a5d6443972c9902205a3e565ae87c1b6e8b12e39d50ffa7663017a43d94446dc",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "limit"
+        },
+        {
+          "kind": "optional-null",
+          "key": "limit"
+        },
+        {
+          "kind": "numeric-string",
+          "key": "limit"
+        },
+        {
+          "kind": "key-form",
+          "key": "prefix"
+        },
+        {
+          "kind": "optional-null",
+          "key": "prefix"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "mesh.members",
+      "baseSchemaDigest": "e33999af542c53457f87ffca7fd17f4438eeb7a474ea2b7b15d490cfb4e6a09c",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "includeStale"
+        },
+        {
+          "kind": "optional-null",
+          "key": "includeStale"
+        },
+        {
+          "kind": "key-form",
+          "key": "kinds"
+        },
+        {
+          "kind": "optional-null",
+          "key": "kinds"
+        },
+        {
+          "kind": "key-form",
+          "key": "limit"
+        },
+        {
+          "kind": "optional-null",
+          "key": "limit"
+        },
+        {
+          "kind": "numeric-string",
+          "key": "limit"
+        },
+        {
+          "kind": "key-form",
+          "key": "scope"
+        },
+        {
+          "kind": "optional-null",
+          "key": "scope"
+        },
+        {
+          "kind": "enum-form",
+          "key": "scope"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "mesh.publish",
+      "baseSchemaDigest": "36c7b87b8eea6ce5439a9168bd15b95d7ae455f5b82437545e12e86d9e376f74",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "afterMs"
+        },
+        {
+          "kind": "optional-null",
+          "key": "afterMs"
+        },
+        {
+          "kind": "numeric-string",
+          "key": "afterMs"
+        },
+        {
+          "kind": "key-form",
+          "key": "data"
+        },
+        {
+          "kind": "key-form",
+          "key": "key"
+        },
+        {
+          "kind": "optional-null",
+          "key": "key"
+        },
+        {
+          "kind": "key-form",
+          "key": "kind"
+        },
+        {
+          "kind": "optional-null",
+          "key": "kind"
+        },
+        {
+          "kind": "key-form",
+          "key": "notBefore"
+        },
+        {
+          "kind": "optional-null",
+          "key": "notBefore"
+        },
+        {
+          "kind": "key-form",
+          "key": "text"
+        },
+        {
+          "kind": "optional-null",
+          "key": "text"
+        },
+        {
+          "kind": "key-form",
+          "key": "to"
+        },
+        {
+          "kind": "optional-null",
+          "key": "to"
+        },
+        {
+          "kind": "key-form",
+          "key": "topic"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "mesh.put",
+      "baseSchemaDigest": "52661913fcd62aadb0d98c9463c7dbae731ae5906d1da53a0c4ee08752250c88",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "ifVersion"
+        },
+        {
+          "kind": "optional-null",
+          "key": "ifVersion"
+        },
+        {
+          "kind": "numeric-string",
+          "key": "ifVersion"
+        },
+        {
+          "kind": "key-form",
+          "key": "key"
+        },
+        {
+          "kind": "key-form",
+          "key": "value"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "mesh.read",
+      "baseSchemaDigest": "a64cd884cb5717997dae472d2f01f5b67b108d058003e1f368857a092def978d",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "after"
+        },
+        {
+          "kind": "optional-null",
+          "key": "after"
+        },
+        {
+          "kind": "numeric-string",
+          "key": "after"
+        },
+        {
+          "kind": "key-form",
+          "key": "limit"
+        },
+        {
+          "kind": "optional-null",
+          "key": "limit"
+        },
+        {
+          "kind": "numeric-string",
+          "key": "limit"
+        },
+        {
+          "kind": "key-form",
+          "key": "to"
+        },
+        {
+          "kind": "optional-null",
+          "key": "to"
+        },
+        {
+          "kind": "key-form",
+          "key": "topic"
+        },
+        {
+          "kind": "optional-null",
+          "key": "topic"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "mesh.revoke",
+      "baseSchemaDigest": "1dde6161863a3e63b8aef1e17565e668c9f8051bfef1ccdddffefbb265715b65",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "grantId"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "mesh.scheduled",
+      "baseSchemaDigest": "1448e95768972e107e9ed6681625b168f410998605072eed600431a7da8102cc",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "limit"
+        },
+        {
+          "kind": "optional-null",
+          "key": "limit"
+        },
+        {
+          "kind": "numeric-string",
+          "key": "limit"
+        },
+        {
+          "kind": "key-form",
+          "key": "topic"
+        },
+        {
+          "kind": "optional-null",
+          "key": "topic"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "mesh.unschedule",
+      "baseSchemaDigest": "d5953a9373c3ddba3f86763022d5133f4ab88bfab6ffb82508a448e8d11475a2",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "key"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "native.classify",
+      "baseSchemaDigest": "cbb95e17ca1dc07e2d15fd57064e5bc69107b3ebac1e90d8e0e4ab91aa00ba91",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "context"
+        },
+        {
+          "kind": "key-form",
+          "key": "model"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "native.generateImages",
+      "baseSchemaDigest": "101c39389ea12939af391f567e0cda19ab3d0ec316fff85ed2577eefa3780dab",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "context"
+        },
+        {
+          "kind": "key-form",
+          "key": "model"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "native.getAvailableOfType",
+      "baseSchemaDigest": "26b41a8093740105652951535e4cf06b3e2f8d852e71a9dc768ffebcbbdc99b1",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "provider"
+        },
+        {
+          "kind": "optional-null",
+          "key": "provider"
+        },
+        {
+          "kind": "key-form",
+          "key": "type"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "native.getModelOfType",
+      "baseSchemaDigest": "fca4a28e1e410568bf56671cf39745000356d24cea620345a910eaa56895dbbe",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "id"
+        },
+        {
+          "kind": "key-form",
+          "key": "provider"
+        },
+        {
+          "kind": "key-form",
+          "key": "type"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "native.getModelsOfType",
+      "baseSchemaDigest": "26b41a8093740105652951535e4cf06b3e2f8d852e71a9dc768ffebcbbdc99b1",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "provider"
+        },
+        {
+          "kind": "optional-null",
+          "key": "provider"
+        },
+        {
+          "kind": "key-form",
+          "key": "type"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "native.store",
+      "baseSchemaDigest": "9bd9f9d623924ff02c01bf362027fab484fb1a96fd5f2a9df3699fa95546367e",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "values"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "pi.edit",
+      "baseSchemaDigest": "28aa9979314383af9dbd999b39e39462747ed5c04d6c1d260e3ea859e98654c4",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "all"
+        },
+        {
+          "kind": "optional-null",
+          "key": "all"
+        },
+        {
+          "kind": "key-form",
+          "key": "edits"
+        },
+        {
+          "kind": "key-form",
+          "key": "path"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "pi.find",
+      "baseSchemaDigest": "9d5c13be09b186b1be3b3d875372f9f8f97c4794eb560dfb0089576ca4232ea8",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "limit"
+        },
+        {
+          "kind": "optional-null",
+          "key": "limit"
+        },
+        {
+          "kind": "numeric-string",
+          "key": "limit"
+        },
+        {
+          "kind": "key-form",
+          "key": "path"
+        },
+        {
+          "kind": "optional-null",
+          "key": "path"
+        },
+        {
+          "kind": "key-form",
+          "key": "pattern"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "pi.grep",
+      "baseSchemaDigest": "d96dad0f270e4de1918764036a313269d49c3f76440c60a02602597aba3c8816",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "context"
+        },
+        {
+          "kind": "optional-null",
+          "key": "context"
+        },
+        {
+          "kind": "numeric-string",
+          "key": "context"
+        },
+        {
+          "kind": "key-form",
+          "key": "glob"
+        },
+        {
+          "kind": "optional-null",
+          "key": "glob"
+        },
+        {
+          "kind": "key-form",
+          "key": "ignoreCase"
+        },
+        {
+          "kind": "optional-null",
+          "key": "ignoreCase"
+        },
+        {
+          "kind": "key-form",
+          "key": "limit"
+        },
+        {
+          "kind": "optional-null",
+          "key": "limit"
+        },
+        {
+          "kind": "numeric-string",
+          "key": "limit"
+        },
+        {
+          "kind": "key-form",
+          "key": "literal"
+        },
+        {
+          "kind": "optional-null",
+          "key": "literal"
+        },
+        {
+          "kind": "key-form",
+          "key": "path"
+        },
+        {
+          "kind": "optional-null",
+          "key": "path"
+        },
+        {
+          "kind": "key-form",
+          "key": "pattern"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "pi.ls",
+      "baseSchemaDigest": "46794c8c9e27b73c38b2a2c6f67a8c39a44fbb29f778b7b8df2e219eaa27d8fa",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "limit"
+        },
+        {
+          "kind": "optional-null",
+          "key": "limit"
+        },
+        {
+          "kind": "numeric-string",
+          "key": "limit"
+        },
+        {
+          "kind": "key-form",
+          "key": "path"
+        },
+        {
+          "kind": "optional-null",
+          "key": "path"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "pi.powershell",
+      "baseSchemaDigest": "d41156e01ec9b23a48bcea2d8d35d8d0e2392e68df720b77b5e26c9f067790fd",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "background"
+        },
+        {
+          "kind": "optional-null",
+          "key": "background"
+        },
+        {
+          "kind": "key-form",
+          "key": "command"
+        },
+        {
+          "kind": "key-form",
+          "key": "cwd"
+        },
+        {
+          "kind": "optional-null",
+          "key": "cwd"
+        },
+        {
+          "kind": "key-form",
+          "key": "description"
+        },
+        {
+          "kind": "optional-null",
+          "key": "description"
+        },
+        {
+          "kind": "key-form",
+          "key": "monitor"
+        },
+        {
+          "kind": "optional-null",
+          "key": "monitor"
+        },
+        {
+          "kind": "key-form",
+          "key": "timeout"
+        },
+        {
+          "kind": "optional-null",
+          "key": "timeout"
+        },
+        {
+          "kind": "numeric-string",
+          "key": "timeout"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "pi.read",
+      "baseSchemaDigest": "79feeed73d2e07a87d454fa8fc7d60028fa3d7d6e5029e02a8711c44dbfde27b",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "limit"
+        },
+        {
+          "kind": "optional-null",
+          "key": "limit"
+        },
+        {
+          "kind": "numeric-string",
+          "key": "limit"
+        },
+        {
+          "kind": "key-form",
+          "key": "offset"
+        },
+        {
+          "kind": "optional-null",
+          "key": "offset"
+        },
+        {
+          "kind": "numeric-string",
+          "key": "offset"
+        },
+        {
+          "kind": "key-form",
+          "key": "path"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "pi.write",
+      "baseSchemaDigest": "d51f4f9757c57c74b37bdc3ab7020c500e4ca934e52ce3dc387881f6f1fe9a98",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "content"
+        },
+        {
+          "kind": "key-form",
+          "key": "path"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "programs.get",
+      "baseSchemaDigest": "773ca93961388fde5378976accbff7f8ff6091979041bbe72297c1845926748f",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "ref"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "programs.list",
+      "baseSchemaDigest": "64227b816088e0d2ca07d981897ac29c5b39b46e8c689f7a4d94ae4d22b26105",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "name"
+        },
+        {
+          "kind": "optional-null",
+          "key": "name"
+        },
+        {
+          "kind": "key-form",
+          "key": "status"
+        },
+        {
+          "kind": "optional-null",
+          "key": "status"
+        },
+        {
+          "kind": "enum-form",
+          "key": "status"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "programs.run",
+      "baseSchemaDigest": "9b34043d22cd96f9e37a1b86aaad19b91cd045da907a5e7f6b5ff5006747422f",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "input"
+        },
+        {
+          "kind": "key-form",
+          "key": "ref"
+        },
+        {
+          "kind": "key-form",
+          "key": "requirePromoted"
+        },
+        {
+          "kind": "optional-null",
+          "key": "requirePromoted"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "programs.save",
+      "baseSchemaDigest": "309e119367681720ae08de4d79bf701280d319d4ba632d1575de9d98b3552364",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "code"
+        },
+        {
+          "kind": "optional-null",
+          "key": "code"
+        },
+        {
+          "kind": "key-form",
+          "key": "description"
+        },
+        {
+          "kind": "optional-null",
+          "key": "description"
+        },
+        {
+          "kind": "key-form",
+          "key": "inputSchema"
+        },
+        {
+          "kind": "optional-null",
+          "key": "inputSchema"
+        },
+        {
+          "kind": "key-form",
+          "key": "jevProgram"
+        },
+        {
+          "kind": "optional-null",
+          "key": "jevProgram"
+        },
+        {
+          "kind": "key-form",
+          "key": "kernel"
+        },
+        {
+          "kind": "optional-null",
+          "key": "kernel"
+        },
+        {
+          "kind": "enum-form",
+          "key": "kernel"
+        },
+        {
+          "kind": "key-form",
+          "key": "kind"
+        },
+        {
+          "kind": "optional-null",
+          "key": "kind"
+        },
+        {
+          "kind": "enum-form",
+          "key": "kind"
+        },
+        {
+          "kind": "key-form",
+          "key": "name"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "schema.abort",
+      "baseSchemaDigest": "b113a199a9fb91525b1a0a755dc924064a1a80fbdcb7617b4439767864768589",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "certificate"
+        },
+        {
+          "kind": "optional-null",
+          "key": "certificate"
+        },
+        {
+          "kind": "key-form",
+          "key": "hypothesisId"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "schema.commit",
+      "baseSchemaDigest": "cd5376d4e2f2f7948dc537c176767c0bf65a91bc17b1e1b134608b9a067119a2",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "certificate"
+        },
+        {
+          "kind": "key-form",
+          "key": "hypothesisId"
+        },
+        {
+          "kind": "key-form",
+          "key": "operations"
+        },
+        {
+          "kind": "key-form",
+          "key": "postconditions"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "schema.hypothesize",
+      "baseSchemaDigest": "fce68ecf4b408e1281a373bb87f6aa3941fe8e514818f6ef6958cb6e9bf9258d",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "complexityReduction"
+        },
+        {
+          "kind": "optional-null",
+          "key": "complexityReduction"
+        },
+        {
+          "kind": "key-form",
+          "key": "evidence"
+        },
+        {
+          "kind": "key-form",
+          "key": "label"
+        },
+        {
+          "kind": "key-form",
+          "key": "summary"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "schema.verify",
+      "baseSchemaDigest": "c3fc8ba12f461e259704dd32e317e93cd7db32d75660415863466cc918ba9035",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "hypothesisId"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "sessions.closeInput",
+      "baseSchemaDigest": "85d289b94ffd3c3364c9ae19b013a90607b5d0d090e5be54c7f84976d6cf1de9",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "id"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "sessions.events",
+      "baseSchemaDigest": "3564cf2f3c568e8a3dc4e312e476f380796d588e76281de584dd2ef9f5cd730d",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "after"
+        },
+        {
+          "kind": "optional-null",
+          "key": "after"
+        },
+        {
+          "kind": "numeric-string",
+          "key": "after"
+        },
+        {
+          "kind": "key-form",
+          "key": "id"
+        },
+        {
+          "kind": "key-form",
+          "key": "waitMs"
+        },
+        {
+          "kind": "optional-null",
+          "key": "waitMs"
+        },
+        {
+          "kind": "numeric-string",
+          "key": "waitMs"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "sessions.open",
+      "baseSchemaDigest": "71a13159e1706ac86a88f8be6c1d9cdf143d39cb1a16013f2b037427a3a14010",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "argv"
+        },
+        {
+          "kind": "optional-null",
+          "key": "argv"
+        },
+        {
+          "kind": "key-form",
+          "key": "cmd"
+        },
+        {
+          "kind": "optional-null",
+          "key": "cmd"
+        },
+        {
+          "kind": "key-form",
+          "key": "cwd"
+        },
+        {
+          "kind": "optional-null",
+          "key": "cwd"
+        },
+        {
+          "kind": "key-form",
+          "key": "durable"
+        },
+        {
+          "kind": "optional-null",
+          "key": "durable"
+        },
+        {
+          "kind": "key-form",
+          "key": "label"
+        },
+        {
+          "kind": "optional-null",
+          "key": "label"
+        },
+        {
+          "kind": "key-form",
+          "key": "timeoutMs"
+        },
+        {
+          "kind": "optional-null",
+          "key": "timeoutMs"
+        },
+        {
+          "kind": "numeric-string",
+          "key": "timeoutMs"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "sessions.read",
+      "baseSchemaDigest": "528c04a3f99786acc1541c6fbe1c97e38fb2ee0cb1ce079e88697b88b4a80a20",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "encoding"
+        },
+        {
+          "kind": "optional-null",
+          "key": "encoding"
+        },
+        {
+          "kind": "enum-form",
+          "key": "encoding"
+        },
+        {
+          "kind": "key-form",
+          "key": "id"
+        },
+        {
+          "kind": "key-form",
+          "key": "max"
+        },
+        {
+          "kind": "optional-null",
+          "key": "max"
+        },
+        {
+          "kind": "numeric-string",
+          "key": "max"
+        },
+        {
+          "kind": "key-form",
+          "key": "offset"
+        },
+        {
+          "kind": "optional-null",
+          "key": "offset"
+        },
+        {
+          "kind": "numeric-string",
+          "key": "offset"
+        },
+        {
+          "kind": "key-form",
+          "key": "stream"
+        },
+        {
+          "kind": "optional-null",
+          "key": "stream"
+        },
+        {
+          "kind": "enum-form",
+          "key": "stream"
+        },
+        {
+          "kind": "key-form",
+          "key": "waitMs"
+        },
+        {
+          "kind": "optional-null",
+          "key": "waitMs"
+        },
+        {
+          "kind": "numeric-string",
+          "key": "waitMs"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "sessions.status",
+      "baseSchemaDigest": "85d289b94ffd3c3364c9ae19b013a90607b5d0d090e5be54c7f84976d6cf1de9",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "id"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "sessions.stop",
+      "baseSchemaDigest": "85d289b94ffd3c3364c9ae19b013a90607b5d0d090e5be54c7f84976d6cf1de9",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "id"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "sessions.wait",
+      "baseSchemaDigest": "c4395fc37b75a4272018e6b7812bcb19e25be07df133ac4abaf2102f1059d40e",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "id"
+        },
+        {
+          "kind": "key-form",
+          "key": "timeoutMs"
+        },
+        {
+          "kind": "optional-null",
+          "key": "timeoutMs"
+        },
+        {
+          "kind": "numeric-string",
+          "key": "timeoutMs"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "sessions.write",
+      "baseSchemaDigest": "a9f003300511aba891a696c98b8aa353873b212a13bc8d5cafb2533319f7ed0b",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "id"
+        },
+        {
+          "kind": "key-form",
+          "key": "text"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "state.checkGoal",
+      "baseSchemaDigest": "001d0bf8fcb2d2e4d5ff9cdff64adefd654918f73ff6ef4faea960a7ff3b530a",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "timeoutMs"
+        },
+        {
+          "kind": "optional-null",
+          "key": "timeoutMs"
+        },
+        {
+          "kind": "numeric-string",
+          "key": "timeoutMs"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "state.complexity",
+      "baseSchemaDigest": "4d982abea20181bf199e4939f3530892dae1fd2ac45e035a6a0b8140cb3f585f",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "files"
+        },
+        {
+          "kind": "optional-null",
+          "key": "files"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "state.goal",
+      "baseSchemaDigest": "539c0db915611dad724cd088d42151df7d444a5fbe60c207c930ae0c45ecee08",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "check"
+        },
+        {
+          "kind": "key-form",
+          "key": "description"
+        },
+        {
+          "kind": "optional-null",
+          "key": "description"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "state.history",
+      "baseSchemaDigest": "2f9878021054895f012ad1d2f5f0d8e23faf4db784d8f922f4f4e9485d3c78ea",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "includeArchived"
+        },
+        {
+          "kind": "optional-null",
+          "key": "includeArchived"
+        },
+        {
+          "kind": "key-form",
+          "key": "label"
+        },
+        {
+          "kind": "optional-null",
+          "key": "label"
+        },
+        {
+          "kind": "key-form",
+          "key": "limit"
+        },
+        {
+          "kind": "optional-null",
+          "key": "limit"
+        },
+        {
+          "kind": "numeric-string",
+          "key": "limit"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "state.transition",
+      "baseSchemaDigest": "6883e17f1316e706d145b8d9f69e2486dc514ce66dc74ec620ebe09c21ad9519",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "complexity"
+        },
+        {
+          "kind": "optional-null",
+          "key": "complexity"
+        },
+        {
+          "kind": "key-form",
+          "key": "evidence"
+        },
+        {
+          "kind": "optional-null",
+          "key": "evidence"
+        },
+        {
+          "kind": "key-form",
+          "key": "force"
+        },
+        {
+          "kind": "optional-null",
+          "key": "force"
+        },
+        {
+          "kind": "key-form",
+          "key": "from"
+        },
+        {
+          "kind": "optional-null",
+          "key": "from"
+        },
+        {
+          "kind": "key-form",
+          "key": "kind"
+        },
+        {
+          "kind": "optional-null",
+          "key": "kind"
+        },
+        {
+          "kind": "enum-form",
+          "key": "kind"
+        },
+        {
+          "kind": "key-form",
+          "key": "label"
+        },
+        {
+          "kind": "key-form",
+          "key": "summary"
+        },
+        {
+          "kind": "key-form",
+          "key": "tags"
+        },
+        {
+          "kind": "optional-null",
+          "key": "tags"
+        },
+        {
+          "kind": "key-form",
+          "key": "to"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "state.verify",
+      "baseSchemaDigest": "9d7ed74ca21aefcbb0f7585f4c9f5e661fd0749ec74eae390ae5d2394e9d60c9",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "binding"
+        },
+        {
+          "kind": "optional-null",
+          "key": "binding"
+        },
+        {
+          "kind": "key-form",
+          "key": "includeArchived"
+        },
+        {
+          "kind": "optional-null",
+          "key": "includeArchived"
+        },
+        {
+          "kind": "key-form",
+          "key": "labels"
+        },
+        {
+          "kind": "optional-null",
+          "key": "labels"
+        },
+        {
+          "kind": "key-form",
+          "key": "timeoutMs"
+        },
+        {
+          "kind": "optional-null",
+          "key": "timeoutMs"
+        },
+        {
+          "kind": "numeric-string",
+          "key": "timeoutMs"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "tasks.adopt",
+      "baseSchemaDigest": "12197c1c930b049c71a94c132cadfaa77d473a5233c5c43e593074e8a2b64972",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "description"
+        },
+        {
+          "kind": "optional-null",
+          "key": "description"
+        },
+        {
+          "kind": "key-form",
+          "key": "jobId"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "tasks.get",
+      "baseSchemaDigest": "edf9aab1fda640465c91e2a89ac6059b04e1f643957c3dd8e010e8075b5c5f95",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "id"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "tasks.read",
+      "baseSchemaDigest": "1931ac663844eadfa0430b9fa2372924607e25669cb97976db1c7c919ebc7813",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "encoding"
+        },
+        {
+          "kind": "optional-null",
+          "key": "encoding"
+        },
+        {
+          "kind": "enum-form",
+          "key": "encoding"
+        },
+        {
+          "kind": "key-form",
+          "key": "id"
+        },
+        {
+          "kind": "key-form",
+          "key": "max"
+        },
+        {
+          "kind": "optional-null",
+          "key": "max"
+        },
+        {
+          "kind": "numeric-string",
+          "key": "max"
+        },
+        {
+          "kind": "key-form",
+          "key": "offset"
+        },
+        {
+          "kind": "optional-null",
+          "key": "offset"
+        },
+        {
+          "kind": "numeric-string",
+          "key": "offset"
+        },
+        {
+          "kind": "key-form",
+          "key": "waitMs"
+        },
+        {
+          "kind": "optional-null",
+          "key": "waitMs"
+        },
+        {
+          "kind": "numeric-string",
+          "key": "waitMs"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "tasks.stop",
+      "baseSchemaDigest": "edf9aab1fda640465c91e2a89ac6059b04e1f643957c3dd8e010e8075b5c5f95",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "id"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "tasks.wait",
+      "baseSchemaDigest": "cbd44ad5974d47f0e564827dfb3f87ffb27a64a5f644ab59adb646b21cca1c90",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "id"
+        },
+        {
+          "kind": "key-form",
+          "key": "timeoutMs"
+        },
+        {
+          "kind": "optional-null",
+          "key": "timeoutMs"
+        },
+        {
+          "kind": "numeric-string",
+          "key": "timeoutMs"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "tasks.watch",
+      "baseSchemaDigest": "dfad25186fe672417299b7b852757414b905ecaa5a5deb96200c01b5e352648a",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "after"
+        },
+        {
+          "kind": "optional-null",
+          "key": "after"
+        },
+        {
+          "kind": "numeric-string",
+          "key": "after"
+        },
+        {
+          "kind": "key-form",
+          "key": "id"
+        },
+        {
+          "kind": "key-form",
+          "key": "match"
+        },
+        {
+          "kind": "optional-null",
+          "key": "match"
+        },
+        {
+          "kind": "key-form",
+          "key": "timeoutMs"
+        },
+        {
+          "kind": "optional-null",
+          "key": "timeoutMs"
+        },
+        {
+          "kind": "numeric-string",
+          "key": "timeoutMs"
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "ref": "thinking.set",
+      "baseSchemaDigest": "4fc188035fc9b0cf166006d3285d194b4ccfd62863f7735f920be3eab827aa94",
+      "rules": [
+        {
+          "kind": "key-form",
+          "key": "level"
+        },
+        {
+          "kind": "enum-form",
+          "key": "level"
+        },
+        {
+          "kind": "key-form",
+          "key": "reason"
+        },
+        {
+          "kind": "optional-null",
+          "key": "reason"
+        },
+        {
+          "kind": "key-form",
+          "key": "scope"
+        },
+        {
+          "kind": "optional-null",
+          "key": "scope"
+        },
+        {
+          "kind": "enum-form",
+          "key": "scope"
+        },
+        {
+          "kind": "key-form",
+          "key": "turns"
+        },
+        {
+          "kind": "optional-null",
+          "key": "turns"
+        },
+        {
+          "kind": "numeric-string",
+          "key": "turns"
+        }
+      ]
+    }
+  ],
+  "applied": [
+    {
+      "kind": "normal-form",
+      "ref": "agents.actorStatus",
+      "detail": "1 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "agents.actors",
+      "detail": "3 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "agents.ask",
+      "detail": "8 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "agents.cleanup",
+      "detail": "3 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "agents.clearMessages",
+      "detail": "1 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "agents.compact",
+      "detail": "3 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "agents.export",
+      "detail": "3 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "agents.followUp",
+      "detail": "3 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "agents.handoff",
+      "detail": "27 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "agents.import",
+      "detail": "6 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "agents.join",
+      "detail": "1 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "agents.list",
+      "detail": "3 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "agents.log",
+      "detail": "12 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "agents.members",
+      "detail": "7 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "agents.messages",
+      "detail": "4 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "agents.models",
+      "detail": "4 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "agents.remove",
+      "detail": "4 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "agents.run",
+      "detail": "56 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "agents.setDeliveryPolicy",
+      "detail": "7 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "agents.setEvents",
+      "detail": "2 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "agents.setFollowUpMode",
+      "detail": "3 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "agents.setInstructions",
+      "detail": "5 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "agents.setModel",
+      "detail": "6 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "agents.setSteeringMode",
+      "detail": "3 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "agents.setThinking",
+      "detail": "7 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "agents.setTools",
+      "detail": "5 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "agents.spawn",
+      "detail": "59 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "agents.status",
+      "detail": "1 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "agents.steer",
+      "detail": "3 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "agents.stop",
+      "detail": "1 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "agents.subscribe",
+      "detail": "9 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "agents.subscriptions",
+      "detail": "4 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "agents.switchModel",
+      "detail": "3 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "agents.tell",
+      "detail": "8 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "agents.unsubscribe",
+      "detail": "1 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "agents.wait",
+      "detail": "1 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "cache.hold",
+      "detail": "11 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "cache.lease",
+      "detail": "11 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "cache.release",
+      "detail": "1 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "cache.status",
+      "detail": "3 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "compact.carry",
+      "detail": "8 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "compact.request",
+      "detail": "8 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "components.apply",
+      "detail": "10 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "components.describe",
+      "detail": "1 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "components.plan",
+      "detail": "9 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "components.reload",
+      "detail": "2 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "components.status",
+      "detail": "1 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "decisions.answer",
+      "detail": "5 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "decisions.cancel",
+      "detail": "1 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "decisions.escalate",
+      "detail": "3 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "decisions.list",
+      "detail": "8 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "decisions.raise",
+      "detail": "26 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "decisions.wait",
+      "detail": "4 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "extensions.visual_explainer",
+      "detail": "23 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "jev.advise",
+      "detail": "3 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "jev.evaluate",
+      "detail": "4 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "jev.join",
+      "detail": "1 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "jev.run",
+      "detail": "4 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "jev.spawn",
+      "detail": "4 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "jev.status",
+      "detail": "5 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "jev.stop",
+      "detail": "1 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "jev.wait",
+      "detail": "1 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "mcp.$call",
+      "detail": "4 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "mcp.$register",
+      "detail": "17 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "mcp.node_repl.js",
+      "detail": "6 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "mcp.node_repl.js_add_node_module_dir",
+      "detail": "1 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "mcp.node_repl.turn_ended",
+      "detail": "3 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "memory.expand",
+      "detail": "36 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "memory.recall",
+      "detail": "50 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "memory.sessions",
+      "detail": "10 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "mesh.delete",
+      "detail": "4 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "mesh.get",
+      "detail": "1 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "mesh.grant",
+      "detail": "8 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "mesh.list",
+      "detail": "5 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "mesh.members",
+      "detail": "10 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "mesh.publish",
+      "detail": "15 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "mesh.put",
+      "detail": "5 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "mesh.read",
+      "detail": "10 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "mesh.revoke",
+      "detail": "1 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "mesh.scheduled",
+      "detail": "5 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "mesh.unschedule",
+      "detail": "1 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "native.classify",
+      "detail": "2 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "native.generateImages",
+      "detail": "2 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "native.getAvailableOfType",
+      "detail": "3 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "native.getModelOfType",
+      "detail": "3 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "native.getModelsOfType",
+      "detail": "3 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "native.store",
+      "detail": "1 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "pi.edit",
+      "detail": "4 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "pi.find",
+      "detail": "6 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "pi.grep",
+      "detail": "15 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "pi.ls",
+      "detail": "5 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "pi.powershell",
+      "detail": "12 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "pi.read",
+      "detail": "7 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "pi.write",
+      "detail": "2 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "programs.get",
+      "detail": "1 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "programs.list",
+      "detail": "5 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "programs.run",
+      "detail": "4 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "programs.save",
+      "detail": "15 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "schema.abort",
+      "detail": "3 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "schema.commit",
+      "detail": "4 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "schema.hypothesize",
+      "detail": "5 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "schema.verify",
+      "detail": "1 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "sessions.closeInput",
+      "detail": "1 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "sessions.events",
+      "detail": "7 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "sessions.open",
+      "detail": "13 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "sessions.read",
+      "detail": "16 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "sessions.status",
+      "detail": "1 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "sessions.stop",
+      "detail": "1 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "sessions.wait",
+      "detail": "4 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "sessions.write",
+      "detail": "2 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "state.checkGoal",
+      "detail": "3 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "state.complexity",
+      "detail": "2 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "state.goal",
+      "detail": "3 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "state.history",
+      "detail": "7 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "state.transition",
+      "detail": "16 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "state.verify",
+      "detail": "9 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "tasks.adopt",
+      "detail": "3 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "tasks.get",
+      "detail": "1 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "tasks.read",
+      "detail": "13 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "tasks.stop",
+      "detail": "1 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "tasks.wait",
+      "detail": "4 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "tasks.watch",
+      "detail": "9 proven rules"
+    },
+    {
+      "kind": "normal-form",
+      "ref": "thinking.set",
+      "detail": "10 proven rules"
+    }
+  ],
+  "gate": {
+    "passed": true,
+    "beforeScore": 0,
+    "afterScore": 0,
+    "reasons": []
+  },
+  "evidenceDigest": "0fe3bd86703ae765201abff59d8fc5c5a9c6384a1b05b287ee116882cd4c08f7"
+}

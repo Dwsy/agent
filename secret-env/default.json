@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "env": {},
+  "secrets": {
+    "TAVILY_API_KEY": {
+      "source": "macos-keychain",
+      "service": "pi-secret-request",
+      "account": "TAVILY_API_KEY"
+    }
+  }
+}
