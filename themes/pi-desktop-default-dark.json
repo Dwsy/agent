@@ -97,11 +97,5 @@
     "thinkingHigh": "thinkingHigh",
     "thinkingXhigh": "thinkingXhigh",
     "bashMode": "bashMode"
-  },
-  "piDesktop": {
-    "source": "pi-desktop-theme-v1",
-    "variant": "dark",
-    "contrast": 50,
-    "codeThemeId": "vscode-plus"
   }
 }
