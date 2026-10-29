@@ -26,10 +26,8 @@ export class Navbar extends LitElement {
       z-index: 1000;
       width: 100%;
       padding: 0.75rem 1.5rem;
-      background: rgba(9, 9, 11, 0.72);
-      backdrop-filter: blur(18px) saturate(140%);
-      -webkit-backdrop-filter: blur(18px) saturate(140%);
-      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+      background: #09090b;
+      border-bottom: 1px solid #27272a;
     }
 
     .nav {
@@ -156,14 +154,9 @@ export class Navbar extends LitElement {
       transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
     }
 
-    .cta:hover {
-      transform: translateY(-1px);
-      box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
-    }
+    .cta:hover { background: #34d399; }
 
-    .cta:active {
-      transform: translateY(0) scale(0.98);
-    }
+    .cta:active { background: #059669; }
 
     /* Mobile Menu */
     .burger {
@@ -181,14 +174,12 @@ export class Navbar extends LitElement {
       top: calc(100% + 0.75rem);
       left: 0;
       right: 0;
-      background: rgba(24, 24, 27, 0.95);
-      backdrop-filter: blur(20px);
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      border-radius: 1rem;
+      background: #111113;
+      border: 1px solid #27272a;
+      border-radius: 0.5rem;
       padding: 0.75rem;
       flex-direction: column;
       gap: 0.25rem;
-      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
     }
 
     .mobile[open] {
@@ -225,7 +216,7 @@ export class Navbar extends LitElement {
 
     /* Responsive */
     @media (prefers-color-scheme: light) {
-      :host { background: rgba(255,255,255,0.9); border-bottom-color: #e4e4e7; }
+      :host { background: #ffffff; border-bottom-color: #e4e4e7; }
       .nav { background: transparent; border-color: transparent; box-shadow: none; }
       :host([scrolled]) .nav { background: transparent; border-color: transparent; box-shadow: none; }
       .logo-text { color: #18181b; }

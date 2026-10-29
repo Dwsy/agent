@@ -10,9 +10,6 @@ import "./components/ExtendAndProveScene";
 import "./components/CTASection";
 import "./components/Footer";
 
-// Background
-import "./components/CanvasBackground";
-
 @customElement("pi-app")
 export class App extends LitElement {
   
@@ -22,7 +19,6 @@ export class App extends LitElement {
 
   render() {
     return html`
-      <canvas-background></canvas-background>
       <pi-navbar></pi-navbar>
       <main id="main-content" style="position: relative; z-index: 1;">
         <hero-section></hero-section>
