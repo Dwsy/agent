@@ -46,6 +46,7 @@ export async function activateRole(rt: Runtime, roleName: string, rolePath: stri
   state.autoMemoryLastMessages = null;
   state.rolePromptSnapshot = null;
   state.memoryPromptSnapshot = null;
+  state.memoryPromptConfigKey = null;
   stopMemoryCheckpointSpinner(rt);
 
   ensureRoleMemoryFiles(rolePath, roleName);
@@ -123,7 +124,7 @@ export async function activateRole(rt: Runtime, roleName: string, rolePath: stri
     const identity = getRoleIdentity(rolePath);
     const displayName = identity?.name || roleName;
 
-    ctx.ui.setStatus("role", displayName);
+    ctx.ui.setStatus("role", ctx.ui.theme.fg("dim", displayName));
     ctx.ui.setStatus("memory-checkpoint", undefined);
   }
 }

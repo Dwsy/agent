@@ -22,9 +22,21 @@ mock.module("@earendil-works/pi-tui", () => ({
 }));
 
 const { addRoleEvent, ensureRoleMemoryFiles } = await import("../memory-md.ts");
+const { reloadConfig } = await import("../config.ts");
 const { buildMemoryPrompt } = await import("./injection.ts");
 
 const ROLE = "injection-test";
+
+function createRuntime(rolePath: string) {
+  return {
+    state: {
+      currentRole: ROLE,
+      currentRolePath: rolePath,
+      memoryPromptSnapshot: null,
+      memoryPromptConfigKey: null,
+    },
+  } as any;
+}
 
 test("session memory snapshot does not change after role memory is written", () => {
   const rolePath = mkdtempSync(join(tmpdir(), "rp-injection-"));
@@ -47,6 +59,65 @@ test("session memory snapshot does not change after role memory is written", () 
     assert.equal(second, first);
     assert.ok(!second.includes("Background"));
   } finally {
+    rmSync(rolePath, { recursive: true, force: true });
+  }
+});
+
+test("master switch off injects no memory at all", () => {
+  const rolePath = mkdtempSync(join(tmpdir(), "rp-injection-off-"));
+  process.env.ROLE_MEMORY_INJECTION = "0";
+  try {
+    ensureRoleMemoryFiles(rolePath, ROLE);
+    addRoleEvent(rolePath, ROLE, "must not reach the prompt", { title: "Hidden", appendDaily: true });
+    reloadConfig();
+
+    assert.equal(buildMemoryPrompt(createRuntime(rolePath)), "");
+  } finally {
+    delete process.env.ROLE_MEMORY_INJECTION;
+    reloadConfig();
+    rmSync(rolePath, { recursive: true, force: true });
+  }
+});
+
+test("longTerm switch off drops consolidated memory while daily injection stays independent", () => {
+  const rolePath = mkdtempSync(join(tmpdir(), "rp-injection-longterm-"));
+  process.env.ROLE_LONGTERM_INJECTION = "0";
+  process.env.ROLE_DAILY_INJECTION = "1";
+  try {
+    ensureRoleMemoryFiles(rolePath, ROLE);
+    addRoleEvent(rolePath, ROLE, "consolidated entry", { title: "ConsolidatedOnly", appendDaily: true });
+    reloadConfig();
+
+    const prompt = buildMemoryPrompt(createRuntime(rolePath));
+
+    assert.ok(!prompt.includes("Long-Term Memory"));
+    assert.ok(!prompt.includes("[id:"));
+    assert.ok(prompt.includes("Daily"));
+  } finally {
+    delete process.env.ROLE_LONGTERM_INJECTION;
+    delete process.env.ROLE_DAILY_INJECTION;
+    reloadConfig();
+    rmSync(rolePath, { recursive: true, force: true });
+  }
+});
+
+test("turning injection off mid-session drops the frozen snapshot", () => {
+  const rolePath = mkdtempSync(join(tmpdir(), "rp-injection-toggle-"));
+  try {
+    ensureRoleMemoryFiles(rolePath, ROLE);
+    addRoleEvent(rolePath, ROLE, "visible while enabled", { title: "Visible", appendDaily: false });
+    reloadConfig();
+
+    const rt = createRuntime(rolePath);
+    assert.ok(buildMemoryPrompt(rt).includes("## Your Memory"));
+
+    process.env.ROLE_MEMORY_INJECTION = "0";
+    reloadConfig();
+
+    assert.equal(buildMemoryPrompt(rt), "");
+  } finally {
+    delete process.env.ROLE_MEMORY_INJECTION;
+    reloadConfig();
     rmSync(rolePath, { recursive: true, force: true });
   }
 });

@@ -32,7 +32,7 @@ function createHandoff(rt: Runtime): CompactionMemoryHandoff {
   return {
     createInstructions(_ctx: ExtensionContext): string | undefined {
       const { currentRole, currentRolePath } = rt.state;
-      if (!config.autoMemory.enabled || !currentRole || !currentRolePath) return;
+      if (!currentRole || !currentRolePath) return;
 
       const memory = readRoleMemory(currentRolePath, currentRole);
       const editableMemory = [

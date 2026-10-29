@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Fixed (记忆注入开关关不掉)
+- **根因**：`buildMemoryPrompt` 无条件调用 `readLongTermMemoryBlock` / `buildPendingReviewBlock`，长期记忆（consolidated 的 learnings/preferences/events）与 pending 候选**没有任何开关**。控制中心「记忆注入与搜索」分区只有 `memory.dailyInjection.enabled` 与 `memory.onDemandSearch.enabled`，两项默认均为 `false`——关掉它们之后 `## Your Memory` 仍原封不动出现，因为它们本来就没控制长期记忆
+- **新增 `memory.injection.enabled`（总开关）与 `memory.injection.longTerm`（默认均 `true`，保持既有行为）**：总开关关闭时 `buildMemoryPrompt` 返回空串、首条消息按需召回也短路；`longTerm` 单独关闭时只移除长期记忆 + pending 块，daily 注入不受影响。环境变量 `ROLE_MEMORY_INJECTION` / `ROLE_LONGTERM_INJECTION` 可覆盖
+- **会话内切换即时生效**：`memoryPromptSnapshot` 此前整会话冻结，会中改配置不重建。现记录生成快照时的开关指纹 `memoryPromptConfigKey`，指纹变化即重建；记忆内容本身的冻结语义不变（后台写入仍不改本会话快照）
+- `/role` 控制中心：分区顶部新增两个开关，状态页与「查看当前实际注入内容」按开关显式标注长期记忆是「已关闭」还是「(none)」，避免把「关了但没关」当成「没有记忆」
+- 测试：`runtime/injection.test.ts` 新增 3 例——总开关关闭零注入、longTerm 关闭但 daily 仍注入、会话中途关闭立即丢弃旧快照；134 tests 全绿
+
+### Added (`corePrompt.injectConstraints` 配置，默认不注入硬约束)
+- **`core/constraints.md` 默认不再进入系统提示词**：硬约束是侵入性最强的一段人格内容，却对每次请求常驻。新增顶层配置 `corePrompt.injectConstraints`，默认 `false`——文件照旧创建、迁移、可通过 viewer 与 `/role` 控制中心读改，只是不拼进 `loadRolePrompts` 的返回结果
+- 优先级与其余配置一致：`ROLE_INJECT_CONSTRAINTS` 环境变量 > `pi-role-persona.jsonc` > 默认值 `false`
+- `/role` 控制中心新增「核心提示」配置分区；状态页与「查看当前实际注入内容」都会显式标注 `constraints.md` 是否被注入，避免看到文件存在却以为已注入
+- 测试：`loadRolePrompts` 用例改为按开关断言分区数量与顺序，新增「仅在开关开启时包含 constraints.md」回归用例，131 tests 全绿
+
 ### Changed (工具重构为渐进式两工具，降低常驻 token)
 - **`memory`(20 action) / `knowledge`(4 action) / `role_info` 三工具合并为 `role_search` + `role_exec`**：工具 schema 从三份长描述 + 大参数枚举缩到「search 三参数、exec 两参数」，每轮请求的常驻工具定义 token 大幅下降；详细操作目录与参数规范不再常驻，`role_exec({ op: "help" })` 按需加载（`args.topic: "edit_spec"` 返回直接编辑文件的格式规范）
 - **`role_search`**：唯一检索入口，覆盖记忆全层（向量可用时混合检索，保留 auto-reinforce / pending auto-promote）+ 知识库（`scope: all|memory|knowledge`），结果统一带 `[id:...]`

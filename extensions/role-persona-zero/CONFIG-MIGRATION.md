@@ -12,6 +12,10 @@
 
 ```jsonc
 {
+  "corePrompt": {
+    "injectConstraints": false
+  },
+
   "autoMemory": {
     "enabled": true,
     "model": "openai-codex/gpt-5.1-codex-mini",
@@ -92,6 +96,7 @@
 | `ROLE_VECTOR_API_KEY` | vectorMemory.apiKey |
 | `ROLE_EXTERNAL_READONLY` | externalReadonly.enabled |
 | `ROLE_EXTERNAL_BASE_URL` | externalReadonly.baseUrl |
+| `ROLE_INJECT_CONSTRAINTS` | corePrompt.injectConstraints |
 
 ## 示例
 

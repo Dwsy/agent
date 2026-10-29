@@ -35,22 +35,36 @@ Protocol:
 
 export function buildMemoryPrompt(rt: Runtime): string {
   const { state } = rt;
-  if (state.memoryPromptSnapshot !== null) return state.memoryPromptSnapshot;
+  // A frozen snapshot must never outlive the switches that produced it:
+  // toggling injection off mid-session has to take effect on the next turn.
+  const configKey = memoryInjectionConfigKey();
+  if (state.memoryPromptSnapshot !== null && state.memoryPromptConfigKey === configKey) {
+    return state.memoryPromptSnapshot;
+  }
+  state.memoryPromptConfigKey = configKey;
+
+  const injection = config.memory.injection;
+  if (!injection.enabled) {
+    state.memoryPromptSnapshot = "";
+    return "";
+  }
 
   const currentRolePath = state.currentRolePath!;
   const currentRole = state.currentRole!;
   const memoryBlocks: string[] = [];
 
-  const longTerm = readLongTermMemoryBlock(currentRolePath, currentRole);
-  if (longTerm) memoryBlocks.push(longTerm);
+  if (injection.longTerm) {
+    const longTerm = readLongTermMemoryBlock(currentRolePath, currentRole);
+    if (longTerm) memoryBlocks.push(longTerm);
+
+    const pendingReview = buildPendingReviewBlock(currentRolePath);
+    if (pendingReview) memoryBlocks.push(pendingReview);
+  }
 
   if (config.memory.dailyInjection.enabled) {
     const dailyBlocks = readDailyMemoryBlocks(currentRolePath);
     if (dailyBlocks.length > 0) memoryBlocks.push(...dailyBlocks);
   }
-
-  const pendingReview = buildPendingReviewBlock(currentRolePath);
-  if (pendingReview) memoryBlocks.push(pendingReview);
 
   state.memoryPromptSnapshot = memoryBlocks.length === 0
     ? ""
@@ -58,8 +72,18 @@ export function buildMemoryPrompt(rt: Runtime): string {
   return state.memoryPromptSnapshot;
 }
 
+/**
+ * Fingerprint of every switch that shapes the memory snapshot.
+ * Kept as a plain string so a config change invalidates the snapshot cheaply.
+ */
+function memoryInjectionConfigKey(): string {
+  const { injection, dailyInjection, dailySummary } = config.memory;
+  return [injection.enabled, injection.longTerm, dailyInjection.enabled, dailySummary.enabled, dailySummary.recentDays].join("|");
+}
+
 function buildOnDemandRecallPrompt(rt: Runtime, event: any): string {
   const { state } = rt;
+  if (!config.memory.injection.enabled) return "";
   if (!config.memory.onDemandSearch.enabled || !state.isFirstUserMessage) return "";
   state.isFirstUserMessage = false;
 

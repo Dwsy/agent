@@ -3,7 +3,7 @@ import { Key, Markdown, matchesKey, truncateToWidth, visibleWidth } from "@earen
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 
-import { config, saveConfigPatch, type DeepPartial, type RolePersonaConfig } from "./config.ts";
+import { config, DEFAULT_CONFIG, saveConfigPatch, type DeepPartial, type RolePersonaConfig } from "./config.ts";
 import {
   getPendingMemories,
   loadHighPriorityMemories,
@@ -42,6 +42,7 @@ interface ConfigField {
 
 interface ConfigSection {
   label: string;
+  description: string;
   fields: ConfigField[];
 }
 
@@ -72,7 +73,15 @@ export interface RoleControlCenterOptions {
 
 const CONFIG_SECTIONS: ConfigSection[] = [
   {
+    label: "核心提示",
+    description: "core/*.md 进入系统提示词的范围",
+    fields: [
+      { label: "注入 constraints.md", path: "corePrompt.injectConstraints", kind: "boolean", description: "默认关闭，硬约束按需开启" },
+    ],
+  },
+  {
     label: "自动记忆",
+    description: "会话后自动提取 learnings / preferences / events",
     fields: [
       { label: "启用自动记忆", path: "autoMemory.enabled", kind: "boolean" },
       { label: "提取模型", path: "autoMemory.model", kind: "json-or-text", description: "单个 provider/model 或 JSON 数组" },
@@ -88,12 +97,15 @@ const CONFIG_SECTIONS: ConfigSection[] = [
   },
   {
     label: "记忆注入与搜索",
+    description: "系统提示记忆注入与首条消息上下文召回",
     fields: [
+      { label: "启用记忆注入（总开关）", path: "memory.injection.enabled", kind: "boolean", description: "关闭后系统提示不再注入任何记忆内容（长期/daily/pending/按需召回）" },
+      { label: "注入长期记忆", path: "memory.injection.longTerm", kind: "boolean", description: "consolidated.md 的 learnings/preferences/events 与 pending 候选" },
       { label: "注入 Daily Memory", path: "memory.dailyInjection.enabled", kind: "boolean" },
       { label: "启用 Daily Summary", path: "memory.dailySummary.enabled", kind: "boolean" },
       { label: "近期天数", path: "memory.dailySummary.recentDays", kind: "number", min: 1, max: 30 },
       { label: "自动生成 Daily Summary", path: "memory.dailySummary.autoGenerate", kind: "boolean" },
-      { label: "启用按需搜索", path: "memory.onDemandSearch.enabled", kind: "boolean" },
+      { label: "首条消息自动注入上下文", path: "memory.onDemandSearch.enabled", kind: "boolean" },
       { label: "按需最大结果", path: "memory.onDemandSearch.maxResults", kind: "number", min: 1, max: 100 },
       { label: "按需最低分数", path: "memory.onDemandSearch.minScore", kind: "number", min: 0, max: 1 },
       { label: "始终加载高优先级", path: "memory.onDemandSearch.alwaysLoadHighPriority", kind: "boolean" },
@@ -107,6 +119,7 @@ const CONFIG_SECTIONS: ConfigSection[] = [
   },
   {
     label: "向量记忆",
+    description: "本地/远程 embedding 的语义召回与自动索引",
     fields: [
       { label: "启用向量记忆", path: "vectorMemory.enabled", kind: "boolean" },
       { label: "Provider", path: "vectorMemory.provider", kind: "select", choices: ["openai", "local", "minilm-direct", "minilm-daemon"] },
@@ -125,6 +138,7 @@ const CONFIG_SECTIONS: ConfigSection[] = [
   },
   {
     label: "外部只读与知识",
+    description: "外部经验只读召回与项目知识库检索",
     fields: [
       { label: "启用外部只读记忆", path: "externalReadonly.enabled", kind: "boolean" },
       { label: "外部服务 URL", path: "externalReadonly.baseUrl", kind: "text" },
@@ -143,6 +157,7 @@ const CONFIG_SECTIONS: ConfigSection[] = [
   },
   {
     label: "日志、界面与高级",
+    description: "日志、Spinner、进化提醒等杂项设置",
     fields: [
       { label: "启用日志", path: "logging.enabled", kind: "boolean" },
       { label: "日志级别", path: "logging.level", kind: "select", choices: ["debug", "info", "warn", "error"] },
@@ -161,15 +176,16 @@ const CONFIG_SECTIONS: ConfigSection[] = [
 class RoleControlCenterComponent {
   private selectedIndex = 0;
   private disposed = false;
+  private view: "main" | "config" = "main";
 
   constructor(
     private options: RoleControlCenterOptions,
     private tui: any,
     private theme: any,
-    private done: (action?: RoleControlAction) => void,
+    private done: (action?: string) => void,
   ) {}
 
-  private close(action?: RoleControlAction): void {
+  private close(action?: string): void {
     if (this.disposed) return;
     this.disposed = true;
     this.done(action);
@@ -177,17 +193,25 @@ class RoleControlCenterComponent {
 
   handleInput(data: string): void {
     if (this.disposed) return;
+    const isConfig = this.view === "config";
+    const itemCount = isConfig ? CONFIG_SECTIONS.length + 1 : ROLE_CONTROL_ACTIONS.length;
     if (matchesKey(data, Key.escape) || matchesKey(data, Key.ctrl("c"))) {
-      this.close(undefined);
+      if (isConfig) {
+        this.view = "main";
+        this.selectedIndex = 0;
+        this.tui.requestRender();
+      } else {
+        this.close(undefined);
+      }
       return;
     }
     if (matchesKey(data, Key.up) || data === "k") {
-      this.selectedIndex = (this.selectedIndex - 1 + ROLE_CONTROL_ACTIONS.length) % ROLE_CONTROL_ACTIONS.length;
+      this.selectedIndex = (this.selectedIndex - 1 + itemCount) % itemCount;
       this.tui.requestRender();
       return;
     }
     if (matchesKey(data, Key.down) || data === "j") {
-      this.selectedIndex = (this.selectedIndex + 1) % ROLE_CONTROL_ACTIONS.length;
+      this.selectedIndex = (this.selectedIndex + 1) % itemCount;
       this.tui.requestRender();
       return;
     }
@@ -197,12 +221,29 @@ class RoleControlCenterComponent {
       return;
     }
     if (matchesKey(data, Key.end) || data === "G") {
-      this.selectedIndex = ROLE_CONTROL_ACTIONS.length - 1;
+      this.selectedIndex = itemCount - 1;
       this.tui.requestRender();
       return;
     }
     if (matchesKey(data, Key.enter)) {
-      this.close(ROLE_CONTROL_ACTIONS[this.selectedIndex]?.value);
+      if (isConfig) {
+        if (this.selectedIndex >= CONFIG_SECTIONS.length) {
+          this.view = "main";
+        } else {
+          this.done(`config:${this.selectedIndex}`);
+          return;
+        }
+      } else {
+        const action = ROLE_CONTROL_ACTIONS[this.selectedIndex]?.value;
+        if (action === "config") {
+          this.view = "config";
+        } else {
+          this.close(action);
+          return;
+        }
+      }
+      this.selectedIndex = 0;
+      this.tui.requestRender();
     }
   }
 
@@ -229,27 +270,44 @@ class RoleControlCenterComponent {
       ? getPendingMemories(activePath).filter((item) => !item.discarded).length
       : 0;
 
-    const title = " 角色控制中心 ";
+    const isConfig = this.view === "config";
+    const title = isConfig ? " 配置分类 " : " 角色控制中心 ";
     const left = Math.max(0, Math.floor((inner - visibleWidth(title)) / 2));
     const right = Math.max(0, inner - visibleWidth(title) - left);
     const lines = [border("╭" + "─".repeat(left)) + accent(this.theme.bold(title)) + border("─".repeat(right) + "╮")];
 
-    lines.push(row(` ${accent("当前角色")}  ${text(activeRole || "无")} ${identity?.name ? muted(`· ${identity.name}`) : ""}`));
-    lines.push(row(` ${accent("解析来源")}  ${text(resolution.source)}${resolution.matchedPath ? muted(` · ${resolution.matchedPath}`) : ""}`));
-    lines.push(row(` ${accent("当前目录")}  ${muted(this.options.cwd)}`));
-    lines.push(row(` ${accent("记忆概览")}  ${text(`${memory?.learnings.length || 0} learnings · ${memory?.preferences.length || 0} preferences · ${memory?.events.length || 0} events · ${pendingCount} pending`)}`));
-    lines.push(divider());
+    if (!isConfig) {
+      lines.push(row(` ${accent("当前角色")}  ${text(activeRole || "无")} ${identity?.name ? muted(`· ${identity.name}`) : ""}`));
+      lines.push(row(` ${accent("解析来源")}  ${text(resolution.source)}${resolution.matchedPath ? muted(` · ${resolution.matchedPath}`) : ""}`));
+      lines.push(row(` ${accent("当前目录")}  ${muted(this.options.cwd)}`));
+      lines.push(row(` ${accent("记忆概览")}  ${text(`${memory?.learnings.length || 0} learnings · ${memory?.preferences.length || 0} preferences · ${memory?.events.length || 0} events · ${pendingCount} pending`)}`));
+      lines.push(divider());
 
-    ROLE_CONTROL_ACTIONS.forEach((action, index) => {
-      const selected = index === this.selectedIndex;
-      const prefix = selected ? accent("❯ ") : "  ";
-      const label = selected ? accent(this.theme.bold(action.label)) : text(action.label);
-      const description = selected ? muted(` — ${action.description}`) : dim(` — ${action.description}`);
-      lines.push(row(`${prefix}${label}${description}`));
-    });
+      ROLE_CONTROL_ACTIONS.forEach((action, index) => {
+        const selected = index === this.selectedIndex;
+        const prefix = selected ? accent("❯ ") : "  ";
+        const label = selected ? accent(this.theme.bold(action.label)) : text(action.label);
+        const description = selected ? muted(` — ${action.description}`) : dim(` — ${action.description}`);
+        lines.push(row(`${prefix}${label}${description}`));
+      });
+    } else {
+      CONFIG_SECTIONS.forEach((section, index) => {
+        const selected = index === this.selectedIndex;
+        const prefix = selected ? accent("❯ ") : "  ";
+        const label = selected ? accent(this.theme.bold(section.label)) : text(section.label);
+        const meta = muted(` — ${section.description}（${section.fields.length} 项）`);
+        lines.push(row(`${prefix}${label}${meta}`));
+      });
+      const backSelected = this.selectedIndex === CONFIG_SECTIONS.length;
+      const prefix = backSelected ? accent("❯ ") : "  ";
+      const label = backSelected ? accent(this.theme.bold("← 返回角色控制中心")) : text("← 返回角色控制中心");
+      lines.push(row(`${prefix}${label}`));
+    }
 
     lines.push(divider());
-    lines.push(row(dim(" ↑↓ / j k 选择 · Enter 执行 · g/G 首尾 · Esc 关闭")));
+    lines.push(row(dim(isConfig
+      ? " ↑↓ / j k 选择 · Enter 进入 · Esc 返回上级"
+      : " ↑↓ / j k 选择 · Enter 执行 · g/G 首尾 · Esc 关闭")));
     lines.push(border("╰" + "─".repeat(inner) + "╯"));
     return lines;
   }
@@ -341,6 +399,128 @@ class MarkdownOverlay {
   }
 }
 
+interface RolePickerEntry {
+  name: string;
+  displayName: string;
+  learnings: number;
+  preferences: number;
+  events: number;
+  isDefault: boolean;
+  isCurrent: boolean;
+  mappedToCwd: boolean;
+}
+
+class RolePickerComponent {
+  private selectedIndex = 0;
+  private filterText = "";
+  private disposed = false;
+
+  constructor(
+    private entries: RolePickerEntry[],
+    private tui: any,
+    private theme: any,
+    private done: (roleName?: string) => void,
+  ) {}
+
+  private filtered(): RolePickerEntry[] {
+    const query = this.filterText.toLowerCase();
+    if (!query) return this.entries;
+    return this.entries.filter((entry) =>
+      entry.name.toLowerCase().includes(query) || entry.displayName.toLowerCase().includes(query)
+    );
+  }
+
+  private close(roleName?: string): void {
+    if (this.disposed) return;
+    this.disposed = true;
+    this.done(roleName);
+  }
+
+  handleInput(data: string): void {
+    if (this.disposed) return;
+    const items = this.filtered();
+    if (matchesKey(data, Key.escape) || matchesKey(data, Key.ctrl("c"))) {
+      this.close();
+      return;
+    }
+    if (matchesKey(data, Key.up) || data === "k") {
+      this.selectedIndex = Math.max(0, Math.min(items.length - 1, this.selectedIndex - 1));
+      this.tui.requestRender();
+      return;
+    }
+    if (matchesKey(data, Key.down) || data === "j") {
+      this.selectedIndex = Math.min(Math.max(0, items.length - 1), this.selectedIndex + 1);
+      this.tui.requestRender();
+      return;
+    }
+    if (matchesKey(data, Key.enter)) {
+      const picked = items[this.selectedIndex];
+      if (picked) this.close(picked.name);
+      return;
+    }
+    if (matchesKey(data, Key.backspace)) {
+      if (this.filterText.length > 0) {
+        this.filterText = this.filterText.slice(0, -1);
+        this.selectedIndex = 0;
+        this.tui.requestRender();
+      }
+      return;
+    }
+    if (data.length === 1 && data >= " " && data !== "\x7f") {
+      this.filterText += data;
+      this.selectedIndex = 0;
+      this.tui.requestRender();
+    }
+  }
+
+  render(width: number): string[] {
+    const inner = Math.max(1, width - 2);
+    const border = (value: string) => this.theme.fg("border", value);
+    const accent = (value: string) => this.theme.fg("accent", value);
+    const text = (value: string) => this.theme.fg("text", value);
+    const muted = (value: string) => this.theme.fg("muted", value);
+    const dim = (value: string) => this.theme.fg("dim", value);
+    const row = (content = "") => {
+      const fitted = truncateToWidth(content, inner, "…", true);
+      return border("│") + fitted + " ".repeat(Math.max(0, inner - visibleWidth(fitted))) + border("│");
+    };
+    const divider = () => border("├" + "─".repeat(inner) + "┤");
+    const items = this.filtered();
+
+    const title = ` 选择角色 · ${items.length}/${this.entries.length} `;
+    const left = Math.max(0, Math.floor((inner - visibleWidth(title)) / 2));
+    const right = Math.max(0, inner - visibleWidth(title) - left);
+    const lines = [border("╭" + "─".repeat(left)) + accent(this.theme.bold(title)) + border("─".repeat(right) + "╮")];
+
+    lines.push(row(` ${accent("过滤")}  ${text(this.filterText || "")}${dim("▏")}${this.filterText ? "" : dim("（直接输入过滤，Backspace 删除）")}`));
+    lines.push(divider());
+
+    if (items.length === 0) {
+      lines.push(row(dim(" 无匹配角色")));
+    }
+    items.forEach((entry, index) => {
+      const selected = index === this.selectedIndex;
+      const prefix = selected ? accent("❯ ") : "  ";
+      const name = selected ? accent(this.theme.bold(entry.name)) : text(entry.name);
+      const display = entry.displayName ? muted(` · ${entry.displayName}`) : "";
+      const counts = dim(`  L${entry.learnings} P${entry.preferences} E${entry.events}`);
+      const markers = [
+        entry.isCurrent ? accent("● 当前") : "",
+        entry.isDefault ? muted("★ 默认") : "",
+        entry.mappedToCwd ? muted("→ 本目录") : "",
+      ].filter(Boolean).join(" ");
+      lines.push(row(`${prefix}${name}${display}${counts}${markers ? dim("  ") + markers : ""}`));
+    });
+
+    lines.push(divider());
+    lines.push(row(dim(" ↑↓ / j k 选择 · Enter 映射并激活 · 输入文字过滤 · Esc 取消")));
+    lines.push(border("╰" + "─".repeat(inner) + "╯"));
+    return lines;
+  }
+
+  invalidate(): void {}
+}
+
 function normalizePath(path: string): string {
   const normalized = path.replace(/[\\/]+$/, "");
   return normalized || path;
@@ -374,13 +554,13 @@ async function choose(ctx: any, title: string, entries: Array<{ label: string; v
   return entries.find((entry) => entry.label === selected)?.value;
 }
 
-async function openControlCenterMenu(options: RoleControlCenterOptions): Promise<RoleControlAction | undefined> {
+async function openControlCenterMenu(options: RoleControlCenterOptions): Promise<string | undefined> {
   const action = await options.ctx.ui.custom(
-    (tui: any, theme: any, _kb: any, done: (value?: RoleControlAction) => void) =>
+    (tui: any, theme: any, _kb: any, done: (value?: string) => void) =>
       new RoleControlCenterComponent(options, tui, theme, done),
-    { overlay: true, overlayOptions: { anchor: "center", width: "88%", minWidth: 68, maxHeight: "96%" } },
+    { overlay: true, overlayOptions: { anchor: "center", width: "94%", minWidth: 88, maxHeight: "96%" } },
   );
-  return action as RoleControlAction | undefined;
+  return action as string | undefined;
 }
 
 async function showMarkdown(ctx: any, title: string, content: string): Promise<void> {
@@ -395,6 +575,13 @@ async function editConfigField(options: RoleControlCenterOptions, field: ConfigF
   let next: unknown;
 
   if (field.kind === "boolean") {
+    const currentLabel = current ? "开启" : "关闭";
+    const targetLabel = current ? "关闭" : "开启";
+    const picked = await choose(options.ctx, `${field.label}（当前：${currentLabel}）`, [
+      { label: `切换为${targetLabel}`, value: "toggle" },
+      { label: "保持不变", value: "keep" },
+    ]);
+    if (!picked || picked === "keep") return;
     next = !current;
   } else if (field.kind === "select") {
     const selected = await choose(options.ctx, field.label, (field.choices || []).map((value) => ({ label: value, value })));
@@ -402,7 +589,13 @@ async function editConfigField(options: RoleControlCenterOptions, field: ConfigF
     next = selected;
   } else {
     const currentText = field.kind === "secret" ? "" : typeof current === "string" ? current : JSON.stringify(current);
-    const hint = field.description ? `${field.description}；当前: ${field.kind === "secret" ? "<隐藏>" : currentText}` : `当前: ${currentText}`;
+    const kindLabel = field.kind === "secret" ? "密钥" : field.kind === "number" ? "数值" : field.kind === "json" || field.kind === "json-or-text" ? "JSON" : "文本";
+    const defaultText = field.kind === "secret" ? "<隐藏>" : formatValue(field, getAtPath(DEFAULT_CONFIG, field.path));
+    const rangeText = field.kind === "number" && (field.min !== undefined || field.max !== undefined)
+      ? ` · 范围: ${field.min ?? "-∞"}~${field.max ?? "∞"}`
+      : "";
+    const descText = field.description ? `${field.description} · ` : "";
+    const hint = `[${kindLabel}] ${descText}默认: ${defaultText} · 当前: ${field.kind === "secret" ? "<隐藏>" : currentText}${rangeText}`;
     const input = await options.ctx.ui.input(field.label, hint);
     if (input === undefined || input === null) return;
     const trimmed = String(input).trim();
@@ -452,27 +645,20 @@ async function editConfigField(options: RoleControlCenterOptions, field: ConfigF
   options.notify(`已保存 ${field.label}：${formatValue(field, getAtPath(config, field.path))}。部分启动期设置需 /reload 或重启生效。`, "success");
 }
 
-async function openConfigEditor(options: RoleControlCenterOptions): Promise<void> {
+async function openConfigEditor(options: RoleControlCenterOptions, sectionIndex: number): Promise<void> {
+  const selectedSection = CONFIG_SECTIONS[sectionIndex];
+  if (!selectedSection) return;
   while (true) {
-    const section = await choose(options.ctx, "角色系统配置", [
-      ...CONFIG_SECTIONS.map((item, index) => ({ label: `⚙ ${item.label}`, value: String(index) })),
+    const fieldPath = await choose(options.ctx, `配置 · ${selectedSection.label}`, [
+      ...selectedSection.fields.map((field) => ({
+        label: `${field.label}  ·  ${formatValue(field, getAtPath(config, field.path))}${field.description ? `  ·  ${field.description}` : ""}`,
+        value: field.path,
+      })),
       { label: "← 返回角色控制中心", value: "back" },
     ]);
-    if (!section || section === "back") return;
-
-    const selectedSection = CONFIG_SECTIONS[Number(section)];
-    while (true) {
-      const fieldPath = await choose(options.ctx, selectedSection.label, [
-        ...selectedSection.fields.map((field) => ({
-          label: `${field.label}  ·  ${formatValue(field, getAtPath(config, field.path))}`,
-          value: field.path,
-        })),
-        { label: "← 返回配置分类", value: "back" },
-      ]);
-      if (!fieldPath || fieldPath === "back") break;
-      const field = selectedSection.fields.find((item) => item.path === fieldPath);
-      if (field) await editConfigField(options, field);
-    }
+    if (!fieldPath || fieldPath === "back") return;
+    const field = selectedSection.fields.find((item) => item.path === fieldPath);
+    if (field) await editConfigField(options, field);
   }
 }
 
@@ -505,6 +691,9 @@ async function showStatus(options: RoleControlCenterOptions): Promise<void> {
 ## 当前注入开关
 
 - 自动记忆：${config.autoMemory.enabled ? "开启" : "关闭"}
+- 注入 constraints.md：${config.corePrompt.injectConstraints ? "开启" : "关闭"}
+- 记忆注入总开关：${config.memory.injection.enabled ? "开启" : "关闭"}
+- 长期记忆注入：${config.memory.injection.longTerm ? "开启" : "关闭"}
 - 按需搜索：${config.memory.onDemandSearch.enabled ? "开启" : "关闭"}
 - Daily 注入：${config.memory.dailyInjection.enabled ? "开启" : "关闭"}
 - Daily Summary：${config.memory.dailySummary.enabled ? "开启" : "关闭"}
@@ -527,17 +716,32 @@ async function showInjectionPreview(options: RoleControlCenterOptions): Promise<
   }
 
   const rolePrompt = await loadRolePrompts(rolePath);
+  const constraintsNote = config.corePrompt.injectConstraints
+    ? ""
+    : "\n\n> `core/constraints.md` 当前未注入（`corePrompt.injectConstraints = false`）。";
   const highPriority = loadHighPriorityMemories(rolePath, roleName);
-  const longTerm = readLongTermMemoryBlock(rolePath, roleName);
-  const daily = config.memory.dailyInjection.enabled ? readDailyMemoryBlocks(rolePath) : [];
+  const injection = config.memory.injection;
+  const longTerm = injection.enabled && injection.longTerm
+    ? readLongTermMemoryBlock(rolePath, roleName)
+    : null;
+  const dailyEnabled = injection.enabled && config.memory.dailyInjection.enabled;
+  const daily = dailyEnabled ? readDailyMemoryBlocks(rolePath) : [];
   const pending = getPendingMemories(rolePath).filter((item) => !item.discarded && !item.promoted);
 
   const dynamic = [
-    `- 按需关键词召回：${config.memory.onDemandSearch.enabled ? "开启（内容取决于下一条用户查询）" : "关闭"}`,
+    `- 记忆注入总开关：${injection.enabled ? "开启" : "关闭（以下全部失效）"}`,
+    `- 长期记忆注入：${injection.enabled && injection.longTerm ? "开启（每轮注入）" : "关闭"}`,
+    `- 按需关键词召回：${injection.enabled && config.memory.onDemandSearch.enabled ? "开启（内容取决于下一条用户查询）" : "关闭"}`,
     `- 向量语义召回：${config.vectorMemory.enabled && config.vectorMemory.autoRecall ? "开启（内容取决于下一条用户查询）" : "关闭"}`,
     `- 外部只读提示：${config.externalReadonly.enabled ? "开启（内容取决于下一条用户查询与远端结果）" : "关闭"}`,
     `- Pending 候选：${pending.length} 条（默认不会直接注入，需验证/晋升）`,
   ].join("\n");
+
+  const longTermView = !injection.enabled
+    ? "已关闭（`memory.injection.enabled = false`）"
+    : !injection.longTerm
+      ? "已关闭（`memory.injection.longTerm = false`）"
+      : (longTerm || "(none)");
 
   const content = `# 当前角色注入预览：${roleName}
 
@@ -549,7 +753,7 @@ ${dynamic}
 
 ## 角色 Core Prompt
 
-${rolePrompt || "(empty)"}
+${rolePrompt || "(empty)"}${constraintsNote}
 
 ## 首条消息高优先级记忆
 
@@ -557,11 +761,11 @@ ${highPriority || "(none)"}
 
 ## 长期记忆（每轮注入）
 
-${longTerm || "(none)"}
+${longTermView}
 
 ## Daily Memory
 
-${config.memory.dailyInjection.enabled ? (daily.join("\n\n---\n\n") || "(none)") : "已关闭"}`;
+${dailyEnabled ? (daily.join("\n\n---\n\n") || "(none)") : "已关闭"}`;
 
   await showMarkdown(options.ctx, `注入预览 · ${roleName}`, content);
 }
@@ -572,18 +776,49 @@ async function mapRole(options: RoleControlCenterOptions): Promise<void> {
     options.notify("尚无角色，请先创建", "warning");
     return;
   }
-  const selected = await choose(options.ctx, "映射当前目录到角色", roles.map((role) => {
-    const identity = getRoleIdentity(join(ROLES_DIR, role));
-    return { label: `${role}${identity?.name ? ` · ${identity.name}` : ""}`, value: role };
-  }));
-  if (!selected) return;
-
   const roleConfig = loadRoleConfig();
   const cwdKey = normalizePath(resolveRoleScopeDir(options.cwd));
+  const currentRole = options.getCurrentRole();
+
+  // 只统计已存在 consolidated.md 的角色，避免为未初始化角色创建记忆文件
+  const entries: RolePickerEntry[] = roles.map((role) => {
+    const rolePath = join(ROLES_DIR, role);
+    const identity = existsSync(rolePath) ? getRoleIdentity(rolePath) : null;
+    const memoryFile = join(rolePath, "memory", "consolidated.md");
+    let counts = { learnings: 0, preferences: 0, events: 0 };
+    if (existsSync(rolePath) && existsSync(memoryFile)) {
+      try {
+        const memory = readRoleMemory(rolePath, role);
+        counts = { learnings: memory.learnings.length, preferences: memory.preferences.length, events: memory.events.length };
+      } catch {
+        // 记忆文件损坏时显示 0，不阻塞选择
+      }
+    }
+    return {
+      name: role,
+      displayName: identity?.name || "",
+      ...counts,
+      isDefault: (roleConfig.defaultRole || DEFAULT_ROLE) === role,
+      isCurrent: currentRole === role,
+      mappedToCwd: roleConfig.mappings?.[cwdKey] === role,
+    };
+  });
+
+  const selected = await options.ctx.ui.custom(
+    (tui: any, theme: any, _kb: any, done: (value?: string) => void) => new RolePickerComponent(entries, tui, theme, done),
+    { overlay: true, overlayOptions: { anchor: "center", width: "94%", minWidth: 88, maxHeight: "96%" } },
+  );
+  if (!selected) return;
+
+  const rolePath = join(ROLES_DIR, selected);
+  if (!existsSync(rolePath)) {
+    options.notify(`角色 "${selected}" 不存在`, "error");
+    return;
+  }
   roleConfig.mappings[cwdKey] = selected;
   roleConfig.disabledPaths = (roleConfig.disabledPaths || []).filter((path) => normalizePath(path) !== cwdKey);
   saveRoleConfig(roleConfig);
-  await options.activateRole(selected, join(ROLES_DIR, selected));
+  await options.activateRole(selected, rolePath);
   options.notify(`已映射：${cwdKey} → ${selected}`, "success");
 }
 
@@ -657,6 +892,10 @@ export async function openRoleControlCenter(options: RoleControlCenterOptions): 
     const action = await openControlCenterMenu(options);
 
     if (!action || action === "close") return;
+    if (action.startsWith("config:")) {
+      await openConfigEditor(options, Number(action.slice("config:".length)));
+      continue;
+    }
     if (action === "status") await showStatus(options);
     else if (action === "map") await mapRole(options);
     else if (action === "create") await createAndMaybeMapRole(options);
@@ -664,6 +903,5 @@ export async function openRoleControlCenter(options: RoleControlCenterOptions): 
     else if (action === "disable") await disableRoleForCwd(options);
     else if (action === "injection") await showInjectionPreview(options);
     else if (action === "memories") await showMemories(options);
-    else if (action === "config") await openConfigEditor(options);
   }
 }

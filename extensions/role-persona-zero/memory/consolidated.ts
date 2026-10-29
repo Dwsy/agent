@@ -1,5 +1,5 @@
 /** consolidated.md parsing, rendering, read/write, layout migration, and repair. */
-import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { log } from "../logger.ts";
 import { contentHash, writeCommittedMemoryFile } from "../memory-git.ts";
@@ -609,10 +609,8 @@ export function repairRoleMemory(
 ): {
   repaired: boolean;
   issues: number;
-  backupPath?: string;
 } {
   ensureRoleMemoryFiles(rolePath, roleName);
-  const file = memoryFilePath(rolePath);
   const raw = readRawMemory(rolePath);
 
   const parsed = parseRoleMemory(raw, roleName);
@@ -622,14 +620,8 @@ export function repairRoleMemory(
   const issues = parsed.issues.length;
   if (!changed && issues === 0) return { repaired: false, issues: 0 };
 
-  const backupDir = join(rolePath, ".backup", "memory");
-  if (!existsSync(backupDir)) {
-    mkdirSync(backupDir, { recursive: true });
-  }
-  const backupPath = join(backupDir, `MEMORY.backup-${Date.now()}.md`);
-  if (existsSync(file)) copyFileSync(file, backupPath);
   writeMemory(rolePath, canonical, contentHash(raw));
 
-  log("repair", `repaired ${roleName}: ${issues} issues, backup=${backupPath}`);
-  return { repaired: true, issues, backupPath };
+  log("repair", `repaired ${roleName}: ${issues} issues`);
+  return { repaired: true, issues };
 }

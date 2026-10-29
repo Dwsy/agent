@@ -48,7 +48,7 @@ export function registerRoleCommand(rt: Runtime): void {
             clearRole: () => {
               rt.state.currentRole = null;
               rt.state.currentRolePath = null;
-              ctx.ui.setStatus("role", "off");
+              ctx.ui.setStatus("role", ctx.ui.theme.fg("dim", "off"));
               ctx.ui.setStatus("memory-checkpoint", undefined);
             },
             notify: (message, type = "info") => notify(rt, ctx, message, type),
@@ -217,7 +217,7 @@ export function registerRoleCommand(rt: Runtime): void {
           rt.state.currentRole = null;
           rt.state.currentRolePath = null;
           if (isTuiAvailable(ctx)) {
-            ctx.ui.setStatus("role", "off");
+            ctx.ui.setStatus("role", ctx.ui.theme.fg("dim", "off"));
             ctx.ui.setStatus("memory-checkpoint", undefined);
           }
 

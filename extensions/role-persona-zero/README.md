@@ -414,12 +414,17 @@ env ROLE_* > pi-role-persona.jsonc > defaults
 
 无参数 `/role` 会直接渲染自定义键盘导航 overlay（不会先进入系统 `select`），并可在 TUI 中编辑全部配置字段。修改按字段合并写入配置文件，不会覆盖未编辑字段；环境变量仍具有最高优先级。部分启动期常量、角色存储目录和向量后端设置需执行 `/reload` 或重启后完全生效。
 
+`core/constraints.md` 默认不进入系统提示词（`corePrompt.injectConstraints = false`），文件仍会创建和维护，需要硬约束时在控制中心「核心提示」里开启，或用 `ROLE_INJECT_CONSTRAINTS=1` 覆盖。
+
 “查看当前实际注入内容”会展示角色 core prompt、高优先级记忆、长期记忆和启用的 daily memory。按需关键词召回、向量召回和外部只读记忆依赖下一条用户查询，因此界面只展示其真实开关与规则，不执行搜索或伪造结果。
 
 ### 关键配置块
 
 ```jsonc
 {
+  "corePrompt": {
+    "injectConstraints": false
+  },
   "autoMemory": {
     "enabled": true,
     "model": "openai/gpt-4.1-mini",

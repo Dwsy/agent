@@ -60,6 +60,8 @@ export interface RuntimeState {
   rolePromptSnapshot: string | null;
   /** 会话级快照：memory 只在 role 激活时读取，避免会中修改改变 system prompt */
   memoryPromptSnapshot: string | null;
+  /** memoryPromptSnapshot 对应的注入开关指纹；开关变化时快照必须重建 */
+  memoryPromptConfigKey: string | null;
   /** 会话级缓存：该 rolePath 的 missing summary 已生成过 */
   dailySummaryEnsuredFor: string | null;
   memoryDistillMode: MemoryDistillMode | null;
@@ -100,6 +102,7 @@ export function createRuntime(pi: ExtensionAPI, indexModuleUrl: string): Runtime
       isFirstUserMessage: true,
       rolePromptSnapshot: null,
       memoryPromptSnapshot: null,
+      memoryPromptConfigKey: null,
       dailySummaryEnsuredFor: null,
       memoryDistillMode: null,
       memoryLog: [],

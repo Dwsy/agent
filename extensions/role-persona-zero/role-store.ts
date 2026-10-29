@@ -456,8 +456,9 @@ export function loadRolePrompts(rolePath: string): string {
 
   const parts: string[] = [];
   const lang = resolveTemplateLanguage();
+  const includeConstraints = getConfig().corePrompt.injectConstraints;
 
-  const files =
+  const files = (
     lang === "zh"
       ? [
           { core: "agents.md", header: "core/agents.md - 工作空间规则" },
@@ -476,7 +477,9 @@ export function loadRolePrompts(rolePath: string): string {
           { core: "tools.md", header: "core/tools.md - Tool Preferences" },
           { core: "heartbeat.md", header: "core/heartbeat.md - Heartbeat" },
           { core: "constraints.md", header: "core/constraints.md - Hard Constraints" },
-        ];
+        ]
+  ).filter((file) => includeConstraints || file.core !== "constraints.md");
+
 
   for (const file of files) {
     const path = promptPath(rolePath, file.core);

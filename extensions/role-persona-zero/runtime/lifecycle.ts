@@ -1,5 +1,5 @@
 /**
- * Session lifecycle handlers: session_start, resources_discover, agent_end,
+ * Session lifecycle handlers: session_start, resources_discover,
  * session_shutdown, and the turn_end evolution reminder.
  */
 import { existsSync } from "node:fs";
@@ -16,13 +16,8 @@ import {
   ROLES_DIR,
 } from "../role-store.ts";
 import { config } from "../config.ts";
-import {
-  flushAutoMemory,
-  stopMemoryCheckpointSpinner,
-} from "./auto-memory.ts";
 import type { CompactionIntegration } from "./compaction.ts";
 import type { Runtime } from "./context.ts";
-import { runExternalExperienceExtract, isExternalReadonlyEnabled } from "./external-readonly.ts";
 import { activateRole } from "./role-activation.ts";
 import { isTuiAvailable, notify } from "./ui.ts";
 
@@ -61,6 +56,7 @@ export function registerLifecycle(rt: Runtime, compaction: CompactionIntegration
     state.isFirstUserMessage = true;
     state.rolePromptSnapshot = null;
     state.memoryPromptSnapshot = null;
+    state.memoryPromptConfigKey = null;
     state.dailySummaryEnsuredFor = null;
 
     // Discover project-level knowledge base (docs/knowledge/)
@@ -84,11 +80,12 @@ export function registerLifecycle(rt: Runtime, compaction: CompactionIntegration
         await activateRole(rt, roleName, rolePath, ctx);
       } else {
         notify(rt, ctx, `[WARN] 角色 "${roleName}" 不存在（source: ${resolution.source}）`, "warning");
-        ctx.ui?.setStatus("role", "none");
+        ctx.ui?.setStatus("role", ctx.ui?.theme.fg("dim", "none"));
       }
     } else {
       if (isTuiAvailable(ctx)) {
-        ctx.ui.setStatus("role", resolution.source === "disabled" ? "off" : "none");
+        const stateText = resolution.source === "disabled" ? "off" : "none";
+        ctx.ui.setStatus("role", ctx.ui.theme.fg("dim", stateText));
       }
     }
   });
@@ -101,39 +98,12 @@ export function registerLifecycle(rt: Runtime, compaction: CompactionIntegration
     };
   });
 
-  // 3. During the session, only retain the latest conversation for shutdown extraction.
-  // Persisting auto-memory here would mutate the role files while the active session
-  // is still using its startup memory snapshot, so automatic writes are deferred to
-  // compaction or session_shutdown boundaries.
-  pi.on("agent_end", async (event, ctx) => {
-    const { state } = rt;
-    if (!state.currentRole || !state.currentRolePath) return;
-
-    // External readonly memory experience extraction (best-effort, no side effects)
-    if (isExternalReadonlyEnabled()) {
-      await runExternalExperienceExtract(ctx.cwd || "");
-    }
-
-    if (!config.autoMemory.enabled) return;
-    state.autoMemoryPendingTurns += 1;
-    state.autoMemoryLastMessages = event.messages;
-  });
-
-  // 4. Persist automatic memory only at the session boundary (best-effort, bounded wait)
+  // 3. Session shutdown only flushes indexes. Memory persistence is agent-driven
+  // through role_exec; there is no background conversation extraction.
   pi.on("session_shutdown", async (_event, ctx) => {
-    const { state } = rt;
-    if (config.autoMemory.enabled && state.autoMemoryPendingTurns > 0 && state.autoMemoryLastMessages) {
-      await Promise.race([
-        flushAutoMemory(rt, state.autoMemoryLastMessages, ctx, "session-shutdown"),
-        new Promise<void>((resolve) => setTimeout(resolve, config.advanced.shutdownFlushTimeoutMs)),
-      ]);
-    }
-
     // Flush pending vector index entries
     await flushVectorIndex().catch((err) => log("vector", `flush on shutdown failed: ${err}`));
     disposeVectorMemory();
-
-    stopMemoryCheckpointSpinner(rt);
 
     if (isTuiAvailable(ctx)) {
       ctx.ui.setStatus("role", undefined);
@@ -143,7 +113,7 @@ export function registerLifecycle(rt: Runtime, compaction: CompactionIntegration
     compaction.unpublish();
   });
 
-  // 5. Evolution reminder: periodic gentle nudge for daily reflection.
+  // 4. Evolution reminder: periodic gentle nudge for daily reflection.
   // Counts USER input turns only, with 60-min cooldown to avoid spam.
   pi.on("turn_end", async (event, ctx) => {
     const { state } = rt;

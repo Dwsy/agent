@@ -54,10 +54,22 @@ export interface DailyInjectionConfig {
   enabled: boolean;
 }
 
+export interface MemoryInjectionConfig {
+  /**
+   * Master switch for memory content injection (default: true).
+   * When false no memory block — long-term, daily, pending, on-demand —
+   * enters the system prompt. Fine-grained switches below stay inert.
+   */
+  enabled: boolean;
+  /** Inject long-term consolidated memory + pending review block (default: true). */
+  longTerm: boolean;
+}
+
 export interface MemoryConfig {
   defaultCategories: string[];
   dailyPathTemplate: string;
   dedupeThreshold: number;
+  injection: MemoryInjectionConfig;
   dailyInjection: DailyInjectionConfig;
   onDemandSearch: {
     enabled: boolean;
@@ -88,6 +100,14 @@ export interface DailySummaryConfig {
   recentDays: number;
   /** Auto-generate summaries at startup for days that lack them (default: false) */
   autoGenerate: boolean;
+}
+
+export interface CorePromptConfig {
+  /**
+   * Inject core/constraints.md into the system prompt (default: false).
+   * 硬约束属于高侵入内容，默认不注入；需要时显式开启。
+   */
+  injectConstraints: boolean;
 }
 
 export interface UIConfig {
@@ -172,6 +192,7 @@ export interface StorageConfig {
 
 export interface RolePersonaConfig {
   storage: StorageConfig;
+  corePrompt: CorePromptConfig;
   autoMemory: AutoMemoryConfig;
   logging: LoggingConfig;
   memory: MemoryConfig;
@@ -186,12 +207,15 @@ export interface RolePersonaConfig {
 // 内置默认值
 // ============================================================================
 
-const DEFAULT_CONFIG: RolePersonaConfig = {
+export const DEFAULT_CONFIG: RolePersonaConfig = {
   storage: {
     rolesDir: "~/.pi/roles",
   },
+  corePrompt: {
+    injectConstraints: false,
+  },
   autoMemory: {
-    enabled: true,
+    enabled: false,
     model: "openai-codex/gpt-5.1-codex-mini",
     tagModel: null,
     reserveTokens: 8192,
@@ -211,11 +235,16 @@ const DEFAULT_CONFIG: RolePersonaConfig = {
     defaultCategories: ["Communication", "Code", "Tools", "Workflow", "General"],
     dailyPathTemplate: "{rolePath}/memory/daily/{date}.md",
     dedupeThreshold: 0.9,
+    injection: {
+      enabled: true,
+      longTerm: true,
+    },
     dailyInjection: {
       enabled: false,
     },
     onDemandSearch: {
-      enabled: true,
+      // 首条用户消息自动注入相关记忆（上下文自动注入），默认关闭
+      enabled: false,
       maxResults: 3,
       minScore: 0.3,
       alwaysLoadHighPriority: true,
@@ -563,6 +592,22 @@ function applyEnvOverrides(config: RolePersonaConfig): RolePersonaConfig {
       process.env.ROLE_DAILY_INJECTION !== "0" && process.env.ROLE_DAILY_INJECTION !== "false";
   }
 
+  // memory.injection overrides
+  if (process.env.ROLE_MEMORY_INJECTION !== undefined) {
+    result.memory.injection.enabled =
+      process.env.ROLE_MEMORY_INJECTION !== "0" && process.env.ROLE_MEMORY_INJECTION !== "false";
+  }
+  if (process.env.ROLE_LONGTERM_INJECTION !== undefined) {
+    result.memory.injection.longTerm =
+      process.env.ROLE_LONGTERM_INJECTION !== "0" && process.env.ROLE_LONGTERM_INJECTION !== "false";
+  }
+
+  // corePrompt.injectConstraints override
+  if (process.env.ROLE_INJECT_CONSTRAINTS !== undefined) {
+    result.corePrompt.injectConstraints =
+      process.env.ROLE_INJECT_CONSTRAINTS !== "0" && process.env.ROLE_INJECT_CONSTRAINTS !== "false";
+  }
+
   return result;
 }
 
@@ -756,6 +801,9 @@ function deepMerge<T extends Record<string, any>>(base: T, override: Partial<T>)
 export const config = {
   get storage(): StorageConfig {
     return getConfig().storage;
+  },
+  get corePrompt(): CorePromptConfig {
+    return getConfig().corePrompt;
   },
   get autoMemory(): AutoMemoryConfig {
     return getConfig().autoMemory;

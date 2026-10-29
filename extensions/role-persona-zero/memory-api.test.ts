@@ -5,7 +5,7 @@
  */
 import { mock, test } from "bun:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -187,7 +187,7 @@ test("reinforce: used count increments and reaches the high-priority tier at 3x"
   }
 });
 
-test("repair: corrupted consolidated.md (duplicate section, stray line) is backed up and normalized", () => {
+test("repair: corrupted consolidated.md is normalized without redundant file backups", () => {
   const rolePath = makeRole("rp-api-repair-");
   const memoryFile = join(rolePath, "memory", "consolidated.md");
   const corrupted = [
@@ -205,9 +205,7 @@ test("repair: corrupted consolidated.md (duplicate section, stray line) is backe
     writeFileSync(memoryFile, corrupted, "utf-8");
 
     const result = repairRoleMemory(rolePath, ROLE_NAME);
-    assert.deepEqual({ repaired: result.repaired, issues: result.issues }, { repaired: true, issues: 1 });
-    assert.ok(result.backupPath && existsSync(result.backupPath), "backup file must exist");
-    assert.equal(readFileSync(result.backupPath!, "utf-8"), corrupted);
+    assert.deepEqual(result, { repaired: true, issues: 1 });
 
     // Repaired file parses cleanly, keeps deduped content, and reports no issues
     const data = readRoleMemory(rolePath, ROLE_NAME);

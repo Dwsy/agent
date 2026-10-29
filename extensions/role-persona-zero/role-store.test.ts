@@ -51,6 +51,7 @@ delete process.env.PI_AGENT_ROLES_DIR;
 // knowledge.test.ts) that redirect PI_ROLES_DIR to their own fixture tree.
 const roleStoreSpecifier = "./role-store.ts?role-store-test";
 const roleStore = (await import(roleStoreSpecifier)) as typeof import("./role-store.ts");
+const { reloadConfig, DEFAULT_CONFIG } = await import("./config.ts");
 const { getDefaultPrompts, resolveTemplateLanguage } = await import("./role-template.ts");
 
 // Hard safety gate: never run filesystem tests against the user's real roles
@@ -443,11 +444,12 @@ test("isFirstRun is true only while BOOTSTRAP.md exists", () => {
   assert.equal(isFirstRun(rolePath), false);
 });
 
-test("loadRolePrompts concatenates all seven core files with localized headers", () => {
+test("loadRolePrompts concatenates core files in order with localized headers", () => {
   const rolePath = join(rolesDir, "alpha");
   const prompts = loadRolePrompts(rolePath);
   const sections = prompts.split("\n\n---\n\n");
-  assert.equal(sections.length, 7);
+  const includeConstraints = reloadConfig().corePrompt.injectConstraints;
+  assert.equal(sections.length, includeConstraints ? 7 : 6);
 
   const lang = resolveTemplateLanguage();
   const expectedHeaders =
@@ -470,15 +472,36 @@ test("loadRolePrompts concatenates all seven core files with localized headers",
           "core/heartbeat.md - Heartbeat",
           "core/constraints.md - Hard Constraints",
         ];
+  const expectedSections = includeConstraints ? expectedHeaders : expectedHeaders.slice(0, 6);
   sections.forEach((section, index) => {
     assert.ok(
-      section.startsWith(`## ${expectedHeaders[index]}\n\n`),
-      `section ${index} should start with header "${expectedHeaders[index]}"`,
+      section.startsWith(`## ${expectedSections[index]}\n\n`),
+      `section ${index} should start with header "${expectedSections[index]}"`,
     );
   });
 
   const identityContent = readFileSync(join(rolePath, "core", "identity.md"), "utf-8");
-  assert.equal(sections[1], `## ${expectedHeaders[1]}\n\n${identityContent}`);
+  assert.equal(sections[1], `## ${expectedSections[1]}\n\n${identityContent}`);
+});
+
+test("loadRolePrompts includes constraints.md only when corePrompt.injectConstraints is enabled", () => {
+  const rolePath = join(rolesDir, "alpha");
+  const saved = process.env.ROLE_INJECT_CONSTRAINTS;
+  try {
+    assert.equal(DEFAULT_CONFIG.corePrompt.injectConstraints, false);
+
+    process.env.ROLE_INJECT_CONSTRAINTS = "0";
+    reloadConfig();
+    assert.ok(!loadRolePrompts(rolePath).includes("core/constraints.md"));
+
+    process.env.ROLE_INJECT_CONSTRAINTS = "1";
+    reloadConfig();
+    assert.ok(loadRolePrompts(rolePath).includes("core/constraints.md"));
+  } finally {
+    if (saved === undefined) delete process.env.ROLE_INJECT_CONSTRAINTS;
+    else process.env.ROLE_INJECT_CONSTRAINTS = saved;
+    reloadConfig();
+  }
 });
 
 test("migrateAllRolesToStructuredLayout moves legacy files into the v2 layout", () => {
