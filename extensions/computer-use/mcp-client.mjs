@@ -10,6 +10,21 @@ const DEFAULT_BRIDGE_PATH = join(
 const PROTOCOL_VERSION = "2025-11-25";
 const MAX_STDERR_CHARS = 16_000;
 const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
+const KILL_GRACE_MS = 750;
+
+// 只读动作可安全重放；有副作用的动作（click/type/...）重放会翻倍执行。
+const READ_ONLY_ACTIONS = new Set(["list_apps", "get_app_state"]);
+// 上游运行时重启或认证失效时返回的临时服务错误（-100xx）。
+const TRANSIENT_SERVER_ERROR_RE = /Computer Use server error -1\d{4}/;
+
+function isTransientServerError(result) {
+  if (!result?.isError) return false;
+  const text = (Array.isArray(result.content) ? result.content : [])
+    .filter((item) => item?.type === "text" && typeof item.text === "string")
+    .map((item) => item.text)
+    .join("\n");
+  return TRANSIENT_SERVER_ERROR_RE.test(text);
+}
 
 function abortError() {
   const error = new Error("Computer Use request aborted");
@@ -47,8 +62,7 @@ export class ComputerUseMcpClient {
       return await this.#startPromise;
     } catch (error) {
       this.#startPromise = undefined;
-      this.#child?.kill("SIGTERM");
-      this.#child = undefined;
+      this.#killProcessTree();
       throw error;
     }
   }
@@ -61,6 +75,8 @@ export class ComputerUseMcpClient {
     const child = spawn(process.execPath, [this.#bridgePath], {
       env: this.#env,
       stdio: ["pipe", "pipe", "pipe"],
+      // 独立进程组：close() 时可整组击杀 bridge 及其拉起的 sandbox/client 孙进程。
+      detached: true,
     });
     this.#child = child;
 
@@ -103,16 +119,57 @@ export class ComputerUseMcpClient {
 
   async callTool(name, args = {}, signal) {
     await this.start();
+    const result = await this.#request("tools/call", { name, arguments: args }, signal);
+    if (!isTransientServerError(result)) return result;
+
+    // 🎯 上游运行时重启/认证失效（-100xx）：整树换新传输。
+    // 只读动作安全重放一次；有副作用的动作不重放（可能已执行），仅保证后续调用恢复。
+    try {
+      await this.#recycle();
+    } catch {
+      return result;
+    }
+    if (!READ_ONLY_ACTIONS.has(name)) return result;
     return this.#request("tools/call", { name, arguments: args }, signal);
+  }
+
+  async #recycle() {
+    this.#failAll(new Error("Computer Use client recycled"));
+    this.#killProcessTree();
+    this.#startPromise = undefined;
+    await this.start();
   }
 
   close() {
     this.#closing = true;
     this.#failAll(new Error("Computer Use client closed"));
-    if (this.#child?.stdin.writable) this.#child.stdin.end();
-    this.#child?.kill("SIGTERM");
-    this.#child = undefined;
+    this.#killProcessTree();
     this.#startPromise = undefined;
+  }
+
+  #killProcessTree() {
+    const child = this.#child;
+    this.#child = undefined;
+    if (!child) return;
+    if (child.stdin?.writable) child.stdin.end();
+    // bridge 会拉起 codex sandbox + Sky client 孙进程，SIGTERM 给整个进程组。
+    try {
+      process.kill(-child.pid, "SIGTERM");
+    } catch {
+      try {
+        child.kill("SIGTERM");
+      } catch {
+        // 进程已退出。
+      }
+    }
+    const escalate = setTimeout(() => {
+      try {
+        process.kill(-child.pid, "SIGKILL");
+      } catch {
+        // 进程已退出。
+      }
+    }, KILL_GRACE_MS);
+    escalate.unref();
   }
 
   #request(method, params, signal) {

@@ -25,7 +25,35 @@ The default mode is **progressive** and exposes one tool: `computer_use`.
 - `action: "action-schema"`, `obj: { "action": "get_app_state" }` shows that action's input/output definition.
 - `action: "get_app_state"`, `obj: { "app": "Calculator" }` executes a discovered action.
 
-Use `/computer-use-mode full` to activate the individual `computer_use_<action>` tools, `/computer-use-mode progressive` to return to the single gateway, or `/computer-use-mode` to toggle. Run `/computer-use-status` to verify the runtime and current mode.
+The gateway declares an `outputSchema`, so codemode scripts receive structured
+`{ content: [...] }` results (text and image blocks) from `tools.computer_use(...)` and can
+chain observe → act → re-observe calls in one script:
+
+```js
+const state = await tools.computer_use({ action: "get_app_state", obj: { app: "com.google.Chrome" } });
+for (const c of state.content ?? []) c.type === "image" ? image(c) : text(c.text.slice(0, 400));
+```
+
+Read-only actions (`list_apps`, `get_app_state`) are retried once on a fresh transport after
+transient upstream server errors (`-100xx`, e.g. the Codex runtime restarting); mutating actions
+are never replayed automatically.
+
+Use `/computer-use-mode skill` to switch to the **skill** mode, `/computer-use-mode progressive`
+to return to the single gateway, or `/computer-use-mode` to toggle. Run `/computer-use-status` to
+verify the runtime and current mode. The `computer-use` skill is advertised in both modes and
+loads on demand. No system prompts are injected: the skill routes itself through its frontmatter
+description, and the gateway tool's prompts instruct the agent to read the skill first (workflow and
+confirmations taxonomy).
+
+In **skill** mode no Computer Use tools are exposed to the model. Instead the extension registers the `computer-use` skill, which drives the same MCP service from Node.js:
+
+```sh
+node ~/.pi/agent/extensions/computer-use/skill/scripts/cu.mjs list
+node ~/.pi/agent/extensions/computer-use/skill/scripts/cu.mjs schema get_app_state
+node ~/.pi/agent/extensions/computer-use/skill/scripts/cu.mjs call get_app_state '{"app":"Calculator"}'
+```
+
+The mode is persisted in `.mode` next to the extension and honored on `/reload` and new sessions; switching into skill mode prompts you to run `/reload` so the skill loads.
 
 ## Configuration
 
@@ -41,7 +69,7 @@ cd ~/.pi/agent/extensions/computer-use
 npm test
 ```
 
-The test uses a fake local MCP client. It verifies tool discovery, automatic elicitation acceptance, and screenshot preservation without controlling real applications.
+The tests use a fake local MCP client. `test/mcp-client.test.mjs` verifies tool discovery, automatic elicitation acceptance, and screenshot preservation without controlling real applications. `test/smoke-index.mjs` verifies extension registration: the three modes, skill discovery paths, system-prompt selection, and mode persistence.
 
 ## Security
 
