@@ -1,0 +1,19 @@
+{
+  "id": "demo-board",
+  "name": "Demo Board",
+  "description": "SDK smoke test v2",
+  "created": "2026-07-23T14:24:35.319Z",
+  "updated": "2026-07-23T14:24:35.325Z",
+  "scope": "project",
+  "enabled": true,
+  "archived": false,
+  "entry": "index.html",
+  "stateFile": "state.json",
+  "width": 900,
+  "height": 700,
+  "version": 2,
+  "contentHash": "6fb62d282c3bfc6b",
+  "lastRunAt": "2026-07-27T10:52:14.418Z",
+  "runCount": 4,
+  "cwd": "/Users/dengwenyu/Dev/AI/glimpse"
+}

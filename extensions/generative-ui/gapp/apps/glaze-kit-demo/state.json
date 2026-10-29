@@ -1,0 +1,6 @@
+{
+  "implementation": "exact-renderer",
+  "__radiusLocalStorage": {
+    "neat.frameSize": "400"
+  }
+}

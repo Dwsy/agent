@@ -1,0 +1,21 @@
+{
+  "id": "demo-board",
+  "name": "Demo Board",
+  "description": "SDK smoke test",
+  "created": "2026-07-23T14:24:35.319Z",
+  "updated": "2026-07-23T14:24:35.318Z",
+  "scope": "project",
+  "enabled": true,
+  "archived": false,
+  "entry": "index.html",
+  "stateFile": "state.json",
+  "width": 900,
+  "height": 700,
+  "version": 1,
+  "contentHash": "81b088c13220ae16",
+  "lastRunAt": null,
+  "runCount": 0,
+  "cwd": "/Users/dengwenyu/Dev/AI/glimpse",
+  "snapshotAt": "2026-07-23T14:24:35.324Z",
+  "snapshotReason": "upsert"
+}

@@ -1,0 +1,20 @@
+{
+  "id": "glaze-kit-demo",
+  "name": "Radius Match — Exact Renderer",
+  "description": "Original Radius Match 2.0.0 React renderer rebundled with real Glaze SDK components and product CSS.",
+  "scope": "project",
+  "enabled": true,
+  "archived": false,
+  "instances": "single",
+  "width": 440,
+  "height": 640,
+  "updated": "2026-07-26T01:47:14.673Z",
+  "lastRunAt": "2026-07-26T01:47:13.438Z",
+  "runCount": 45,
+  "transparent": true,
+  "frameless": false,
+  "version": "2.0.0-exact",
+  "minWidth": 390,
+  "minHeight": 580,
+  "resizable": true
+}

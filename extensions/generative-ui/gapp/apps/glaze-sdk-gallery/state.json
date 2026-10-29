@@ -1,0 +1,383 @@
+{
+  "sidebarCollapseDiagnostics": {
+    "phase": "settled",
+    "samples": [
+      {
+        "sidebarPanel": {
+          "y": 0,
+          "x": 0,
+          "width": 147.140625,
+          "height": 820
+        },
+        "phase": "60ms",
+        "toggle": {
+          "y": 8,
+          "x": 90,
+          "width": 36,
+          "height": 36
+        },
+        "floatingToggleInset": {
+          "x": 180.859375,
+          "y": 8
+        },
+        "sidebarMaterial": {
+          "filter": "none",
+          "borderTopWidth": "0px",
+          "borderTopColor": "rgba(0, 0, 0, 0)",
+          "borderRadius": "0px",
+          "backdropFilter": "none",
+          "boxShadow": "none",
+          "background": "rgba(0, 0, 0, 0)",
+          "opacity": "1",
+          "transform": "none",
+          "overflow": "hidden"
+        },
+        "sidebarAfter": {
+          "opacity": "1",
+          "transform": "none",
+          "background": "rgba(0, 0, 0, 0)"
+        },
+        "materialNodes": [
+          {
+            "filter": "none",
+            "position": "absolute",
+            "after": {
+              "opacity": "0",
+              "transform": "none",
+              "background": "rgba(0, 0, 0, 0)"
+            },
+            "className": "bg-glass-sidebar absolute inset-0 ",
+            "rect": {
+              "y": 0,
+              "x": -90.859375,
+              "width": 238,
+              "height": 820
+            },
+            "backdropFilter": "none",
+            "background": "rgba(0, 0, 0, 0)",
+            "opacity": "1",
+            "transform": "none",
+            "overflow": "visible"
+          }
+        ],
+        "workspacePanel": {
+          "y": 0,
+          "x": 148.140625,
+          "width": 1031.859375,
+          "height": 820
+        }
+      },
+      {
+        "sidebarPanel": {
+          "y": 0,
+          "x": 0,
+          "width": 238,
+          "height": 820
+        },
+        "phase": "settled",
+        "toggle": {
+          "y": 8,
+          "x": 90,
+          "width": 36,
+          "height": 36
+        },
+        "floatingToggleInset": {
+          "x": 90,
+          "y": 8
+        },
+        "sidebarMaterial": {
+          "filter": "none",
+          "borderTopWidth": "0px",
+          "borderTopColor": "rgba(0, 0, 0, 0)",
+          "borderRadius": "0px",
+          "backdropFilter": "none",
+          "boxShadow": "none",
+          "background": "rgba(0, 0, 0, 0)",
+          "opacity": "1",
+          "transform": "none",
+          "overflow": "hidden"
+        },
+        "sidebarAfter": {
+          "opacity": "1",
+          "transform": "none",
+          "background": "rgba(0, 0, 0, 0)"
+        },
+        "materialNodes": [
+          {
+            "filter": "none",
+            "position": "absolute",
+            "after": {
+              "opacity": "0",
+              "transform": "none",
+              "background": "rgba(0, 0, 0, 0)"
+            },
+            "className": "bg-glass-sidebar absolute inset-0 ",
+            "rect": {
+              "y": 0,
+              "x": 0,
+              "width": 238,
+              "height": 820
+            },
+            "backdropFilter": "none",
+            "background": "rgba(0, 0, 0, 0)",
+            "opacity": "1",
+            "transform": "none",
+            "overflow": "visible"
+          }
+        ],
+        "workspacePanel": {
+          "y": 0,
+          "x": 239,
+          "width": 941,
+          "height": 820
+        }
+      }
+    ],
+    "collapsed": false,
+    "changedAt": "2026-08-27T08:16:15.904Z"
+  },
+  "section": "native",
+  "theme": "system",
+  "version": "0.11.1.0",
+  "profile": "mac",
+  "nativeImageDiagnostics": {
+    "result": "RUNNING",
+    "bridgeMarked": true
+  },
+  "sidebarPresentation": "attached",
+  "nativeMaterialDiagnostics": {
+    "requested": true,
+    "ids": [
+      "gallery-background",
+      "gallery-control-custom-select-trigger-2",
+      "gallery-control-segmented-control-1",
+      "gallery-control-sidebar-presentation-switch-0",
+      "gallery-control-sidebar-toggle-10",
+      "gallery-control-status-4",
+      "gallery-sidebar-surface-0"
+    ],
+    "regionCount": 7,
+    "supported": true,
+    "background": false,
+    "lastSyncAt": "2026-08-27T08:16:41.047Z",
+    "regions": [
+      {
+        "id": "gallery-background",
+        "style": "regular",
+        "pressed": false,
+        "foregroundColor": "rgb(0, 0, 0)",
+        "x": 0,
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "hovered": false,
+        "y": 0,
+        "width": 1180,
+        "adaptiveAppearance": 1,
+        "interactive": false,
+        "height": 820,
+        "role": "background",
+        "cornerRadius": 0,
+        "tintWhite": 1,
+        "tintAlpha": 0.16
+      },
+      {
+        "id": "gallery-sidebar-surface-0",
+        "style": "regular",
+        "pressed": false,
+        "foregroundColor": "rgb(0, 0, 0)",
+        "x": 0,
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "hovered": false,
+        "y": 0,
+        "width": 238,
+        "adaptiveAppearance": 1,
+        "interactive": false,
+        "height": 820,
+        "role": "sidebar",
+        "cornerRadius": 0,
+        "tintWhite": 1,
+        "tintAlpha": 0.1
+      },
+      {
+        "id": "gallery-control-sidebar-presentation-switch-0",
+        "style": "regular",
+        "pressed": false,
+        "foregroundColor": "rgb(0, 0, 0)",
+        "x": 768,
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "hovered": false,
+        "y": 10,
+        "width": 141.5,
+        "adaptiveAppearance": 1,
+        "interactive": false,
+        "height": 32,
+        "role": "control",
+        "cornerRadius": 16,
+        "tintWhite": 1,
+        "tintAlpha": 0
+      },
+      {
+        "id": "gallery-control-segmented-control-1",
+        "style": "regular",
+        "pressed": false,
+        "foregroundColor": "rgb(0, 0, 0)",
+        "x": 917.5,
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "hovered": false,
+        "y": 10,
+        "width": 162.5,
+        "adaptiveAppearance": 1,
+        "interactive": false,
+        "height": 32,
+        "role": "control",
+        "cornerRadius": 16,
+        "tintWhite": 1,
+        "tintAlpha": 0
+      },
+      {
+        "id": "gallery-control-custom-select-trigger-2",
+        "style": "regular",
+        "pressed": false,
+        "foregroundColor": "rgb(0, 0, 0)",
+        "x": 1088,
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "hovered": false,
+        "y": 12,
+        "width": 84,
+        "adaptiveAppearance": 1,
+        "interactive": false,
+        "height": 28,
+        "role": "control",
+        "cornerRadius": 12,
+        "tintWhite": 1,
+        "tintAlpha": 0
+      },
+      {
+        "id": "gallery-control-status-4",
+        "style": "regular",
+        "pressed": false,
+        "foregroundColor": "rgb(0, 0, 0)",
+        "x": 274,
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "hovered": false,
+        "y": 27.5,
+        "width": 157,
+        "adaptiveAppearance": 1,
+        "interactive": false,
+        "height": 20,
+        "role": "control",
+        "cornerRadius": 10,
+        "tintWhite": 1,
+        "tintAlpha": 0
+      },
+      {
+        "id": "gallery-control-sidebar-toggle-10",
+        "style": "regular",
+        "pressed": false,
+        "foregroundColor": "rgb(0, 0, 0)",
+        "x": 90,
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "hovered": false,
+        "y": 8,
+        "width": 36,
+        "adaptiveAppearance": 1,
+        "interactive": false,
+        "height": 36,
+        "role": "control",
+        "cornerRadius": 18,
+        "tintWhite": 1,
+        "tintAlpha": 0.07
+      }
+    ]
+  },
+  "nativeContextMenuRect": {
+    "y": 207,
+    "x": 261,
+    "width": 437.5,
+    "height": 112
+  },
+  "package": "@glaze/core",
+  "sidebarCollapsed": false,
+  "nativeDateValue": null,
+  "windowDragDiagnostics": {
+    "noDragCount": 8,
+    "dragCount": 2,
+    "requested": true,
+    "applied": true,
+    "regions": {
+      "drag": [
+        {
+          "y": 0,
+          "x": 0,
+          "width": 238,
+          "height": 44
+        },
+        {
+          "y": 0,
+          "x": 239,
+          "width": 941,
+          "height": 52
+        }
+      ],
+      "noDrag": [
+        {
+          "y": 10,
+          "x": 768,
+          "width": 404.5,
+          "height": 32
+        },
+        {
+          "y": 13.5,
+          "x": 771,
+          "width": 70,
+          "height": 25
+        },
+        {
+          "y": 13.5,
+          "x": 842.5,
+          "width": 64,
+          "height": 25
+        },
+        {
+          "y": 13.5,
+          "x": 920.5,
+          "width": 60.5,
+          "height": 25
+        },
+        {
+          "y": 13.5,
+          "x": 983,
+          "width": 47,
+          "height": 25
+        },
+        {
+          "y": 13.5,
+          "x": 1032,
+          "width": 45,
+          "height": 25
+        },
+        {
+          "y": 12,
+          "x": 1088,
+          "width": 84,
+          "height": 28
+        },
+        {
+          "y": 8,
+          "x": 90,
+          "width": 36,
+          "height": 36
+        }
+      ]
+    }
+  },
+  "nativeThemeInfo": {
+    "shouldUseDarkColors": false,
+    "accentColor": "#007aff",
+    "prefersReducedTransparency": false,
+    "shouldUseDarkColorsForSystemIntegratedUI": false,
+    "themeSource": "system",
+    "shouldUseHighContrastColors": false,
+    "shouldUseInvertedColorScheme": false
+  },
+  "auditLocked": false
+}

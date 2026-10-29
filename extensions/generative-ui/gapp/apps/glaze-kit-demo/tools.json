@@ -1,0 +1,152 @@
+{
+  "v": "0.1",
+  "tools": [
+    {
+      "name": "get_exact_ui",
+      "description": "Inspect mounted original Radius Match UI, popovers, resize handles and boot errors.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "get_exact_boot",
+      "description": "Alias of exact UI diagnostics.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "click_exact_mode",
+      "description": "Click original Inner/Outer control.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "click_exact_frame",
+      "description": "Open original frame size menu.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "click_exact_button",
+      "description": "Click any current original-renderer button by DOM index.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "index": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "index"
+        ]
+      }
+    },
+    {
+      "name": "set_exact_input",
+      "description": "Set a current numeric input by DOM index and dispatch React events.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "index": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "value": {
+            "type": "number"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "index",
+          "value"
+        ]
+      }
+    },
+    {
+      "name": "drag_exact_handle",
+      "description": "Drag a current resize handle by DOM snapshot index.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "index": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "dx": {
+            "type": "number"
+          },
+          "dy": {
+            "type": "number"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "index",
+          "dx",
+          "dy"
+        ]
+      }
+    },
+    {
+      "name": "click_exact_result",
+      "description": "Click the original result row; clipboard requires direct user gesture.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "reset_exact",
+      "description": "Restore product defaults.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "get_extract_info",
+      "description": "Return exact hashes and runtime path.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "get_material_diagnostics",
+      "description": "Inspect liquid-glass support and computed styles.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    }
+  ]
+}

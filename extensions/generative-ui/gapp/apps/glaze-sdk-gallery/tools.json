@@ -1,0 +1,157 @@
+{
+  "revision": 2,
+  "tools": [
+    {
+      "name": "get_sdk_status",
+      "description": "Inspect the full Glaze SDK runtime, theme, profile, visible families and material support.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "get_component_matrix",
+      "description": "Return all extracted component families and live sample coverage.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "set_theme",
+      "description": "Set gallery theme.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "theme": {
+            "type": "string",
+            "enum": [
+              "system",
+              "light",
+              "dark"
+            ]
+          }
+        },
+        "required": [
+          "theme"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "set_profile",
+      "description": "Set SDK style profile.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "profile": {
+            "type": "string",
+            "enum": [
+              "mac",
+              "windows",
+              "terminal"
+            ]
+          }
+        },
+        "required": [
+          "profile"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "set_section",
+      "description": "Show a gallery section.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "section": {
+            "type": "string",
+            "enum": [
+              "fundamentals",
+              "forms",
+              "structure",
+              "collections",
+              "overlays",
+              "native"
+            ]
+          }
+        },
+        "required": [
+          "section"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "get_interaction_diagnostics",
+      "description": "Return computed styles and geometry for current audit targets.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "prepare_visual_audit",
+      "description": "Lock pointer interaction and prepare an exact theme/profile/section state for screenshot capture.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "theme": {
+            "type": "string",
+            "enum": [
+              "system",
+              "light",
+              "dark"
+            ]
+          },
+          "profile": {
+            "type": "string",
+            "enum": [
+              "mac",
+              "windows",
+              "terminal"
+            ]
+          },
+          "section": {
+            "type": "string",
+            "enum": [
+              "fundamentals",
+              "forms",
+              "structure",
+              "collections",
+              "overlays",
+              "native"
+            ]
+          }
+        },
+        "required": [
+          "theme",
+          "section"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "release_visual_audit",
+      "description": "Release the screenshot interaction lock.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    }
+  ]
+}

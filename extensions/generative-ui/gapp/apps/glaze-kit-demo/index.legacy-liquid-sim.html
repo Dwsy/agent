@@ -1,0 +1,790 @@
+<!doctype html>
+<html lang="zh-CN" data-glass-mode="fallback">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<meta name="color-scheme" content="light dark"/>
+<title>Glaze Kit Demo</title>
+<style>
+/* === REAL KIT: tokens.css (from @glaze/core/src/components/styles.css) === */
+/* Sliced from @glaze/core/src/components/styles.css (real source, not rewritten tokens) */
+/* source lines ~66-340 */
+
+:root {
+  /* Theme seeds */
+  --bg: #ffffff;
+  --bg-secondary: #ffffff;
+  --fg: #000000;
+  --theme-accent: #138af2;
+  /* System accent (when injected) wins over the theme accent */
+  --accent: var(--color-system-accent, var(--theme-accent));
+  --selection: #000000;
+  --loader: #000000;
+  --red: #b12424;
+  --orange: #c75d07;
+  --yellow: #f8a300;
+  --green: #006b4f;
+  --blue: #138af2;
+  --purple: #6a3dec;
+  --magenta: #9a1b6e;
+
+  /* Generated primitive steps */
+  --bg-0: rgb(from var(--bg) r g b / 0%);
+  --bg-5: rgb(from var(--bg) r g b / 5%);
+  --bg-10: rgb(from var(--bg) r g b / 10%);
+  --bg-20: rgb(from var(--bg) r g b / 20%);
+  --bg-40: rgb(from var(--bg) r g b / 40%);
+  --bg-60: rgb(from var(--bg) r g b / 60%);
+  --bg-80: rgb(from var(--bg) r g b / 80%);
+  --bg-secondary-0: rgb(from var(--bg-secondary) r g b / 0%);
+  --bg-secondary-5: rgb(from var(--bg-secondary) r g b / 5%);
+  --bg-secondary-10: rgb(from var(--bg-secondary) r g b / 10%);
+  --bg-secondary-20: rgb(from var(--bg-secondary) r g b / 20%);
+  --bg-secondary-40: rgb(from var(--bg-secondary) r g b / 40%);
+  --bg-secondary-60: rgb(from var(--bg-secondary) r g b / 60%);
+  --bg-secondary-80: rgb(from var(--bg-secondary) r g b / 80%);
+  --fg-0: rgb(from var(--fg) r g b / 0%);
+  --fg-5: rgb(from var(--fg) r g b / 5%);
+  --fg-10: rgb(from var(--fg) r g b / 10%);
+  --fg-20: rgb(from var(--fg) r g b / 20%);
+  --fg-40: rgb(from var(--fg) r g b / 40%);
+  --fg-60: rgb(from var(--fg) r g b / 60%);
+  --fg-80: rgb(from var(--fg) r g b / 80%);
+  --fg-700: var(--fg-60);
+  --accent-0: rgb(from var(--accent) r g b / 0%);
+  --accent-5: rgb(from var(--accent) r g b / 5%);
+  --accent-10: rgb(from var(--accent) r g b / 10%);
+  --accent-20: rgb(from var(--accent) r g b / 20%);
+  --accent-40: rgb(from var(--accent) r g b / 40%);
+  --accent-60: rgb(from var(--accent) r g b / 60%);
+  --accent-80: rgb(from var(--accent) r g b / 80%);
+  --selection-0: rgb(from var(--selection) r g b / 0%);
+  --selection-5: rgb(from var(--selection) r g b / 5%);
+  --selection-10: rgb(from var(--selection) r g b / 10%);
+  --selection-20: rgb(from var(--selection) r g b / 20%);
+  --selection-40: rgb(from var(--selection) r g b / 40%);
+  --selection-60: rgb(from var(--selection) r g b / 60%);
+  --selection-80: rgb(from var(--selection) r g b / 80%);
+  --loader-0: rgb(from var(--loader) r g b / 0%);
+  --loader-5: rgb(from var(--loader) r g b / 5%);
+  --loader-10: rgb(from var(--loader) r g b / 10%);
+  --loader-20: rgb(from var(--loader) r g b / 20%);
+  --loader-40: rgb(from var(--loader) r g b / 40%);
+  --loader-60: rgb(from var(--loader) r g b / 60%);
+  --loader-80: rgb(from var(--loader) r g b / 80%);
+  --support-red-0: rgb(from var(--red) r g b / 0%);
+  --support-red-5: rgb(from var(--red) r g b / 5%);
+  --support-red-10: rgb(from var(--red) r g b / 10%);
+  --support-red-20: rgb(from var(--red) r g b / 20%);
+  --support-red-40: rgb(from var(--red) r g b / 40%);
+  --support-red-60: rgb(from var(--red) r g b / 60%);
+  --support-red-80: rgb(from var(--red) r g b / 80%);
+  --support-orange-0: rgb(from var(--orange) r g b / 0%);
+  --support-orange-5: rgb(from var(--orange) r g b / 5%);
+  --support-orange-10: rgb(from var(--orange) r g b / 10%);
+  --support-orange-20: rgb(from var(--orange) r g b / 20%);
+  --support-orange-40: rgb(from var(--orange) r g b / 40%);
+  --support-orange-60: rgb(from var(--orange) r g b / 60%);
+  --support-orange-80: rgb(from var(--orange) r g b / 80%);
+  --support-yellow-0: rgb(from var(--yellow) r g b / 0%);
+  --support-yellow-5: rgb(from var(--yellow) r g b / 5%);
+  --support-yellow-10: rgb(from var(--yellow) r g b / 10%);
+  --support-yellow-20: rgb(from var(--yellow) r g b / 20%);
+  --support-yellow-40: rgb(from var(--yellow) r g b / 40%);
+  --support-yellow-60: rgb(from var(--yellow) r g b / 60%);
+  --support-yellow-80: rgb(from var(--yellow) r g b / 80%);
+  --support-green-0: rgb(from var(--green) r g b / 0%);
+  --support-green-5: rgb(from var(--green) r g b / 5%);
+  --support-green-10: rgb(from var(--green) r g b / 10%);
+  --support-green-20: rgb(from var(--green) r g b / 20%);
+  --support-green-40: rgb(from var(--green) r g b / 40%);
+  --support-green-60: rgb(from var(--green) r g b / 60%);
+  --support-green-80: rgb(from var(--green) r g b / 80%);
+  --support-blue-0: rgb(from var(--blue) r g b / 0%);
+  --support-blue-5: rgb(from var(--blue) r g b / 5%);
+  --support-blue-10: rgb(from var(--blue) r g b / 10%);
+  --support-blue-20: rgb(from var(--blue) r g b / 20%);
+  --support-blue-40: rgb(from var(--blue) r g b / 40%);
+  --support-blue-60: rgb(from var(--blue) r g b / 60%);
+  --support-blue-80: rgb(from var(--blue) r g b / 80%);
+  --support-purple-0: rgb(from var(--purple) r g b / 0%);
+  --support-purple-5: rgb(from var(--purple) r g b / 5%);
+  --support-purple-10: rgb(from var(--purple) r g b / 10%);
+  --support-purple-20: rgb(from var(--purple) r g b / 20%);
+  --support-purple-40: rgb(from var(--purple) r g b / 40%);
+  --support-purple-60: rgb(from var(--purple) r g b / 60%);
+  --support-purple-80: rgb(from var(--purple) r g b / 80%);
+  --support-magenta-0: rgb(from var(--magenta) r g b / 0%);
+  --support-magenta-5: rgb(from var(--magenta) r g b / 5%);
+  --support-magenta-10: rgb(from var(--magenta) r g b / 10%);
+  --support-magenta-20: rgb(from var(--magenta) r g b / 20%);
+  --support-magenta-40: rgb(from var(--magenta) r g b / 40%);
+  --support-magenta-60: rgb(from var(--magenta) r g b / 60%);
+  --support-magenta-80: rgb(from var(--magenta) r g b / 80%);
+
+  /* Semantic color roles */
+  --color-text-primary: var(--fg);
+  --color-text-secondary: var(--fg-60);
+  --color-text-tertiary: var(--fg-40);
+  --color-text-quaternary: var(--fg-20);
+  --color-text-disabled: var(--fg-40);
+  /* Solid (not alpha) so placeholders match adjacent solid icons on glass surfaces. */
+  --color-text-placeholder: var(--color-text-tertiary-solid);
+  --color-text-link: var(--accent);
+  /* Solid flavors of the alpha text colors — same perceived value flattened against the
+     window background. Icons need these: translucent strokes double up where paths overlap.
+     An @layer utilities rule below auto-applies them to svgs (direct class or immediate wrapper). */
+  --color-text-secondary-solid: color-mix(in srgb, var(--bg), var(--fg) 60%);
+  --color-text-tertiary-solid: color-mix(in srgb, var(--bg), var(--fg) 40%);
+  --color-text-quaternary-solid: color-mix(in srgb, var(--bg), var(--fg) 20%);
+  /* Semantic surfaces. Control surfaces have named interaction states
+     (control-subtle for hover, control for resting fills and presses from subtle,
+     control-active for presses from filled) because components and agent-generated
+     code compose Tailwind utilities, where the semantic name carries meaning. */
+  --color-surface-control: var(--fg-10);
+  --color-surface-control-subtle: var(--fg-5);
+  --color-surface-control-active: var(--fg-20);
+  /* Large inset surfaces (settings wells, zebra stripes): subtler than any ramp step on purpose */
+  --color-surface-well: rgb(from var(--fg) r g b / 2.5%);
+  --color-surface-panel: var(--bg-secondary-40);
+  /* Elevated surfaces (dialogs, menus, popovers) are neutral-dominant by design — they float
+     above the themed window rather than amplifying its color — with a 15% seed mix so custom
+     themes still read as a subtle tint. */
+  --color-surface-popover: color-mix(in srgb, #fcfcfc, var(--bg) 15%);
+  /* Solid hover companion — translucent fills would let content show through elevated chips */
+  --color-surface-popover-hover: color-mix(in srgb, var(--color-surface-popover), var(--fg) 5%);
+  --color-surface-list-hover: var(--selection-5);
+  --color-surface-list-selection: var(--selection-10);
+  --color-surface-input: var(--fg-5);
+  --color-border-primary: var(--fg-20);
+  --color-border-secondary: var(--fg-10);
+  --color-border-tertiary: var(--fg-5);
+  --color-border-separator: var(--fg-10);
+  --color-border-field: var(--fg-20);
+  --color-window-bg: var(--bg-40);
+  --color-window-bg-secondary: var(--bg-secondary-40);
+  --color-panel-background: var(--color-window-bg-secondary);
+  --color-panel-overlay: var(--bg);
+  --color-panel-backdrop: rgb(0 0 0 / 18%);
+
+  /* Style roles */
+  --radius-2: 2px;
+  --radius-4: 4px;
+  --radius-6: 6px;
+  --radius-8: 8px;
+  --radius-10: 10px;
+  --radius-12: 12px;
+  --radius-16: 16px;
+  --radius-18: 18px;
+  --radius-20: 20px;
+  --radius-26: 26px;
+  --radius-full: 9999px;
+  --radius-control: var(--radius-12);
+  --radius-panel: var(--radius-18);
+  --radius-popover: var(--radius-12);
+  --radius-window: var(--radius-16);
+  --radius-pill: 9999px; /* pill-shaped chrome (buttons, tabs, search) — squares on Windows */
+  --radius-dialog: 24px; /* dialogs sit off the numeric scale deliberately */
+  --radius-card: var(--radius-12); /* content containers (cards, wells, groups) */
+  --border-width-control: 1px;
+  --border-width-panel: 1px;
+  --shadow-panel:
+    inset 0 0 0 1px var(--color-border-secondary), 0 8px 10px -6px rgb(0 0 0 / 10%), 0 20px 25px -5px rgb(0 0 0 / 16%);
+  --shadow-popover: inset 0 0 0 1px var(--color-border-primary), 0 8px 24px rgb(0 0 0 / 18%);
+  --shadow-dialog: 0 20px 48px -12px rgb(0 0 0 / 35%);
+  --blur-panel: 24px;
+  --blur-popover: 36px;
+  --icon-small: 12px;
+  --icon-medium: 16px;
+  --icon-large: 22px;
+
+  /* Legacy aliases */
+  --background: var(--color-window-bg);
+  --background-solid: var(--bg-secondary);
+  --sidebar: var(--bg-secondary);
+  --sidebar-border: var(--fg-10);
+  --panel-border: var(--fg-10);
+  --accent-hover: color-mix(in srgb, var(--accent), black 5%);
+  --red-hover: color-mix(in srgb, var(--red), black 5%);
+  --accent-contrast: #ffffff;
+
+  /* syntax highlighting */
+  --color-token-primary: hsl(214 100% 41%);
+  --color-token-secondary: hsl(214 100% 30%);
+  --color-token-tertiary: hsl(0 0% 31.373%);
+  --color-token-string: hsl(0 84% 51%);
+  --color-token-highlight: hsl(35 99% 50%);
+}
+
+.dark {
+  --bg: #000000;
+  --bg-secondary: #000000;
+  --fg: #ffffff;
+  --theme-accent: #4fa3f8;
+  --selection: #ffffff;
+  --loader: #ffffff;
+  --red: #ff6363;
+  --orange: #ff9217;
+  --yellow: #ffc531;
+  --green: #59d499;
+  --blue: #56c2ff;
+  --purple: #a485ff;
+  --magenta: #cf2f98;
+  --color-window-bg: var(--bg-40);
+  --color-surface-popover: color-mix(in srgb, #111113, var(--bg) 15%);
+  --color-panel-backdrop: rgb(0 0 0 / 42%);
+  --background: var(--color-window-bg);
+  --background-solid: var(--bg);
+  --sidebar: var(--bg-secondary);
+  --sidebar-border: var(--fg-10);
+  --panel-border: var(--fg-10);
+  --panel-border-hover: var(--fg-20);
+  --accent-hover: color-mix(in srgb, var(--accent), white 15%);
+  --red-hover: color-mix(in srgb, var(--red), white 15%);
+  --shadow-panel:
+    inset 0 0 0 1px var(--color-border-tertiary), 0 8px 10px -6px rgb(0 0 0 / 40%), 0 20px 25px -5px rgb(0 0 0 / 48%);
+  --shadow-popover: inset 0 0 0 1px var(--color-border-secondary), 0 8px 28px rgb(0 0 0 / 48%);
+  --shadow-dialog: 0 32px 64px -8px rgb(0 0 0 / 85%), 0 10px 20px -4px rgb(0 0 0 / 40%);
+
+  /* syntax highlighting */
+  --color-token-primary: hsl(214 100% 61%);
+  --color-token-secondary: hsl(214 100% 30%);
+  --color-token-tertiary: hsl(0 0% 70.588%);
+  --color-token-string: hsl(0 84% 60%);
+  --color-token-highlight: hsl(35 99% 60%);
+}
+
+.style-windows,
+[data-style-profile="windows"] {
+  --radius-control: var(--radius-8);
+  --radius-panel: var(--radius-8);
+  --radius-popover: var(--radius-8);
+  --radius-window: var(--radius-8);
+  --radius-pill: var(--radius-8);
+  --radius-dialog: var(--radius-8);
+  --radius-card: var(--radius-8);
+  --blur-panel: 60px;
+  --blur-popover: 120px;
+  --shadow-panel: inset 0 0 0 1px var(--color-border-secondary), 0 16px 32px rgb(0 0 0 / 18%);
+  --shadow-popover: inset 0 0 0 1px var(--color-border-primary), 0 16px 36px rgb(0 0 0 / 22%);
+}
+
+.style-terminal,
+[data-style-profile="terminal"] {
+  --radius-control: var(--radius-4);
+  --radius-panel: var(--radius-4);
+  --radius-popover: var(--radius-4);
+  --radius-window: var(--radius-6);
+  --border-width-control: 1px;
+  --border-width-panel: 2px;
+  --blur-panel: 0px;
+  --blur-popover: 0px;
+  --shadow-panel: inset 0 0 0 var(--border-width-panel) var(--color-border-primary);
+  --shadow-popover: inset 0 0 0 var(--border-width-panel) var(--color-border-primary);
+  --shadow-dialog: inset 0 0 0 var(--border-width-panel) var(--color-border-primary);
+}
+
+/* === REAL KIT: glass-materials.css (L1090-L1188) === */
+/* Sliced from @glaze/core/src/components/styles.css L1090-L1188 */
+/* Real -apple-visual-effect materials */
+
+  .bg-glass {
+    @supports (-apple-visual-effect: -apple-system-glass-material) {
+      -apple-visual-effect: -apple-system-glass-material;
+      transition: none !important;
+
+      :root.is-macos-27-plus & {
+        border: 1px solid transparent;
+      }
+
+      /* :root:not(.dark) & {
+        background-color: rgba(255, 255, 255, 0.9);
+      } */
+
+      :root.window-blurred & {
+        -apple-visual-effect: none;
+        background-color: var(--color-gray-a3);
+        backdrop-filter: blur(24px);
+
+        :root.is-macos-27-plus & {
+          border: 1px solid var(--color-border-secondary);
+        }
+
+        &:not(.dimmable) > * {
+          opacity: 0.4;
+        }
+
+        /* The sidebar list is `.dimmable` but lives inside the ScrollArea root — a
+           non-dimmable direct child that already inherits the 0.4 group opacity above.
+           Its own `.dimmable` rule would compound that to 0.4 × 0.4 = 0.16, dimming the
+           list far harder than the surrounding chrome. Neutralize it so the list lands at
+           a single 0.4, matching the macOS 27 `.dimmable-children` path. */
+        &:not(.dimmable) > * .dimmable {
+          opacity: 1 !important;
+        }
+      }
+    }
+  }
+
+  .bg-glass-toast {
+    @supports (-apple-visual-effect: -apple-system-glass-material-media-controls) {
+      -apple-visual-effect: -apple-system-glass-material-media-controls;
+      transition: none !important;
+
+      :root:not(.dark) & {
+        background-color: hsl(0 0% 100% / 0.7);
+      }
+    }
+  }
+
+  .bg-glass-sidebar {
+    @supports (-apple-visual-effect: -apple-system-glass-material) {
+      -apple-visual-effect: -apple-system-glass-material-subdued;
+      transition: none !important;
+      opacity: 0.8;
+
+      &::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background-color: black;
+        opacity: 0.4;
+        pointer-events: none;
+      }
+
+      transform: scale(1000%);
+      filter: saturate(1.25);
+
+      :root:not(.dark) &::after {
+        background-color: black;
+        opacity: 0;
+        transform: scale(100%);
+        filter: saturate(1);
+      }
+
+      :root.window-blurred & {
+        -apple-visual-effect: none;
+        background-color: var(--color-gray-a3);
+        backdrop-filter: blur(24px);
+
+        &:not(.dimmable) > * {
+          opacity: 0.4;
+        }
+      }
+    }
+  }
+
+  .bg-glass-accent {
+    @supports (-apple-visual-effect: -apple-system-glass-material) {
+      -apple-visual-effect: -apple-system-glass-material;
+      background: var(--accent);
+      color: white;
+
+      &:hover,
+      &:active,
+      &:focus-visible {
+        background: var(--accent-hover);
+      }
+    }
+  }
+
+
+/* === REAL KIT: liquid-sim.css (honest fallback) === */
+/* liquid-sim.css
+ * Honest visual simulation of macOS-style liquid glass for hosts without
+ * -apple-visual-effect support (e.g. Glimpse WKWebView).
+ * NOT the system liquid glass material. Do not market as true liquid glass.
+ */
+
+:root {
+  --liquid-blur: 32px;
+  --liquid-saturate: 1.65;
+  --liquid-bright: 1.05;
+  --liquid-contrast: 1.04;
+  --liquid-fill: color-mix(in srgb, var(--bg, #fff) 38%, transparent);
+  --liquid-fill-strong: color-mix(in srgb, var(--bg, #fff) 52%, transparent);
+  --liquid-stroke: color-mix(in srgb, var(--fg, #000) 14%, transparent);
+  --liquid-spec: rgb(255 255 255 / 55%);
+  --liquid-spec-soft: rgb(255 255 255 / 18%);
+  --liquid-shadow: 0 10px 40px rgb(0 0 0 / 14%), inset 0 1px 0 var(--liquid-spec);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --liquid-fill: color-mix(in srgb, #2a2a2e 42%, transparent);
+    --liquid-fill-strong: color-mix(in srgb, #2a2a2e 58%, transparent);
+    --liquid-stroke: color-mix(in srgb, #fff 16%, transparent);
+    --liquid-spec: rgb(255 255 255 / 16%);
+    --liquid-spec-soft: rgb(255 255 255 / 8%);
+    --liquid-shadow: 0 14px 48px rgb(0 0 0 / 45%), inset 0 1px 0 var(--liquid-spec);
+  }
+}
+
+/* Prefer real system material when available */
+@supports (-apple-visual-effect: -apple-system-glass-material) {
+  .liquid-sim,
+  .liquid-sim-accent,
+  .liquid-sim-sidebar,
+  .liquid-sim-toast {
+    -apple-visual-effect: -apple-system-glass-material;
+    background: transparent;
+    border-color: transparent;
+  }
+  .liquid-sim-sidebar {
+    -apple-visual-effect: -apple-system-glass-material-subdued;
+  }
+  .liquid-sim-toast {
+    -apple-visual-effect: -apple-system-glass-material-media-controls;
+  }
+  .liquid-sim-accent {
+    background: color-mix(in srgb, var(--accent, #138af2) 22%, transparent);
+  }
+}
+
+/* Simulation path */
+@supports not (-apple-visual-effect: -apple-system-glass-material) {
+  .liquid-sim,
+  .liquid-sim-accent,
+  .liquid-sim-sidebar,
+  .liquid-sim-toast {
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+    background: var(--liquid-fill);
+    border: 1px solid var(--liquid-stroke);
+    box-shadow: var(--liquid-shadow);
+    -webkit-backdrop-filter:
+      blur(var(--liquid-blur))
+      saturate(var(--liquid-saturate))
+      brightness(var(--liquid-bright))
+      contrast(var(--liquid-contrast));
+    backdrop-filter:
+      blur(var(--liquid-blur))
+      saturate(var(--liquid-saturate))
+      brightness(var(--liquid-bright))
+      contrast(var(--liquid-contrast));
+  }
+
+  /* specular rim + refractive edge */
+  .liquid-sim::before,
+  .liquid-sim-accent::before,
+  .liquid-sim-sidebar::before,
+  .liquid-sim-toast::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    z-index: 1;
+    background:
+      linear-gradient(165deg, var(--liquid-spec) 0%, transparent 42%),
+      linear-gradient(320deg, var(--liquid-spec-soft) 0%, transparent 40%);
+    opacity: 0.9;
+    mix-blend-mode: soft-light;
+  }
+
+  /* secondary caustic / liquid highlight sweep */
+  .liquid-sim::after,
+  .liquid-sim-accent::after,
+  .liquid-sim-sidebar::after,
+  .liquid-sim-toast::after {
+    content: "";
+    position: absolute;
+    inset: -20%;
+    border-radius: inherit;
+    pointer-events: none;
+    z-index: 1;
+    background: conic-gradient(
+      from 180deg at 50% 50%,
+      transparent 0deg,
+      rgb(255 255 255 / 10%) 60deg,
+      transparent 120deg,
+      rgb(255 255 255 / 6%) 220deg,
+      transparent 300deg
+    );
+    opacity: 0.55;
+    animation: liquid-sheen 9s linear infinite;
+  }
+
+  .liquid-sim > *,
+  .liquid-sim-accent > *,
+  .liquid-sim-sidebar > *,
+  .liquid-sim-toast > * {
+    position: relative;
+    z-index: 2;
+  }
+
+  .liquid-sim-accent {
+    background: color-mix(in srgb, var(--accent, #138af2) 28%, var(--liquid-fill));
+    border-color: color-mix(in srgb, var(--accent, #138af2) 35%, var(--liquid-stroke));
+    color: var(--accent, #0b6bcb);
+  }
+
+  .liquid-sim-sidebar {
+    --liquid-blur: 40px;
+    --liquid-saturate: 1.45;
+    background: color-mix(in srgb, var(--bg, #fff) 32%, transparent);
+  }
+
+  .liquid-sim-toast {
+    --liquid-blur: 36px;
+    background: color-mix(in srgb, var(--bg, #fff) 48%, transparent);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    .liquid-sim-accent { color: #fff; }
+  }
+}
+
+@keyframes liquid-sheen {
+  from { transform: rotate(0deg) scale(1.05); }
+  to { transform: rotate(360deg) scale(1.05); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .liquid-sim::after,
+  .liquid-sim-accent::after,
+  .liquid-sim-sidebar::after,
+  .liquid-sim-toast::after {
+    animation: none;
+  }
+}
+
+/* Map Glaze class names → simulation when host cannot use system glass.
+   Keeps markup compatible with real bg-glass* kit classes. */
+@supports not (-apple-visual-effect: -apple-system-glass-material) {
+  .bg-glass.liquid-bridge { composes: none; }
+  .bg-glass { /* enhanced by also adding .liquid-sim in demo markup */ }
+}
+
+/* Utility: use both classes in markup: class="bg-glass liquid-sim" */
+
+
+/* === Demo layout === */
+* { box-sizing: border-box; margin: 0; }
+html, body { height: 100%; }
+html { background: var(--bg-secondary, #f5f5f5); }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  background: var(--color-window-bg, rgba(255,255,255,0.85)) !important;
+  color: var(--color-text-primary, #000);
+  padding: 16px;
+  overflow-y: auto;
+}
+h2 { font-size: 14px; font-weight: 600; margin: 18px 0 8px; opacity: .8; }
+h2:first-child { margin-top: 0; }
+.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+@media (max-width: 600px) { .grid { grid-template-columns: 1fr; } }
+.card { padding: 14px; border-radius: var(--radius-card, 12px); min-height: 80px; }
+.lbl { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .6px; opacity: .5; margin-bottom: 6px; }
+.btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  height: 30px; padding: 0 12px; gap: 6px;
+  border: none; border-radius: var(--radius-control, 12px);
+  font-size: 12px; font-weight: 500; cursor: default;
+  transition: opacity .12s;
+}
+.btn:active { opacity: .65; }
+.btn-glass { background: var(--color-surface-control, rgba(0,0,0,.08)); }
+.btn-accent { background: var(--accent, #138af2); color: #fff; }
+.btn-red { background: var(--red, #b12424); color: #fff; }
+.seg { display: inline-flex; border-radius: var(--radius-pill, 9999px); overflow: hidden; }
+.seg button {
+  border: none; padding: 5px 14px; font-size: 12px; font-weight: 500;
+  background: transparent; color: var(--color-text-secondary, #666); cursor: default;
+}
+.seg button[aria-pressed="true"] {
+  background: var(--color-surface-control, rgba(0,0,0,.08));
+  color: var(--color-text-primary, #000);
+}
+.nav-item { padding: 7px 10px; border-radius: var(--radius-control, 12px); font-size: 12px; margin-bottom: 3px; }
+.nav-item:hover { background: var(--color-surface-control-subtle, rgba(0,0,0,.04)); }
+.nav-item[aria-current] { background: var(--color-surface-control, rgba(0,0,0,.08)); font-weight: 500; }
+.toast { display: inline-flex; align-items: center; gap: 8px; padding: 9px 14px; border-radius: var(--radius-popover, 12px); font-size: 12px; }
+.prog-wrap { position: relative; height: 100px; overflow: hidden; border-radius: var(--radius-card, 12px); }
+.prog-content { padding: 14px; font-size: 11px; line-height: 1.6; }
+.token-row { display: flex; justify-content: space-between; padding: 3px 0; font-size: 11px; border-bottom: 1px solid var(--color-border-tertiary, rgba(0,0,0,.05)); }
+.token-val { font-family: ui-monospace, monospace; font-size: 10px; opacity: .6; }
+.status { margin-top: 10px; padding: 10px 12px; border-radius: var(--radius-control, 12px); font-size: 10px; font-family: ui-monospace, monospace; white-space: pre-wrap; word-break: break-all; }
+</style>
+</head>
+<body>
+<script>
+(function(){
+  var r = document.documentElement;
+  if (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) r.classList.add("dark");
+  r.classList.add("is-macos","is-macos-27-plus","is-tahoe-plus");
+})();
+</script>
+
+<h2>Surfaces — 真 kit glass 材质</h2>
+<div class="grid">
+  <div class="card bg-glass liquid-sim"><div class="lbl">bg-glass</div><p style="font-size:12px">Panel / Card</p></div>
+  <div class="card bg-glass-accent liquid-sim-accent"><div class="lbl">bg-glass-accent</div><p style="font-size:12px">Accent 强调</p></div>
+  <div class="card bg-glass-sidebar liquid-sim-sidebar" style="position:relative;overflow:hidden">
+    <div class="lbl">bg-glass-sidebar</div>
+    <div class="nav-item" aria-current="true">Dashboard</div>
+    <div class="nav-item">Settings</div>
+    <div class="nav-item">Components</div>
+  </div>
+  <div class="card bg-glass-toast liquid-sim-toast"><div class="lbl">bg-glass-toast</div><span class="toast">✓ Saved</span></div>
+</div>
+
+<h2>Controls</h2>
+<div class="grid">
+  <div class="card bg-glass liquid-sim">
+    <div class="lbl">Buttons</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
+      <button class="btn btn-glass">Glass</button>
+      <button class="btn btn-accent">Accent</button>
+      <button class="btn btn-red">Delete</button>
+    </div>
+  </div>
+  <div class="card bg-glass liquid-sim">
+    <div class="lbl">Segmented</div>
+    <div class="seg" style="margin-top:6px">
+      <button aria-pressed="true">Inner</button>
+      <button aria-pressed="false">Outer</button>
+    </div>
+  </div>
+</div>
+
+<h2>Dynamics</h2>
+<div class="grid">
+  <div class="card bg-glass liquid-sim dimmable"><div class="lbl">dimmable</div><p style="font-size:12px">失焦 → opacity 0.4</p></div>
+  <div class="card bg-glass liquid-sim"><div class="lbl">non-dimmable</div><p style="font-size:12px">不受影响</p></div>
+</div>
+<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">
+  <button class="btn btn-glass" id="btn-blur">Toggle window-blurred</button>
+  <button class="btn btn-glass" id="btn-profile">Profile: macos</button>
+</div>
+
+<h2>Progressive Blur</h2>
+<div class="prog-wrap bg-glass liquid-sim" id="prog-wrap">
+  <div class="prog-content">Progressive blur: 5 layers [0.5,1,2,3,4]px<br/>真源: extracted/kit/components/progressive-blur.tsx</div>
+</div>
+
+<h2>Tokens (live)</h2>
+<div class="card bg-glass liquid-sim" id="token-panel"></div>
+
+<h2>Material Path</h2>
+<div class="status bg-glass liquid-sim" id="status-panel"></div>
+
+<script>
+(function(){
+  var prov = {"extractedAt": "2026-07-25T09:16:18.206259+00:00", "sourceApp": "/Applications/Glaze.app", "sourcePath": "/Applications/Glaze.app/Contents/Resources/sdk/@glaze/core", "package": {"name": "@glaze/core", "version": "0.11.1.0"}, "note": "Extracted from Glaze installed SDK resources. Not rewritten. UI/design-system surface only (components/styles/hooks/utils/fonts/docs).", "included": ["package.json", "components.css", "components.tailwind.css", "components.js", "components/**", "src/**", "hooks/**", "utils/**", "fonts/**", "GLAZE-SDK-API-REFERENCE/**"], "excluded": ["backend/**", "ai/**", "build/**", "cli/**", "ipc/**", "preload/**", "oauth/**", "vendor/**", "node_modules/**"], "fileCount": 408, "bytes": 3894947, "sourceFileHashes": {"package.json": {"bytes": 3301, "sha256": "3ca7f3740a5a81338854ec4fb63d1e1c2248df2069ce5cd2e4b6e782e0bf4727"}, "components.css": {"bytes": 164214, "sha256": "261b0b4865077443cb8a61343fcb2a213e39f25f4490c06d0832f64f18dd134e"}, "components.tailwind.css": {"bytes": 40150, "sha256": "2b98aece8bbc3c138d1cc45f48baa85cace62fdfbb07ec5fb1babb75b71fdb4d"}, "src/components/styles.css": {"bytes": 58586, "sha256": "3396a3fdb7e40f50f8c138d98b737a58af146d312a0f1e2a98e5979e608a25a1"}, "components.js": {"bytes": 374629, "sha256": "361345eb812f0fdf28fb5db7145e1c63fb52c92acce58a6a506c9b49634500e4"}}};
+  var catalog = {"total": 53, "glassFacing": 19, "list": [{"id": "alert-dialog", "glassRelated": []}, {"id": "avatar", "glassRelated": []}, {"id": "badge", "glassRelated": []}, {"id": "button-group", "glassRelated": ["glass", "bg-glass"]}, {"id": "button", "glassRelated": []}, {"id": "callout", "glassRelated": []}, {"id": "checkbox", "glassRelated": []}, {"id": "collapsible", "glassRelated": []}, {"id": "color-well", "glassRelated": []}, {"id": "command", "glassRelated": []}, {"id": "context-menu", "glassRelated": []}, {"id": "custom-context-menu", "glassRelated": ["glass", "bg-glass"]}, {"id": "custom-dropdown-menu", "glassRelated": []}, {"id": "custom-select", "glassRelated": ["glass", "bg-glass"]}, {"id": "date-picker", "glassRelated": ["glass", "bg-glass"]}, {"id": "dialog-shortcut-hints", "glassRelated": []}, {"id": "dialog", "glassRelated": []}, {"id": "dropdown-menu", "glassRelated": []}, {"id": "empty-state", "glassRelated": []}, {"id": "error-boundary-view", "glassRelated": []}, {"id": "field", "glassRelated": []}, {"id": "glaze-logo", "glassRelated": []}, {"id": "grid", "glassRelated": []}, {"id": "input", "glassRelated": []}, {"id": "inspector", "glassRelated": ["glass"]}, {"id": "key", "glassRelated": []}, {"id": "label", "glassRelated": []}, {"id": "list", "glassRelated": []}, {"id": "native-view", "glassRelated": []}, {"id": "navigation-button-group", "glassRelated": ["glass"]}, {"id": "notification-dot", "glassRelated": []}, {"id": "number-input", "glassRelated": []}, {"id": "panel", "glassRelated": []}, {"id": "progressive-blur", "glassRelated": []}, {"id": "radio-group", "glassRelated": []}, {"id": "scroll-area", "glassRelated": ["glass"]}, {"id": "segmented-control", "glassRelated": ["glass", "bg-glass"]}, {"id": "select", "glassRelated": ["glass", "bg-glass"]}, {"id": "separator", "glassRelated": []}, {"id": "share-sheet", "glassRelated": []}, {"id": "sidebar", "glassRelated": ["glass", "bg-glass"]}, {"id": "slider", "glassRelated": []}, {"id": "sonner", "glassRelated": ["glass", "bg-glass"]}, {"id": "split-view", "glassRelated": ["glass", "bg-glass"]}, {"id": "status", "glassRelated": ["glass", "bg-glass"]}, {"id": "switch", "glassRelated": []}, {"id": "table", "glassRelated": []}, {"id": "tabs", "glassRelated": ["glass", "bg-glass"]}, {"id": "text", "glassRelated": []}, {"id": "textarea", "glassRelated": []}, {"id": "toggle-button", "glassRelated": ["glass", "bg-glass"]}, {"id": "toolbar", "glassRelated": ["glass", "bg-glass"]}, {"id": "tooltip", "glassRelated": []}]};
+  var profiles = ["macos","windows","terminal"];
+  var profileIdx = 0;
+
+  function supportsApple() {
+    try { return CSS.supports("-apple-visual-effect", "-apple-system-glass-material"); } catch(e) { return false; }
+  }
+
+  function renderStatus() {
+    var apple = supportsApple();
+    var mode = apple ? "system" : "fallback";
+    document.documentElement.setAttribute("data-glass-mode", mode);
+    var classes = Array.from(document.documentElement.classList).sort();
+    var bodyBg = getComputedStyle(document.body).backgroundColor;
+    var htmlBg = getComputedStyle(document.documentElement).backgroundColor;
+    var s = {
+      mode: mode,
+      isLiquidGlass: apple,
+      isFallbackNotLiquidGlass: !apple,
+      path: apple ? "SYSTEM: -apple-visual-effect" : "FALLBACK: liquid-sim.css — NOT macOS liquid glass",
+      supportsAppleVisualEffect: apple,
+      transparentWindow: { bodyBg: bodyBg, htmlBg: htmlBg, transparent: bodyBg.indexOf("0, 0, 0, 0") > -1 || bodyBg === "transparent" },
+      rootClasses: classes,
+      documentElementClasses: classes,
+      profile: profiles[profileIdx],
+      windowBlurred: document.documentElement.classList.contains("window-blurred"),
+      cssSource: "extracted/kit/styles/",
+      package: prov.package
+    };
+    document.getElementById("status-panel").textContent = JSON.stringify(s, null, 2);
+    return s;
+  }
+
+  function renderTokens() {
+    var cs = getComputedStyle(document.documentElement);
+    var keys = ["--radius-control","--radius-panel","--radius-card","--radius-pill","--blur-panel","--blur-popover","--accent","--color-surface-control","--color-border-primary","--shadow-panel"];
+    var h = "";
+    keys.forEach(function(k) {
+      var v = cs.getPropertyValue(k).trim() || "(not set)";
+      h += "<div class=\"token-row\"><span>" + k + "</span><span class=\"token-val\">" + v + "</span></div>";
+    });
+    document.getElementById("token-panel").innerHTML = h;
+  }
+
+  function renderProgressive() {
+    var wrap = document.getElementById("prog-wrap");
+    var old = wrap.querySelectorAll(".prog-layer");
+    old.forEach(function(e) { e.remove(); });
+    [0.5,1,2,3,4].forEach(function(blur, i) {
+      var p = i / 4;
+      var d = document.createElement("div");
+      d.className = "prog-layer";
+      d.style.cssText = "position:absolute;inset:0;pointer-events:none;z-index:" + (i+1) +
+        ";backdrop-filter:blur(" + blur + "px);-webkit-backdrop-filter:blur(" + blur + "px)" +
+        ";-webkit-mask-image:linear-gradient(to bottom,transparent " + (p*100) + "%,black " + (p*100+10) + "%)" +
+        ";mask-image:linear-gradient(to bottom,transparent " + (p*100) + "%,black " + (p*100+10) + "%)";
+      wrap.appendChild(d);
+    });
+  }
+
+  document.getElementById("btn-blur").addEventListener("click", function() {
+    document.documentElement.classList.toggle("window-blurred");
+    renderStatus();
+  });
+  document.getElementById("btn-profile").addEventListener("click", function() {
+    profileIdx = (profileIdx + 1) % profiles.length;
+    document.documentElement.setAttribute("data-style-profile", profiles[profileIdx]);
+    this.textContent = "Profile: " + profiles[profileIdx];
+    renderTokens(); renderStatus();
+  });
+  document.querySelectorAll(".seg button").forEach(function(btn) {
+    btn.addEventListener("click", function() {
+      this.parentElement.querySelectorAll("button").forEach(function(b) { b.setAttribute("aria-pressed","false"); });
+      this.setAttribute("aria-pressed","true");
+    });
+  });
+  window.addEventListener("focus", function() { document.documentElement.classList.remove("window-blurred"); renderStatus(); });
+  window.addEventListener("blur", function() { document.documentElement.classList.add("window-blurred"); renderStatus(); });
+
+  // GappHost
+  function tryReg(n) {
+    n = n || 0;
+    var host = window.GappHost;
+    if (!host || !host.registerTools) { if (n < 30) setTimeout(function(){ tryReg(n+1); }, 200); return; }
+    host.registerTools([
+      {name:"get_glass_status",description:"mode/apple/root/transparent",inputSchema:{type:"object",properties:{}},annotations:{readOnlyHint:true}},
+      {name:"get_extract_info",description:"provenance",inputSchema:{type:"object",properties:{}},annotations:{readOnlyHint:true}},
+      {name:"get_catalog",description:"component catalog",inputSchema:{type:"object",properties:{}},annotations:{readOnlyHint:true}},
+      {name:"set_profile",description:"macos|windows|terminal",inputSchema:{type:"object",properties:{profile:{type:"string"}},required:["profile"]}},
+      {name:"toggle_blur",description:"toggle window-blurred",inputSchema:{type:"object",properties:{}}}
+    ]);
+    if (typeof host.onToolCall === "function") {
+      host.onToolCall(function(name, args) {
+        if (name === "get_glass_status") return renderStatus();
+        if (name === "get_extract_info") return prov;
+        if (name === "get_catalog") return catalog;
+        if (name === "set_profile") {
+          var idx = profiles.indexOf(args.profile);
+          if (idx >= 0) { profileIdx = idx; document.documentElement.setAttribute("data-style-profile", args.profile); renderTokens(); }
+          return { profile: profiles[profileIdx] };
+        }
+        if (name === "toggle_blur") { document.documentElement.classList.toggle("window-blurred"); return renderStatus(); }
+        throw new Error("Unknown: " + name);
+      });
+    }
+  }
+
+  renderProgressive();
+  renderTokens();
+  renderStatus();
+  tryReg();
+})();
+</script>
+</body>
+</html>

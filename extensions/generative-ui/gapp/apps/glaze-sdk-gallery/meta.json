@@ -1,0 +1,23 @@
+{
+  "id": "glaze-sdk-gallery",
+  "name": "Glaze SDK Gallery",
+  "description": "Complete @glaze/core 0.11.1.0 component gallery with Glimpse native background and local Liquid Glass regions.",
+  "scope": "project",
+  "enabled": true,
+  "archived": false,
+  "entry": "index.html",
+  "stateFile": "state.json",
+  "instances": "single",
+  "width": 1180,
+  "height": 820,
+  "minWidth": 720,
+  "minHeight": 580,
+  "resizable": true,
+  "transparent": true,
+  "frameless": false,
+  "version": "0.11.1.0-native-gallery",
+  "source": "/Applications/Glaze.app/Contents/Resources/sdk/@glaze/core",
+  "lastRunAt": "2026-07-27T13:29:59.126Z",
+  "runCount": 3,
+  "updated": "2026-08-27T08:16:41.049Z"
+}
