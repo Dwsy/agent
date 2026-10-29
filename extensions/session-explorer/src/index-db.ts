@@ -12,7 +12,7 @@
  * every method here is allowed to throw at open time but not at query time.
  */
 
-import { DatabaseSync } from "node:sqlite";
+import { openReadOnly, type SqlDatabase } from "./sqlite.ts";
 import { existsSync } from "node:fs";
 import { basename, join } from "node:path";
 import { homedir } from "node:os";
@@ -159,9 +159,9 @@ const SESSION_SELECT = `
 `;
 
 export class SessionIndex {
-  #db: DatabaseSync;
+  #db: SqlDatabase;
 
-  private constructor(db: DatabaseSync) {
+  private constructor(db: SqlDatabase) {
     this.#db = db;
   }
 
@@ -174,7 +174,7 @@ export class SessionIndex {
       throw new Error(`Pi session index not found at ${path}`);
     }
 
-    const db = new DatabaseSync(path, { readOnly: true });
+    const db = openReadOnly(path);
     // Fail loudly here rather than on the first user query.
     db.prepare("SELECT COUNT(*) FROM sessions").get();
     return new SessionIndex(db);

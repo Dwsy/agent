@@ -1,0 +1,14 @@
+{
+  "name": "@local/psm-system-prompt-history",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "pnpm --dir /Users/dengwenyu/Dev/AI/pi-session-manager exec vite build --config /Users/dengwenyu/.pi/agent/extensions/zz-system-prompt-history/vite.config.ts"
+  },
+  "psm": {
+    "extensions": [
+      "./dist/index.mjs"
+    ]
+  }
+}

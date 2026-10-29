@@ -1,7 +1,7 @@
 /**
  * Pi extension entry point.
  *
- * `/explorer` starts the local server on first use and opens the browser. The
+ * `/session-explorer` starts the local server on first use and opens the browser. The
  * server is shared across invocations for the lifetime of the Pi process and
  * shuts down with it.
  */
@@ -37,7 +37,7 @@ function openInBrowser(url: string): void {
   });
 }
 
-/** `/explorer [port] [--no-open]` */
+/** `/session-explorer [port] [--no-open]` */
 function parseArgs(args: string): { port?: number; open: boolean } {
   const tokens = args.trim().split(/\s+/).filter(Boolean);
   const open = !tokens.includes("--no-open");
@@ -47,7 +47,7 @@ function parseArgs(args: string): { port?: number; open: boolean } {
 }
 
 export default function (pi: ExtensionAPI): void {
-  pi.registerCommand("explorer", {
+  pi.registerCommand("session-explorer", {
     description: "Browse, search and read past sessions in a local web UI",
     handler: async (args: string, ctx: ExtensionCommandContext) => {
       const { port, open } = parseArgs(args);
