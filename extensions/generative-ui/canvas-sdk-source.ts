@@ -249,7 +249,7 @@ function rowToneDot(t, tone) {
 export function Table({ headers = [], rows = [], columnAlign = [], rowTone = [], framed = true, striped = false, stickyHeader = false, style, emptyMessage = "No data" }) {
   const t = useHostTheme();
   const table = h("table", { style: { borderCollapse: "collapse", width: "100%", minWidth: "max-content", fontSize: canvasTypography.body.fontSize, lineHeight: canvasTypography.body.lineHeight } },
-    h("thead", null, h("tr", null, headers.map((header, index) => h("th", { key: index, style: { position: stickyHeader ? "sticky" : undefined, top: stickyHeader ? 0 : undefined, zIndex: stickyHeader ? 1 : undefined, background: stickyHeader ? t.bg.editor : undefined, textAlign: columnAlign[index] || "left", color: t.text.secondary, fontWeight: 500, padding: "7px 10px", borderBottom: "1px solid " + t.stroke.tertiary, whiteSpace: "nowrap" } }, header))),
+    h("thead", null, h("tr", null, headers.map((header, index) => h("th", { key: index, style: { position: stickyHeader ? "sticky" : undefined, top: stickyHeader ? 0 : undefined, zIndex: stickyHeader ? 1 : undefined, background: stickyHeader ? t.bg.editor : undefined, textAlign: columnAlign[index] || "left", color: t.text.secondary, fontWeight: 500, padding: "7px 10px", borderBottom: "1px solid " + t.stroke.tertiary, whiteSpace: "nowrap" } }, header)))),
     h("tbody", null,
       rows.length === 0 ? h("tr", null, h("td", { colSpan: Math.max(1, headers.length), style: { padding: 12, color: t.text.tertiary, borderBottom: "1px solid " + t.stroke.tertiary } }, emptyMessage)) :
       rows.map((row, rowIndex) => h("tr", { key: rowIndex, style: striped && rowIndex % 2 === 1 ? { background: t.fill.quaternary } : undefined },
@@ -258,7 +258,7 @@ export function Table({ headers = [], rows = [], columnAlign = [], rowTone = [],
         ))
       ))
     )
-  ));
+  );
   if (!framed) return h("div", { style: mergeStyle({ overflowX: "auto" }, style) }, table);
   return h("div", { style: mergeStyle({ overflow: "auto", border: "1px solid " + t.stroke.tertiary, borderRadius: canvasRadius.lg }, style) }, table);
 }

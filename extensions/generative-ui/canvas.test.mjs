@@ -202,12 +202,13 @@ test("Canvas progressive TSX templates all transpile", async () => {
 });
 
 test("Canvas host keeps state namespace stable and actions fire-and-forget", () => {
-  const source = readFileSync(new URL("./tools.ts", import.meta.url), "utf8");
+  const source = readFileSync(new URL("./visual-cli.ts", import.meta.url), "utf8");
+  const canvasSource = readFileSync(new URL("./canvas.ts", import.meta.url), "utf8");
   assert.match(source, /const canvasStateId = process\.cwd\(\) \+ "::" \+ safeTitle/);
   assert.match(source, /canvasStateId,/);
   assert.match(source, /canvasDocumentHTML\(compiled, canvasStateId, provenanceFooter\)/);
-  assert.match(source, /validateGroundingDeclaration\(params\.grounding\)/);
-  assert.match(source, /genui-grounding/);
+  assert.match(source, /validateGroundingDeclaration\(opts\.grounding\)/);
+  assert.match(canvasSource, /genui-grounding/);
   assert.match(source, /const isCanvasAction =/);
-  assert.match(source, /!isCanvasAction && !resolved && !settling/);
+  assert.match(source, /!settled && !isCanvasAction/);
 });

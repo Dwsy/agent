@@ -5,7 +5,7 @@
   },
   "scripts": {
     "gapp:tui": "bun gapp/cli.ts",
-    "test": "node --test psm-renderer/index.test.mjs theme-templates.test.mjs storage.test.mjs && bun test canvas.test.mjs grounding.test.mjs render-boundary.test.mjs widget-validation.test.mjs routing.test.mjs visual-plan.test.mjs gapp/storage.test.mjs gapp/host.test.mjs gapp/tui.test.mjs gapp/subagent.test.mjs && bun test gapp/mcp-inspector.test.ts && bun test gapp/ngrok-inspector.test.ts"
+    "test": "node --test psm-renderer/index.test.mjs theme-templates.test.mjs storage.test.mjs && bun test canvas.test.mjs grounding.test.mjs render-boundary.test.mjs widget-validation.test.mjs routing.test.mjs visual-plan.test.mjs gapp/storage.test.mjs gapp/host.test.mjs gapp/daemon.test.mjs gapp/tui.test.mjs gapp/subagent.test.mjs gapp/hot-reload.test.mjs gapp/tool-arguments.test.mjs && bun test gapp/mcp-inspector.test.ts && bun test gapp/ngrok-inspector.test.ts"
   },
   "dependencies": {
     "@earendil-works/pi-tui": "0.82.1",

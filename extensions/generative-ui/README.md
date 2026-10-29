@@ -152,7 +152,6 @@ width?       default 800
 height?      default 600
 floating?
 interactive?
-i_have_seen_read_me?   compatibility field
 ```
 
 `widget_code` 必须是 HTML fragment 或 raw SVG，不允许完整 HTML document。
@@ -205,7 +204,6 @@ width?       default 900
 height?      default 640
 floating?
 interactive?
-i_have_seen_read_me?   compatibility field
 ```
 
 宿主使用 esbuild 将 TSX 编译成自包含 IIFE。允许 import：
@@ -408,7 +406,10 @@ token 由 host 写入 `~/.pi/gapp/host-token`，权限为 `0600`。
 
 ```text
 index.ts
-├── tools.ts                 tool registration + render boundary
+├── visual-cli.ts            agent-facing bun CLI (route/widget/canvas/browse)
+├── render-policy.ts         plan-grounding enforcement (render boundary)
+├── visual-registry.ts       skill-extensible route manifests (visual-routes.json)
+├── skills/generative-ui/    SKILL.md — CLI 调用体系（渐进式读取）
 ├── routing.ts               request → route
 ├── visual-plan.ts           route → guidance/template plan
 ├── grounding.ts             host provenance invariant
@@ -465,7 +466,7 @@ bun test gapp/ngrok-inspector.test.ts
 - `routing.test.mjs`: intent / representation / retrieval / priority matrix
 - `visual-plan.test.mjs`: request-first plan、单 skeleton 展开、expert override
 - `grounding.test.mjs`: grounding declaration、locator 校验、escaping、host footer
-- `render-boundary.test.mjs`: 真实 `registerTools + execute`，验证 route-aware grounding、matching plan 保留/消费、live/saved/index provenance
+- `render-boundary.test.mjs`: 驱动 `visual-cli runVisualCli` + `render-policy enforceGroundingForPlan`，验证 route-aware grounding、matching plan 保留/消费、saved/index provenance
 - `widget-validation.test.mjs`: fragment、禁网、CDN allowlist、interactive bridge、2 MB
 - `canvas.test.mjs`: TSX transpile、import allowlist、runtime shell、SDK、模板真实编译
 - `theme-templates.test.mjs`: host theme、guideline/template contract

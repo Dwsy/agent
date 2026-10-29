@@ -298,20 +298,20 @@ export function defaultEventPrompt(appId: string, event: string, payload: unknow
       `[GAPP event] app=${appId} event=${event}`,
       `payload: ${body}`,
       "",
-      "UI/用户修改了此 GAPP。请：",
-      "1) 用 gapp_get_state 或 gapp_call（list/read 工具）核对当前进度",
+      "UI/用户修改了此 GAPP。先读技能 `gapp`，然后：",
+      "1) `bun gapp-cli.ts get-state <id>` 或 `bun gapp-cli.ts call <id> <tool>` 核对当前进度",
       "2) 简短汇报状态并建议下一步",
-      "未读 state 前勿声称进度。有工具时优先 gapp_call，勿滥用 set_state。",
+      "未读 state 前勿声称进度。有领域工具时优先 call，勿滥用 set-state。",
     ].join("\n");
   }
   return [
     `[GAPP event] app=${appId} event=${event}`,
     `payload: ${body}`,
     "",
-    "UI/user changed this GAPP. Do the following:",
-    "1) gapp_get_state or gapp_call (list/read tools) to verify current progress",
+    "UI/user changed this GAPP. Read the `gapp` skill first, then:",
+    "1) `bun gapp-cli.ts get-state <id>` or `bun gapp-cli.ts call <id> <tool>` to verify current progress",
     "2) Briefly report status and suggest next steps",
-    "Do not claim state without reading it. Prefer gapp_call over raw set_state when tools exist.",
+    "Do not claim state without reading it. Prefer `call` over raw `set-state` when domain tools exist.",
   ].join("\n");
 }
 
@@ -363,7 +363,7 @@ export function mergeToolLists(disk: GappTool[], live: GappTool[]): GappTool[] {
   return [...map.values()];
 }
 
-/** @deprecated Prefer buildGappSystemPrompt liveApps extras in prompt.ts */
+/** @deprecated Dead export; the progressive appendix and tool catalogs are gone — see skills/gapp */
 export function buildToolsCatalogMarkdown(
   apps: Array<{ id: string; name: string; scope: string; tools: GappTool[]; live: boolean }>,
 ): string {
@@ -389,37 +389,37 @@ export function buildToolsCatalogMarkdown(
     }
     lines.push(
       lang === "zh"
-        ? `调用: \`gapp_call({ id: "${app.id}", tool: "<name>", arguments: {…} })\``
-        : `Call: \`gapp_call({ id: "${app.id}", tool: "<name>", arguments: {…} })\``,
+        ? `调用: \`bun gapp-cli.ts call "${app.id}" <name> --args '{…}'\``
+        : `Call: \`bun gapp-cli.ts call "${app.id}" <name> --args '{…}'\``,
       "",
     );
   }
   if (lang === "zh") {
     lines.push(
-      "有工具时优先 `gapp_call`，勿滥用 `gapp_set_state`。",
+      "有工具时优先 `call`，勿滥用 `set-state`。",
       "人改 UI 后可能收到 `[GAPP event]` — 先重读 state 再建议。",
     );
   } else {
     lines.push(
-      "Prefer `gapp_call` over `gapp_set_state` when a tool exists.",
+      "Prefer `call` over `set-state` when a tool exists.",
       "After human UI edits you may receive `[GAPP event]` — re-read state before advising.",
     );
   }
   return lines.join("\n");
 }
 
-/** Kept for callers; main guidance lives in prompt.ts */
+/** Kept for callers; main guidance lives in the gapp skill */
 export function getGenerativeBridgeSystemAppendix(): string {
   return detectGappLang() === "zh"
     ? `## GAPP 渐进上下文
-- system 仅有 app 列表；领域工具用 \`gapp_list_tools({ id })\` 再 \`gapp_call\`。
+- system 仅有 app 列表；调用体系见技能 \`gapp\`（\`bun gapp-cli.ts\`）。
 - \`[GAPP event]\` — 工具核对后短报。
 - \`[GAPP generate]\` — 只出正文。`
     : `## GAPP progressive context
-- system has app list only; fetch domain tools with \`gapp_list_tools({ id })\` then \`gapp_call\`.
+- system has app list only; see the \`gapp\` skill (\`bun gapp-cli.ts\`) for the calling system.
 - \`[GAPP event]\` — verify via tools, brief help.
 - \`[GAPP generate]\` — content only.`;
 }
 
 /** @deprecated Prefer getGenerativeBridgeSystemAppendix() — re-call for current locale */
-export const GENERATIVE_BRIDGE_SYSTEM_APPENDIX = getGenerativeBridgeSystemAppendix();
+export const GAPP_SKILL_SYSTEM_APPENDIX = getGenerativeBridgeSystemAppendix();

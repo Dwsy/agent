@@ -516,6 +516,12 @@ export async function importGappSdk(): Promise<any | null> {
   }
 }
 
+function describeJsonKind(value: unknown): string {
+  if (value === null) return "null";
+  if (Array.isArray(value)) return "array";
+  return typeof value;
+}
+
 export async function setGappState(
   id: string,
   state: unknown,
@@ -530,9 +536,17 @@ export async function setGappState(
   let next = state;
   if (options?.merge) {
     const prev = bundle.state;
-    if (prev && typeof prev === "object" && !Array.isArray(prev) && state && typeof state === "object" && !Array.isArray(state)) {
-      next = { ...(prev as object), ...(state as object) };
+    const prevIsObject = prev && typeof prev === "object" && !Array.isArray(prev);
+    const nextIsObject = state && typeof state === "object" && !Array.isArray(state);
+    // Silently replacing instead of merging would destroy state the caller
+    // explicitly asked to preserve, so refuse the contradictory request.
+    if (!prevIsObject || !nextIsObject) {
+      throw new GappValidationError(
+        `Cannot merge state for ${id}: merge=true requires object state on both sides ` +
+          `(existing ${describeJsonKind(prev)}, incoming ${describeJsonKind(state)})`,
+      );
     }
+    next = { ...(prev as object), ...(state as object) };
   }
 
   const meta: GappMeta = { ...bundle.meta, updated: new Date().toISOString() };

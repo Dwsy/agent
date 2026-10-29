@@ -1,13 +1,13 @@
 /**
- * HTTP client for the shared GAPP hub on :54888 (when this process is not the hub,
- * or for uniform multipath access).
+ * HTTP client for the persistent GAPP daemon on :54888.
  */
 
 import { GAPP_HOST_BASE, GAPP_PATHS } from "./constants.js";
 import { readHostToken } from "./auth.js";
+import { ensureGappDaemon } from "./daemon-manager.js";
 import type { GappInstances, GappLease, GappTool } from "./protocol.js";
 
-async function req<T = any>(
+async function requestOnce<T = any>(
   method: string,
   path: string,
   body?: unknown,
@@ -33,9 +33,43 @@ async function req<T = any>(
   return { status: res.status, data };
 }
 
+function daemonIsUnreachable(error: unknown): boolean {
+  const value = error as {
+    name?: string;
+    code?: string;
+    cause?: { code?: string; name?: string };
+  };
+  if (value?.name === "AbortError" || value?.name === "TimeoutError") return false;
+  const code = value?.code || value?.cause?.code;
+  return (
+    code === "ConnectionRefused" ||
+    code === "ECONNREFUSED" ||
+    code === "EHOSTUNREACH" ||
+    code === "ENETUNREACH"
+  );
+}
+
+async function req<T = any>(
+  method: string,
+  path: string,
+  body?: unknown,
+  timeoutMs = 8_000,
+  wakeOnFailure = true,
+): Promise<{ status: number; data: T }> {
+  try {
+    return await requestOnce<T>(method, path, body, timeoutMs);
+  } catch (error) {
+    // Retry only when no daemon was listening. Retrying timeouts or reset
+    // requests could duplicate a tool mutation that the server already began.
+    if (!wakeOnFailure || !daemonIsUnreachable(error)) throw error;
+    await ensureGappDaemon();
+    return await requestOnce<T>(method, path, body, timeoutMs);
+  }
+}
+
 export async function hostHealth(): Promise<any | null> {
   try {
-    const { status, data } = await req("GET", GAPP_PATHS.health, undefined, 400);
+    const { status, data } = await req("GET", GAPP_PATHS.health, undefined, 400, false);
     return status === 200 ? data : null;
   } catch {
     return null;
@@ -47,6 +81,9 @@ export async function hostAcquireLease(input: {
   sessionId: string;
   instances?: GappInstances;
   host?: string;
+  cwd?: string;
+  scope?: string;
+  hasWindow?: boolean;
 }): Promise<
   | { ok: true; lease: GappLease; replaced?: boolean }
   | { ok: false; code: "already_connected"; message: string; lease: GappLease }
@@ -58,6 +95,9 @@ export async function hostAcquireLease(input: {
       instances: input.instances ?? "single",
       host: input.host,
       pid: process.pid,
+      cwd: input.cwd,
+      scope: input.scope,
+      hasWindow: input.hasWindow,
     });
     if (status === 200 && data?.ok) return data;
     if (status === 409) return data;
@@ -68,6 +108,39 @@ export async function hostAcquireLease(input: {
       code: "host_unavailable",
       message: e instanceof Error ? e.message : String(e),
     };
+  }
+}
+
+export async function hostRegisterSession(
+  input: { sessionId: string; cwd?: string; bridgeBase?: string },
+  wakeOnFailure = true,
+): Promise<boolean> {
+  try {
+    const { status, data } = await req(
+      "POST",
+      GAPP_PATHS.sessions,
+      { ...input, pid: process.pid },
+      2_000,
+      wakeOnFailure,
+    );
+    return status === 200 && data?.ok === true;
+  } catch {
+    return false;
+  }
+}
+
+export async function hostUnregisterSession(sessionId: string): Promise<boolean> {
+  try {
+    const { status, data } = await req(
+      "DELETE",
+      GAPP_PATHS.session(sessionId),
+      undefined,
+      2_000,
+      false,
+    );
+    return status === 200 && data?.ok === true;
+  } catch {
+    return false;
   }
 }
 
@@ -122,4 +195,51 @@ export async function hostCatalog(): Promise<any | null> {
   } catch {
     return null;
   }
+}
+
+/** Open a daemon-owned window (CLI / external launchers). */
+export async function hostOpenApp(
+  appId: string,
+  options: {
+    cwd?: string;
+    scope?: "project" | "global";
+    versionId?: string;
+    source?: string;
+  } = {},
+): Promise<any> {
+  try {
+    const { status, data } = await req("POST", GAPP_PATHS.open(appId), options, 20_000);
+    return status === 200 ? data : { ok: false, error: data?.error || { message: `open failed (${status})` } };
+  } catch (error) {
+    return {
+      ok: false,
+      error: { code: "host_unavailable", message: error instanceof Error ? error.message : String(error) },
+    };
+  }
+}
+
+/** Write state through the daemon so live windows receive the push. */
+export async function hostSetState(
+  appId: string,
+  state: unknown,
+  options: { cwd?: string; merge?: boolean } = {},
+): Promise<any> {
+  const { status, data } = await req("PUT", GAPP_PATHS.state(appId), {
+    state,
+    merge: options.merge === true,
+    cwd: options.cwd,
+  }, 20_000);
+  return status === 200 ? data : { ok: false, error: data?.error || { message: `set-state failed (${status})` } };
+}
+
+/** Hot reload: drop the daemon's cached tools.mjs (and optionally rebuild the window). */
+export async function hostReloadApp(
+  appId: string,
+  options: { cwd?: string; window?: boolean } = {},
+): Promise<{ ok: boolean; invalidated?: boolean; window?: string; warning?: string; error?: string }> {
+  const { status, data } = await req("POST", GAPP_PATHS.reload(appId), options, 20_000);
+  if (status !== 200 || !data?.ok) {
+    return { ok: false, error: data?.error?.message || `reload failed (${status})` };
+  }
+  return data;
 }

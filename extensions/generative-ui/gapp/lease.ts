@@ -7,6 +7,7 @@ import { t } from "./i18n.js";
 
 
 import { mkdir, readFile, writeFile, unlink, readdir } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import { homedir } from "node:os";
 export type GappInstances = "single" | "multi";
@@ -25,28 +26,64 @@ function normalizeInstances(raw: unknown): GappInstances {
 }
 
 function leasesDir(): string {
-  return process.env.GAPP_LEASES_DIR || join(homedir(), ".pi", "gapp", "_leases");
+  const globalRoot = process.env.GAPP_GLOBAL_DIR || join(homedir(), ".pi", "gapp");
+  return process.env.GAPP_LEASES_DIR || join(globalRoot, "_leases");
 }
 
 function leasePath(appId: string): string {
   return join(leasesDir(), `${appId}.json`);
 }
 
-function pidAlive(pid: number): boolean {
+function parsePsElapsed(raw: string): number | null {
+  const match = raw.trim().match(/^(?:(\d+)-)?((?:\d{1,2}:)?\d{1,2}:\d{2})$/);
+  if (!match) return null;
+  const days = Number(match[1] || 0);
+  const parts = match[2].split(":").map(Number);
+  const seconds = parts.pop() ?? 0;
+  const minutes = parts.pop() ?? 0;
+  const hours = parts.pop() ?? 0;
+  if (minutes > 59 || seconds > 59) return null;
+  return (((days * 24 + hours) * 60 + minutes) * 60 + seconds) * 1000;
+}
+
+function pidAlive(pid: number, openedAt?: string): boolean {
   if (!pid || pid <= 0) return false;
   try {
     process.kill(pid, 0);
-    return true;
   } catch {
     return false;
   }
+
+  // `kill(pid, 0)` also succeeds for zombies and for unrelated processes that
+  // later reuse a stale lease PID. On POSIX, `ps` lets us reject both cases.
+  if (process.platform === "win32") return true;
+  try {
+    const raw = execFileSync("ps", ["-o", "stat=", "-o", "etime=", "-p", String(pid)], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+    if (!raw) return false;
+    const [stat, elapsedRaw] = raw.split(/\s+/, 2);
+    if (/^Z/i.test(stat)) return false;
+
+    const openedAtMs = openedAt ? Date.parse(openedAt) : Number.NaN;
+    const elapsedMs = parsePsElapsed(elapsedRaw || "");
+    if (Number.isFinite(openedAtMs) && elapsedMs != null) {
+      const processStartedAt = Date.now() - elapsedMs;
+      if (processStartedAt > openedAtMs + 5_000) return false;
+    }
+  } catch {
+    // If process metadata cannot be read, preserve the old conservative
+    // behaviour instead of stealing a potentially valid live lease.
+  }
+  return true;
 }
 
 export async function readLease(appId: string): Promise<GappLease | null> {
   try {
     const raw = JSON.parse(await readFile(leasePath(appId), "utf-8")) as GappLease;
     if (!raw?.appId || !raw.sessionId) return null;
-    if (!pidAlive(raw.pid)) {
+    if (!pidAlive(raw.pid, raw.openedAt)) {
       await unlink(leasePath(appId)).catch(() => {});
       return null;
     }
@@ -100,7 +137,7 @@ export async function acquireLease(input: {
   const existing = await readLease(input.appId);
 
   if (existing && existing.sessionId !== input.sessionId && instances === "single") {
-    if (pidAlive(existing.pid)) {
+    if (pidAlive(existing.pid, existing.openedAt)) {
       return {
         ok: false,
         code: "already_connected",

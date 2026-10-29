@@ -2,11 +2,12 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
-import { registerGappTools, type GappToolContext } from "./tools.js";
 import { registerGappCommand } from "./commands.js";
-import { buildGappSystemPrompt, buildGappContextDiff, createGappContextSnapshot, type GappContextSnapshot } from "./prompt.js";
 import { listOnlineGapps } from "./storage.js";
 import { startGappHostServer, stopGappHostServer, getHostRole, getBoundPort } from "./host-server.js";
+import { ensureGappDaemon } from "./daemon-manager.js";
+import { startGappSessionBridge, stopGappSessionBridge } from "./session-bridge.js";
+import { hostRegisterSession, hostUnregisterSession } from "./host-client.js";
 import {
   setAgentBridge,
   setHostSessionId,
@@ -15,14 +16,13 @@ import {
   completeGenerateJob,
   getGenerateJob,
 } from "./registry.js";
-import { GAPP_PROTOCOL_VERSION } from "./protocol.js";
-import { GAPP_HOST_BASE, GAPP_PATHS } from "./constants.js";
+import { GAPP_PATHS } from "./constants.js";
 import { registerHostRpcHandler } from "./host-rpc.js";
 import { McpInspectorHost } from "./mcp-inspector.js";
 import { NgrokInspectorHost } from "./ngrok-inspector.js";
 
 const GAPP_DIR = dirname(fileURLToPath(import.meta.url));
-const GENERATIVE_BRIDGE_SKILL_DIR = join(GAPP_DIR, "skills", "generative-bridge");
+const GAPP_SKILL_DIR = join(GAPP_DIR, "skills", "gapp");
 
 /** Register GAPP tools, /gapp command, host :54888 multipath, protocol bridges. */
 export function registerGapp(pi: ExtensionAPI, ctx: GappToolContext) {
@@ -98,8 +98,50 @@ export function registerGapp(pi: ExtensionAPI, ctx: GappToolContext) {
     }
   });
 
-  // Shared control plane :54888 multipath
-  void startGappHostServer({ sessionId, cwd: process.cwd() })
+  // Shared control plane :54888. Pi starts a detached daemon and only keeps a
+  // small loopback bridge for operations that genuinely need this Pi session.
+  const sessionCwd = process.cwd();
+  let heartbeat: ReturnType<typeof setInterval> | null = null;
+  let embeddedFallback = false;
+  const hostStartup = (async () => {
+    let bridge: Awaited<ReturnType<typeof startGappSessionBridge>> | null = null;
+    try {
+      bridge = await startGappSessionBridge(sessionId);
+      const bridgeBase = bridge.base;
+      await ensureGappDaemon();
+      const info = await startGappHostServer({
+        sessionId,
+        cwd: sessionCwd,
+        bridgeBase,
+        clientOnly: true,
+      });
+      heartbeat = setInterval(() => {
+        void hostRegisterSession(
+          { sessionId, cwd: sessionCwd, bridgeBase },
+          false,
+        );
+      }, 60_000);
+      heartbeat.unref?.();
+      return info;
+    } catch (error) {
+      // Keep the plugin usable if Bun/daemon startup is unavailable. This path
+      // retains the old in-process host and is visible in debug logs.
+      embeddedFallback = true;
+      console.error(
+        `[gapp] persistent daemon unavailable; using embedded fallback: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return await startGappHostServer({
+        sessionId,
+        cwd: sessionCwd,
+        bridgeBase: bridge?.base,
+        mode: "embedded",
+      });
+    }
+  })();
+
+  void hostStartup
     .then((info) => {
       if (process.env.GAPP_HOST_DEBUG === "1") {
         console.error(
@@ -112,74 +154,61 @@ export function registerGapp(pi: ExtensionAPI, ctx: GappToolContext) {
     });
 
   pi.on("session_shutdown", async () => {
+    if (heartbeat) clearInterval(heartbeat);
+    heartbeat = null;
     unregisterMcpInspector();
     unregisterNgrokInspector();
     await Promise.all([
       mcpInspector.closeAll().catch(() => {}),
       ngrokInspector.closeAll().catch(() => {}),
     ]);
-    if (getHostRole() === "hub") {
+    await hostStartup.catch(() => {});
+    await hostUnregisterSession(sessionId).catch(() => false);
+    await stopGappSessionBridge().catch(() => {});
+    if (embeddedFallback && getHostRole() === "hub") {
       await stopGappHostServer().catch(() => {});
     }
   });
 
-  registerGappTools(pi, ctx);
   registerGappCommand(pi, ctx.activeWindows);
 
   pi.on("resources_discover", async () => {
-    return { skillPaths: [GENERATIVE_BRIDGE_SKILL_DIR] };
-  });
-
-  const initialMarkerType = "gapp-context-initial-v1";
-  const stateMarkerType = "gapp-context-state-v1";
-  let frozenAppendix = "";
-  let lastSnapshot: GappContextSnapshot | null = null;
-
-  pi.on("session_start", async (_event, sessionCtx) => {
-    const entries = sessionCtx.sessionManager.getEntries();
-    const initial = [...entries].reverse().find((entry: any) => entry.type === "custom" && entry.customType === initialMarkerType) as any;
-    const state = [...entries].reverse().find((entry: any) => entry.type === "custom" && entry.customType === stateMarkerType) as any;
-    frozenAppendix = typeof initial?.data?.appendix === "string" ? initial.data.appendix : "";
-    lastSnapshot = (state?.data?.snapshot || initial?.data?.snapshot || null) as GappContextSnapshot | null;
+    return { skillPaths: [GAPP_SKILL_DIR] };
   });
 
   pi.on("before_agent_start", async (event, ctx) => {
     try {
-      const online = await listOnlineGapps(ctx.cwd || process.cwd());
-      const lives = listLiveApps();
-      const extras = {
-        liveApps: lives.map((a) => ({
-          id: a.appId,
-          name: a.appId,
-          scope: a.scope,
-          live: true,
-        })),
-        host: {
-          base: GAPP_HOST_BASE,
-          role: getHostRole(),
-          port: getBoundPort(),
-          protocolVersion: GAPP_PROTOCOL_VERSION,
-        },
-      };
-      const currentSnapshot = createGappContextSnapshot(online, extras);
-      if (!frozenAppendix) {
-        frozenAppendix = buildGappSystemPrompt(online, extras);
-        lastSnapshot = currentSnapshot;
-        pi.appendEntry(initialMarkerType, { appendix: frozenAppendix, snapshot: currentSnapshot });
-        return { systemPrompt: `${event.systemPrompt}\n\n${frozenAppendix}` };
+      // Progressive context: current-project app ids only. Everything else —
+      // other projects, global scope, disabled — is discovered on demand via
+      // `bun gapp-cli.ts list`; the gapp skill carries the
+      // full calling system.
+      const sessionCwd = ctx.cwd || process.cwd();
+      const online = (await listOnlineGapps(sessionCwd)).filter(
+        (m) => m.scope === "project" && m.cwd === sessionCwd,
+      );
+      const projectIds = new Set(online.map((m) => m.id));
+      const lives = listLiveApps().filter((a) => projectIds.has(a.appId));
+      if (online.length === 0 && lives.length === 0) return undefined;
+      const lines = ["# Glimpse-APP (GAPP) · 渐进上下文"];
+      if (online.length > 0) {
+        lines.push("", "## 当前项目（enabled · 未归档）", "");
+        for (const m of [...online].sort((a, b) => a.id.localeCompare(b.id))) {
+          lines.push(`- \`${m.id}\` · ${m.name}${m.description ? ` — ${m.description}` : ""}`);
+        }
       }
-      const diff = lastSnapshot ? buildGappContextDiff(lastSnapshot, currentSnapshot) : "";
-      if (diff) {
-        lastSnapshot = currentSnapshot;
-        pi.appendEntry(stateMarkerType, { snapshot: currentSnapshot });
-        return {
-          systemPrompt: `${event.systemPrompt}\n\n${frozenAppendix}`,
-          message: { customType: "gapp-context-diff", content: diff, display: false },
-        };
+      if (lives.length > 0) {
+        lines.push("", "## Live 窗口（仅 id）", "");
+        for (const a of [...lives].sort((x, y) => x.appId.localeCompare(y.appId))) {
+          lines.push(`- \`${a.appId}\``);
+        }
       }
-      return { systemPrompt: `${event.systemPrompt}\n\n${frozenAppendix}` };
+      lines.push(
+        "",
+        "其他项目/全局 GAPP：`bun gapp-cli.ts list` 查询；调用方式见技能 `gapp`（先读技能，渐进操作）。未读工具目录前勿编造 domain tool 名。",
+      );
+      return { systemPrompt: `${event.systemPrompt}\n\n${lines.join("\n")}` };
     } catch {
-      return frozenAppendix ? { systemPrompt: `${event.systemPrompt}\n\n${frozenAppendix}` } : undefined;
+      return undefined;
     }
   });
 }

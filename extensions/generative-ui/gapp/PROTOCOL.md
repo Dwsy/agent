@@ -10,6 +10,8 @@ MCP-inspired **dynamic tools + generative bridge** for Glimpse-APPs running unde
 
 版本号：`0.1`。消息 envelope 内带 `v` 字段；不兼容变更升 minor 前先 deprecate。
 
+> **注（agent 侧已迁移到 CLI）**：文中的 `gapp_*` 元工具（`gapp_call`/`gapp_list_tools`/`gapp_get_state` 等）已不再注册为 Pi 原生工具；agent 统一通过 `bun gapp-cli.ts <command>` 操作（见 `gapp-cli.ts` 与 `skills/gapp/SKILL.md`）。HTTP 控制面路由不变，下文协议仍适用。
+
 ---
 
 ## 0. Shared host: single port multipath
@@ -567,7 +569,7 @@ The host streams your final assistant text back to the app; tool calls in that t
 are allowed only if required to answer.
 ```
 
-可选：`resources_discover` 挂一份短 skill 文件（`gapp/skills/generative-bridge/SKILL.md`）供 `/skill` 显式调用；**默认靠连接注入，不必用户手动开 skill**。
+可选：`resources_discover` 挂一份短 skill 文件（`gapp/skills/gapp/SKILL.md`）供 `/skill` 显式调用；**默认靠连接注入，不必用户手动开 skill**。
 
 ### 7.2 App API
 

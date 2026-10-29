@@ -11,10 +11,16 @@ TUI 不是 WebView 管理面板，也不解释 HTML；它直接渲染 GAPP 自�
 
 ```text
 gapp/
-  index.ts         # registerGapp() + host start + agent bridge
+  index.ts         # registerGapp() + daemon launcher + Pi bridge
   constants.ts     # port 54888 + path table
-  host-server.ts   # multipath HTTP hub
-  host-client.ts   # HTTP client when not hub
+  daemon-manager.ts    # detached supervisor launcher / health probe
+  daemon-supervisor.ts # single-instance watchdog + restart backoff
+  daemon.ts            # persistent HTTP daemon + idle / memory monitor
+  daemon-health.ts     # conservative RSS / heap growth detector
+  daemon-paths.ts      # pid, lock, status and log paths
+  session-bridge.ts    # per-Pi loopback bridge for live-only operations
+  host-server.ts   # multipath HTTP control plane
+  host-client.ts   # HTTP client + on-demand daemon wake-up
   lease.ts         # single-connection leases
   registry.ts      # live windows / tools / generate jobs
   stateops.ts      # legacy declarative stateOps executor
@@ -47,7 +53,7 @@ tools.mjs       optional v0.2 shared executable domain tools
 tui.mjs         optional TUI application renderer
 ```
 
-`state.json` 是应用状态 SSOT；`tools.json` 是可发现 schema，`tools.mjs` 是 v0.2 的共享领域实现。WebView、独立终端、Pi TUI、Host 和 agent `gapp_call` 不再各自复制增删改逻辑。
+`state.json` 是应用状态 SSOT；`tools.json` 是可发现 schema，`tools.mjs` 是 v0.2 的共享领域实现。WebView、独立终端、Pi TUI、Host 和 agent（`gapp-cli call`）不再各自复制增删改逻辑。
 
 ## v0.2 共享工具模块
 
@@ -139,9 +145,23 @@ TUI 内调用工具固定 `openIfNeeded: false`，不会为了执行操作意外
 | `/gapp-tui [n|id]` | 同一 Pi TUI 应用入口 |
 | `/gapp list --text` | 纯文本列表 |
 | `/gapp enable|disable|archive <n|id>` | 生命周期 |
+| `/gapp reload <n|id> [--window]` | 热更新：失效 `tools.mjs` 缓存；`--window` 连窗口一起重建 |
 | `/gapp generate <描述>` | 让 agent 生成 GAPP |
 
 省略 TUI app id 时，选择器只列出含 `tui.mjs` 的 GAPP。
+
+## 代码热更新
+
+编辑 `tools.mjs` / `tui.mjs` 后**不需要重启 daemon**：
+
+- **自动**：文件 mtime 变化后，下一次调用自动重新执行该模块。
+- **显式**：`bun gapp-cli.ts reload <id>` / `POST /v1/gapp/apps/:appId/reload` / `/gapp reload <n|id>`
+  —— 即使 mtime 未变也强制重新装载。
+- **窗口**：`window: true`（或 `--window`）会重建 live 窗口，用于 `index.html` / `meta.json` / `state.json` 的改动。
+
+加载实现见 `app-module.ts`：Bun 的模块缓存以解析路径为键、忽略 URL query，因此
+`import(url + "?mtime=…")` 在 daemon 生命周期内会一直返回首次装载的副本；
+该加载器按 mtime 记忆并在 Bun 下走 `require.cache` 失效重载。
 
 ## 独立 CLI
 
@@ -168,9 +188,35 @@ pnpm gapp:tui demo-kanban --cwd /path/to/agent
 ## Host control plane
 
 - **Port:** `54888`（`GAPP_HOST_PORT`）
-- **Auth:** 除 `/health` 外所有路由要求 `Authorization: Bearer <token>`；token 由 hub 写入 `~/.pi/gapp/host-token`（0600），本地进程读文件、WebView 由 runtime 注入
+- **Auth:** 除 `/health` 外所有路由要求 `Authorization: Bearer <token>`；token 写入 `~/.pi/gapp/host-token`（0600），本地进程读文件、WebView 由 runtime 注入
 - **Paths:** `/health`, `/v1/gapp/...` — 见 `PROTOCOL.md`
-- First process = hub; others = HTTP clients to same port
+- **Lifecycle:** Pi 只负责按需启动 detached supervisor；真正监听端口的是独立 daemon，Pi 退出后 daemon 继续运行
+- **Idle shutdown:** 默认连续 3 小时没有有效调用后正常退出；`/health` 与 Pi session heartbeat 不续期
+- **Self-healing:** supervisor 保持单实例；daemon 崩溃、未捕获异常或内存保护触发时以退避策略重启
+- **Pi bridge:** 每个 Pi 会话只在随机 loopback 端口暴露轻量 bridge，供 live window、原生 RPC、主会话 event / generate 使用；磁盘工具、state 和独立 subagent 可直接由 daemon 执行
+- **Runtime files:** `~/.pi/gapp/_host/` 下保存 `supervisor.pid`、`daemon.pid`、`status.json`、`sessions.json` 与 `gapp-host.log`
+
+daemon 正常空闲退出后不会被 supervisor 立即拉起；下一次 Pi / TUI Host 调用会重新启动它。内存保护同时采用绝对 RSS 上限和持续增长窗口，避免一次性分配尖峰造成误重启。
+
+| 环境变量 | 默认值 | 用途 |
+|---|---:|---|
+| `GAPP_HOST_IDLE_MS` | `10800000` | 无有效调用自动退出时间（3 小时） |
+| `GAPP_HOST_MONITOR_MS` | `60000` | 空闲与内存采样周期 |
+| `GAPP_HOST_MAX_RSS_MB` | `768` | RSS 硬上限 |
+| `GAPP_HOST_MAX_RSS_SAMPLES` | `3` | 连续超过硬上限多少次才重启 |
+| `GAPP_HOST_LEAK_WINDOW` | `12` | 持续增长检测样本数 |
+| `GAPP_HOST_LEAK_GROWTH_MB` | `192` | 窗口内 RSS 最小增长量 |
+| `GAPP_HOST_LEAK_HEAP_GROWTH_MB` | `96` | 窗口内 heap 最小增长量 |
+| `GAPP_HOST_LEAK_MIN_RSS_MB` | `256` | 启用增长判定的最低 RSS |
+| `GAPP_HOST_LEAK_MONOTONIC_RATIO` | `0.75` | 样本中持续上升步数比例 |
+| `GAPP_BUN_BIN` | 自动发现 | daemon / supervisor 使用的 Bun 路径 |
+
+快速检查：
+
+```bash
+curl http://127.0.0.1:54888/health
+tail -f ~/.pi/gapp/_host/gapp-host.log
+```
 
 Host Protocol 仍负责 WebView live tools、events、generate 和跨进程调用；TUI renderer contract 是同一 bundle 的另一种表现层。
 

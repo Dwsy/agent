@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { stat } from "node:fs/promises";
 import { join } from "node:path";
-import { pathToFileURL } from "node:url";
+import { loadAppModule } from "./app-module.js";
 import type { GappBundle } from "./storage.js";
 
 export const GAPP_TOOL_MODULE_ENTRY = "tools.mjs";
@@ -41,15 +40,14 @@ export async function loadGappExecutableToolModule(
   dir: string,
 ): Promise<GappExecutableToolModule | null> {
   const entry = join(dir, GAPP_TOOL_MODULE_ENTRY);
-  let entryStat;
+  let loaded: { gappToolHandlers?: unknown };
   try {
-    entryStat = await stat(entry);
-  } catch {
-    return null;
+    // Hot-reloadable: an edited tools.mjs re-executes on the next load.
+    loaded = (await loadAppModule(entry)) as { gappToolHandlers?: unknown };
+  } catch (error) {
+    if ((error as { code?: string } | null)?.code === "ENOENT") return null;
+    throw error;
   }
-
-  const href = `${pathToFileURL(entry).href}?mtime=${entryStat.mtimeMs}`;
-  const loaded = await import(href);
   const handlers = loaded.gappToolHandlers;
   if (!handlers || typeof handlers !== "object" || Array.isArray(handlers)) {
     throw new Error(

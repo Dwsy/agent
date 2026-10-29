@@ -126,13 +126,16 @@ export function resolveGlimpseuiEntry(): string | null {
   candidates.push(join(homedir(), "Dev/AI/glimpse"));
   candidates.push(join(homedir(), "Dev/glimpse"));
 
-  // 3) Global installs
-  for (const root of globalModuleRoots()) {
-    candidates.push(join(root, "glimpseui"));
-  }
-
+  // Cheap candidates first. globalModuleRoots() runs `npm root -g`, which can
+  // take ~0.5-0.8s, so only pay for it when env/local checkouts are missing.
   for (const c of candidates) {
     const entry = asPackageRootOrEntry(c);
+    if (entry) return entry;
+  }
+
+  // 3) Global installs (same priority as before, evaluated lazily)
+  for (const root of globalModuleRoots()) {
+    const entry = asPackageRootOrEntry(join(root, "glimpseui"));
     if (entry) return entry;
   }
 

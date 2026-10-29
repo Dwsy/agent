@@ -14,7 +14,7 @@ import {
   type GappMeta,
 } from "./storage.js";
 import { closeGappWindow, getOpenGappWindow, openGappBundle, GappOpenError } from "./open.js";
-import { runPiGappTuiApp } from "./tui-pi.js";
+import { reloadGappCode } from "./reload.js";
 
 type ScopeFilter = "all" | "project" | "global";
 type AppAction = "open" | "close" | "enable" | "disable" | "archive" | "unarchive";
@@ -479,6 +479,7 @@ export function registerGappCommand(pi: ExtensionAPI, activeWindows: any[]) {
         { value: "disable ", label: "下线" },
         { value: "archive ", label: "归档" },
         { value: "state ", label: "state.json" },
+        { value: "reload ", label: "热更新：失效 tools.mjs 缓存（--window 重建窗口）" },
         { value: "generate ", label: "生成" },
       ];
       return items.filter(
@@ -512,6 +513,7 @@ export function registerGappCommand(pi: ExtensionAPI, activeWindows: any[]) {
             "/gapp open <n|id>",
             "/gapp enable|disable|archive <n|id>",
             "/gapp state <n|id>",
+            "/gapp reload <n|id> [--window]   失效 tools.mjs 缓存；--window 连窗口一起重建",
             "/gapp generate <描述>",
             "TUI: Tab=all/project/global  Enter=菜单  o/c/e/d/a 快捷键",
             `session=${cwd}`,
@@ -523,7 +525,7 @@ export function registerGappCommand(pi: ExtensionAPI, activeWindows: any[]) {
       }
 
       if (cmd === "tui") {
-        await runPiGappTuiApp(ctx, activeWindows, ref || undefined);
+        await (await import("./tui-pi.js")).runPiGappTuiApp(ctx, activeWindows, ref || undefined);
         return;
       }
 
@@ -553,7 +555,7 @@ export function registerGappCommand(pi: ExtensionAPI, activeWindows: any[]) {
           return;
         }
         ctx.sendUserMessage(
-          `请创建一个 Glimpse-APP：${desc}\n\n要求：使用 gapp_upsert 写入（index.html + state.json + meta），scope 默认 project，enabled=true，完成后 gapp_open 打开。状态走 GappStore / state.json。它运行在原生窗口 WebView 中：使用 --gapp-system-accent / --gapp-font-sans、语义 HTML 和键盘操作；不要伪造标题栏或系统控件，不用 web toast / 模态遮罩、cursor:pointer、平滑滚动或装饰性动画。`,
+          `请创建一个 Glimpse-APP：${desc}\n\n要求：先读技能 gapp，然后用 bun gapp-cli.ts upsert 写入（index.html + state.json + meta），scope 默认 project，enabled=true，完成后用 bun gapp-cli.ts open 打开。状态走 GappStore / state.json。它运行在原生窗口 WebView 中：使用 --gapp-system-accent / --gapp-font-sans、语义 HTML 和键盘操作；不要伪造标题栏或系统控件，不用 web toast / 模态遮罩、cursor:pointer、平滑滚动或装饰性动画。`,
         );
         return;
       }
@@ -581,6 +583,35 @@ export function registerGappCommand(pi: ExtensionAPI, activeWindows: any[]) {
         return;
       }
 
+      if (cmd === "reload") {
+        if (!ref) {
+          ctx.ui.notify("Usage: /gapp reload <n|id> [--window]", "warning");
+          return;
+        }
+        const bundle = await resolveGappRef(ref, { cwd, includeArchived: true });
+        if (!bundle) {
+          ctx.ui.notify(`not found: ${ref}`, "error");
+          return;
+        }
+        const wantWindow = rest.includes("--window");
+        const result = await reloadGappCode(bundle, activeWindows, {
+          cwd: bundle.meta.cwd || cwd,
+          window: wantWindow,
+          liveWindow: getOpenGappWindow(bundle.meta.id),
+        });
+        ctx.ui.notify(
+          [
+            `已热更新 ${result.id}：tools.mjs 缓存已失效（会话=${result.sessionInvalidated}，daemon=${result.daemonInvalidated}）`,
+            wantWindow ? `窗口：${result.window}` : "窗口：未重建（加 --window 可重建）",
+            result.warning ? `警告：${result.warning}` : "",
+          ]
+            .filter(Boolean)
+            .join("\n"),
+          "info",
+        );
+        return;
+      }
+
       if (cmd === "enable" || cmd === "disable" || cmd === "archive") {
         if (!ref) {
           ctx.ui.notify(`Usage: /gapp ${cmd} <n|id>`, "warning");
@@ -603,7 +634,7 @@ export function registerGappCommand(pi: ExtensionAPI, activeWindows: any[]) {
   pi.registerCommand("gapp-tui", {
     description: "Render a GAPP through its tui.mjs application component",
     handler: async (args: string, ctx) => {
-      await runPiGappTuiApp(ctx, activeWindows, (args ?? "").trim() || undefined);
+      await (await import("./tui-pi.js")).runPiGappTuiApp(ctx, activeWindows, (args ?? "").trim() || undefined);
     },
   });
 }

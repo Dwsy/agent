@@ -7,6 +7,7 @@
  *   GET|PUT|DELETE /v1/gapp/leases/:appId
  *   POST /v1/gapp/apps/:appId/open   (host-owned window: open/run a GAPP)
  *   POST /v1/gapp/apps/:appId/window (focus | close)
+ *   POST /v1/gapp/apps/:appId/reload (hot reload: drop cached app module, optional window rebuild)
  *   GET|PUT /v1/gapp/apps/:appId/tools
  *   POST /v1/gapp/apps/:appId/call
  *   POST /v1/gapp/apps/:appId/rpc (private, no browser CORS)
@@ -18,7 +19,7 @@
 
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { resolve, join } from "node:path";
 import { GAPP_HOST_BIND, GAPP_HOST_PORT, GAPP_HTTP_PREFIX, GAPP_PATHS } from "./constants.js";
 import { ensureHostToken, verifyHostToken } from "./auth.js";
 import { acquireLease, listLeases, readLease, releaseLease } from "./lease.js";
@@ -38,7 +39,8 @@ import {
 import { dispatchGenerate } from "./generate.js";
 import { loadGappToolsFile, setGappState, resolveGapp, loadGappBundle, gappProjectScanCwds, importGappSdk } from "./storage.js";
 import { applyStateOps } from "./stateops.js";
-import { executeGappToolModule } from "./tool-module.js";
+import { executeGappToolModule, GAPP_TOOL_MODULE_ENTRY } from "./tool-module.js";
+import { invalidateAppModule } from "./app-module.js";
 import { dispatchHostRpc } from "./host-rpc.js";
 import {
   defaultEventPrompt,
@@ -1153,6 +1155,58 @@ async function route(req: IncomingMessage, res: ServerResponse) {
               code: error instanceof SessionDispatchError ? error.code : "window_unavailable",
               message: error instanceof Error ? error.message : String(error),
             },
+          });
+        }
+      }
+    }
+
+    // Hot reload: drop the cached app-owned tools.mjs so the next call
+    // re-executes an edited file (Bun cannot re-import a changed path), and
+    // optionally rebuild the live window to pick up index.html/state changes.
+    {
+      const m = matchPath(path, `${GAPP_HTTP_PREFIX}/apps/:appId/reload`);
+      if (m && method === "POST") {
+        const body = await parseJson(req);
+        const known = getLiveApp(m.appId) || remoteApps.get(m.appId) || (await readLease(m.appId));
+        const bundle = await resolveGapp(m.appId, body.cwd || known?.cwd || process.cwd());
+        if (!bundle) {
+          return json(res, 404, {
+            ok: false,
+            error: { code: "not_found", message: `GAPP not found: ${m.appId}` },
+          });
+        }
+        invalidateAppModule(join(bundle.dir, GAPP_TOOL_MODULE_ENTRY));
+        if (body.window !== true || !known) {
+          return json(res, 200, { ok: true, appId: m.appId, invalidated: true, window: "none" });
+        }
+        let closed = false;
+        try {
+          await controlHostWindow(m.appId, "close");
+          closed = true;
+        } catch {
+          // Window already gone; the rebuild below still gives a fresh one.
+        }
+        try {
+          const opened = await openHostWindow(m.appId, {
+            cwd: bundle.meta.cwd || known.cwd,
+            scope: bundle.meta.scope,
+            sessionId: known.sessionId,
+            source: "reload",
+          });
+          return json(res, 200, {
+            ok: true,
+            appId: m.appId,
+            invalidated: true,
+            window: "reloaded",
+            sessionId: opened.sessionId,
+          });
+        } catch (error) {
+          return json(res, 200, {
+            ok: true,
+            appId: m.appId,
+            invalidated: true,
+            window: closed ? "closed" : "unchanged",
+            warning: error instanceof Error ? error.message : String(error),
           });
         }
       }

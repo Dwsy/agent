@@ -6,7 +6,6 @@ import { pathToFileURL } from "node:url";
 import test from "node:test";
 
 const storagePath = join(import.meta.dirname, "storage.ts");
-const promptPath = join(import.meta.dirname, "prompt.ts");
 
 async function loadStorage(projectDir, globalDir) {
   process.env.GAPP_PROJECT_DIR = projectDir;
@@ -133,105 +132,4 @@ test("resolveGappRef supports 1-based index and #n", async (t) => {
 
   assert.equal(await s.resolveGappRef("99"), null);
   assert.equal(await s.resolveGappRef("1x"), null);
-});
-
-test("prompt lists online apps", async (t) => {
-  const projectDir = await mkdtemp(join(tmpdir(), "gapp-project-"));
-  const globalDir = await mkdtemp(join(tmpdir(), "gapp-global-"));
-  t.after(async () => {
-    delete process.env.GAPP_PROJECT_DIR;
-    delete process.env.GAPP_GLOBAL_DIR;
-    await rm(projectDir, { recursive: true, force: true });
-    await rm(globalDir, { recursive: true, force: true });
-  });
-  const s = await loadStorage(projectDir, globalDir);
-  await s.upsertGapp({
-    id: "plan-x",
-    name: "Plan X",
-    description: "sprint",
-    state: {},
-    html: "<div/>",
-  });
-  process.env.GAPP_LANG = "zh";
-  const i18nPath = join(import.meta.dirname, "i18n.ts");
-  const i18n = await import(pathToFileURL(i18nPath).href + "?t=" + Date.now());
-  i18n.setGappLang("zh");
-  const prompt = await import(pathToFileURL(promptPath).href + "?t=" + Date.now());
-  const text = await prompt.getGappPromptAppendix();
-  assert.match(text, /plan-x/);
-  assert.match(text, /当前在线/);
-  assert.match(text, /渐进/);
-  assert.match(text, /gapp_list_tools/);
-  assert.match(text, /gapp_call/);
-  assert.match(text, /\[GAPP event\]/);
-  assert.match(text, /\[GAPP generate\]/);
-  // progressive: no full tool catalogs / anti-pattern essays / HTML samples
-  assert.doesNotMatch(text, /反模式/);
-  assert.doesNotMatch(text, /registerTools\(\[/);
-
-  i18n.setGappLang("en");
-  const textEn = prompt.buildGappSystemPrompt([{
-    id: "plan-x", name: "Plan X", description: "sprint",
-    scope: "project", enabled: true, archived: false, instances: "single",
-  }], {
-    liveApps: [{ id: "plan-x", live: true, tools: [{ name: "secret_tool", description: "should not appear", inputSchema: {} }] }],
-  });
-  assert.match(textEn, /Currently online/);
-  assert.match(textEn, /Progressive/);
-  assert.match(textEn, /gapp_list_tools/);
-  assert.doesNotMatch(textEn, /secret_tool/);
-  assert.doesNotMatch(textEn, /Anti-patterns/);
-
-  const stableA = prompt.buildGappSystemPrompt([
-    { id: "z-app", name: "Z", description: "z", scope: "project", enabled: true, archived: false, instances: "single", updated: "2026-08-16T11:17:17Z" },
-    { id: "a-app", name: "A", description: "a", scope: "project", enabled: true, archived: false, instances: "single", updated: "2026-07-01T00:00:00Z" },
-  ], { liveApps: [
-    { id: "z-app", name: "Z", scope: "project", live: true },
-    { id: "a-app", name: "A", scope: "project", live: true },
-  ] });
-  const stableB = prompt.buildGappSystemPrompt([
-    { id: "a-app", name: "A", description: "a", scope: "project", enabled: true, archived: false, instances: "single", updated: "2026-08-20T00:00:00Z" },
-    { id: "z-app", name: "Z", description: "z", scope: "project", enabled: true, archived: false, instances: "single", updated: "2026-06-01T00:00:00Z" },
-  ], { liveApps: [
-    { id: "a-app", name: "A", scope: "project", live: true },
-    { id: "z-app", name: "Z", scope: "project", live: true },
-  ] });
-  assert.equal(stableA, stableB);
-  assert.ok(stableA.indexOf("`a-app`") < stableA.indexOf("`z-app`"));
-
-  const snapshotA = prompt.createGappContextSnapshot([
-    { id: "a-app", name: "A", description: "a", scope: "project", enabled: true, archived: false, instances: "single", updated: "old" },
-  ], { liveApps: [{ id: "a-app", name: "A", scope: "project", live: true }] });
-  const snapshotUpdatedOnly = prompt.createGappContextSnapshot([
-    { id: "a-app", name: "A", description: "a", scope: "project", enabled: true, archived: false, instances: "single", updated: "new" },
-  ], { liveApps: [{ id: "a-app", name: "A", scope: "project", live: true }] });
-  assert.equal(prompt.buildGappContextDiff(snapshotA, snapshotUpdatedOnly), "");
-  const duplicateIdA = prompt.createGappContextSnapshot([
-    { id: "same-app", name: "Same", description: "same", scope: "project", enabled: true, archived: false, instances: "single" },
-    { id: "same-app", name: "Same", description: "same", scope: "global", enabled: true, archived: false, instances: "single" },
-  ], { liveApps: [
-    { id: "same-app", name: "Same", scope: "project", live: true },
-    { id: "same-app", name: "Same", scope: "global", live: true },
-  ] });
-  const duplicateIdB = prompt.createGappContextSnapshot([
-    { id: "same-app", name: "Same", description: "same", scope: "global", enabled: true, archived: false, instances: "single" },
-    { id: "same-app", name: "Same", description: "same", scope: "project", enabled: true, archived: false, instances: "single" },
-  ], { liveApps: [
-    { id: "same-app", name: "Same", scope: "global", live: true },
-    { id: "same-app", name: "Same", scope: "project", live: true },
-  ] });
-  assert.deepEqual(duplicateIdA, duplicateIdB);
-  assert.equal(prompt.buildGappContextDiff(duplicateIdA, duplicateIdB), "");
-  const snapshotB = prompt.createGappContextSnapshot([
-    { id: "a-app", name: "A2", description: "a", scope: "project", enabled: true, archived: false, instances: "single", updated: "new" },
-    { id: "b-app", name: "B", description: "b", scope: "project", enabled: true, archived: false, instances: "single" },
-  ], { liveApps: [{ id: "b-app", name: "B", scope: "project", live: true }] });
-  const contextDiff = prompt.buildGappContextDiff(snapshotA, snapshotB);
-  assert.match(contextDiff, /online added: b-app/);
-  assert.match(contextDiff, /online metadata changed: a-app/);
-  assert.match(contextDiff, /live opened: b-app/);
-  assert.match(contextDiff, /live closed: a-app/);
-
-  i18n.setGappLang(null);
-  delete process.env.GAPP_LANG;
 });

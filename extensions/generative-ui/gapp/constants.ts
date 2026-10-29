@@ -19,6 +19,7 @@ export const GAPP_PATHS = {
   app: (appId: string) => `${GAPP_HTTP_PREFIX}/apps/${encodeURIComponent(appId)}`,
   open: (appId: string) => `${GAPP_HTTP_PREFIX}/apps/${encodeURIComponent(appId)}/open`,
   window: (appId: string) => `${GAPP_HTTP_PREFIX}/apps/${encodeURIComponent(appId)}/window`,
+  reload: (appId: string) => `${GAPP_HTTP_PREFIX}/apps/${encodeURIComponent(appId)}/reload`,
   tools: (appId: string) => `${GAPP_HTTP_PREFIX}/apps/${encodeURIComponent(appId)}/tools`,
   call: (appId: string) => `${GAPP_HTTP_PREFIX}/apps/${encodeURIComponent(appId)}/call`,
   rpc: (appId: string) => `${GAPP_HTTP_PREFIX}/apps/${encodeURIComponent(appId)}/rpc`,

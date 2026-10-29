@@ -3,7 +3,6 @@
 // with esbuild into an IIFE and rendered in a React shell window. Imports are
 // restricted to react, react-dom/client and the @gen-ui/canvas SDK.
 
-import { build } from "esbuild";
 import { cssVariables } from "./svg-styles.js";
 import { WIDGET_CSP, WIDGET_UI_KIT_CSS, WIDGET_UI_KIT_RESOURCES } from "./widget-ui-kit.js";
 import { THEME_VARS_SCRIPT, WIDGET_EVENTS_SCRIPT } from "./html-helpers.js";
@@ -81,6 +80,9 @@ function canvasPlugin(tsx: string) {
 /** Bundle canvas TSX into a self-contained IIFE. Throws readable diagnostics. */
 export async function transpileCanvas(tsx: string): Promise<string> {
   try {
+    // esbuild is only needed when a canvas is compiled; load it on demand so
+    // extension startup does not pay for it.
+    const { build } = await import("esbuild");
     const result = await build({
       entryPoints: ["__entry__"],
       bundle: true,

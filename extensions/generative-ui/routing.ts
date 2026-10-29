@@ -1,3 +1,9 @@
+import {
+  loadVisualRouteRegistry,
+  matchRegisteredRoute,
+  type VisualRouteRegistry,
+} from "./visual-registry.js";
+
 export type VisualTarget = "markdown" | "show_widget" | "show_canvas";
 export type VisualStyle =
   | "editorial"
@@ -21,6 +27,8 @@ export interface VisualRoute {
   contentPlan: string[];
   research: ResearchPolicy;
   researchInstruction: string;
+  /** Skill that registered this route via `visual-routes.json` (absent for built-in routes). */
+  skillRef?: string;
 }
 
 const CURRENT_DATA_RE = /\b(latest|current|today|tonight|recent|live|news|price|prices|market|weather|forecast|score|standings|release|version|availability)\b|最新|当前|今天|实时|新闻|价格|行情|天气|比分|排名|版本|发布|可用性/i;
@@ -52,9 +60,15 @@ function has(request: string, pattern: RegExp): boolean {
   return pattern.test(request);
 }
 
-export function routeVisualRequest(rawRequest: string): VisualRoute {
+export function routeVisualRequest(rawRequest: string, registry: VisualRouteRegistry = loadVisualRouteRegistry()): VisualRoute {
   const request = rawRequest.trim();
   const q = request.toLowerCase();
+
+  const registered = matchRegisteredRoute(request, registry.routes);
+  if (registered) {
+    const { patterns: _patterns, ...spec } = registered;
+    return route(request, spec);
+  }
 
   if (has(q, /\b(text only|plain text|no visual|no chart|no diagram|just answer)\b|只要文字|不要图|不用可视化|纯文字/i)) {
     return route(request, {
@@ -289,5 +303,6 @@ export function formatVisualRoute(route: VisualRoute): string {
   const modules = route.modules.length ? route.modules.map((id) => "`" + id + "`").join(", ") : "none";
   const styleRules = STYLE_RULES[route.style].map((rule) => "- " + rule).join("\n");
   const content = route.contentPlan.map((item, index) => `${index + 1}. ${item}`).join("\n");
-  return `## Auto route\n\n- Route: \`${route.id}\` — ${route.title}\n- Target: \`${route.target}\`\n- Style: \`${route.style}\`\n- Modules: ${modules}\n- Template: ${template}\n- Why: ${route.reason}\n- Retrieval: \`${route.research}\` — ${route.researchInstruction}\n\n### Unified UI/UX contract\n\n- Content anatomy: context → one dominant artifact → evidence/detail → source/recency → action only when needed. No empty shell UI.\n- Typography: 24px title, 18px section, 16px subheading, 14px body, 12px metadata; sentence case.\n- Spacing: use the 4/8/12/16/24/32 rhythm. Prefer 8px small gaps, 12–16px section internals, 24px major separation.\n- Surfaces: transparent page; flat secondary surfaces only when grouping is necessary; 1px semantic borders; 6–12px radii.\n- Color: host theme tokens only for UI chrome; neutral base + one accent max; semantic colors only when they encode status/meaning.\n- Responsive: one-column reading order must remain intact around 320px; rows wrap/stack; avoid fixed outer widths and nested scrolling.\n- Accessibility: semantic controls, visible labels, native focus, and non-color encodings for meaning.\n- Grounding: demo/template values are structure examples only. Replace them with supplied or retrieved evidence before rendering. Every visual render must pass the host-enforced grounding declaration; factual artifacts use \`grounded\` with structured sources, while genuinely non-factual artifacts use \`not_applicable\` with a reason. Grounded provenance is rendered by the host, not left to prompt compliance.\n\n### Style profile\n\n${styleRules}\n\n### Minimum content plan\n\n${content}\n`;
+  const skillRef = route.skillRef ? `- Skill ref: \`${route.skillRef}\` — read that skill's guide when its extended rules matter\n` : "";
+  return `## Auto route\n\n- Route: \`${route.id}\` — ${route.title}\n${skillRef}- Target: \`${route.target}\`\n- Style: \`${route.style}\`\n- Modules: ${modules}\n- Template: ${template}\n- Why: ${route.reason}\n- Retrieval: \`${route.research}\` — ${route.researchInstruction}\n\n### Unified UI/UX contract\n\n- Content anatomy: context → one dominant artifact → evidence/detail → source/recency → action only when needed. No empty shell UI.\n- Typography: 24px title, 18px section, 16px subheading, 14px body, 12px metadata; sentence case.\n- Spacing: use the 4/8/12/16/24/32 rhythm. Prefer 8px small gaps, 12–16px section internals, 24px major separation.\n- Surfaces: transparent page; flat secondary surfaces only when grouping is necessary; 1px semantic borders; 6–12px radii.\n- Color: host theme tokens only for UI chrome; neutral base + one accent max; semantic colors only when they encode status/meaning.\n- Responsive: one-column reading order must remain intact around 320px; rows wrap/stack; avoid fixed outer widths and nested scrolling.\n- Accessibility: semantic controls, visible labels, native focus, and non-color encodings for meaning.\n- Grounding: demo/template values are structure examples only. Replace them with supplied or retrieved evidence before rendering. Every visual render must pass the host-enforced grounding declaration; factual artifacts use \`grounded\` with structured sources, while genuinely non-factual artifacts use \`not_applicable\` with a reason. Grounded provenance is rendered by the host, not left to prompt compliance.\n\n### Style profile\n\n${styleRules}\n\n### Minimum content plan\n\n${content}\n`;
 }

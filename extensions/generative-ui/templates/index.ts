@@ -34,8 +34,9 @@ export const TEMPLATE_CATALOG: readonly TemplateMeta[] = [
   {
     id: "flow-mermaid",
     file: "flow-mermaid.html.frag",
-    title: "Mermaid flowchart",
-    useWhen: "Branches, pipelines, state-ish flows. Neutral theme:base palette.",
+    title: "Mermaid-syntax diagram (Pele)",
+    useWhen:
+      "Branches, pipelines, state-ish flows. Neutral host-token palette via Pele (--pele-* CSS vars). Complex diagram types (block / C4 / class / sequence / gantt / ERD / state / timeline) use this template too — pick the type at https://pele.run/examples.md.",
     modules: ["diagram"],
   },
   {

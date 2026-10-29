@@ -5,9 +5,9 @@ import {
   visibleWidth,
   type Component,
 } from "@earendil-works/pi-tui";
-import { access, stat } from "node:fs/promises";
+import { access } from "node:fs/promises";
 import { join } from "node:path";
-import { pathToFileURL } from "node:url";
+import { loadAppModule } from "./app-module.js";
 import {
   gappDir,
   listGapps,
@@ -158,9 +158,8 @@ export async function createGappTuiAppSession(options: {
   if (!bundle) throw new Error(`GAPP not found: ${options.ref}`);
 
   const entry = join(bundle.dir, GAPP_TUI_ENTRY);
-  let entryStat;
   try {
-    entryStat = await stat(entry);
+    await access(entry);
   } catch {
     throw new Error(
       `GAPP "${bundle.meta.id}" has no TUI renderer. Add ${GAPP_TUI_ENTRY} exporting createGappTui(runtime).`,
@@ -285,8 +284,12 @@ export async function createGappTuiAppSession(options: {
     },
   };
 
-  const href = `${pathToFileURL(entry).href}?mtime=${entryStat.mtimeMs}`;
-  const module = await import(href);
+  // Hot-reloadable: an edited tui.mjs re-executes instead of being cached for
+  // the life of the daemon (Bun ignores the ?mtime URL query).
+  const module = (await loadAppModule(entry)) as {
+    createGappTui?: unknown;
+    default?: unknown;
+  };
   const factory = (module.createGappTui ?? module.default) as GappTuiFactory | undefined;
   if (typeof factory !== "function") {
     throw new Error(

@@ -275,6 +275,9 @@ export async function openGappBundle(
       sessionId,
       instances,
       host: hostBase,
+      cwd: appCwd,
+      scope: bundle.meta.scope,
+      hasWindow: true,
     };
     const leaseResult = isHub()
       ? await acquireLease(leaseInput)
@@ -306,6 +309,9 @@ export async function openGappBundle(
   closeGappWindow(bundle.meta.id);
 
   const diskTools = await loadGappToolsFromDir(bundle.dir);
+  if (bundle.meta.scope === "project" && appCwd) {
+    await touchGappProject(appCwd, bundle.meta.name).catch(() => {});
+  }
   const html = injectGappRuntime(bundle.html, bundle.meta, bundle.state, {
     hostBase,
     hostToken: (await readHostToken()) ?? undefined,
@@ -337,10 +343,6 @@ export async function openGappBundle(
   });
   setLiveWindow(bundle.meta.id, win);
   attachGappMessageRouter(win, bundle.meta, appCwd);
-
-  if (bundle.meta.scope === "project" && appCwd) {
-    void touchGappProject(appCwd, bundle.meta.name).catch(() => {});
-  }
 
   const cleanup = () => {
     const isCurrentGeneration = openWindows.get(bundle.meta.id) === win;

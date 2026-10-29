@@ -1,5 +1,6 @@
 import { getGuidelines } from "./guidelines.js";
 import { formatVisualRoute, routeVisualRequest, type VisualTarget } from "./routing.js";
+import { loadVisualRouteRegistry } from "./visual-registry.js";
 import { TEMPLATE_CATALOG } from "./templates/index.js";
 
 export interface VisualPlanInput {
@@ -19,12 +20,17 @@ export interface VisualPlanResult {
     grounding: "required";
     modules: string[];
     templates: string[];
+    /** Skill refs behind the auto route: `[skillRef]` for registered routes, `[]` for built-in. */
+    skillRefs: string[];
+    /** Bad `visual-routes.json` manifests that were skipped while routing. */
+    warnings?: string[];
   };
 }
 
 export function planVisualGuidance(input: VisualPlanInput): VisualPlanResult {
   const request = input.request?.trim() ?? "";
-  const autoRoute = request ? routeVisualRequest(request) : null;
+  const registry = request ? loadVisualRouteRegistry() : null;
+  const autoRoute = request && registry ? routeVisualRequest(request, registry) : null;
   const explicitModules = (input.modules ?? []).filter(Boolean);
   const explicitTemplates = (input.templates ?? []).filter(Boolean);
   const selectedTemplateMeta = TEMPLATE_CATALOG.filter((item) => explicitTemplates.includes(item.id));
@@ -61,6 +67,8 @@ export function planVisualGuidance(input: VisualPlanInput): VisualPlanResult {
       grounding: "required",
       modules,
       templates,
+      skillRefs: autoRoute?.skillRef ? [autoRoute.skillRef] : [],
+      ...(registry && registry.warnings.length > 0 ? { warnings: registry.warnings } : {}),
     },
   };
 }

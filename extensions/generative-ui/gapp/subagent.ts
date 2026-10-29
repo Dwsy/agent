@@ -7,7 +7,7 @@
  * default 3); excess jobs wait in FIFO order.
  */
 
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 
 export interface SubagentRequest {
   prompt: string;
@@ -32,6 +32,7 @@ function subagentCommand(): string[] {
 
 let active = 0;
 const waiters: (() => void)[] = [];
+const children = new Set<ChildProcess>();
 
 async function acquireSlot(): Promise<void> {
   while (active >= concurrencyLimit()) {
@@ -47,6 +48,39 @@ function releaseSlot(): void {
 
 export function subagentPoolStatus(): { active: number; waiting: number; limit: number } {
   return { active, waiting: waiters.length, limit: concurrencyLimit() };
+}
+
+/** Kill all headless Pi children before a daemon restart so they cannot become orphans. */
+export async function stopAllSubagents(graceMs = 1_000): Promise<void> {
+  const targets = [...children];
+  for (const child of targets) {
+    try {
+      child.kill("SIGTERM");
+    } catch {
+      // Already gone.
+    }
+  }
+  if (targets.length === 0) return;
+  await Promise.race([
+    Promise.all(
+      targets.map(
+        (child) =>
+          new Promise<void>((resolve) => {
+            if (child.exitCode != null || child.signalCode != null) return resolve();
+            child.once("close", () => resolve());
+          }),
+      ),
+    ),
+    new Promise<void>((resolve) => setTimeout(resolve, graceMs)),
+  ]);
+  for (const child of targets) {
+    if (child.exitCode != null || child.signalCode != null) continue;
+    try {
+      child.kill("SIGKILL");
+    } catch {
+      // Already gone.
+    }
+  }
 }
 
 function buildArgs(req: SubagentRequest): string[] {
@@ -90,6 +124,7 @@ export async function runSubagent(req: SubagentRequest): Promise<string> {
         // (no recursive gapp host / window hooks inside subagents).
         env: { ...process.env, GAPP_SUBAGENT: "1" },
       });
+      children.add(child);
 
       let stdout = "";
       let stderr = "";
@@ -155,12 +190,14 @@ export async function runSubagent(req: SubagentRequest): Promise<string> {
       });
       child.stderr.on("data", (chunk) => { stderr += chunk; });
       child.on("error", (err) => {
+        children.delete(child);
         if (settled) return;
         settled = true;
         clearTimeout(timer);
         reject(new Error(`subagent spawn failed: ${err.message}`));
       });
       child.on("close", (code) => {
+        children.delete(child);
         if (settled) return;
         settled = true;
         clearTimeout(timer);

@@ -137,42 +137,48 @@ test("gallery hosts Canvas state/theme without weakening iframe sandbox", () => 
   assert.match(src, /broadcastCanvasTheme\(\)/);
 });
 
-test("streaming preview defers widget scripts until message handlers exist", () => {
+test("windows are held by the detached CLI holder, not a streaming preview", () => {
   const index = readFileSync(join(root, "index.ts"), "utf8");
-  const tools = readFileSync(join(root, "tools.ts"), "utf8");
-  assert.match(index, /window\._setContent\('[^']*'\);/);
-  assert.doesNotMatch(index, /window\._setContent\('[^']*'\); window\._runScripts\(\);/);
-  assert.ok(tools.indexOf('win.on("message"') < tools.indexOf("scheduleActivation();"));
-  assert.match(tools, /window\._setContent\('[^']*'\); window\._runScripts\(\);/);
+  const cli = readFileSync(join(root, "visual-cli.ts"), "utf8");
+  // The mid-generation message_update interception and its shell activation are gone.
+  assert.doesNotMatch(index, /message_update/);
+  assert.doesNotMatch(index, /_setContent/);
+  assert.doesNotMatch(index, /registerTools/);
+  // The detached holder wires message handling before a render can settle, and
+  // canvas_action traffic never settles.
+  assert.ok(cli.indexOf('win.on("message"') < cli.indexOf("const settles"));
+  assert.match(cli, /const settles = !!resultFile && !settled && !isCanvasAction/);
+  assert.match(cli, /closedReason/);
 });
 
-test("visualization prompts require focused, local, accessible interaction", () => {
-  const tools = readFileSync(join(root, "tools.ts"), "utf8");
+test("visual skill and CLI carry the focused, local, accessible interaction contract", () => {
+  const skill = readFileSync(join(root, "skills", "generative-ui", "SKILL.md"), "utf8");
+  const cli = readFileSync(join(root, "visual-cli.ts"), "utf8");
   const widgetValidation = readFileSync(join(root, "widget-validation.ts"), "utf8");
   const grounding = readFileSync(join(root, "grounding.ts"), "utf8");
   const guidelines = readFileSync(join(root, "guidelines.ts"), "utf8");
 
-  assert.match(tools, /materially improves understanding or a decision/);
-  assert.match(tools, /never invent filter, search, reset, dashboard, or KPI panels/);
-  assert.match(tools, /semantic HTML and native controls/);
-  assert.match(tools, /Do not choose Canvas merely because data is present/);
-  assert.match(tools, /request set to the user's actual goal/);
-  assert.match(tools, /Do not ask the user to choose Canvas vs Widget/);
-  assert.match(tools, /Respect the returned retrieval policy/);
-  assert.match(tools, /Never copy demo values from a skeleton/);
-  assert.match(tools, /The first render must be useful/);
-  assert.match(tools, /Keep presentation-only interactions local/);
-  assert.match(tools, /validateWidgetCode\(code, params\.interactive \?\? false\)/);
-  assert.match(tools, /grounding: GROUNDING_SCHEMA/);
-  assert.match(tools, /validateGroundingDeclaration\(params\.grounding\)/);
-  assert.match(tools, /groundingFooterHTML\(grounding\)/);
+  assert.match(skill, /materially improves understanding or a decision/);
+  assert.match(skill, /never invent filter, search, reset, dashboard, or KPI panels/);
+  assert.match(skill, /semantic HTML and native controls/);
+  assert.match(skill, /Do not choose Canvas merely because data is present/);
+  assert.match(skill, /request set to the user's actual goal/);
+  assert.match(skill, /Do not ask the user to choose Canvas vs Widget/);
+  assert.match(skill, /Respect the returned retrieval policy/);
+  assert.match(skill, /Never copy demo values from a skeleton/);
+  assert.match(skill, /The first render must be useful/);
+  assert.match(skill, /Keep presentation-only interactions local/);
+  assert.match(cli, /validateWidgetCode\(code, opts\.interactive\)/);
+  assert.match(cli, /enforceGroundingForPlan\(grounding, plan, /);
+  assert.match(cli, /validateGroundingDeclaration\(opts\.grounding\)/);
+  assert.match(cli, /groundingFooterHTML\(grounding\)/);
   assert.match(widgetValidation, /MAX_WIDGET_CODE_BYTES/);
   assert.match(widgetValidation, /fetch, XMLHttpRequest, or WebSocket/);
   assert.match(widgetValidation, /ALLOWED_RESOURCE_HOSTS/);
   assert.match(widgetValidation, /fonts\.googleapis\.com/);
   assert.match(grounding, /grounded visual renders require at least one provenance source/);
   assert.match(grounding, /data-genui-provenance="grounded"/);
-  assert.match(tools, /data-tooltip support backed by Floating UI/);
+  assert.match(skill, /data-tooltip support backed by Floating UI/);
   assert.match(widgetValidation, /script\|link\|img\|audio\|video\|source/);
   assert.match(widgetValidation, /interactive widgets must send a choice/);
   assert.match(guidelines, /Use the smallest medium that fits: Mermaid/);
@@ -311,11 +317,13 @@ test("_runScripts preserves script attributes for module/onload", () => {
 
 test("flow-mermaid template uses UMD + onload, not ESM module", () => {
   const body = readFileSync(join(root, "templates", "flow-mermaid.html.frag"), "utf8");
-  assert.match(body, /mermaid\.min\.js/);
-  assert.match(body, /onload="initMermaid\(\)"/);
-  assert.match(body, /window\.mermaid/);
+  assert.match(body, /pele\.global\.js/);
+  assert.match(body, /onload="initPele\(\)"/);
+  assert.match(body, /window\.pele/);
+  assert.match(body, /pele\.mount/);
   assert.match(body, /setInterval/);
   assert.doesNotMatch(body, /type="module"/);
-  assert.doesNotMatch(body, /import mermaid from/);
-  assert.match(body, /_themeVars|getPropertyValue/);
+  assert.doesNotMatch(body, /import\s+\S+\s+from\s/);
+  // Theme comes from --pele-* mapped to host tokens, not JS themeVars.
+  assert.match(body, /--pele-fg:\s*var\(--color-text-primary\)/);
 });
