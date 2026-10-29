@@ -208,6 +208,8 @@ qqbot-credentials/
 
 # Pi FFF (fff)
 pi-fff/
+fff/*/data.mdb
+fff/*/lock.mdb
 
 # Local binaries
 bin/
