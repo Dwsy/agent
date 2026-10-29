@@ -15,19 +15,32 @@ This skill utilizes the Tavily MCP server, providing clean, real-time web search
 | **主脚本** | `~/.pi/agent/skills/tavily-search-free/executor.py` | 技能目录 |
 | **使用方式** | `pi` 自动调用或手动执行 | 无需手动执行 |
 
-## API Key 配置
+## API Key 配置（多 Key 自动轮换）
 
-支持多 Key 轮询，提高请求并发能力。
+在 `.env` 中用逗号分隔多个 Key，池子会按顺序轮流用：
 
-**配置方式**：在 `.env` 文件中用逗号分隔多个 Key：
 ```
 TAVILY_API_KEY=key1,key2,key3
 ```
 
-**查看 Key 状态**：
+轮换规则：
+
+| 触发条件 | 行为 |
+|---------|------|
+| 当前 Key 额度耗尽（`plan_usage >= plan_limit`） | 调用前直接跳过 |
+| 调用返回 `401/403/429/432` | 标记该 Key 失败，立刻换下一个重试 |
+| 成功 | 指针前进，下次调用从下一个 Key 开始 |
+| 全部不可用 | 报错并列出每个 Key 的失败原因（退出码 2） |
+
+额度探测走 `GET https://api.tavily.com/usage`（免费，不消耗 credit），结果缓存在 `.mcp.keystate.json`（10 分钟 TTL，含轮换指针）。健康状态按 Key 指纹存储，不落明文。
+
+**查状态 / 强制刷新**：
 ```bash
-uv run executor.py --key-status
+uv run executor.py --key-status          # 每个 Key 的 plan、用量、ready/exhausted
+uv run executor.py --key-status --refresh # 忽略缓存，重新探测额度
 ```
+
+> ⚠️ 常见故障：`status=432 This request exceeds your plan's set usage limit` 表示该 Key 的免费额度已用完（不是配置错误）。加一个新 Key 到 `.env` 即可自动接管。Research 工具最费额度（约 46 credit/次），Search 约 1 credit/次。
 
 ## 可用工具
 

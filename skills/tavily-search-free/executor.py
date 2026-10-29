@@ -9,11 +9,14 @@ import json
 import sys
 import asyncio
 import argparse
+import hashlib
+import re
 import time
 import uuid
 from pathlib import Path
 from typing import Optional, Dict, Any
 
+import httpx
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from dotenv import load_dotenv
@@ -27,37 +30,160 @@ except ImportError:
     HAS_STATS = False
 
 
-# API Key 轮询管理
-class APIKeyRotator:
-    """多 API Key 轮询管理器"""
-    
+# 鉴权/配额类失败状态码：命中即切换下一个 Key
+QUOTA_STATUSES = {401, 403, 429, 432}
+SKILL_DIR = Path(__file__).parent
+KEY_STATE_FILE = SKILL_DIR / '.mcp.keystate.json'
+USAGE_TTL_SECONDS = 600
+USAGE_ENDPOINT = 'https://api.tavily.com/usage'
+
+
+def _fingerprint(key: str) -> str:
+    """Key 指纹，用于缓存健康状态而不落明文"""
+    return hashlib.sha256(key.encode()).hexdigest()[:12]
+
+
+def mask_key(key: str) -> str:
+    return f"{key[:10]}...{key[-4:]}"
+
+
+def _load_env_keys() -> list[str]:
+    """从 .env 读取逗号分隔的 Key 列表（去重、去空）"""
+    load_dotenv(SKILL_DIR / '.env')
+    raw = os.getenv('TAVILY_API_KEY', '')
+    keys: list[str] = []
+    for item in raw.split(','):
+        key = item.strip().strip('"').strip("'")
+        if key and key not in keys:
+            keys.append(key)
+    return keys
+
+
+class KeyPool:
+    """多 Key 轮换池。
+
+    选取顺序：轮换指针起、跳过已耗尽/鉴权的 Key；工具调用命中
+    401/403/429/432 时标记该 Key 并自动切换到下一个。
+    """
+
     def __init__(self):
-        self.keys = []
+        self.keys = _load_env_keys()
         self.index = 0
-        self._load_keys()
-    
-    def _load_keys(self):
-        """从环境变量加载 API Keys"""
-        load_dotenv(Path(__file__).parent / '.env')
-        keys_str = os.getenv('TAVILY_API_KEY', '')
-        if keys_str:
-            self.keys = [k.strip() for k in keys_str.split(',') if k.strip()]
-    
-    def get_key(self) -> str:
-        """获取下一个 API Key（轮询）"""
-        if not self.keys:
-            raise ValueError("No API keys configured")
-        key = self.keys[self.index]
-        self.index = (self.index + 1) % len(self.keys)
-        return key
-    
-    def get_key_count(self) -> int:
-        """获取可用 Key 数量"""
+        self.health: Dict[str, Dict[str, Any]] = {}
+        self._load_cache()
+
+    def _load_cache(self) -> None:
+        """恢复健康状态与轮换指针，使多次调用仍能跨进程轮换"""
+        if not KEY_STATE_FILE.exists():
+            return
+        try:
+            payload = json.loads(KEY_STATE_FILE.read_text())
+        except json.JSONDecodeError:
+            return
+        if not isinstance(payload, dict):
+            return
+        health = payload.get('keys')
+        if isinstance(health, dict):
+            self.health = health
+        index = payload.get('index')
+        if isinstance(index, int) and self.keys:
+            self.index = index % len(self.keys)
+
+    def _save_cache(self) -> None:
+        KEY_STATE_FILE.write_text(json.dumps({'index': self.index, 'keys': self.health}, indent=2))
+        KEY_STATE_FILE.chmod(0o600)
+
+    def _entry(self, key: str) -> Dict[str, Any]:
+        return self.health.setdefault(_fingerprint(key), {})
+
+    def key_count(self) -> int:
         return len(self.keys)
 
+    def is_exhausted(self, key: str) -> bool:
+        entry = self._entry(key)
+        limit = entry.get('plan_limit')
+        used = entry.get('plan_usage')
+        return isinstance(limit, int) and isinstance(used, int) and limit > 0 and used >= limit
 
-# 全局轮询器实例
-_api_rotator = APIKeyRotator()
+    def is_blocked(self, key: str) -> bool:
+        return bool(self._entry(key).get('bad_reason')) or self.is_exhausted(key)
+
+    def candidates(self) -> list[str]:
+        """从轮换指针起返回可用 Key；全被标记时仍返回全部以拿真实错误"""
+        n = len(self.keys)
+        if n == 0:
+            raise ValueError('No API keys configured: set TAVILY_API_KEY in .env')
+        ordered = [self.keys[(self.index + i) % n] for i in range(n)]
+        return [k for k in ordered if not self.is_blocked(k)] or ordered
+
+    def advance(self) -> None:
+        self.index = (self.index + 1) % max(len(self.keys), 1)
+        self._save_cache()
+
+    def mark_ok(self, key: str) -> None:
+        entry = self._entry(key)
+        entry.pop('bad_reason', None)
+        entry.pop('bad_at', None)
+        self._save_cache()
+
+    def mark_bad(self, key: str, status: int, detail: str) -> None:
+        entry = self._entry(key)
+        entry['bad_reason'] = f'{status}: {detail[:160]}'
+        entry['bad_at'] = time.time()
+        self._save_cache()
+
+    async def refresh_usage(self, force: bool = False) -> None:
+        """用 /usage 探测剩余额度（免费，不消耗 credit），供轮换时跳过已耗尽 Key"""
+        now = time.time()
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            for key in self.keys:
+                entry = self._entry(key)
+                if not force and now - entry.get('checked_at', 0) < USAGE_TTL_SECONDS:
+                    continue
+                try:
+                    resp = await client.get(
+                        USAGE_ENDPOINT,
+                        headers={'Authorization': f'Bearer {key}'},
+                    )
+                    payload = resp.json()
+                except (httpx.HTTPError, json.JSONDecodeError) as exc:
+                    entry['checked_at'] = now
+                    entry['usage_error'] = str(exc)[:120]
+                    continue
+                entry['checked_at'] = now
+                entry.pop('usage_error', None)
+                if resp.status_code == 200 and 'account' in payload:
+                    account = payload['account']
+                    entry['plan'] = account.get('current_plan')
+                    entry['plan_usage'] = account.get('plan_usage')
+                    entry['plan_limit'] = account.get('plan_limit')
+                    entry['search_usage'] = account.get('search_usage')
+                    entry['research_usage'] = account.get('research_usage')
+                else:
+                    entry['bad_reason'] = f"{resp.status_code}: {json.dumps(payload)[:160]}"
+                    entry['bad_at'] = now
+        self._save_cache()
+
+    def describe(self) -> list[Dict[str, Any]]:
+        rows = []
+        for i, key in enumerate(self.keys):
+            entry = self.health.get(_fingerprint(key), {})
+            rows.append({
+                'index': i,
+                'key': mask_key(key),
+                'plan': entry.get('plan'),
+                'usage': f"{entry.get('plan_usage')}/{entry.get('plan_limit')}",
+                'search_usage': entry.get('search_usage'),
+                'research_usage': entry.get('research_usage'),
+                'state': 'exhausted' if self.is_exhausted(key) else ('blocked' if entry.get('bad_reason') else 'ready'),
+                'reason': entry.get('bad_reason'),
+                'checked_at': entry.get('checked_at'),
+            })
+        return rows
+
+
+# 全局轮换池实例
+_pool = KeyPool()
 
 
 async def list_tools(config):
@@ -132,50 +258,83 @@ async def list_tools_http(config):
         return []
 
 
-async def http_sse_request(config, method, params=None):
-    """Send a JSON-RPC request to HTTP MCP server with SSE response handling."""
-    import httpx
-    import re
+def _detect_quota_failure(payload: Any, http_status: int) -> tuple[Optional[int], str]:
+    """识别鉴权/配额失败并返回 (status, detail)。
 
-    endpoint = config.get("endpoint")
-    if not endpoint:
+    Tavily 托管 MCP 把搜索错误包在 result.content[].text 的 JSON 里，
+    所以除了 HTTP 状态码还要下钻一层。
+    """
+    if http_status in QUOTA_STATUSES:
+        return http_status, json.dumps(payload)[:300]
+    if not isinstance(payload, dict):
+        return None, ''
+    if 'error' in payload and 'result' not in payload:
+        return http_status or 0, json.dumps(payload['error'])[:300]
+    for item in (payload.get('result') or {}).get('content') or []:
+        text = item.get('text') if isinstance(item, dict) else None
+        if not text:
+            continue
+        try:
+            inner = json.loads(text)
+        except json.JSONDecodeError:
+            continue
+        status = inner.get('status')
+        if isinstance(status, int) and status in QUOTA_STATUSES:
+            detail = inner.get('detail') or {}
+            message = detail.get('error') if isinstance(detail, dict) else str(detail)
+            return status, str(message or inner.get('error'))
+    return None, ''
+
+
+async def http_sse_request(config, method, params=None):
+    """对托管 MCP 端点发 JSON-RPC 请求，遇鉴权/配额错自动切换下一个 Key。"""
+    endpoint_template = config.get("endpoint")
+    if not endpoint_template:
         raise ValueError("SSE transport requires 'endpoint' in config")
 
-    # 获取轮询的 API Key 并替换 endpoint 中的 key
-    current_key = _api_rotator.get_key()
-    endpoint = re.sub(r'tavilyApiKey=[^&]+', f'tavilyApiKey={current_key}', endpoint)
+    await _pool.refresh_usage()
 
-    request_id = str(uuid.uuid4())
-
-    # Build JSON-RPC request
-    request_body = {
-        "jsonrpc": "2.0",
-        "id": request_id,
-        "method": method
-    }
+    request_body = {"jsonrpc": "2.0", "id": str(uuid.uuid4()), "method": method}
     if params:
         request_body["params"] = params
 
-    # Send request with proper Accept header for SSE response
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        response = await client.post(
-            endpoint,
-            json=request_body,
-            headers={
-                "Content-Type": "application/json",
-                "Accept": "application/json, text/event-stream"
-            }
-        )
+    failures: list[str] = []
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        for key in _pool.candidates():
+            endpoint = re.sub(r'tavilyApiKey=[^&]+', f'tavilyApiKey={key}', endpoint_template)
+            try:
+                response = await client.post(
+                    endpoint,
+                    json=request_body,
+                    headers={
+                        "Content-Type": "application/json",
+                        "Accept": "application/json, text/event-stream",
+                    },
+                )
+            except httpx.HTTPError as exc:
+                failures.append(f"{mask_key(key)}: network {exc}")
+                continue
 
-        # Check if response is SSE format
-        content_type = response.headers.get("content-type", "")
-        if "text/event-stream" in content_type:
-            # Parse SSE response
-            result = parse_sse_response(response.text)
-            return result
-        else:
-            # Regular JSON response
-            return response.json()
+            if "text/event-stream" in response.headers.get("content-type", ""):
+                payload = parse_sse_response(response.text)
+            else:
+                try:
+                    payload = response.json()
+                except json.JSONDecodeError:
+                    failures.append(f"{mask_key(key)}: non-JSON {response.status_code}")
+                    continue
+
+            status, detail = _detect_quota_failure(payload, response.status_code)
+            if status is not None:
+                _pool.mark_bad(key, status, detail)
+                failures.append(f"{mask_key(key)}: {status} {detail[:80]}")
+                continue
+
+            _pool.mark_ok(key)
+            _pool.advance()
+            return payload
+
+    raise RuntimeError("All Tavily keys unavailable -> " + " | ".join(failures))
 
 
 def parse_sse_response(text: str) -> dict:
@@ -407,6 +566,7 @@ Supported transports:
     parser.add_argument("--tool", help="Filter logs by tool name")
     parser.add_argument("--reset-stats", action="store_true", help="Reset all statistics")
     parser.add_argument("--key-status", action="store_true", help="Show API key rotation status")
+    parser.add_argument("--refresh", action="store_true", help="Force refresh key usage from Tavily")
     parser.add_argument("--session", help="Set session name for stats tracking")
     parser.add_argument("--version", action="version", version="%(prog)s 5.0.0")
 
@@ -494,10 +654,11 @@ Supported transports:
                 print("Stats tracking not available", file=sys.stderr)
 
         elif args.key_status:
+            await _pool.refresh_usage(force=args.refresh)
             key_info = {
-                "total_keys": _api_rotator.get_key_count(),
-                "current_index": _api_rotator.index,
-                "keys_preview": [f"{k[:15]}...{k[-4:]}" for k in _api_rotator.keys]
+                "total_keys": _pool.key_count(),
+                "active_index": _pool.index,
+                "keys": _pool.describe(),
             }
             print(json.dumps(key_info, indent=2, ensure_ascii=False))
 
@@ -517,6 +678,9 @@ Supported transports:
         sys.stdout.flush()
         sys.stderr.flush()
 
+    except RuntimeError as e:
+        print(f"Error: {str(e)}", file=sys.stderr)
+        sys.exit(2)
     except json.JSONDecodeError as e:
         print(f"Error: Invalid JSON in --call argument: {e}", file=sys.stderr)
         sys.exit(1)
