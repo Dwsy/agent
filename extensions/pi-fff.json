@@ -2,5 +2,6 @@
   "enabledFeatures": [
     "autocomplete",
     "statusUI"
-  ]
+  ],
+  "enableHomeDirScanning": false
 }

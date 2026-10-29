@@ -1,5 +1,5 @@
 {
-  "enabled": true,
+  "enabled": false,
   "mode": "rewrite",
   "guardWhenRtkMissing": true,
   "showRewriteNotifications": false,

@@ -3,7 +3,7 @@
  *
  * 提供 /loop 命令，启动一个带跳出条件的循环。
  * 循环会在每次回合结束时发送提示，直到 Agent 调用 signal_loop_success 工具，
- * 或达到最大轮数 / 连续错误上限。
+ * 或达到最大轮数 / 连续错误上限 / 连续空转（每轮耗时过短）上限。
  *
  * 用法:
  *   /loop                      交互式选择循环模式 (TUI)
@@ -50,6 +50,10 @@ const LOOP_STATE_ENTRY = "loop-state";
 /** 防失控：默认最大轮数与连续错误上限 */
 const DEFAULT_MAX_LOOPS = 50;
 const MAX_CONSECUTIVE_ERRORS = 3;
+
+/** 防空转：连续 N 轮耗时低于阈值，视为没有实质工作，自动停止 */
+const FAST_ROUND_MS = 10_000;
+const MAX_FAST_ROUNDS = 3;
 
 const USAGE_TEXT =
 	"用法: /loop self | debug | tdd | review | verify | tests | custom <条件> [--max N] | status | stop";
@@ -220,10 +224,14 @@ function modeLabel(mode: LoopMode): string {
 export default function loopExtension(pi: ExtensionAPI): void {
 	let loopState: LoopStateData = { active: false };
 	let consecutiveErrors = 0;
+	let fastRounds = 0;
+	let roundStartedAt: number | undefined;
 
 	function setLoopState(state: LoopStateData, ctx: ExtensionContext): void {
 		loopState = state;
 		consecutiveErrors = 0;
+		fastRounds = 0;
+		roundStartedAt = undefined;
 		pi.appendEntry(LOOP_STATE_ENTRY, state);
 		updateStatus(ctx, state);
 	}
@@ -259,6 +267,7 @@ export default function loopExtension(pi: ExtensionAPI): void {
 		pi.appendEntry(LOOP_STATE_ENTRY, loopState);
 		updateStatus(ctx, loopState);
 
+		roundStartedAt = Date.now();
 		pi.sendUserMessage(prompt, { deliverAs: "followUp" });
 	}
 
@@ -467,6 +476,25 @@ export default function loopExtension(pi: ExtensionAPI): void {
 			consecutiveErrors = 0;
 		}
 
+		// 防空转：本轮耗时过短则累计，连续多轮过短说明没有实质工作
+		if (roundStartedAt !== undefined) {
+			const elapsed = Date.now() - roundStartedAt;
+			roundStartedAt = undefined;
+			if (elapsed < FAST_ROUND_MS) {
+				fastRounds++;
+				if (fastRounds >= MAX_FAST_ROUNDS) {
+					stopLoop(
+						ctx,
+						`连续 ${MAX_FAST_ROUNDS} 轮耗时均低于 ${FAST_ROUND_MS / 1000}s，疑似空转，循环已自动停止`,
+						"warning",
+					);
+					return;
+				}
+			} else {
+				fastRounds = 0;
+			}
+		}
+
 		triggerLoopPrompt(ctx);
 	});
 
@@ -499,6 +527,8 @@ export default function loopExtension(pi: ExtensionAPI): void {
 	async function restoreLoopState(ctx: ExtensionContext): Promise<void> {
 		loopState = await loadState(ctx);
 		consecutiveErrors = 0;
+		fastRounds = 0;
+		roundStartedAt = undefined;
 		updateStatus(ctx, loopState);
 	}
 
