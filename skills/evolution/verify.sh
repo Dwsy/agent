@@ -41,7 +41,7 @@ echo ""
 
 # Check workhub dependency
 echo "3. Checking Workhub Dependency..."
-check ~/.pi/agent/skills/workhub/SKILL.md
+check ~/.agents/skills/workhub/SKILL.md
 echo ""
 
 # Verify file contents
@@ -99,7 +99,7 @@ echo "     pi"
 echo ""
 echo "  3. Create a manual evolution issue:"
 echo "     cd /path/to/project"
-echo "     bun ~/.pi/agent/skills/workhub/lib.ts create issue \"test\" \"evolution\""
+echo "     bun ~/.agents/skills/workhub/lib.ts create issue \"test\" \"evolution\""
 echo ""
 echo "For detailed documentation:"
 echo "  cat ~/.pi/agent/skills/evolution/README.md"

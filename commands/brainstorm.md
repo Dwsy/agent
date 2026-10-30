@@ -5,7 +5,7 @@ description: Design exploration and ideation session
 **Step 1**: Use workhub to create issue for the design task
 ```bash
 cd <project-root>
-bun ~/.pi/agent/skills/workhub/lib.ts create issue "Design: $@"
+bun ~/.agents/skills/workhub/lib.ts create issue "Design: $@"
 ```
 
 **Step 2**: Use sequential-thinking skill for structured design exploration

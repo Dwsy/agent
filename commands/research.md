@@ -5,7 +5,7 @@ description: Parallel codebase research using multiple tools
 **Step 1**: Use workhub to create issue for research task
 ```bash
 cd <project-root>
-bun ~/.pi/agent/skills/workhub/lib.ts create issue "Research: $@"
+bun ~/.agents/skills/workhub/lib.ts create issue "Research: $@"
 ```
 
 **Step 2**: Parallel research using multiple tools

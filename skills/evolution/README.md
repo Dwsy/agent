@@ -36,7 +36,7 @@ ls -la ~/.pi/hooks/evolution.ts
 Ensure workhub skill is installed:
 
 ```bash
-ls -la ~/.pi/agent/skills/workhub/SKILL.md
+ls -la ~/.agents/skills/workhub/SKILL.md
 ```
 
 If not installed, install it first.
@@ -58,7 +58,7 @@ Create evolution issues manually:
 ```bash
 # From project root
 cd /path/to/project
-bun ~/.pi/agent/skills/workhub/lib.ts create issue "evolution: new pattern" "evolution"
+bun ~/.agents/skills/workhub/lib.ts create issue "evolution: new pattern" "evolution"
 ```
 
 ### Using Workhub Integration
@@ -108,7 +108,7 @@ You:
 
 Submit via workhub:
 ```bash
-bun ~/.pi/agent/skills/workhub/lib.ts create pr "evolution: update" "evolution"
+bun ~/.agents/skills/workhub/lib.ts create pr "evolution: update" "evolution"
 ```
 
 ## Evolution Markers
@@ -177,7 +177,7 @@ Periodically validate skills:
 
 1. Verify workhub is installed:
    ```bash
-   ls -la ~/.pi/agent/skills/workhub/SKILL.md
+   ls -la ~/.agents/skills/workhub/SKILL.md
    ```
 
 2. Check you're in project root:
@@ -187,7 +187,7 @@ Periodically validate skills:
 
 3. Run manually:
    ```bash
-   bun ~/.pi/agent/skills/workhub/lib.ts create issue "test" "evolution"
+   bun ~/.agents/skills/workhub/lib.ts create issue "test" "evolution"
    ```
 
 ### Temp Files Not Found

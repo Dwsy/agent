@@ -7,7 +7,7 @@
 import { readFileSync, writeFileSync, existsSync } from "fs";
 import { join } from "path";
 
-const WORKHUB_PATH = "~/.pi/agent/skills/workhub/lib.ts";
+const WORKHUB_PATH = "~/.agents/skills/workhub/lib.ts";
 
 /**
  * Create an evolution issue

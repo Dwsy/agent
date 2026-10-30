@@ -10,7 +10,7 @@ ls -la ~/.pi/agent/skills/evolution/SKILL.md
 ls -la ~/.pi/hooks/evolution.ts
 
 # Check workhub dependency
-ls -la ~/.pi/agent/skills/workhub/SKILL.md
+ls -la ~/.agents/skills/workhub/SKILL.md
 ```
 
 ## Test Hook
@@ -32,14 +32,14 @@ The hook should detect the error and prompt to document it.
 
 ```bash
 cd /path/to/project
-bun ~/.pi/agent/skills/workhub/lib.ts create issue "evolution: new pattern" "evolution"
+bun ~/.agents/skills/workhub/lib.ts create issue "evolution: new pattern" "evolution"
 ```
 
 ### Create PR
 
 ```bash
 cd /path/to/project
-bun ~/.pi/agent/skills/workhub/lib.ts create pr "evolution: update skill" "evolution"
+bun ~/.agents/skills/workhub/lib.ts create pr "evolution: update skill" "evolution"
 ```
 
 ## Common Commands

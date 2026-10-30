@@ -130,7 +130,7 @@
         "extensions": []
       },
       "docs": {
-        "skills": ["~/.pi/agent/skills/workhub"]
+        "skills": ["~/.agents/skills/workhub"]
       }
     }
   },

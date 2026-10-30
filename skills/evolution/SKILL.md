@@ -104,7 +104,7 @@ Core Concept/API         → core skill
 ```bash
 # From project root directory
 cd /path/to/project
-bun ~/.pi/agent/skills/workhub/lib.ts create issue "evolution: add new pattern" [category]
+bun ~/.agents/skills/workhub/lib.ts create issue "evolution: add new pattern" [category]
 ```
 
 ### Step 4: Format the Contribution
@@ -152,7 +152,7 @@ Add an evolution marker above new content:
 
 ```bash
 # Create PR for your contribution
-bun ~/.pi/agent/skills/workhub/lib.ts create pr "evolution: add new pattern" [category]
+bun ~/.agents/skills/workhub/lib.ts create pr "evolution: add new pattern" [category]
 ```
 
 ---
@@ -227,7 +227,7 @@ Evolution skill extends workhub for documentation management.
 
 ```bash
 # From project root
-bun ~/.pi/agent/skills/workhub/lib.ts create issue "evolution: [description]" "evolution"
+bun ~/.agents/skills/workhub/lib.ts create issue "evolution: [description]" "evolution"
 ```
 
 ### Issue Template
@@ -262,7 +262,7 @@ bun ~/.pi/agent/skills/workhub/lib.ts create issue "evolution: [description]" "e
 
 ```bash
 # From project root
-bun ~/.pi/agent/skills/workhub/lib.ts create pr "evolution: [description]" "evolution"
+bun ~/.agents/skills/workhub/lib.ts create pr "evolution: [description]" "evolution"
 ```
 
 ### PR Template
@@ -345,6 +345,6 @@ If yes to any, use workhub to create an evolution issue!
 
 ## References
 
-- [Workhub Skill](~/.pi/agent/skills/workhub/SKILL.md)
+- [Workhub Skill](~/.agents/skills/workhub/SKILL.md)
 - [Pi Agent Hooks](https://github.com/badlogic/pi-mono/wiki/@mariozechner/pi-coding-agent#4.9-hooks-system)
 - [Pi Agent Skills](https://github.com/badlogic/pi-mono/wiki/@mariozechner/pi-coding-agent#4.10-skills-system)
