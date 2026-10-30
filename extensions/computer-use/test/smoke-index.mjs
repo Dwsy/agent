@@ -3,7 +3,8 @@
 // mode switching, skill discovery, system-prompt selection, and codemode
 // structuredContent (text + image blocks).
 import assert from "node:assert/strict";
-import { mkdirSync, readFileSync, rmSync, symlinkSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -22,6 +23,12 @@ for (const name of ["pi-coding-agent", "pi-tui"]) {
 process.env.COMPUTER_USE_CLIENT_PATH ??= new URL("./fixtures/fake-computer-use.mjs", import.meta.url)
 	.pathname;
 process.env.COMPUTER_USE_BRIDGE_DIRECT_LAUNCH ??= "1";
+// 独立 socket + 快速空闲退出：不干扰真实会话的守护进程，也不残留进程。
+process.env.COMPUTER_USE_DAEMON_SOCK ??= join(
+	mkdtempSync(join(tmpdir(), "cu-smoke-")),
+	"daemon.sock",
+);
+process.env.COMPUTER_USE_DAEMON_IDLE_MS ??= "150";
 
 // Node ≥ 22.14 strips erasable TypeScript natively; index.ts needs no transform.
 const mod = await import(new URL("../index.ts", import.meta.url));

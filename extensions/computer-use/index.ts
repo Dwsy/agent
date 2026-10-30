@@ -242,7 +242,6 @@ export default function (pi: ExtensionAPI) {
 			toolCatalog = new Map(tools.map((tool) => [tool.name, tool]));
 
 			syncActiveTools();
-			ctx.ui.notify(`${SERVER_NAME} loaded ${tools.length} actions · mode=${mode}`, "info");
 		} catch (error) {
 			toolCatalog.clear();
 			const message = error instanceof Error ? error.message : String(error);

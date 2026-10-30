@@ -55,12 +55,30 @@ node ~/.pi/agent/extensions/computer-use/skill/scripts/cu.mjs call get_app_state
 
 The mode is persisted in `.mode` next to the extension and honored on `/reload` and new sessions; switching into skill mode prompts you to run `/reload` so the skill loads.
 
+## Architecture
+
+One shared daemon owns the single Computer Use process chain; every Pi session is a thin
+client, so N sessions cost one chain instead of N.
+
+```text
+Pi session A ─┐
+Pi session B ─┼─ unix socket ─> computer-use-daemon ─> bridge ─> codex sandbox ─> Sky client
+Pi session C ─┘                     (one chain)
+```
+
+The daemon starts on demand (first client that finds no socket spawns it detached), and exits
+after 10 idle minutes with zero clients, killing the whole bridge process tree. `tools/call`
+requests are serialized across clients because the GUI is a single shared resource.
+
 ## Configuration
 
 - `CODEX_HOME`: override the Codex data directory
 - `COMPUTER_USE_CLIENT_PATH`: override the full Computer Use client path
 - `COMPUTER_USE_CODEX_LAUNCHER_PATH`: override the signed Codex launcher
 - `COMPUTER_USE_BRIDGE_DEBUG=1`: print bridge diagnostics to stderr
+- `COMPUTER_USE_DAEMON_SOCK`: override the daemon socket path (default `$TMPDIR/pi-computer-use-daemon.sock`)
+- `COMPUTER_USE_DAEMON_IDLE_MS`: idle time before the daemon exits (default `600000`)
+- `COMPUTER_USE_DAEMON_DEBUG=1`: print daemon diagnostics to stderr
 
 ## Test
 
@@ -69,7 +87,11 @@ cd ~/.pi/agent/extensions/computer-use
 npm test
 ```
 
-The tests use a fake local MCP client. `test/mcp-client.test.mjs` verifies tool discovery, automatic elicitation acceptance, and screenshot preservation without controlling real applications. `test/smoke-index.mjs` verifies extension registration: the three modes, skill discovery paths, system-prompt selection, and mode persistence.
+The tests use a fake local MCP client. `test/mcp-client.test.mjs` verifies tool discovery,
+automatic elicitation acceptance, screenshot preservation, transient-error recovery, idle
+shutdown of the whole process tree, and multi-client sharing of one daemon. `test/smoke-index.mjs`
+verifies extension registration: the three modes, skill discovery paths, system-prompt selection,
+and mode persistence.
 
 ## Security
 
