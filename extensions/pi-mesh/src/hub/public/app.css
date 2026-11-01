@@ -1,0 +1,3171 @@
+/* pi-mesh WebUI — design tokens (light/dark) + a tiny component layer over Tailwind CDN.
+ *
+ * Every colour in the UI flows through the CSS custom properties below; markup uses
+ * semantic classes (panel/card/btn/chip/badge/…) instead of raw palette utilities.
+ * Theme mechanism: `data-theme="light" | "dark"` on <html>, persisted in
+ * localStorage under `pi-mesh.theme`, bootstrapped pre-paint in index.html.
+ */
+
+/* ----------------------------- palettes ----------------------------- */
+:root,
+[data-theme="light"] {
+	color-scheme: light;
+	/* surfaces */
+	--bg: #f6f6f6;
+	--panel: #ffffff;
+	--panel-2: #f5f5f5;
+	--panel-3: #ebebeb;
+	--header-bg: #f6f6f6;
+	--sidebar: #f0f0f0;
+	--control-bg: #fafafa;
+	--control-selected: #ffffff;
+	--control-hover: rgba(0, 0, 0, 0.045);
+	--backdrop: rgba(0, 0, 0, 0.42);
+	/* borders */
+	--border: #dedede;
+	--border-strong: #c7c7c7;
+	/* text (all meta tiers >= 4.5:1 on --bg/--panel-2/--panel) */
+	--text: #242424;
+	--muted: #595959;
+	--faint: #606060;
+	/* accent */
+	--accent: #0066cc;
+	--accent-strong: #0055b3;
+	--accent-soft: rgba(0, 102, 204, 0.08);
+	--accent-border: rgba(0, 102, 204, 0.24);
+	/* danger */
+	--danger: #b63434;
+	--danger-soft: rgba(182, 52, 52, 0.07);
+	--danger-border: rgba(182, 52, 52, 0.18);
+	/* semantic states */
+	--running: #287c43;
+	--running-soft: rgba(40, 124, 67, 0.08);
+	--running-border: rgba(40, 124, 67, 0.24);
+	--waiting: #946000;
+	--waiting-soft: rgba(148, 96, 0, 0.08);
+	--waiting-border: rgba(148, 96, 0, 0.24);
+	--offline: #666666;
+	--offline-soft: rgba(102, 102, 102, 0.08);
+	--offline-border: rgba(102, 102, 102, 0.24);
+	--closed: #6b6b6b;
+	--closed-soft: rgba(107, 107, 107, 0.08);
+	--closed-border: rgba(107, 107, 107, 0.24);
+	/* elevation */
+	--shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+	--shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 1px 3px rgba(0, 0, 0, 0.07);
+	--shadow-lg: 0 10px 28px rgba(0, 0, 0, 0.14);
+	/* misc */
+	--focus: #0066cc;
+	--scroll-thumb: #c7c7c7;
+	--scroll-track: #f6f6f6;
+	/* workbench additions (hairline chrome + elevation + selection) */
+	--hairline: rgba(0, 0, 0, 0.09);
+	--elev-1: 0 1px 2px rgba(0, 0, 0, 0.08), 0 8px 24px rgba(0, 0, 0, 0.12);
+	--elev-2: 0 16px 48px rgba(0, 0, 0, 0.24);
+	--sel-soft: #dedede;
+	--selection-edge: #777777;
+	--menu-bg: #ffffff;
+	--menu-selection: #eeeeee;
+}
+
+[data-theme="dark"] {
+	color-scheme: dark;
+	/* surfaces — neutral graphite */
+	--bg: #1b1b1b;
+	--panel: #1e1e1e;
+	--panel-2: #282828;
+	--panel-3: #181818;
+	--header-bg: #252525;
+	--sidebar: #252525;
+	--control-bg: #303030;
+	--control-selected: #454545;
+	--control-hover: rgba(255, 255, 255, 0.06);
+	--backdrop: rgba(0, 0, 0, 0.55);
+	/* borders */
+	--border: #353535;
+	--border-strong: #4a4a4a;
+	/* text */
+	--text: #ededed;
+	--muted: #b3b3b3;
+	--faint: #a6a6a6;
+	/* accent */
+	--accent: #7fb4ff;
+	--accent-strong: #9bc5ff;
+	--accent-soft: rgba(127, 180, 255, 0.10);
+	--accent-border: rgba(127, 180, 255, 0.25);
+	/* danger */
+	--danger: #ed9191;
+	--danger-soft: rgba(237, 145, 145, 0.08);
+	--danger-border: rgba(237, 145, 145, 0.20);
+	/* semantic states */
+	--running: #72b98a;
+	--running-soft: rgba(114, 185, 138, 0.08);
+	--running-border: rgba(114, 185, 138, 0.24);
+	--waiting: #d4af70;
+	--waiting-soft: rgba(212, 175, 112, 0.08);
+	--waiting-border: rgba(212, 175, 112, 0.24);
+	--offline: #a6a6a6;
+	--offline-soft: rgba(166, 166, 166, 0.08);
+	--offline-border: rgba(166, 166, 166, 0.24);
+	--closed: #a6a6a6;
+	--closed-soft: rgba(166, 166, 166, 0.08);
+	--closed-border: rgba(166, 166, 166, 0.24);
+	/* elevation */
+	--shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+	--shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 2px 8px rgba(0, 0, 0, 0.28);
+	--shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.5);
+	/* misc */
+	--focus: #7fb4ff;
+	--scroll-thumb: #4a4a4a;
+	--scroll-track: #1b1b1b;
+	/* workbench additions (hairline chrome + elevation + selection) */
+	--hairline: rgba(255, 255, 255, 0.09);
+	--elev-1: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.36);
+	--elev-2: 0 16px 48px rgba(0, 0, 0, 0.56);
+	--sel-soft: #3b3b3b;
+	--selection-edge: #aaaaaa;
+	--menu-bg: #2b2b2b;
+	--menu-selection: #3b3b3b;
+}
+
+/* ----------------------------- base ----------------------------- */
+[x-cloak] {
+	display: none !important;
+}
+
+html {
+	scrollbar-color: var(--border) transparent;
+	scrollbar-width: thin;
+}
+
+body {
+	background-color: var(--bg);
+	color: var(--text);
+	font-family: -apple-system, "SF Pro Text", "PingFang SC", Inter, sans-serif;
+	font-size: 13px;
+	line-height: 1.55;
+}
+
+/* mono strictly for terminal / diff / paths (native app chrome is sans) */
+.mono,
+pre,
+code,
+.term-host,
+.pre-block,
+.entry-text pre,
+.entry-text code {
+	font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+/* thin scrollbars: 8px rounded thumb, transparent track, muted on hover */
+::-webkit-scrollbar {
+	width: 8px;
+	height: 8px;
+}
+::-webkit-scrollbar-track {
+	background: transparent;
+}
+::-webkit-scrollbar-thumb {
+	background: var(--border);
+	border-radius: 8px;
+	border: none;
+}
+::-webkit-scrollbar-thumb:hover {
+	background: var(--muted);
+}
+
+/* focus ring discipline: 2px accent, offset 2px, never suppressed */
+:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 2px;
+}
+
+pre {
+	tab-size: 2;
+}
+
+/* ----------------------------- workbench primitives ----------------------------- */
+/* type scale (desktop/mobile): caption 11/12 · row 12/13 · body 13/15 · title 15/17 · large 20/22 */
+.t-caption {
+	font-size: 11px;
+	line-height: 1.45;
+}
+.t-row {
+	font-size: 12px;
+	line-height: 1.45;
+}
+.t-body {
+	font-size: 13px;
+	line-height: 1.55;
+}
+.t-title {
+	font-size: 15px;
+	font-weight: 600;
+	letter-spacing: -0.01em;
+	line-height: 1.4;
+}
+.t-large {
+	font-size: 20px;
+	font-weight: 600;
+	letter-spacing: -0.01em;
+	line-height: 1.3;
+}
+@media (max-width: 899px) {
+	.t-caption { font-size: 12px; }
+	.t-row { font-size: 13px; }
+	.t-body { font-size: 15px; }
+	.t-title { font-size: 17px; }
+	.t-large { font-size: 22px; }
+}
+
+/* hairline divider (replaces boxed borders in the chrome) */
+.hairline-b {
+	border-bottom: 1px solid var(--hairline);
+}
+.hairline-t {
+	border-top: 1px solid var(--hairline);
+}
+.hairline-l {
+	border-left: 1px solid var(--hairline);
+}
+
+/* elevation layers: e0 flat hairline · e1 menu/popover · e2 command bar / sheet */
+.e1 {
+	box-shadow: var(--elev-1);
+}
+.e2 {
+	box-shadow: var(--elev-2);
+}
+
+/* segmented capsule: --panel-3 track, --panel slider + hairline + micro-shadow */
+.seg {
+	display: inline-flex;
+	align-items: center;
+	gap: 2px;
+	border-radius: 8px;
+	background: var(--panel-3);
+	padding: 2px;
+}
+.seg-btn {
+	border: 1px solid transparent;
+	border-radius: 6px;
+	background: transparent;
+	color: var(--muted);
+	padding: 2px 10px;
+	font-size: 11px;
+	line-height: 1.4;
+	cursor: pointer;
+	transition:
+		background-color 0.1s ease-out,
+		color 0.1s ease-out,
+		border-color 0.1s ease-out,
+		box-shadow 0.1s ease-out;
+}
+.seg-btn:hover {
+	color: var(--text);
+}
+.seg-btn.seg-on {
+	background: var(--panel);
+	border-color: var(--hairline);
+	color: var(--text);
+	box-shadow: var(--shadow-sm);
+}
+
+/* native popup menu (RowOverflowMenu / CommandBar groups): 8px radius, 24px items */
+.menu {
+	min-width: 200px;
+	padding: 4px;
+	border: 1px solid var(--hairline);
+	border-radius: 8px;
+	background: var(--menu-bg);
+	box-shadow: var(--elev-1);
+	animation: menu-in 100ms ease-out;
+}
+.menu-item {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	width: 100%;
+	height: 24px;
+	border: none;
+	border-radius: 6px;
+	background: transparent;
+	padding: 0 8px;
+	font-size: 12px;
+	color: var(--text);
+	text-align: left;
+	cursor: pointer;
+	transition: background-color 0.1s ease-out;
+}
+.menu-item:hover,
+.menu-item:focus-visible {
+	background: var(--menu-selection);
+}
+.menu-sep {
+	height: 1px;
+	margin: 4px 8px;
+	background: var(--hairline);
+}
+.menu-label {
+	padding: 4px 8px 2px;
+	font-size: 10px;
+	text-transform: uppercase;
+	letter-spacing: 0.06em;
+	color: var(--faint);
+}
+/* panel open/close fade (the only remaining motion: opacity, 100ms) */
+@keyframes menu-in {
+	from {
+		opacity: 0;
+	}
+	to {
+		opacity: 1;
+	}
+}
+
+/* skeleton: static placeholder blocks (no shimmer) */
+.skeleton {
+	position: relative;
+	overflow: hidden;
+	background: var(--panel-2);
+	border-radius: 4px;
+}
+
+/* keyboard hint (⌘K) */
+.kbd {
+	display: inline-flex;
+	align-items: center;
+	gap: 2px;
+	border: 1px solid var(--border);
+	border-radius: 4px;
+	background: var(--panel-2);
+	padding: 0 5px;
+	height: 18px;
+	font-size: 10px;
+	color: var(--muted);
+}
+
+/* press affordance shared by icon buttons and rows (background feedback only) */
+.press {
+	transition:
+		background-color 0.1s ease-out,
+		color 0.1s ease-out;
+}
+.press:active {
+	background: var(--panel-3);
+}
+
+/* de-native: no default browser chrome anywhere — custom macOS controls */
+button,
+input,
+textarea,
+select,
+summary {
+	appearance: none;
+	-webkit-appearance: none;
+	font: inherit;
+}
+summary {
+	list-style: none;
+	cursor: pointer;
+}
+summary::-webkit-details-marker {
+	display: none;
+}
+/* custom chevron for <details> (review.js 外部命令 block) */
+.pm-shell-summary::before {
+	content: "";
+	display: inline-block;
+	width: 6px;
+	height: 6px;
+	margin-right: 8px;
+	border-right: 1.5px solid currentColor;
+	border-bottom: 1.5px solid currentColor;
+	transform: rotate(-45deg);
+	vertical-align: middle;
+}
+details[open] > .pm-shell-summary::before {
+	transform: rotate(45deg);
+}
+/* custom checkbox (hidden real input keeps label click + a11y) */
+.check-input {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	opacity: 0;
+	pointer-events: none;
+}
+.check-box {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	flex: 0 0 auto;
+	width: 14px;
+	height: 14px;
+	border: 1px solid var(--border-strong);
+	border-radius: 3px;
+	background: var(--panel);
+	color: var(--panel);
+	transition:
+		background-color 0.1s ease-out,
+		border-color 0.1s ease-out;
+}
+.check-box.check-on {
+	background: var(--accent);
+	border-color: var(--accent);
+}
+.check-mark {
+	display: inline-flex;
+}
+.check-mark [data-lucide] {
+	width: 10px;
+	height: 10px;
+	stroke-width: 2.5;
+}
+.check-input:focus-visible + .check-box {
+	outline: 2px solid var(--accent);
+	outline-offset: 2px;
+}
+
+/* icon glyph sizing discipline: 14px default, 16px in titles/empty states */
+[data-lucide] {
+	width: 14px;
+	height: 14px;
+	stroke-width: 1.75;
+	/* optical centring inside the hot box */
+	transform: translateY(0.5px);
+}
+/* no icon flash: un-hydrated `<i>` placeholders keep their box but stay hidden */
+[data-lucide]:not(svg) {
+	visibility: hidden;
+}
+.icon-16[data-lucide],
+[data-lucide].icon-16 {
+	width: 16px;
+	height: 16px;
+}
+.icon-32[data-lucide],
+[data-lucide].icon-32 {
+	width: 32px;
+	height: 32px;
+}
+
+/* text helpers */
+.muted {
+	color: var(--muted);
+}
+.faint {
+	color: var(--faint);
+}
+.accent-text {
+	color: var(--accent);
+}
+.warn-text {
+	color: var(--waiting);
+}
+.danger-text {
+	color: var(--danger);
+}
+.hover-accent:hover {
+	color: var(--accent);
+}
+.linkish {
+	color: var(--muted);
+	text-decoration: underline dotted;
+	text-underline-offset: 2px;
+	cursor: pointer;
+}
+.linkish:hover {
+	color: var(--accent);
+}
+.notice-error {
+	border: 1px solid var(--danger-border);
+	border-radius: 8px;
+	background: var(--danger-soft);
+	color: var(--danger);
+}
+
+/* ----------------------------- header ----------------------------- */
+.app-header {
+	background: var(--header-bg);
+	border-bottom: 1px solid var(--border);
+	backdrop-filter: blur(10px);
+	-webkit-backdrop-filter: blur(10px);
+}
+.app-title {
+	color: var(--text);
+	letter-spacing: -0.015em;
+}
+
+/* connection status pill */
+.conn {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.375rem;
+	font-size: 10px;
+}
+.conn-dot {
+	height: 6px;
+	width: 6px;
+	border-radius: 999px;
+	background: currentColor;
+}
+.conn-ok {
+	color: var(--running);
+}
+.conn-paused {
+	color: var(--muted);
+}
+.conn-err {
+	color: var(--danger);
+}
+
+/* reconnect banner */
+.banner-offline {
+	position: relative;
+	z-index: 50;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 0.5rem;
+	padding: 0.375rem 1rem;
+	font-size: 12px;
+	color: var(--danger);
+	background: var(--danger-soft);
+	border-bottom: 1px solid var(--danger-border);
+	backdrop-filter: blur(8px);
+	-webkit-backdrop-filter: blur(8px);
+}
+
+/* theme toggle: show the icon of the *current* theme */
+.icon-moon {
+	display: none;
+}
+[data-theme="dark"] .icon-sun {
+	display: none;
+}
+[data-theme="dark"] .icon-moon {
+	display: inline-block;
+}
+
+/* ----------------------------- buttons ----------------------------- */
+.btn {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.375rem;
+	height: 28px;
+	border: 1px solid var(--border-strong);
+	border-radius: 6px;
+	padding: 0 0.625rem;
+	font-size: 11px;
+	line-height: 1.25rem;
+	color: var(--text);
+	background: var(--panel);
+	box-shadow: var(--shadow-sm);
+	transition:
+		background-color 0.15s ease,
+		color 0.15s ease,
+		border-color 0.15s ease,
+		box-shadow 0.15s ease;
+	cursor: pointer;
+}
+.btn:hover {
+	background: var(--panel-2);
+	color: var(--text);
+	border-color: var(--border-strong);
+}
+.btn:focus-visible {
+	outline: 2px solid var(--focus);
+	outline-offset: 2px;
+}
+.btn-icon {
+	padding: 0.25rem 0.375rem;
+}
+.btn-primary {
+	border-color: var(--accent-border);
+	color: var(--accent);
+	background: var(--accent-soft);
+	box-shadow: none;
+}
+.btn-primary:hover {
+	background: var(--accent-soft);
+	border-color: var(--accent-strong);
+	color: var(--accent);
+}
+.btn-danger {
+	border-color: var(--danger-border);
+	color: var(--danger);
+	background: var(--danger-soft);
+	box-shadow: none;
+}
+.btn-danger:hover {
+	background: var(--danger-soft);
+	border-color: var(--danger);
+	color: var(--danger);
+}
+.btn:disabled {
+	opacity: 0.5;
+	cursor: not-allowed;
+	box-shadow: none;
+}
+.btn:disabled:hover {
+	background: var(--panel);
+	color: var(--text);
+	border-color: var(--border-strong);
+}
+
+/* follow (关注) toggle: emphasised when following */
+.btn-following {
+	border-color: var(--accent-border);
+	color: var(--accent);
+	background: var(--accent-soft);
+	box-shadow: none;
+}
+.btn-following:hover {
+	background: var(--accent-soft);
+	border-color: var(--accent-strong);
+	color: var(--accent);
+}
+
+/* segmented control (steer / followUp) */
+.btn-seg {
+	border: 1px solid var(--border-strong);
+	background: var(--panel);
+	color: var(--muted);
+	padding: 0.125rem 0.625rem;
+	font-size: 11px;
+	cursor: pointer;
+	transition:
+		background-color 0.15s ease,
+		color 0.15s ease,
+		border-color 0.15s ease;
+}
+.btn-seg:first-child {
+	border-radius: 6px 0 0 6px;
+}
+.btn-seg:last-child {
+	border-radius: 0 6px 6px 0;
+}
+.btn-seg + .btn-seg {
+	margin-left: -1px;
+}
+.btn-seg:hover {
+	color: var(--text);
+	background: var(--panel-2);
+}
+.btn-seg:focus-visible {
+	outline: 2px solid var(--focus);
+	outline-offset: 2px;
+	z-index: 1;
+}
+.btn-seg-active {
+	background: var(--accent-soft);
+	border-color: var(--accent-border);
+	color: var(--accent);
+}
+
+/* ----------------------------- chips / badges / tags ----------------------------- */
+/* small chips (branch / worktree / model / role) */
+.chip {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.25rem;
+	border: 1px solid var(--border);
+	border-radius: 4px;
+	padding: 0 0.375rem;
+	font-size: 10px;
+	font-weight: 500;
+	line-height: 1.125rem;
+	color: var(--muted);
+	background: var(--panel-2);
+	max-width: 16rem;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.chip-strong {
+	color: var(--text);
+}
+.chip-muted {
+	color: var(--muted);
+	border-color: var(--border);
+	background: var(--panel-2);
+}
+.chip-accent {
+	color: var(--accent);
+	border-color: var(--accent-border);
+	background: var(--accent-soft);
+}
+/* 当前视角 marker on the viewed peer */
+.chip-viewer {
+	color: var(--muted);
+	border-color: var(--border);
+	background: var(--panel-2);
+	font-weight: 600;
+}
+/* resume badge (↻N) */
+.chip-resume {
+	color: var(--muted);
+	border-color: var(--border);
+	background: var(--panel-2);
+}
+/* herdr host marker (🖥 herdr): workspaceId + status in the tooltip */
+.chip-herdr {
+	color: var(--muted);
+	border-color: var(--border);
+	background: var(--panel-2);
+}
+/* 临时会话（--no-session / persistence=memory）标记 */
+.chip-ephemeral {
+	color: var(--muted);
+	border-color: var(--border-strong);
+	background: var(--panel-3);
+}
+/* transcript role chips */
+.chip-user {
+	color: var(--muted);
+	border-color: var(--border);
+	background: var(--panel-2);
+}
+.chip-assistant {
+	color: var(--muted);
+	border-color: var(--border);
+	background: var(--panel-2);
+}
+.chip-tool {
+	color: var(--muted);
+	border-color: var(--border);
+	background: var(--panel-2);
+}
+
+/* state badges (运行中/等待/离线/已关闭) */
+.badge {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.25rem;
+	border: 1px solid var(--border);
+	border-radius: 4px;
+	padding: 0.0625rem 0.375rem;
+	font-size: 10px;
+	line-height: 1.125rem;
+	white-space: nowrap;
+}
+.badge-running {
+	color: var(--running);
+	border-color: var(--running-border);
+	background: var(--running-soft);
+}
+.badge-waiting {
+	color: var(--waiting);
+	border-color: var(--waiting-border);
+	background: var(--waiting-soft);
+}
+.badge-offline {
+	color: var(--offline);
+	border-color: var(--offline-border);
+	background: var(--offline-soft);
+}
+.badge-closed {
+	color: var(--closed);
+	border-color: var(--closed-border);
+	background: var(--closed-soft);
+}
+
+/* state dots */
+.dot {
+	height: 8px;
+	width: 8px;
+	border-radius: 999px;
+}
+.dot-running {
+	background: var(--running);
+}
+.dot-waiting {
+	background: var(--waiting);
+}
+.dot-offline {
+	background: var(--offline);
+}
+.dot-closed {
+	background: var(--closed);
+}
+.dot-all {
+	background: var(--muted);
+}
+
+/* file-activity op badges: tiny uppercase muted text, no filled chips */
+.tag {
+	flex-shrink: 0;
+	font-size: 10px;
+	font-weight: 600;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	color: var(--faint);
+}
+
+/* ----------------------------- panels & cards ----------------------------- */
+.panel {
+	overflow: hidden;
+	border: 1px solid var(--border);
+	border-radius: 10px;
+	background: var(--panel);
+	box-shadow: var(--shadow);
+}
+.panel-head {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.5rem;
+	border-bottom: 1px solid var(--border);
+	background: var(--panel-2);
+	padding: 0.625rem 1rem;
+}
+.panel-title {
+	font-size: 13px;
+	font-weight: 600;
+	color: var(--text);
+}
+.panel-path {
+	min-width: 0;
+	font-size: 11px;
+	color: var(--muted);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+/* worktree / branch grouping rows */
+.wt-row {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	margin-bottom: 0.5rem;
+	font-size: 10px;
+	text-transform: uppercase;
+	letter-spacing: 0.06em;
+	color: var(--muted);
+}
+.wt-rule {
+	height: 1px;
+	flex: 1;
+	background: var(--border);
+}
+.branch-row {
+	display: flex;
+	align-items: center;
+	gap: 0.375rem;
+	margin-bottom: 0.375rem;
+	font-size: 11px;
+	color: var(--muted);
+}
+.branch-name {
+	color: var(--accent);
+}
+
+/* peer card */
+.card {
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 0.5rem;
+	border: 1px solid var(--border);
+	border-radius: 8px;
+	background: var(--panel);
+	padding: 0.75rem 0.875rem;
+	box-shadow: var(--shadow-sm);
+	line-height: 1.65;
+	transition:
+		border-color 0.15s ease,
+		box-shadow 0.15s ease;
+}
+.card:hover {
+	border-color: var(--border-strong);
+	box-shadow: var(--shadow);
+}
+.card-title {
+	min-width: 0;
+	font-size: 13px;
+	color: var(--text);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	line-height: 1.5;
+}
+.card-actions {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.5rem;
+	border-top: 1px solid var(--border);
+	padding-top: 0.5rem;
+	margin-top: 0.125rem;
+}
+
+/* file activity inset */
+.filebox {
+	display: flex;
+	flex-direction: column;
+	gap: 0.25rem;
+	border: 1px solid var(--border);
+	border-radius: 6px;
+	background: var(--panel-3);
+	padding: 0.5rem;
+}
+.filebox-head {
+	display: flex;
+	align-items: center;
+	gap: 0.375rem;
+	font-size: 9px;
+	text-transform: uppercase;
+	letter-spacing: 0.06em;
+	color: var(--faint);
+}
+
+/* compose panel (发消息) */
+.compose {
+	display: flex;
+	flex-direction: column;
+	gap: 0.5rem;
+	border-top: 1px solid var(--border);
+	padding-top: 0.5rem;
+}
+.textarea {
+	width: 100%;
+	resize: vertical;
+	border: 1px solid var(--border-strong);
+	border-radius: 6px;
+	background: var(--panel-3);
+	padding: 0.5rem;
+	font-size: 11px;
+	line-height: 1.6;
+	color: var(--text);
+	transition: border-color 0.1s ease-out;
+}
+.textarea::placeholder {
+	color: var(--faint);
+}
+.textarea:focus {
+	outline: none;
+	border-color: var(--accent-strong);
+}
+
+input[type="checkbox"] {
+	accent-color: var(--accent-strong);
+}
+
+/* ----------------------------- empty state ----------------------------- */
+.empty {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 0.5rem;
+	border: 1px solid var(--hairline);
+	border-radius: 10px;
+	background: var(--panel-2);
+	padding: 2rem 1rem;
+	text-align: center;
+}
+.empty-icon {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	height: 3.25rem;
+	width: 3.25rem;
+	border: 1px solid var(--border);
+	border-radius: 999px;
+	background: var(--panel);
+	color: var(--faint);
+	box-shadow: var(--shadow-sm);
+}
+.empty-title {
+	font-size: 13px;
+	color: var(--text);
+}
+.empty-hint {
+	max-width: 28rem;
+	font-size: 11px;
+	color: var(--muted);
+	line-height: 1.7;
+}
+
+/* ----------------------------- drawer (历史) ----------------------------- */
+.drawer-backdrop {
+	background: var(--backdrop);
+}
+.drawer {
+	background: var(--bg);
+	border-left: 1px solid var(--border);
+	box-shadow: var(--shadow-lg);
+}
+.drawer-head {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	border-bottom: 1px solid var(--border);
+	background: var(--panel);
+	padding: 0.75rem 1rem;
+}
+.entry {
+	border: 1px solid var(--border);
+	border-radius: 8px;
+	background: var(--panel);
+	padding: 0.625rem;
+	box-shadow: var(--shadow-sm);
+	line-height: 1.65;
+}
+.entry-error {
+	/* status colour lives on the badge/✗N text, never as a panel fill */
+	border-color: var(--danger-border);
+	background: transparent;
+}
+.pre-block {
+	margin-top: 0.375rem;
+	max-height: 16rem;
+	overflow: auto;
+	white-space: pre-wrap;
+	word-break: break-word;
+	border: 1px solid var(--border);
+	border-radius: 6px;
+	background: var(--panel-3);
+	padding: 0.5rem;
+	font-size: 10px;
+	line-height: 1.65;
+	color: var(--muted);
+}
+/* history: full pane reading width, line breaks preserved. The old 62ch
+   measure (~409px @ 11px) squeezed markdown into the left half of the pane
+   and clipped wide tables/code at the column edge ("渲染了一半剩下是空白").
+   Wide blocks now scroll horizontally instead of being cut or blanking the
+   column; nothing is ever clipped away. */
+.entry-text {
+	margin-top: 0.375rem;
+	max-width: 100%;
+	white-space: pre-wrap;
+	word-break: break-word;
+	overflow-x: auto;
+	font-size: 11px;
+	line-height: 1.75;
+	color: var(--text);
+}
+/* rendered markdown (entry.htmlSafe): the HTML owns its whitespace — source
+   newlines between block elements must not become visible line breaks;
+   long tokens (paths/URLs) wrap rather than overflow the column */
+.entry-text.entry-md {
+	white-space: normal;
+	word-break: normal;
+	overflow-wrap: break-word;
+}
+/* history: collapsed consecutive toolResult run (⋯ 工具调用 ×N) */
+/* 加载更早 control sits at the head of the list (older pages prepend above) */
+/* 加载更早 cue: two skeleton blocks while the older page prepends */
+.older-cue {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	width: 220px;
+	padding: 4px 0;
+}
+.history-older {
+	display: flex;
+	justify-content: center;
+	padding-bottom: 4px;
+}
+.entry-toolrun {
+	padding-bottom: 0.5rem;
+}
+.toolrun-head {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.375rem;
+	width: 100%;
+	border: none;
+	border-radius: 4px;
+	background: transparent;
+	padding: 0.25rem 0.125rem;
+	font-size: 10px;
+	text-align: left;
+	color: var(--muted);
+	cursor: pointer;
+	transition: color 0.1s ease-out;
+}
+.toolrun-head:hover {
+	color: var(--accent);
+}
+.toolrun-head:focus-visible {
+	outline: 2px solid var(--focus);
+	outline-offset: 2px;
+}
+.toolrun-caret {
+	display: inline-flex;
+}
+.toolrun-open {
+	transform: rotate(90deg);
+}
+.toolrun-body {
+	display: flex;
+	flex-direction: column;
+	gap: 0.5rem;
+	border-top: 1px dashed var(--border);
+	margin-top: 0.375rem;
+	padding-top: 0.5rem;
+}
+.toolrun-item {
+	display: flex;
+	flex-direction: column;
+	gap: 0.25rem;
+	min-width: 0;
+}
+/* clamp long tool results to ~6 lines until 展开 (chevron toggle, no text) */
+.toolrun-expand {
+	border: none;
+	background: transparent;
+	padding: 0 2px;
+	color: var(--muted);
+	cursor: pointer;
+	display: inline-flex;
+	align-items: center;
+	transition: color 0.1s ease-out;
+}
+.toolrun-expand:hover {
+	color: var(--accent);
+}
+.pre-clamp {
+	display: -webkit-box;
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: 6;
+	overflow: hidden;
+}
+
+/* ----------------------------- terminal drawer (herdr 终端) ----------------------------- */
+/* wterm theme: resolves these custom properties as its CSS fallback palette;
+   app.js additionally feeds the same tokens to WTerm.setThemeColors(). */
+.term-host {
+	--term-fg: var(--text);
+	--term-bg: var(--panel);
+	--term-cursor: var(--accent);
+	--term-color-0: var(--panel-3);
+	--term-color-1: var(--danger);
+	--term-color-2: var(--running);
+	--term-color-3: var(--waiting);
+	--term-color-4: var(--accent);
+	--term-color-5: var(--danger);
+	--term-color-6: var(--accent-strong);
+	--term-color-7: var(--text);
+	--term-color-8: var(--muted);
+	--term-color-9: var(--offline);
+	--term-color-10: var(--running);
+	--term-color-11: var(--waiting);
+	--term-color-12: var(--accent-strong);
+	--term-color-13: var(--danger);
+	--term-color-14: var(--accent);
+	--term-color-15: var(--text);
+	height: 100%;
+	width: 100%;
+	min-height: 0;
+	overflow: hidden;
+	border: 1px solid var(--border);
+	border-radius: 6px;
+	background: var(--panel);
+}
+.term-body {
+	position: relative;
+	flex: 1 1 auto;
+	min-height: 0;
+	display: flex;
+	padding: 0.5rem;
+	background: var(--panel-3);
+	overflow: hidden;
+	overscroll-behavior: contain;
+}
+/* connecting / 连接已断开 / error states over the terminal surface */
+.term-status {
+	position: absolute;
+	inset: 0.5rem;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border-radius: 6px;
+	background: var(--backdrop);
+}
+.term-status-card {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 0.5rem;
+	border: 1px solid var(--border-strong);
+	border-radius: 8px;
+	background: var(--panel);
+	padding: 1rem 1.25rem;
+	box-shadow: var(--shadow-lg);
+}
+/* terminal mode indicator (控制 / 观察 · 只读) */
+.chip-term-control {
+	color: var(--accent);
+	border-color: var(--accent-border);
+	background: var(--accent-soft);
+}
+.chip-term-observe {
+	color: var(--waiting);
+	border-color: var(--waiting-border);
+	background: var(--waiting-soft);
+}
+
+/* ----------------------------- toasts ----------------------------- */
+.toast {
+	border: 1px solid var(--border-strong);
+	border-radius: 8px;
+	background: var(--panel);
+	color: var(--text);
+	padding: 0.5rem 0.75rem;
+	font-size: 11px;
+	line-height: 1.6;
+	box-shadow: var(--shadow-lg);
+}
+.toast-info {
+	border-color: var(--border-strong);
+}
+.toast-success {
+	color: var(--running);
+	border-color: var(--running-border);
+	background: var(--running-soft);
+}
+.toast-error {
+	color: var(--danger);
+	border-color: var(--danger-border);
+	background: var(--danger-soft);
+}
+
+/* ----------------------------- form controls ----------------------------- */
+/* dense select (当前视角 viewer picker) */
+.select {
+	border: 1px solid var(--border-strong);
+	border-radius: 6px;
+	background: var(--panel);
+	color: var(--text);
+	font-size: 11px;
+	line-height: 1.25rem;
+	padding: 0.125rem 0.5rem;
+	max-width: 14rem;
+	cursor: pointer;
+	transition:
+		background-color 0.15s ease,
+		border-color 0.15s ease;
+}
+.select:hover {
+	background: var(--panel-2);
+	border-color: var(--border-strong);
+}
+.select:focus-visible {
+	outline: 2px solid var(--focus);
+	outline-offset: 2px;
+}
+.select:disabled {
+	opacity: 0.5;
+	cursor: not-allowed;
+}
+
+/* ── history markdown (server-rendered satteri HTML) ───────────────────── */
+.entry-text h1,
+.entry-text h2,
+.entry-text h3,
+.entry-text h4 {
+	margin: 0.85em 0 0.4em;
+	font-weight: 600;
+	line-height: 1.35;
+	color: var(--text);
+}
+.entry-text h1 { font-size: 1.18em; }
+.entry-text h2 { font-size: 1.1em; }
+.entry-text h3 { font-size: 13px; font-weight: 600; }
+.entry-text h4 { font-size: 1em; }
+.entry-text p { margin: 0.5em 0; }
+.entry-text ul,
+.entry-text ol { margin: 0.5em 0; padding-left: 1.4em; }
+.entry-text ul { list-style: disc; }
+.entry-text ol { list-style: decimal; }
+.entry-text li { margin: 0.22em 0; }
+.entry-text li > input[type="checkbox"] { margin-right: 0.4em; }
+.entry-text a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
+.entry-text blockquote {
+	margin: 0.6em 0;
+	padding: 0.15em 0.9em;
+	border-left: 3px solid var(--border);
+	color: var(--muted);
+}
+.entry-text code {
+	font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+	font-size: 0.92em;
+}
+.entry-text :not(pre) > code {
+	padding: 0.12em 0.36em;
+	border: 1px solid var(--border);
+	border-radius: 4px;
+	background: var(--panel-2);
+}
+.entry-text pre {
+	margin: 0.7em 0;
+	overflow-x: auto;
+}
+.entry-text hr { margin: 0.9em 0; border: 0; border-top: 1px solid var(--border); }
+.entry-text table { border-collapse: collapse; margin: 0.6em 0; }
+.entry-text th,
+.entry-text td { border: 1px solid var(--border); padding: 0.32em 0.62em; }
+.entry-text th { background: var(--panel-2); font-weight: 600; }
+.entry-text svg { max-width: 100%; height: auto; }
+.entry-text .mermaid { margin: 0.7em 0; text-align: center; }
+.entry-text img { max-width: 100%; }
+
+/* ============================== Session Workbench shell ============================== */
+/* AppShell: CSS-grid 两栏 (SessionList | DetailPane) + mobile push route */
+.app-body {
+	height: 100dvh;
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+}
+
+/* TopBar 44px: brand · ⌘K · 当前视角 · SSE · theme · refresh · pause */
+.topbar {
+	flex: 0 0 44px;
+	height: 44px;
+	display: flex;
+	align-items: center;
+	gap: 16px;
+	padding: 0 12px 0 0;
+	background: var(--header-bg);
+	backdrop-filter: blur(20px) saturate(1.8);
+	-webkit-backdrop-filter: blur(20px) saturate(1.8);
+	border-bottom: 1px solid var(--hairline);
+	z-index: 30;
+}
+/* The toolbar split follows the list divider, including while resizing. */
+.toolbar-sidebar {
+	flex: 0 0 var(--pane-list-w, 480px);
+	min-width: 0;
+	height: 44px;
+	display: flex;
+	align-items: center;
+	gap: 16px;
+	padding: 0 12px;
+	background: var(--sidebar);
+	border-right: 1px solid var(--hairline);
+	border-bottom: 1px solid var(--hairline);
+}
+.brand svg {
+	width: 16px;
+	height: 16px;
+	color: var(--muted);
+}
+.brand {
+	font-size: 13px;
+	font-weight: 600;
+	letter-spacing: -0.01em;
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+	flex: 0 0 auto;
+}
+/* Labelled command shortcut; session search remains editable in the list. */
+.cmd-trigger {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	flex: 0 0 auto;
+	white-space: nowrap;
+	height: 28px;
+	min-width: 0;
+	border: 1px solid var(--hairline);
+	border-radius: 6px;
+	background: var(--control-bg);
+	padding: 0 6px 0 8px;
+	color: var(--muted);
+	cursor: pointer;
+	transition: background-color 0.1s ease-out;
+	margin-left: auto;
+	font-size: 11px;
+}
+.cmd-trigger:hover {
+	background: var(--control-selected);
+	color: var(--text);
+}
+.cmd-trigger .kbd {
+	margin-left: 12px;
+	border: none;
+	background: transparent;
+	padding: 0;
+}
+/* Source identity is a quiet popup button; full title lives in its tooltip. */
+.cmd-trigger > svg {
+	width: 14px;
+	height: 14px;
+}
+.viewer-label {
+	flex: 0 0 auto;
+	color: var(--faint);
+	font-size: 11px;
+}
+.viewer-btn:hover {
+	background: var(--control-hover);
+}
+.viewer-pick {
+	position: relative;
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	max-width: 28rem;
+	border-radius: 6px;
+	padding: 0;
+	white-space: nowrap;
+	color: var(--muted);
+	transition: background-color 0.1s ease-out;
+	flex: 0 1 28rem;
+	min-width: 0;
+}
+.viewer-pick:hover {
+	background: transparent;
+}
+.viewer-btn {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	min-width: 0;
+	border: none;
+	background: transparent;
+	padding: 0 6px;
+	color: var(--text);
+	font-size: 12px;
+	cursor: pointer;
+	height: 28px;
+	border-radius: 6px;
+}
+.viewer-btn:disabled {
+	opacity: 0.5;
+	cursor: not-allowed;
+}
+.viewer-title {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	max-width: 20rem;
+}
+.viewer-sid {
+	color: var(--faint);
+	font-size: 11px;
+}
+.viewer-caret {
+	flex: 0 0 auto;
+}
+/* custom dropdown list (.menu grammar): 24px items, active = accent check */
+.viewer-menu {
+	width: 288px;
+	min-width: 288px;
+	max-height: 320px;
+	overflow-y: auto;
+}
+.viewer-item {
+	height: 24px;
+}
+.viewer-item-title {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.viewer-check {
+	margin-left: auto;
+	color: var(--accent);
+	display: inline-flex;
+}
+.menu-focus {
+	background: var(--menu-selection);
+}
+.conn-text {
+	color: var(--muted);
+}
+.topbar-right .conn {
+	margin-right: 8px;
+	white-space: nowrap;
+}
+.topbar-right .icon-btn[aria-pressed="true"] {
+	background: var(--control-hover);
+	color: var(--text);
+}
+.topbar-right {
+	margin-left: auto;
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	flex: 0 0 auto;
+}
+
+/* workbench grid: SessionList | handle | DetailPane —
+   the list owns the draggable width; the detail takes the rest */
+.workbench {
+	flex: 1 1 auto;
+	min-height: 0;
+	display: grid;
+	grid-template-columns: minmax(360px, var(--pane-list-w, 480px)) 1px minmax(0, 1fr);
+}
+
+/* drag handle: 1px hairline column, 6px hit area, accent line on hover.
+   Desktop two-pane only (hidden by the compact-layout media queries). */
+.pane-handle {
+	position: relative;
+	z-index: 3;
+	align-self: stretch;
+	cursor: col-resize;
+	background: transparent;
+}
+.pane-handle::before {
+	content: "";
+	position: absolute;
+	top: 0;
+	bottom: 0;
+	left: -3px;
+	right: -3px;
+}
+.pane-handle:hover::after {
+	content: "";
+	position: absolute;
+	top: 0;
+	bottom: 0;
+	left: -1px;
+	right: -1px;
+	background: var(--accent);
+	opacity: 0.55;
+}
+/* mid-drag: no text selection, col-resize cursor everywhere */
+.pane-dragging {
+	user-select: none;
+	cursor: col-resize;
+}
+.pane-dragging * {
+	user-select: none;
+}
+
+/* SessionList: 状态过滤 + 搜索 + flat sections + sticky branch heads */
+.session-list {
+	min-width: 0;
+	min-height: 0;
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+	background: var(--sidebar);
+}
+.list-head {
+	flex: 0 0 auto;
+	padding: 12px;
+	background: var(--sidebar);
+}
+.list-filters {
+	display: flex;
+	flex-wrap: nowrap;
+	align-items: center;
+	gap: 2px;
+	overflow-x: auto;
+	margin-bottom: 6px;
+	scrollbar-width: none;
+	padding: 3px;
+	border: 1px solid var(--hairline);
+	border-radius: 8px;
+	background: var(--control-hover);
+}
+.list-filters::-webkit-scrollbar {
+	display: none;
+}
+/* Neutral segmented control; semantic state colour stays in session rows. */
+.list-filter {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	flex: 1 0 auto;
+	height: 26px;
+	border: none;
+	border-radius: 6px;
+	background: transparent;
+	padding: 0 8px;
+	color: var(--muted);
+	font-size: 12px;
+	text-align: left;
+	white-space: nowrap;
+	cursor: pointer;
+	transition: background-color 0.1s ease-out;
+	justify-content: center;
+}
+.list-filter:hover {
+	background: var(--control-bg);
+}
+.list-filter .list-count {
+	margin-left: 2px;
+	font-size: 11px;
+	font-weight: 400;
+	color: var(--muted);
+	font-variant-numeric: tabular-nums;
+}
+.list-filter-on {
+	background: var(--control-selected);
+	color: var(--text);
+	box-shadow: var(--shadow-sm);
+}
+.list-filter-on .list-count {
+	color: inherit;
+}
+.list-filter-on:hover {
+	background: var(--control-selected);
+	color: var(--text);
+}
+.filter-chip {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	height: 22px;
+	/* chips never shrink or wrap: the horizontal strip scrolls instead of
+	   squeezing labels into 2-4 clipped lines on a 390px viewport */
+	flex: 0 0 auto;
+	white-space: nowrap;
+	border: 1px solid var(--hairline);
+	border-radius: 6px;
+	background: transparent;
+	padding: 0 8px;
+	font-size: 11px;
+	color: var(--muted);
+	cursor: pointer;
+	transition:
+		background-color 0.1s ease-out,
+		color 0.1s ease-out,
+		border-color 0.1s ease-out;
+}
+.filter-chip:hover {
+	color: var(--text);
+	background: var(--panel-2);
+}
+.filter-chip b {
+	font-weight: 600;
+	color: inherit;
+}
+.filter-chip.filter-on {
+	background: var(--sel-soft);
+	border-color: var(--border-strong);
+	color: var(--text);
+}
+.list-scroll {
+	flex: 1 1 auto;
+	min-height: 0;
+	overflow-y: auto;
+	padding: 4px 0 24px;
+	scrollbar-gutter: stable;
+	scrollbar-width: thin;
+	scrollbar-color: var(--scroll-thumb) transparent;
+}
+.list-scroll::-webkit-scrollbar {
+	width: 8px;
+}
+.list-scroll::-webkit-scrollbar-thumb {
+	background: var(--scroll-thumb);
+	border-radius: 4px;
+}
+.list-section {
+	padding: 0;
+}
+.list-section + .list-section {
+	margin-top: 10px;
+}
+/* Repo header: sticky, solid panel + hairline (no gradient: rows must not bleed through) */
+.repo-head {
+	position: sticky;
+	top: 0;
+	z-index: 5;
+	display: flex;
+	align-items: center;
+	height: 30px;
+	box-sizing: border-box;
+	padding: 0 12px;
+	background: var(--sidebar);
+}
+.repo-head:hover {
+	background: var(--sidebar);
+}
+.repo-toggle {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	flex: 1 1 auto;
+	min-width: 0;
+	height: 100%;
+	border: none;
+	background: transparent;
+	padding: 0;
+	color: var(--text);
+	font: inherit;
+	text-align: left;
+	cursor: pointer;
+}
+.repo-chevron {
+	display: inline-flex;
+	flex: 0 0 14px;
+	color: var(--muted);
+}
+/* two static chevrons: lucide replaces the bound <i>, so direction rides on CSS */
+.repo-head .chev-closed {
+	display: none;
+}
+.repo-head.is-collapsed .chev-open {
+	display: none;
+}
+.repo-head.is-collapsed .chev-closed {
+	display: inline;
+}
+.repo-name {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-size: 12px;
+	font-weight: 600;
+	color: var(--text);
+}
+.repo-count {
+	margin-left: auto;
+	padding-left: 8px;
+	font-size: 11px;
+	font-weight: 400;
+	color: var(--faint);
+	font-variant-numeric: tabular-nums;
+}
+.branch-head {
+	display: flex;
+	align-items: center;
+	height: 24px;
+	padding: 0 12px 0 24px;
+}
+.branch-label {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	flex: 1 1 auto;
+	min-width: 0;
+	font-size: 11px;
+	color: var(--muted);
+}
+.section-wt,
+.section-sep,
+.section-dot,
+.section-count {
+	font-size: 11px;
+	color: var(--faint);
+}
+.section-branch {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-size: 11px;
+	color: var(--muted);
+}
+.section-dot {
+	margin-left: auto;
+}
+.section-count {
+	font-variant-numeric: tabular-nums;
+}
+/* filter icon entry: 14px glyph, revealed on hover or while this level is filtered */
+.group-filter {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	flex: 0 0 20px;
+	width: 20px;
+	height: 20px;
+	border: none;
+	border-radius: 4px;
+	background: transparent;
+	color: var(--muted);
+	cursor: pointer;
+	opacity: 0;
+	transition:
+		opacity 0.1s ease-out,
+		background-color 0.1s ease-out;
+}
+.repo-head:hover .group-filter,
+.branch-head:hover .group-filter,
+.group-filter:focus-visible,
+.group-filter.is-on {
+	opacity: 1;
+}
+.group-filter:hover {
+	color: var(--text);
+	background: var(--panel-2);
+}
+.group-filter.is-on {
+	color: var(--accent);
+}
+.cards-grid {
+	display: grid;
+	gap: 12px;
+	grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+	padding-bottom: 12px;
+}
+
+/* DetailPane: tabs 36px + tab content + Composer footer */
+.detail-pane {
+	min-width: 0;
+	min-height: 0;
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+	background: var(--panel);
+}
+.detail-filter-banner {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 10px;
+	padding: 7px 12px;
+	border-bottom: 1px solid var(--hairline);
+	background: var(--panel-2);
+	color: var(--muted);
+	font-size: 11px;
+}
+.detail-filter-locate {
+	flex: 0 0 auto;
+	border: 1px solid var(--border-strong);
+	border-radius: 6px;
+	padding: 3px 8px;
+	background: var(--panel);
+	color: var(--accent);
+	font-size: 11px;
+	cursor: pointer;
+}
+.detail-filter-locate:hover {
+	border-color: var(--accent);
+}
+.detail-tabs {
+	flex: 0 0 36px;
+	height: 36px;
+	display: flex;
+	align-items: stretch;
+	gap: 2px;
+	padding: 0 8px;
+	position: relative;
+	background: var(--panel);
+}
+.detail-tab {
+	position: relative;
+	border: none;
+	background: transparent;
+	padding: 0 12px;
+	font-size: 12px;
+	color: var(--muted);
+	cursor: pointer;
+	transition: color 0.1s ease-out;
+}
+.detail-tab:hover {
+	color: var(--text);
+}
+.detail-tab.tab-on {
+	color: var(--text);
+	font-weight: 500;
+}
+.detail-tab.tab-on::after {
+	content: "";
+	position: absolute;
+	left: 8px;
+	right: 8px;
+	bottom: 0;
+	height: 2px;
+	background: var(--accent);
+	border-radius: 1px;
+}
+.detail-body {
+	flex: 1 1 auto;
+	min-height: 0;
+	overflow-y: auto;
+	padding: 12px;
+}
+.session-meta-summary {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 10px;
+	margin-bottom: 10px;
+	padding: 0 1px 8px;
+	border-bottom: 1px solid var(--hairline);
+}
+.session-view-label {
+	color: var(--text);
+	font-size: 12px;
+	font-weight: 600;
+}
+.session-activity-link {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	border: 1px solid var(--border);
+	border-radius: 7px;
+	padding: 5px 8px;
+	background: var(--panel-2);
+	color: var(--muted);
+	font-size: 10px;
+	cursor: pointer;
+}
+.session-activity-link:hover {
+	border-color: var(--accent);
+	color: var(--accent);
+}
+.session-activity-link b {
+	color: var(--text);
+	font-variant-numeric: tabular-nums;
+}
+.session-activity-link svg {
+	width: 12px;
+	height: 12px;
+}
+.session-inspector {
+	margin-bottom: 12px;
+	overflow: hidden;
+	border: 1px solid var(--hairline);
+	border-radius: 8px;
+	background: var(--panel);
+}
+.session-inspector > summary {
+	display: flex;
+	align-items: center;
+	gap: 7px;
+	min-height: 34px;
+	padding: 7px 10px;
+	color: var(--muted);
+	font-size: 11px;
+	cursor: pointer;
+	list-style: none;
+}
+.session-inspector > summary::-webkit-details-marker {
+	display: none;
+}
+.session-inspector > summary::before {
+	content: "›";
+	display: inline-block;
+	color: var(--faint);
+	font-size: 16px;
+	line-height: 1;
+	transform: rotate(0deg);
+	transition: transform 0.12s ease-out;
+}
+.session-inspector[open] > summary::before {
+	transform: rotate(90deg);
+}
+.session-inspector[open] > summary {
+	border-bottom: 1px solid var(--hairline);
+}
+.session-inspector-hint {
+	min-width: 0;
+	margin-left: auto;
+	overflow: hidden;
+	color: var(--faint);
+	font-size: 10px;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.session-inspector > .ov-block {
+	padding: 10px;
+}
+.session-history {
+	padding-top: 2px;
+}
+
+/* ============================== workbench components ============================== */
+/* icon button 28×28 (44 touch) */
+.icon-btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 28px;
+	height: 28px;
+	border: 1px solid transparent;
+	border-radius: 6px;
+	background: transparent;
+	color: var(--muted);
+	cursor: pointer;
+	transition:
+		background-color 0.1s ease-out,
+		color 0.1s ease-out,
+		border-color 0.1s ease-out;
+}
+.icon-btn:hover {
+	color: var(--text);
+	background: var(--panel-2);
+}
+.icon-btn.icon-on {
+	color: var(--accent);
+	background: var(--sel-soft);
+	border-color: var(--accent-border);
+}
+.icon-btn:disabled {
+	opacity: 0.4;
+	pointer-events: none;
+}
+
+/* SessionList search */
+.list-search {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	color: var(--faint);
+	height: 30px;
+	border: 1px solid var(--hairline);
+	border-radius: 6px;
+	background: var(--control-bg);
+	padding: 0 8px;
+}
+.list-search:focus-within {
+	outline: 2px solid var(--accent);
+	outline-offset: 2px;
+}
+.list-search > svg {
+	flex: 0 0 14px;
+	width: 14px;
+	height: 14px;
+}
+.list-search .kbd {
+	border: none;
+	background: transparent;
+	padding: 0 2px;
+}
+.search-clear {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	flex: 0 0 22px;
+	width: 22px;
+	height: 24px;
+	border: none;
+	border-radius: 4px;
+	color: var(--muted);
+	background: transparent;
+	cursor: pointer;
+}
+.search-clear:hover {
+	background: var(--control-hover);
+}
+.search-clear svg {
+	width: 12px;
+	height: 12px;
+}
+.search-input {
+	flex: 1;
+	min-width: 0;
+	height: 28px;
+	border: none;
+	border-radius: 0;
+	background: transparent;
+	padding: 0;
+	font-size: 12px;
+	color: var(--text);
+	transition: border-color 0.1s ease-out;
+}
+.search-input::placeholder {
+	color: var(--faint);
+}
+.search-input:focus {
+	outline: none;
+}
+
+/* PeerRow: 40px desktop / 48px touch, hairline-separated, selected = --sel-soft + 2px 左条 */
+.peer-row {
+	position: relative;
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	height: 40px;
+	padding: 0 12px;
+	border-radius: 6px;
+	cursor: pointer;
+	transition: background-color 0.12s ease-out;
+}
+.peer-row + .peer-row::before {
+	content: "";
+	position: absolute;
+	left: 12px;
+	right: 12px;
+	top: 0;
+	height: 1px;
+	background: var(--hairline);
+}
+.peer-row:hover {
+	background: var(--panel-2);
+}
+/* keyboard focus reveals the row actions on a solid background */
+.peer-row:focus-within {
+	background: var(--panel-2);
+}
+.peer-row:active {
+	background: var(--panel-3);
+}
+.peer-row.row-sel {
+	background: var(--sel-soft);
+}
+.peer-row.row-sel::after {
+	content: "";
+	position: absolute;
+	left: 0;
+	top: 0;
+	bottom: 0;
+	width: 2px;
+	background: var(--selection-edge);
+	border-radius: 0 1px 1px 0;
+}
+.row-dot-wrap {
+	position: relative;
+	flex: 0 0 10px;
+	width: 10px;
+	height: 10px;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+}
+.row-dot {
+	width: 6px;
+	height: 6px;
+	border-radius: 999px;
+}
+.row-title {
+	min-width: 0;
+	flex: 1 1 auto;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-size: 12px;
+	font-weight: 500;
+	color: var(--text);
+}
+/* 裸目录名行的安静消歧（父目录） */
+.row-sub {
+	flex: 0 0 auto;
+	max-width: 8rem;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.row-chips {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	flex: 0 0 auto;
+	max-width: 40%;
+	overflow: hidden;
+}
+.row-chips .chip-strong {
+	max-width: 150px;
+}
+.row-chips .chip-text {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.row-meta {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	flex: 0 0 auto;
+	margin-left: auto;
+	font-size: 10px;
+	color: var(--faint);
+}
+.row-files {
+	display: inline-flex;
+	align-items: center;
+	gap: 3px;
+}
+/* actions keep their 28px hit box but stay invisible until the row is engaged */
+.row-actions {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	flex: 0 0 auto;
+	opacity: 0;
+	pointer-events: none;
+	transition: opacity 0.1s ease-out;
+}
+.peer-row:hover .row-actions,
+.peer-row.row-sel .row-actions,
+.peer-row:focus-within .row-actions {
+	opacity: 1;
+	pointer-events: auto;
+}
+.row-act {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	height: 28px;
+	border: 1px solid transparent;
+	border-radius: 6px;
+	background: transparent;
+	padding: 0 8px;
+	font-size: 11px;
+	color: var(--muted);
+	cursor: pointer;
+	transition:
+		background-color 0.1s ease-out,
+		color 0.1s ease-out;
+}
+.row-act:hover {
+	color: var(--text);
+	background: var(--panel-2);
+}
+/* popup menus anchor at --menu-x/--menu-y (set on <body>, clamped/flip in JS) */
+.menu-at {
+	position: fixed;
+	left: var(--menu-x, 8px);
+	top: var(--menu-y, 8px);
+	z-index: 60;
+}
+@media (hover: none) {
+	.peer-row {
+		height: 48px;
+	}
+	.icon-btn,
+	.row-act {
+		min-width: 44px;
+		min-height: 44px;
+	}
+	/* touch has no hover: actions and filter entries stay visible */
+	.row-actions,
+	.group-filter {
+		opacity: 1;
+	}
+	.row-actions {
+		pointer-events: auto;
+	}
+}
+
+/* DetailPane head + panels */
+.detail-head {
+	flex: 0 0 auto;
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 8px 12px;
+}
+.detail-id {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	min-width: 0;
+}
+.detail-title {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-size: 17px;
+	font-weight: 600;
+	letter-spacing: -0.01em;
+}
+.detail-title:focus {
+	outline: none;
+}
+.detail-actions {
+	margin-left: auto;
+	display: flex;
+	align-items: center;
+	gap: 6px;
+}
+.panel-view {
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+}
+.ov-block {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	border-bottom: 1px solid var(--hairline);
+	padding-bottom: 12px;
+}
+.ov-block:last-child {
+	border-bottom: none;
+}
+.ov-title {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	font-weight: 600;
+	color: var(--faint);
+	text-transform: uppercase;
+	letter-spacing: 0.06em;
+}
+.ov-title .linkish {
+	margin-left: auto;
+	text-transform: none;
+	letter-spacing: 0;
+}
+.kv {
+	display: flex;
+	gap: 12px;
+	align-items: baseline;
+	min-width: 0;
+	font-size: 12px;
+}
+.kv .k {
+	flex: 0 0 96px;
+	color: var(--faint);
+}
+.kv .v {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	color: var(--text);
+}
+/* inspector flow rows: chips + compact actions on one line */
+.ov-flow {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 6px;
+	padding: 2px 0;
+}
+.flow-sep {
+	flex: 0 0 auto;
+	width: 1px;
+	height: 16px;
+	background: var(--hairline);
+}
+.ov-timeline {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+}
+.tl-item {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+.ov-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+}
+.file-row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	min-width: 0;
+	width: 100%;
+	padding: 2px 0;
+	text-align: left;
+}
+.file-row-btn {
+	border: none;
+	background: transparent;
+	border-radius: 4px;
+	cursor: pointer;
+	padding: 4px 6px;
+}
+.file-row-btn:hover {
+	background: var(--panel-2);
+}
+/* 文件活动树：可折叠目录行 */
+.file-tree-dir {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	width: 100%;
+	border: none;
+	background: transparent;
+	border-radius: 4px;
+	padding: 2px 6px;
+	color: var(--muted);
+	text-align: left;
+	cursor: pointer;
+	transition:
+		background-color 0.1s ease-out,
+		color 0.1s ease-out;
+}
+.file-tree-dir:hover {
+	background: var(--panel-2);
+	color: var(--text);
+}
+/* tree rows: hairline-separated, 13px content */
+.file-tree > div {
+	border-bottom: 1px solid var(--hairline);
+}
+.file-tree > div:last-child {
+	border-bottom: none;
+}
+.file-group {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	padding-bottom: 12px;
+}
+.file-group-head {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	color: var(--faint);
+	padding: 4px 0;
+}
+.panel-loading {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	padding: 8px 0;
+}
+.sk-line {
+	height: 12px;
+}
+.sk-line:nth-child(2) {
+	width: 85%;
+}
+.sk-line:nth-child(3) {
+	width: 65%;
+}
+.review-host {
+	flex: 1 1 auto;
+	min-height: 0;
+	overflow: hidden;
+}
+
+/* TerminalPanel (tab + ⛶ 全屏浮层) */
+.term-panel {
+	display: flex;
+	flex-direction: column;
+	min-height: 0;
+	height: 100%;
+}
+/* terminal toolbar: one 36px row — chip + segs left, 重连/⛶/✕ right */
+.term-toolbar {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	flex: 0 0 auto;
+	height: 36px;
+	padding: 0 0 8px;
+	flex-wrap: nowrap;
+	white-space: nowrap;
+}
+.term-toolbar-right {
+	margin-left: auto;
+	display: flex;
+	align-items: center;
+	gap: 2px;
+}
+.term-full {
+	position: fixed;
+	inset: 0;
+	z-index: 45;
+	padding: 12px;
+	background: var(--bg);
+	border: none;
+}
+.term-full .term-body {
+	border: 1px solid var(--hairline);
+	border-radius: 6px;
+}
+
+/* Composer (常驻 DetailPane 底部): 一个统一圆角输入栏，模式/输入/发送 同处一框 */
+.composer {
+	flex: 0 0 auto;
+	padding: 8px 12px 10px;
+	background: var(--panel);
+}
+.composer-context {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 4px 14px;
+	padding: 0 2px 6px;
+	color: var(--muted);
+	font-size: 10px;
+}
+.composer-context-item {
+	display: inline-flex;
+	align-items: baseline;
+	gap: 5px;
+	min-width: 0;
+}
+.composer-context-label {
+	color: var(--faint);
+}
+.composer-context-item strong {
+	min-width: 0;
+	color: var(--text);
+	font-weight: 600;
+}
+.composer-context-status {
+	position: relative;
+	margin-left: auto;
+	padding-left: 9px;
+	font-size: 10px;
+	white-space: nowrap;
+	color: var(--muted);
+}
+.composer-context-status::before {
+	content: "";
+	position: absolute;
+	left: 0;
+	top: 50%;
+	width: 5px;
+	height: 5px;
+	border-radius: 50%;
+	background: var(--muted);
+	transform: translateY(-50%);
+}
+.composer-context-status.availability-running::before {
+	background: var(--running);
+}
+.composer-context-status.availability-waiting::before {
+	background: var(--waiting);
+}
+.composer-context-status.availability-offline::before {
+	background: var(--offline);
+}
+.composer-context-status.availability-closed::before {
+	background: var(--closed);
+}
+.composer-field {
+	display: flex;
+	align-items: flex-end;
+	gap: 6px;
+	border: 1px solid var(--border-strong);
+	border-radius: 10px;
+	background: var(--panel);
+	padding: 4px 4px 4px 6px;
+	transition: border-color 0.1s ease-out;
+}
+.composer-field:focus-within {
+	border-color: var(--accent);
+}
+.composer-field .seg {
+	flex: 0 0 auto;
+	align-self: flex-end;
+	margin-bottom: 2px;
+}
+.composer-input {
+	flex: 1;
+	min-width: 0;
+	resize: none;
+	border: none;
+	background: transparent;
+	padding: 4px 0;
+	font-size: 12px;
+	line-height: 1.5;
+	color: var(--text);
+}
+.composer-input:focus {
+	outline: none;
+}
+.composer-input::placeholder {
+	color: var(--faint);
+}
+.composer-send {
+	flex: 0 0 auto;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 28px;
+	height: 28px;
+	border: none;
+	border-radius: 8px;
+	background: var(--accent);
+	color: var(--panel);
+	cursor: pointer;
+	transition:
+		background-color 0.1s ease-out,
+		opacity 0.1s ease-out;
+}
+.composer-send:hover {
+	background: var(--accent-strong);
+}
+.composer-send:disabled {
+	background: var(--panel-3);
+	color: var(--faint);
+	cursor: not-allowed;
+}
+.composer-send.is-sending svg {
+	opacity: 0.7;
+}
+.composer-receipt {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 4px 10px;
+	padding: 5px 2px 0;
+	color: var(--muted);
+	font-size: 10px;
+}
+.composer-receipt.receipt-accepted {
+	color: var(--running);
+}
+.composer-receipt.receipt-rejected {
+	color: var(--closed);
+}
+.composer-receipt.receipt-unknown {
+	color: var(--waiting);
+}
+.composer-receipt-detail {
+	color: var(--muted);
+}
+
+/* ConfirmPopover (锚定) */
+.confirm-scrim {
+	position: fixed;
+	inset: 0;
+	z-index: 55;
+	background: transparent;
+}
+.confirm-popover {
+	position: fixed;
+	z-index: 60;
+	width: 272px;
+	border: 1px solid var(--hairline);
+	border-radius: 8px;
+	background: var(--panel);
+	padding: 12px;
+	animation: menu-in 100ms ease-out;
+}
+.confirm-inner {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+.confirm-fork {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	font-size: 11px;
+	color: var(--muted);
+	cursor: pointer;
+}
+.confirm-actions {
+	display: flex;
+	gap: 8px;
+}
+
+/* CommandBar (⌘K, elevation e2 + scrim blur) */
+.cmdk-scrim {
+	position: fixed;
+	inset: 0;
+	z-index: 70;
+	background: rgba(0, 0, 0, 0.28);
+	backdrop-filter: blur(4px);
+	-webkit-backdrop-filter: blur(4px);
+}
+.cmdk {
+	position: fixed;
+	z-index: 71;
+	left: 50%;
+	top: 12vh;
+	transform: translateX(-50%);
+	width: min(560px, 92vw);
+	border: 1px solid var(--hairline);
+	border-radius: 10px;
+	background: var(--panel);
+	overflow: hidden;
+	/* CSS animation only (no Alpine x-transition): the static transform above
+	   carries the centering translateX so the modal can never end up offset */
+	animation: cmdk-in 100ms ease-out;
+}
+@keyframes cmdk-in {
+	from {
+		opacity: 0;
+	}
+	to {
+		opacity: 1;
+	}
+}
+.cmdk-input-row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 10px 12px;
+	color: var(--faint);
+}
+.cmdk-input {
+	flex: 1;
+	border: none;
+	background: transparent;
+	font-size: 15px;
+	color: var(--text);
+}
+.cmdk-input:focus {
+	outline: none;
+}
+.cmdk-list {
+	max-height: 52vh;
+	overflow-y: auto;
+	padding: 4px;
+}
+.cmdk-item {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	width: 100%;
+	height: 28px;
+	border: none;
+	border-radius: 6px;
+	background: transparent;
+	padding: 0 8px;
+	color: var(--text);
+	font-size: 12px;
+	text-align: left;
+	cursor: pointer;
+}
+.cmdk-item.cmdk-on,
+.cmdk-item:hover {
+	background: var(--sel-soft);
+}
+.cmdk-hint {
+	margin-left: auto;
+}
+.cmdk-empty {
+	padding: 16px 8px;
+	text-align: center;
+}
+
+/* ============================== SkeletonRows + mobile layer + polish ============================== */
+/* SkeletonRows: 5× PeerRow geometry on first paint */
+.skeleton-rows {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	padding: 8px 12px;
+}
+.skeleton-row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	height: 40px;
+	padding: 0 12px;
+}
+.sk-dot {
+	width: 8px;
+	height: 8px;
+	border-radius: 999px;
+	flex: 0 0 8px;
+}
+.sk-title {
+	width: 34%;
+	height: 12px;
+}
+.sk-chip {
+	width: 18%;
+	height: 12px;
+}
+
+/* empty state: 32px Lucide on --panel-3 round base + 13px title + 11px hint */
+.empty-icon {
+	height: 52px;
+	width: 52px;
+	border: none;
+	background: var(--panel-3);
+	box-shadow: none;
+	color: var(--muted);
+}
+.empty-title {
+	font-size: 13px;
+	font-weight: 500;
+	color: var(--text);
+}
+.empty-hint {
+	font-size: 11px;
+}
+
+/* toasts: above the composer (never covering 发送), bottom-right */
+.toasts-layer {
+	position: fixed;
+	right: 16px;
+	bottom: 72px;
+	z-index: 50;
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	width: 20rem;
+	max-width: calc(100vw - 2rem);
+	pointer-events: none;
+}
+@media (max-width: 899px) {
+	.toasts-layer {
+		bottom: calc(56px + env(safe-area-inset-bottom));
+	}
+}
+/* toast: opacity fade in via x-transition, 4s 自动消失 */
+
+/* button feedback: 100ms background hover only — no press scaling */
+.btn {
+	transition:
+		background-color 0.1s ease-out,
+		color 0.1s ease-out,
+		border-color 0.1s ease-out;
+}
+.btn:disabled {
+	opacity: 0.4;
+	transition: none;
+}
+
+/* menu open 100ms fade (menu-in) */
+
+/* repo chips strip (mobile) */
+.repo-chips {
+	display: flex;
+	gap: 4px;
+	overflow-x: auto;
+	padding-bottom: 6px;
+	scrollbar-width: none;
+}
+.repo-chips::-webkit-scrollbar {
+	display: none;
+}
+
+/* mobile panes (发现 / 设置) + bottom tab bar */
+.mobile-only {
+	display: none;
+}
+.mobile-pane {
+	display: none;
+}
+.mobile-bar {
+	display: none;
+}
+
+@media (max-width: 899px) {
+	.mobile-only {
+		display: inline-flex;
+	}
+	/* The chips strip must stay block-level flex: inline-flex sizes it to
+	   max-content (~1198px), and .session-list's overflow then clips it with
+	   no way to scroll. */
+	.repo-chips.mobile-only {
+		display: flex;
+	}
+	/* desktop two-pane collapses: list full width, detail -> push-in */
+	.workbench {
+		grid-template-columns: 1fr;
+	}
+	.pane-handle {
+		display: none;
+	}
+	.detail-pane {
+		display: none;
+		border-left: none;
+	}
+	.workbench.mobile-detail .detail-pane {
+		display: flex;
+		position: fixed;
+		inset: 44px 0 49px 0;
+		z-index: 35;
+	}
+	.mobile-bar {
+		display: flex;
+		flex: 0 0 49px;
+		height: 49px;
+		align-items: stretch;
+		background: var(--header-bg);
+		backdrop-filter: blur(20px) saturate(1.8);
+		-webkit-backdrop-filter: blur(20px) saturate(1.8);
+		padding-bottom: env(safe-area-inset-bottom);
+		z-index: 36;
+	}
+	.mobile-pane {
+		position: fixed;
+		inset: 44px 0 49px 0;
+		z-index: 34;
+		background: var(--bg);
+	}
+	.mobile-pane[x-show] {
+		display: block;
+	}
+	.mobile-pane-head {
+		padding: 12px;
+	}
+	.mobile-pane-body {
+		padding: 12px;
+		overflow-y: auto;
+		height: calc(100% - 48px);
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+	}
+	.detail-body,
+	.composer {
+		padding: 12px;
+	}
+	.composer {
+		padding-bottom: calc(8px + env(safe-area-inset-bottom));
+	}
+	.topbar {
+		gap: 8px;
+		padding: 0 8px;
+	}
+	.cmd-trigger {
+		min-width: 0;
+	}
+	.cmd-trigger .t-caption {
+		display: none;
+	}
+}
+
+/* mobile tab bar buttons: 49px targets, icon + 11px label */
+.mobile-tab {
+	flex: 1;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 2px;
+	border: none;
+	background: transparent;
+	color: var(--muted);
+	font-size: 11px;
+	cursor: pointer;
+}
+.mobile-tab-on {
+	color: var(--accent);
+}
+
+/* mobile push-in detail shares the .drawer surface */
+.mobile-push {
+	background: var(--panel);
+	border-left: none;
+}
+
+@media (max-width: 899px) {
+	/* Compact headers keep the session title readable; the overflow menu still exposes Copy sessionId. */
+	.detail-id > .linkish.t-caption,
+	.detail-id > .chip-viewer {
+		display: none;
+	}
+}
+
+@media (hover: none) {
+	.row-act span {
+		display: none;
+	}
+}
+
+/* ============================== rework loop 1: breakpoint layer ============================== */
+.nowrap {
+	white-space: nowrap;
+}
+
+/* back button + detail overflow: visible in every compact layout (<=1179) */
+.cond-only {
+	display: none;
+}
+@media (max-width: 1179px) {
+	.cond-only {
+		display: inline-flex;
+	}
+}
+
+/* Review: tree clamp(180–240px) + diff takes the rest (diff ≥360px at the
+   600px default); diffs never wrap per character — white-space:pre + h-scroll */
+.detail-pane .pm-review {
+	padding: 8px;
+	gap: 8px;
+}
+.detail-pane .pm-review .pm-tree {
+	flex: 0 0 clamp(180px, 30%, 240px);
+}
+.detail-pane .pm-review .pm-diff {
+	min-width: 0;
+	overflow-x: auto;
+}
+.detail-pane .pm-review .pm-diff [data-line] {
+	white-space: pre;
+	word-break: normal;
+	overflow-wrap: normal;
+}
+/* review.js header restates the Review tab — keep only the stats chips */
+.detail-pane .pm-review-title {
+	display: none;
+}
+/* stat chips → quiet muted text (color only on +/−); M/A marks letter-only */
+.detail-pane .pm-review .pm-review-stats .pm-chip {
+	border: none;
+	background: transparent;
+	padding: 0;
+	color: var(--muted);
+	font-weight: 400;
+}
+.detail-pane .pm-review .pm-add {
+	color: var(--running);
+}
+.detail-pane .pm-review .pm-del {
+	color: var(--danger);
+}
+.detail-pane .pm-review .pm-chip-label {
+	display: none; /* review.js renders letter + word (M 修改) — keep the letter */
+}
+.detail-pane .pm-review .pm-status {
+	border: none;
+	background: transparent;
+	padding: 0;
+}
+/* twin empty boxes: keep the tree's message, hide the diff twin */
+.detail-pane .pm-review:has(.pm-tree .pm-empty) .pm-diff .pm-empty {
+	display: none;
+}
+
+/* 900–1179px: list full width; DetailPane -> right overlay + scrim */
+.detail-scrim {
+	display: none;
+	position: fixed;
+	inset: 44px 0 0 0;
+	z-index: 34;
+	background: rgba(0, 0, 0, 0.28);
+	backdrop-filter: blur(4px);
+	-webkit-backdrop-filter: blur(4px);
+}
+@media (max-width: 1179px) {
+	.toolbar-sidebar {
+		flex: 0 0 auto;
+		height: 44px;
+		border: none;
+		background: transparent;
+		padding: 0;
+	}
+	.topbar {
+		gap: 12px;
+		padding: 0 12px;
+	}
+	.cmd-trigger .kbd {
+		margin-left: 4px;
+	}
+	.viewer-label {
+		display: none;
+	}
+}
+@media (min-width: 900px) and (max-width: 1179px) {
+	.workbench {
+		grid-template-columns: minmax(0, 1fr);
+	}
+	.pane-handle {
+		display: none;
+	}
+	.detail-scrim {
+		display: block;
+	}
+	.detail-pane {
+		display: none;
+		position: fixed;
+		right: 0;
+		top: 44px;
+		bottom: 0;
+		width: min(560px, 92vw);
+		z-index: 35;
+		border-left: 1px solid var(--hairline);
+		box-shadow: var(--elev-2);
+	}
+	.workbench.mobile-detail .detail-pane {
+		display: flex;
+	}
+}
+
+/* <=600px: command shortcut becomes a 44px icon target. */
+@media (max-width: 599px) {
+	.toolbar-sidebar {
+		gap: 8px;
+	}
+	.brand svg,
+	.cmd-label,
+	.cmd-trigger .kbd {
+		display: none;
+	}
+	.cmd-trigger {
+		width: 44px;
+		height: 44px;
+		justify-content: center;
+		border: none;
+		background: transparent;
+		padding: 0;
+	}
+	.list-search {
+		height: 44px;
+	}
+	.search-input {
+		height: 42px;
+	}
+	.search-clear {
+		flex-basis: 44px;
+		width: 44px;
+		height: 44px;
+	}
+	.list-filter {
+		min-height: 44px;
+	}
+}
+@media (hover: none) {
+	.cmd-trigger,
+	.viewer-btn,
+	.list-filter {
+		min-height: 44px;
+	}
+}
+@media (forced-colors: active) {
+	.list-filter-on {
+		outline: 2px solid Highlight;
+		outline-offset: -2px;
+	}
+}
+/* <=600px: compact topbar + rows fit 390px */
+@media (max-width: 599px) {
+	.topbar {
+		gap: 6px;
+		padding: 0 8px;
+		overflow: hidden;
+		flex-wrap: nowrap;
+	}
+	.brand {
+		font-size: 13px;
+		white-space: nowrap;
+		flex: 0 0 auto;
+	}
+	.viewer-pick {
+		display: none;
+	}
+	.conn-text {
+		display: none;
+	}
+	.peer-row {
+		height: 48px;
+		overflow: hidden;
+	}
+	.row-act span {
+		display: none;
+	}
+	.row-act,
+	.icon-btn {
+		min-width: 44px;
+		min-height: 44px;
+	}
+	.row-chips .chip-strong {
+		display: none;
+	}
+	.row-files {
+		display: none;
+	}
+}
+
+/* row chip budget follows the LIST width (the DetailPane keeps a constant share) */
+.session-list {
+	container-type: inline-size;
+}
+@container (max-width: 420px) {
+	.row-chips .chip-strong,
+	.row-files {
+		display: none;
+	}
+}
+@container (max-width: 400px) {
+	.row-chips .chip-resume {
+		display: none;
+	}
+	.row-chips {
+		max-width: 32%;
+	}
+}

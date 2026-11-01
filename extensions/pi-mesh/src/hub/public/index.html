@@ -1,0 +1,1023 @@
+<!doctype html>
+<html lang="zh-CN">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>pi-mesh · Session Workbench</title>
+		<!-- vendored CDN stack (pinned): tailwindcss 3.4.16 · alpinejs 3.14.9 · lucide 0.469.0 -->
+		<script src="/cdn/tailwindcss-3.4.16.js"></script>
+		<script>
+			tailwind.config = {
+				theme: {
+					extend: {
+						fontFamily: { mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'Consolas', 'monospace'] },
+					},
+				},
+			};
+		</script>
+		<link rel="stylesheet" href="app.css" />
+		<!-- wterm terminal: ESM packages served from node_modules via /vendor/.
+		     Bare cross-package specifiers are wired to their /vendor/ URLs here so
+		     the terminal module can be loaded lazily (only when a terminal opens). -->
+		<script type="importmap">
+			{
+				"imports": {
+					"@wterm/core": "/vendor/@wterm/core/dist/index.js",
+					"@wterm/core/worker": "/vendor/@wterm/core/dist/worker-core.js",
+					"@wterm/dom": "/vendor/@wterm/dom/dist/index.js",
+					"@wterm/ghostty": "/vendor/@wterm/ghostty/dist/index.js",
+					"dompurify": "/vendor/dompurify/dist/purify.es.mjs",
+					"@pierre/diffs": "/vendor/@pierre/diffs/dist/index.js",
+					"@pierre/diffs/ssr": "/vendor/@pierre/diffs/dist/ssr/index.js",
+					"@pierre/highlights": "/vendor/@pierre/highlights/dist/default.js",
+					"@pierre/highlights/themes": "/vendor/@pierre/highlights/dist/themes.js",
+					"@pierre/theming": "/vendor/@pierre/theming/dist/index.js",
+					"@pierre/theming/color": "/vendor/@pierre/theming/dist/color.js",
+					"ccount": "/vendor/ccount/index.js",
+					"character-entities-html4": "/vendor/character-entities-html4/index.js",
+					"character-entities-legacy": "/vendor/character-entities-legacy/index.js",
+					"comma-separated-tokens": "/vendor/comma-separated-tokens/index.js",
+					"diff": "/vendor/diff/libesm/index.js",
+					"hast-util-to-html": "/vendor/@pierre/diffs/node_modules/hast-util-to-html/index.js",
+					"hast-util-whitespace": "/vendor/hast-util-whitespace/index.js",
+					"html-void-elements": "/vendor/html-void-elements/index.js",
+					"property-information": "/vendor/property-information/index.js",
+					"space-separated-tokens": "/vendor/space-separated-tokens/index.js",
+					"stringify-entities": "/vendor/stringify-entities/index.js",
+					"zwitch": "/vendor/zwitch/index.js"
+				}
+			}
+		</script>
+		<link rel="stylesheet" href="/vendor/@wterm/dom/src/terminal.css" />
+		<link rel="stylesheet" href="/review.css" />
+		<script defer src="/review.js"></script>
+		<script>
+			/* Pre-paint theme bootstrap: light default, persisted choice in
+			   localStorage (pi-mesh.theme), else respect prefers-color-scheme. */
+			(function () {
+				var t = "light";
+				try {
+					var stored = localStorage.getItem("pi-mesh.theme");
+					if (stored === "dark" || stored === "light") t = stored;
+					else if (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) t = "dark";
+				} catch (e) {}
+				document.documentElement.setAttribute("data-theme", t);
+			})();
+		</script>
+		<script defer src="/cdn/lucide-0.469.0.js"></script>
+		<script defer src="app.js"></script>
+		<script defer src="/cdn/alpinejs-3.14.9.js"></script>
+	</head>
+	<body class="app-body" x-data="mesh" x-cloak @keydown.escape.window="onEscape()" @keydown.window="onListKey($event)" :style="menuVars">
+		<!-- 连接断开 banner（建立后掉线 + ~1.8s 宽限才出现，首屏不误报） -->
+		<div
+			x-show="connBanner"
+			x-transition.opacity
+			class="banner-offline"
+			role="status"
+		>
+			<i data-lucide="wifi-off"></i>
+			<span>连接断开 · 正在自动重连…</span>
+		</div>
+
+		<!-- ================= TopBar (44px, native toolbar) ================= -->
+		<header class="topbar" :style="paneStyle">
+			<div class="toolbar-sidebar">
+				<h1 class="brand"><i data-lucide="panels-top-left" aria-hidden="true"></i><span>pi-mesh</span></h1>
+				<button class="cmd-trigger" type="button" @click="openCommand()" aria-label="搜索/命令" title="搜索与命令 · ⌘K">
+					<i data-lucide="search" aria-hidden="true"></i>
+					<span class="cmd-label">搜索与命令</span>
+					<span class="kbd"><i data-lucide="command" aria-hidden="true"></i><span>K</span></span>
+				</button>
+			</div>
+
+			<div class="viewer-pick" :title="esc(viewer ? (viewer.title || basename(viewer.cwd)) : '暂无可选会话')">
+				<span class="viewer-label">协作来源</span>
+				<button
+					class="viewer-btn"
+					type="button"
+					aria-label="当前视角"
+					:aria-expanded="viewerOpen ? 'true' : 'false'"
+					:disabled="viewerOptions.length === 0"
+					@click="toggleViewerMenu($event)"
+					@keydown="onViewerKey($event)"
+				>
+					<span class="viewer-title" x-html="esc(viewer ? (viewer.title || basename(viewer.cwd)) : '选择会话')"></span>
+					<i data-lucide="chevron-down" class="viewer-caret"></i>
+				</button>
+			</div>
+
+			<div class="topbar-right">
+				<span
+					class="conn"
+					:class="paused ? 'conn-paused' : connState === 'connected' ? 'conn-ok' : connState === 'retrying' ? 'conn-err' : 'conn-busy'"
+					role="status"
+				>
+					<span class="conn-dot"></span>
+					<span class="conn-text" x-html="paused ? esc('已暂停') : connState === 'connected' ? esc('已连接') : connState === 'retrying' ? esc('重连中') : esc('连接中')"></span>
+				</span>
+				<button
+					id="theme-toggle"
+					class="icon-btn"
+					@click="toggleTheme()"
+					:title="theme === 'dark' ? '切换到浅色主题' : '切换到深色主题'"
+					:aria-pressed="theme === 'dark' ? 'true' : 'false'"
+					aria-label="切换深色/浅色主题"
+				>
+					<i data-lucide="sun" class="icon-sun"></i>
+					<i data-lucide="moon" class="icon-moon"></i>
+				</button>
+				<button class="icon-btn" @click="refreshPeers(false)" aria-label="刷新实例列表" title="刷新">
+					<i data-lucide="refresh-cw"></i>
+				</button>
+				<button
+					class="icon-btn"
+					@click="setPaused(!paused)"
+					:aria-pressed="paused ? 'true' : 'false'"
+					:aria-label="paused ? '恢复实时更新' : '暂停实时更新'"
+					:title="paused ? esc('恢复实时更新') : esc('暂停实时更新')"
+				>
+					<span x-show="!paused"><i data-lucide="pause"></i></span>
+					<span x-show="paused"><i data-lucide="play"></i></span>
+				</button>
+			</div>
+		</header>
+
+		<!-- ================= AppShell: SessionList | DetailPane ================= -->
+		<div class="detail-scrim" x-show="mobileView === 'detail'" @click="mobileView = 'list'"></div>
+		<div class="workbench" :class="mobileView === 'detail' ? 'mobile-detail' : ''" :style="paneStyle">
+			<!-- ---------- SessionList: 状态过滤 + 搜索 + 两级分组（repo 可折叠） ---------- -->
+			<section class="session-list" role="region" aria-label="会话列表">
+				<div class="list-head hairline-b">
+					<div class="list-filters" role="group" aria-label="状态过滤">
+						<button class="list-filter" :class="stateFilter === 'all' ? 'list-filter-on' : ''" :aria-pressed="stateFilter === 'all' ? 'true' : 'false'" type="button" @click="setStateFilter('all')">
+							<span>全部</span>
+							<b class="list-count" x-show="counts.total > 0" x-html="esc(counts.total)"></b>
+						</button>
+						<button class="list-filter" :class="stateFilter === 'online' ? 'list-filter-on' : ''" :aria-pressed="stateFilter === 'online' ? 'true' : 'false'" type="button" @click="setStateFilter('online')">
+							<span>在线</span>
+							<b class="list-count" x-show="counts.online > 0" x-html="esc(counts.online)"></b>
+						</button>
+						<button class="list-filter" :class="stateFilter === 'offline' ? 'list-filter-on' : ''" :aria-pressed="stateFilter === 'offline' ? 'true' : 'false'" type="button" @click="setStateFilter('offline')">
+							<span>离线</span>
+							<b class="list-count" x-show="counts.offline > 0" x-html="esc(counts.offline)"></b>
+						</button>
+						<button class="list-filter" :class="stateFilter === 'closed' ? 'list-filter-on' : ''" :aria-pressed="stateFilter === 'closed' ? 'true' : 'false'" type="button" @click="setStateFilter('closed')">
+							<span>已关闭</span>
+							<b class="list-count" x-show="counts.closed > 0" x-html="esc(counts.closed)"></b>
+						</button>
+					</div>
+					<div class="repo-chips mobile-only">
+						<button class="filter-chip press" :class="repoFilter === '' ? 'filter-on' : ''" type="button" @click="repoFilter = ''; branchFilter = ''">全部</button>
+						<template x-for="g in grouped" :key="g.key">
+							<button class="filter-chip press" :class="repoFilter === g.key ? 'filter-on' : ''" type="button" @click="toggleGroupFilter(g.key)">
+								<i :data-lucide="g.isGit ? 'folder-git-2' : 'folder'"></i><span x-html="esc(g.name)"></span>
+							</button>
+						</template>
+					</div>
+					<div class="list-search">
+						<i data-lucide="search"></i>
+						<input
+							class="search-input"
+							type="text"
+							placeholder="搜索全部会话…"
+							x-ref="searchInput"
+							x-model="search"
+							aria-label="搜索全部会话"
+						/>
+						<span class="kbd" x-show="!search">/</span>
+						<button class="search-clear" type="button" x-show="search" @click="search = ''; $refs.searchInput.focus()" aria-label="清空会话搜索" title="清空搜索"><i data-lucide="x" aria-hidden="true"></i></button>
+					</div>
+				</div>
+
+				<div class="list-scroll" @contextmenu.prevent="openCtx($event, '')">
+					<!-- SkeletonRows: first-paint loading (5×PeerRow 几何) -->
+					<div class="skeleton-rows" x-show="booting" aria-label="正在加载会话">
+						<template x-for="i in 5" :key="i">
+							<div class="skeleton-row">
+								<div class="skeleton sk-dot"></div>
+								<div class="skeleton sk-title"></div>
+								<div class="skeleton sk-chip"></div>
+							</div>
+						</template>
+					</div>
+					<!-- 空状态 -->
+					<div x-show="counts.total === 0" class="empty">
+						<div class="empty-icon">
+							<i data-lucide="unplug" class="icon-16"></i>
+						</div>
+						<p class="empty-title">没有可用会话</p>
+					</div>
+
+					<!-- 两层层级：repo 头可折叠 + 分支头（过滤入口）= 行级 3 个一键：发消息 / 终端 / ⋯ -->
+					<div x-show="!booting && counts.total > 0 && filteredPeers.length === 0" class="empty">
+						<div class="empty-icon">
+							<i data-lucide="search-x" class="icon-16"></i>
+						</div>
+						<p class="empty-title">无匹配结果</p>
+						<button class="btn" @click="clearFilters()">
+							<i data-lucide="list-restart"></i>
+							<span>清空过滤</span>
+						</button>
+					</div>
+					<template x-for="g in repoGroups" :key="g.root">
+						<section class="list-section">
+							<!-- repo 头 = 折叠入口；右侧图标才是过滤入口，右键仍按仓库目录新建对话 -->
+							<header class="repo-head" :class="isCollapsed(g.root) ? 'is-collapsed' : ''" @contextmenu.prevent.stop="openCtx($event, g.root)">
+								<button class="repo-toggle" type="button" :title="esc(g.root)" :aria-expanded="isCollapsed(g.root) ? 'false' : 'true'" @click="toggleRepo(g.root)">
+									<span class="repo-chevron" aria-hidden="true">
+										<i data-lucide="chevron-down" class="chev-open"></i>
+										<i data-lucide="chevron-right" class="chev-closed"></i>
+									</span>
+									<span class="repo-name" x-html="esc(g.repo)"></span>
+									<span class="repo-count" x-html="esc(g.count)"></span>
+								</button>
+								<button
+									class="group-filter"
+									:class="repoFilter === g.root ? 'is-on' : ''"
+									type="button"
+									:title="esc('过滤到 ' + g.repo)"
+									:aria-label="esc('过滤到 ' + g.repo)"
+									@click.stop="toggleGroupFilter(g.root)"
+								>
+									<i data-lucide="list-filter"></i>
+								</button>
+							</header>
+							<!-- 折叠组不渲染行（x-if 从 DOM 移除）；repo 头计数仍是整组总数 -->
+							<template x-if="!isCollapsed(g.root)">
+								<div class="repo-body">
+									<template x-for="s in g.branches" :key="s.key">
+										<div class="branch-block">
+											<header class="branch-head" x-show="!s.single || (s.branch && s.branch !== '(无分支)')">
+												<span class="branch-label">
+													<span class="section-wt" x-show="!s.single" x-html="esc(s.wt)"></span>
+													<span class="section-sep" x-show="!s.single">/</span>
+													<span class="section-branch" x-show="!s.single || (s.branch && s.branch !== '(无分支)')" x-html="esc(s.branch)"></span>
+													<span class="section-dot" x-show="!s.single || (s.branch && s.branch !== '(无分支)')">·</span>
+													<span class="section-count" x-html="esc(s.peers.length)"></span>
+												</span>
+												<button
+													class="group-filter"
+													:class="repoFilter === g.root && branchFilter === s.branch ? 'is-on' : ''"
+													type="button"
+													:title="esc('过滤到 ' + s.branch)"
+													:aria-label="esc('过滤到 ' + s.branch)"
+													@click.stop="toggleBranchFilter(g.root, s.branch)"
+												>
+													<i data-lucide="list-filter"></i>
+												</button>
+											</header>
+											<template x-for="p in s.peers" :key="p.sessionId">
+								<!-- ---------------- PeerRow ---------------- -->
+								<div
+									class="peer-row press"
+									:class="String(p.sessionId ?? '') === selectedId ? 'row-sel' : ''"
+									:data-sid="p.sessionId"
+									:tabindex="String(p.sessionId ?? '') === selectedId ? 0 : -1"
+									role="button"
+									@click="selectPeer(p.sessionId); mobileView = 'detail'"
+									@contextmenu.prevent="toggleMenu(p.sessionId, $event); $event.stopPropagation()"
+								>
+									<span class="row-dot-wrap">
+										<span class="row-dot" :class="stateMeta(p.state).dot"></span>
+									</span>
+									<span class="row-title t-row" :title="esc(p.title || p.cwd)" x-html="esc(p.title || basename(p.cwd))"></span>
+									<span class="row-sub t-caption faint" x-show="!p.title" x-html="esc(parentDirLabel(p))"></span>
+									<span class="row-chips">
+										<span x-show="p.model" class="chip chip-strong" :title="esc(p.model)"><span class="chip-text" x-html="esc(p.model)"></span></span>
+										<span
+											x-show="resumeCount(p) > 0"
+											class="chip chip-resume"
+											:title="esc(resumeTip(p))"
+										><i data-lucide="rotate-ccw"></i><span x-html="esc(resumeCount(p))"></span></span>
+										<span
+											x-show="herdrInfo(p)"
+											class="chip chip-herdr"
+											:title="esc(herdrTip(p))"
+										><i data-lucide="monitor"></i><span>herdr</span></span>
+										<span
+											x-show="ephemeral(p)"
+											class="chip chip-ephemeral"
+											title="临时会话（--no-session）· 不保存记录"
+										><i data-lucide="zap"></i><span>临时</span></span>
+									</span>
+									<span class="row-meta t-caption faint">
+										<span x-show="(p.files || []).length" class="row-files" :title="esc((p.files || []).length + ' 个文件改动')">
+											<i data-lucide="file-clock"></i><span x-html="esc((p.files || []).length)"></span>
+										</span>
+									</span>
+									<span class="row-actions">
+										<button class="row-act" @click.stop="focusComposer(p.sessionId)" title="发消息" aria-label="发消息">
+											<i data-lucide="send"></i>
+										</button>
+										<button class="row-act" x-show="herdrInfo(p)" @click.stop="openTerminal(p)" title="在浏览器中打开终端" aria-label="终端">
+											<i data-lucide="square-terminal"></i>
+										</button>
+										<button class="icon-btn" @click.stop="toggleMenu(p.sessionId, $event)" aria-label="更多操作" title="更多操作">
+											<i data-lucide="ellipsis"></i>
+										</button>
+									</span>
+
+									<!-- RowOverflowMenu（右键/⋯ 在鼠标或按钮下方弹出，与详情菜单互斥） -->
+									<div class="menu row-menu menu-at e1" x-show="menuSid === p.sessionId" @click.outside="menuSid = null">
+										<div class="menu-label" x-html="esc(sid8(p.sessionId))"></div>
+										<button
+											class="menu-item"
+											x-show="!isSelf(p)"
+											:disabled="!canFollow()"
+											:title="canFollow() ? esc(isFollowing(p) ? '点击解绑关注' : '点击关注该实例') : esc('先选择当前视角')"
+											@click="toggleFollow(p.sessionId)"
+										>
+											<i data-lucide="eye"></i><span x-html="esc(isFollowing(p) ? '已关注' : '关注')"></span>
+										</button>
+										<button
+											class="menu-item"
+											x-show="canResume(p)"
+											@click="openResume(p.sessionId, $event)"
+											title="在独立 herdr 工作区恢复该会话"
+										>
+											<i data-lucide="rotate-ccw"></i><span>恢复</span>
+										</button>
+										<div class="menu-sep" x-show="herdrInfo(p)"></div>
+										<button class="menu-item" x-show="herdrInfo(p)" @click="enterHerdr(p)" :title="esc(herdrTip(p))">
+											<i data-lucide="log-in"></i><span>进入</span>
+										</button>
+										<button
+											class="menu-item"
+											x-show="herdrInfo(p)"
+											@click="copyHerdrCmd(p)"
+											:title="esc('复制命令: ' + (herdrInfo(p) ? herdrInfo(p).command : ''))"
+										>
+											<i data-lucide="copy"></i><span>复制 focus 命令</span>
+										</button>
+										<div class="menu-sep"></div>
+										<button class="menu-item" @click="copySid(p)">
+											<i data-lucide="copy"></i><span>复制 sessionId</span>
+										</button>
+										<button class="menu-item" x-show="!ephemeral(p)" @click="openReview(p)">
+											<i data-lucide="file-diff"></i><span>查看 Review</span>
+										</button>
+									</div>
+												</div>
+											</template>
+										</div>
+									</template>
+								</div>
+							</template>
+						</section>
+					</template>
+				</div>
+			</section>
+
+			<div
+				class="pane-handle"
+				role="separator"
+				aria-orientation="vertical"
+				aria-label="调整列表宽度"
+				title="拖拽调整宽度 · 双击重置"
+				@mousedown.prevent="startPaneDrag('list', $event)"
+				@dblclick="resetPane('list')"
+			></div>
+
+			<!-- ---------- DetailPane: DetailTabs + 5 懒加载面板 + Composer ---------- -->
+			<section class="detail-pane hairline-l" :class="mobileView === 'detail' ? 'drawer mobile-push' : ''" role="region" aria-label="会话详情">
+				<!-- 上下文工具栏：按状态主操作 + 关注 eye 常驻 -->
+				<header class="detail-head hairline-b" x-show="selected">
+					<button class="icon-btn cond-only press" @click="mobileView = 'list'" aria-label="返回">
+						<i data-lucide="arrow-left"></i>
+					</button>
+					<div class="detail-id">
+						<span class="relative flex h-2 w-2 shrink-0">
+							<span class="relative inline-flex h-2 w-2 rounded-full" :class="selected ? stateMeta(selected.state).dot : ''"></span>
+						</span>
+						<h2 class="t-title detail-title" tabindex="-1" x-ref="detailTitle" x-html="esc(selected ? (selected.title || basename(selected.cwd)) : '')"></h2>
+						<button
+							class="linkish t-caption"
+							@click="copySid(selected)"
+							:title="selected ? '点击复制完整 sessionId: ' + esc(selected.sessionId) : ''"
+							x-html="esc(sid8(selected && selected.sessionId))"
+						></button>
+						<template x-if="selected && isSelf(selected)">
+							<span class="chip chip-viewer">当前视角</span>
+						</template>
+						<template x-if="selected && ephemeral(selected)">
+							<span class="chip chip-ephemeral" title="临时会话（--no-session）· 不保存记录"><i data-lucide="zap"></i><span>临时</span></span>
+						</template>
+					</div>
+					<div class="detail-actions">
+						<button
+							class="icon-btn press"
+							:class="selected && isFollowing(selected) ? 'icon-on' : ''"
+							:disabled="!canFollow()"
+							:title="canFollow() ? esc(selected && isFollowing(selected) ? '点击解绑关注' : '点击关注该实例') : esc('先选择当前视角')"
+							:aria-label="selected && isFollowing(selected) ? '已关注' : '关注'"
+							@click="toggleFollow(selected && selected.sessionId)"
+						>
+							<i data-lucide="eye"></i>
+						</button>
+						<button
+							x-show="selected && selected.state === 'running'"
+							class="btn btn-danger press"
+							@click="askCancel(selected.sessionId)"
+						>
+							<i data-lucide="circle-stop"></i>
+							<span>取消</span>
+						</button>
+						<button
+							x-show="selected && canResume(selected)"
+							class="btn press"
+							@click="openResume(selected.sessionId)"
+							title="在独立 herdr 工作区恢复该会话"
+						>
+							<i data-lucide="rotate-ccw"></i>
+							<span>恢复</span>
+						</button>
+						<button
+							x-show="selected && herdrInfo(selected)"
+							class="btn btn-primary press"
+							@click="enterHerdr(selected)"
+							:title="esc(herdrTip(selected))"
+						>
+							<i data-lucide="log-in"></i>
+							<span>进入</span>
+						</button>
+						<button
+							x-show="selected && herdrInfo(selected)"
+							class="icon-btn press"
+							@click="copyHerdrCmd(selected)"
+							:title="esc('复制命令: ' + (herdrInfo(selected) ? herdrInfo(selected).command : ''))"
+							aria-label="复制 herdr 聚焦命令"
+						>
+							<i data-lucide="copy"></i>
+						</button>
+						<button class="icon-btn cond-only" @click="toggleDetailMenu($event)" aria-label="更多操作">
+							<i data-lucide="ellipsis"></i>
+						</button>
+					</div>
+					<!-- 详情 overflow 菜单（同一组动作） -->
+					<div class="menu detail-menu menu-at e1" x-show="detailMenu && selected" @click.outside="detailMenu = false">
+						<button
+							class="menu-item"
+							x-show="selected && !isSelf(selected)"
+							:disabled="!canFollow()"
+							:title="canFollow() ? esc(selected && isFollowing(selected) ? '点击解绑关注' : '点击关注该实例') : esc('先选择当前视角')"
+							@click="toggleFollow(selected && selected.sessionId)"
+						>
+							<i data-lucide="eye"></i><span x-html="esc(selected && isFollowing(selected) ? '已关注' : '关注')"></span>
+						</button>
+						<button class="menu-item" x-show="selected && canResume(selected)" @click="openResume(selected && selected.sessionId, $event)" title="在独立 herdr 工作区恢复该会话">
+							<i data-lucide="rotate-ccw"></i><span>恢复</span>
+						</button>
+						<div class="menu-sep"></div>
+						<button class="menu-item" @click="copySid(selected)">
+							<i data-lucide="copy"></i><span>复制 sessionId</span>
+						</button>
+						<button class="menu-item" @click="selected && openReview(selected)">
+							<i data-lucide="file-diff"></i><span>查看 Review</span>
+						</button>
+					</div>
+				</header>
+
+				<div class="detail-filter-banner" x-show="selected && selectedHidden">
+					<span>当前目标被左侧筛选或分组折叠隐藏；详情与草稿仍保留。</span>
+					<button type="button" class="detail-filter-locate" @click="locateSelected()">定位会话</button>
+				</div>
+
+				<!-- DetailTabs: 会话 / 变更 / 终端 -->
+				<div class="detail-tabs hairline-b" role="tablist" aria-label="详情视图">
+					<button class="detail-tab" :class="detailTab === 'session' ? 'tab-on' : ''" role="tab" type="button" @click="setTab('session')">会话</button>
+					<button class="detail-tab" :class="detailTab === 'changes' ? 'tab-on' : ''" role="tab" type="button" @click="setTab('changes')">变更</button>
+					<button class="detail-tab" :class="detailTab === 'terminal' ? 'tab-on' : ''" role="tab" type="button" @click="setTab('terminal')">终端</button>
+				</div>
+
+				<div class="detail-body" x-ref="detailBody" @scroll.passive="onHistoryScroll($event)">
+					<!-- 未选择空态 -->
+					<div x-show="!selected" class="empty">
+						<div class="empty-icon">
+							<i data-lucide="panel-right" class="icon-16"></i>
+						</div>
+						<p class="empty-title">选择一个会话查看详情</p>
+					</div>
+
+					<!-- ================= Session view: conversation first, inspector collapsed ================= -->
+					<div class="panel-view session-view" x-show="selected && detailTab === 'session'" x-transition.opacity.120ms>
+						<div class="session-meta-summary">
+							<span class="session-view-label">会话对话</span>
+							<button type="button" class="session-activity-link" @click="setTab('changes')">
+								<i data-lucide="file-diff"></i>
+								<span>文件活动</span>
+								<b x-html="esc(selected && Array.isArray(selected.files) ? selected.files.length : 0)"></b>
+								<span>查看变更</span>
+								<i data-lucide="arrow-up-right"></i>
+							</button>
+						</div>
+						<details class="session-inspector">
+							<summary>
+								<i data-lucide="info"></i>
+								<span>会话信息</span>
+								<span class="session-inspector-hint" x-html="esc(selected && (selected.git && selected.git.branch || selected.model || basename(selected.cwd)) || '')"></span>
+							</summary>
+						<!-- 元数据 + Git + 关注（kv + 信息流） -->
+						<div class="ov-block">
+							<div class="kv">
+								<span class="k">cwd</span>
+								<button class="linkish mono v" :title="esc(selected && selected.cwd)" @click="copyText(selected ? selected.cwd : '', '已复制路径')" x-html="esc(selected ? midTrunc(selected.cwd, 46) : '')"></button>
+							</div>
+							<div class="kv"><span class="k">model</span><span class="v" x-html="esc(selected && selected.model || '—')"></span></div>
+							<div class="kv"><span class="k">pid</span><span class="v" x-html="esc(selected && selected.pid)"></span></div>
+							<div class="kv"><span class="k">启动于</span><span class="v" x-html="esc(relT(selected && selected.startedAt))"></span></div>
+							<div class="ov-flow">
+								<span class="chip chip-accent" x-show="selected && selected.git && selected.git.branch" :title="esc(selected && selected.git && selected.git.branch)"><i data-lucide="git-branch"></i><span x-html="esc(selected && selected.git && selected.git.branch)"></span></span>
+								<span class="chip" x-show="selected && selected.git && selected.git.worktree" :title="esc(wtLabel(selected && selected.git && selected.git.worktree))"><i data-lucide="git-fork"></i><span x-html="esc(wtLabel(selected && selected.git && selected.git.worktree))"></span></span>
+								<button class="chip" x-show="selected && selected.git && selected.git.repoRoot" :title="esc(selected && selected.git && selected.git.repoRoot)" @click="copyText(selected && selected.git && selected.git.repoRoot, '已复制路径')"><i data-lucide="folder-git-2"></i><span class="mono" x-html="esc(midTrunc(selected && selected.git && selected.git.repoRoot, 36))"></span></button>
+								<span class="faint t-caption" x-show="!(selected && selected.git && (selected.git.branch || selected.git.repoRoot || selected.git.worktree))">未关联 Git</span>
+								<span class="flow-sep" x-show="selected && (followerCount(selected) > 0 || followingCount(selected) > 0)"></span>
+								<span class="chip" x-show="selected && followerCount(selected) > 0" :title="esc(selected ? followerTip(selected) : '')"><i data-lucide="users"></i><span x-html="esc('粉丝 ' + (selected ? followerCount(selected) : 0))"></span></span>
+								<span class="chip" x-show="selected && followingCount(selected) > 0"><i data-lucide="eye"></i><span x-html="esc('关注 ' + (selected ? followingCount(selected) : 0))"></span></span>
+								<button
+									class="btn"
+									:class="selected && isFollowing(selected) ? 'btn-following' : ''"
+									:disabled="!canFollow()"
+									:title="canFollow() ? esc(selected && isFollowing(selected) ? '点击解绑关注' : '点击关注该实例') : esc('先选择当前视角')"
+									@click="toggleFollow(selected && selected.sessionId)"
+								>
+									<i data-lucide="eye"></i>
+									<span x-html="esc(selected && isFollowing(selected) ? '已关注' : '关注')"></span>
+								</button>
+							</div>
+						</div>
+
+						<!-- 恢复记录 -->
+						<div class="ov-block" x-show="selected && resumeCount(selected) > 0">
+							<div class="ov-title t-caption">恢复记录</div>
+							<div class="ov-timeline">
+								<template x-for="(r, i) in (selected && selected.resumptions || [])" :key="i">
+									<div class="tl-item">
+										<span class="dot dot-closed"></span>
+										<span class="mono t-caption" x-html="esc((r && r.herdrWorkspaceId) || '(无工作区)')"></span>
+										<span class="faint t-caption" x-html="esc(relT(r && r.at))"></span>
+									</div>
+								</template>
+							</div>
+						</div>
+
+						<!-- 文件活动（树形，点按→Review 聚焦） -->
+						<div class="ov-block">
+							<div x-show="selected && ephemeral(selected)" class="empty-hint">临时会话，不保存记录</div>
+							<div x-show="selected && !ephemeral(selected) && !(selected.files || []).length" class="empty-hint">尚无文件改动</div>
+							<div class="file-tree" x-show="selected && !ephemeral(selected) && fileTreeRows.length">
+								<template x-for="r in fileTreeRows" :key="r.kind + ':' + r.path">
+									<div :style="'padding-left:' + (r.depth * 14 + 2) + 'px'">
+										<button
+											x-show="r.kind === 'dir'"
+											class="file-tree-dir"
+											type="button"
+											@click="toggleFileTree(r.path)"
+											:aria-expanded="fileTreeCollapsed[r.path] ? 'false' : 'true'"
+											:title="esc(r.path)"
+										>
+											<span class="toolrun-caret" :class="fileTreeCollapsed[r.path] ? '' : 'toolrun-open'"><i data-lucide="chevron-right"></i></span>
+											<i data-lucide="folder"></i>
+											<span class="mono" x-html="esc(r.name)"></span>
+										</button>
+										<button
+											x-show="r.kind === 'file'"
+											class="file-row file-row-btn"
+											type="button"
+											@click="openReviewFile(r.path)"
+											:title="esc(r.path)"
+										>
+											<span class="tag" x-html="esc(r.op)"></span>
+											<span class="min-w-0 truncate mono" x-html="esc(r.name)"></span>
+											<span class="faint t-caption" x-html="esc(relT(r.ts))"></span>
+											<i data-lucide="chevron-right"></i>
+										</button>
+									</div>
+								</template>
+							</div>
+						</div>
+						</details>
+					</div>
+
+					<!-- ================= Session conversation (history entries and tool runs) ================= -->
+					<div class="panel-view session-history" x-show="selected && detailTab === 'session'" x-transition.opacity.120ms>
+						<div x-show="selected && ephemeral(selected)" class="empty-hint">临时会话，不保存记录</div>
+						<div x-show="drawer.loading" class="panel-loading">
+							<div class="skeleton sk-line"></div>
+							<div class="skeleton sk-line"></div>
+							<div class="skeleton sk-line"></div>
+							<div class="t-caption muted">正在加载历史…</div>
+						</div>
+						<div x-show="!drawer.loading && drawer.error" class="notice-error p-3 text-[11px]" x-html="esc('加载失败: ' + drawer.error)"></div>
+						<div x-show="!drawer.loading && !drawer.error && drawer.entries.length === 0 && !(selected && ephemeral(selected))" class="py-10 text-center text-[11px] muted">
+							没有历史记录
+						</div>
+
+						<!-- 加载更早: 历史按时间正序渲染（旧→新），缺失的更早内容在列表顶部 ——
+						     beforeEntryId 向后翻页，旧页前插并保持阅读位置锚定 -->
+						<div class="history-older" x-show="!drawer.loading && !drawer.error && drawer.hasMore">
+							<template x-if="!drawer.loadingOlder">
+								<button class="btn" type="button" @click="loadOlder()">加载更早</button>
+							</template>
+							<div class="older-cue" x-show="drawer.loadingOlder" aria-label="正在加载更早的历史">
+								<div class="skeleton sk-line"></div>
+								<div class="skeleton sk-line"></div>
+							</div>
+						</div>
+
+						<template x-for="(item, itemIdx) in drawer.items" :key="item.key">
+							<div>
+								<!-- 对话块：用户 / 助手 / 其他（保留换行的可读宽度文本） -->
+								<template x-if="item.kind === 'entry'">
+									<div class="entry" :class="item.e.isError ? 'entry-error' : ''">
+										<div class="flex flex-wrap items-center gap-2 text-[10px]">
+											<span class="chip" :class="roleMeta(item.e.role).chip" x-html="esc(roleMeta(item.e.role).label)"></span>
+											<span x-show="item.e.toolName" class="warn-text" x-html="esc(item.e.toolName)"></span>
+											<span x-show="item.e.isError" class="danger-text">错误</span>
+											<span class="ml-auto faint" x-show="showTimeGap(drawer.items, itemIdx)" x-html="esc(relT(item.e.timestamp))"></span>
+										</div>
+										<div class="entry-text" :class="item.e.htmlSafe ? 'entry-md' : ''" x-html="item.e.htmlSafe ?? esc(item.e.text)"></div>
+									</div>
+								</template>
+								<!-- 工具链：连续 toolResult 折叠为一行 ⋯ 工具调用 ×N（chevron 展开） -->
+								<template x-if="item.kind === 'tools'">
+									<div class="entry entry-toolrun" :class="item.errorCount ? 'entry-error' : ''">
+										<button
+											class="toolrun-head"
+											@click="toggleRun(item)"
+											:aria-expanded="item.open ? 'true' : 'false'"
+											:title="esc('工具调用 ×' + item.count)"
+										>
+											<span class="toolrun-caret" :class="item.open ? 'toolrun-open' : ''"><i data-lucide="chevron-right"></i></span>
+											<span class="muted" x-html="esc('⋯ 工具调用 ×' + item.count)"></span>
+											<template x-for="n in item.toolNames" :key="n">
+												<span class="chip chip-tool" :title="esc(n)" x-html="esc(n)"></span>
+											</template>
+											<span x-show="item.extraTools > 0" class="chip chip-muted" x-html="esc('+' + item.extraTools)"></span>
+											<span x-show="item.errorCount > 0" class="danger-text inline-flex items-center gap-0.5" :title="'失败 ' + item.errorCount">
+												<i data-lucide="x" class="h-3 w-3"></i><span x-text="item.errorCount"></span>
+											</span>
+											<span class="ml-auto faint" x-show="showTimeGap(drawer.items, itemIdx)" x-html="esc(relT(item.items[0].timestamp))"></span>
+										</button>
+										<div x-show="item.open" class="toolrun-body">
+											<template x-for="te in item.items" :key="te.id">
+												<div class="toolrun-item">
+													<div class="flex flex-wrap items-center gap-2 text-[10px]">
+														<span class="chip chip-tool" x-html="esc(te.toolName || '工具')"></span>
+														<span x-show="te.isError" class="danger-text">错误</span>
+														<span class="ml-auto faint" x-html="esc(relT(te.timestamp))"></span>
+													</div>
+													<pre class="pre-block" :class="textOpen(te.id) ? '' : 'pre-clamp'" x-html="esc(te.text)"></pre>
+													<button
+														x-show="isLongText(te.text)"
+														class="toolrun-expand"
+														type="button"
+														@click="toggleText(te.id)"
+														:aria-expanded="textOpen(te.id) ? 'true' : 'false'"
+														:aria-label="textOpen(te.id) ? '收起' : '展开'"
+														:title="textOpen(te.id) ? '收起' : '展开'"
+													>
+														<span class="toolrun-caret" :class="textOpen(te.id) ? 'toolrun-open' : ''"><i data-lucide="chevron-right"></i></span>
+													</button>
+												</div>
+											</template>
+										</div>
+									</div>
+								</template>
+							</div>
+						</template>
+					</div>
+
+					<!-- ================= ChangesPanel (Review diff + file activity) ================= -->
+					<div class="panel-view review-panel" x-show="selected && detailTab === 'changes'" x-transition.opacity.120ms>
+						<div x-show="review.sessionId !== (selected && selected.sessionId)" class="panel-loading">
+							<div class="skeleton sk-line"></div>
+							<div class="skeleton sk-line"></div>
+							<div class="t-caption muted">正在加载 Review…</div>
+						</div>
+						<div x-show="selected && ephemeral(selected)" class="empty-hint">临时会话，不保存记录</div>
+						<div x-ref="reviewHost" class="review-host" x-show="!(selected && ephemeral(selected))"></div>
+					</div>
+
+					<!-- ================= TerminalPanel（吸收终端抽屉；⛶ 全屏复用 .drawer 类与同一 termHost） ================= -->
+					<div x-show="selected && detailTab === 'terminal' && !term.open" class="empty">
+						<div class="empty-icon">
+							<i data-lucide="square-terminal" class="icon-16"></i>
+						</div>
+						<p class="empty-title">该实例不在 herdr 中</p>
+					</div>
+					<div
+						class="term-panel"
+						:class="term.fullscreen ? 'drawer term-full' : ''"
+						x-show="selected && detailTab === 'terminal' && term.open"
+						role="region"
+						aria-label="终端面板"
+					>
+						<div class="term-toolbar hairline-b">
+							<span class="mobile-only t-caption warn-text">触屏终端为受限体验</span>
+							<span class="chip chip-accent mono" :title="esc('herdr 目标: ' + term.target)" x-html="esc(term.target)"></span>
+							<div class="seg">
+								<button class="seg-btn" :class="term.mode === 'control' ? 'seg-on' : ''" @click="setTermMode('control')">控制</button>
+								<button class="seg-btn" :class="term.mode === 'observe' ? 'seg-on' : ''" @click="setTermMode('observe')">观察</button>
+							</div>
+							<button
+								class="seg-btn"
+								:class="term.mouse === 'local' ? 'seg-on' : ''"
+								@click="setTermMouse(term.mouse === 'local' ? 'auto' : 'local')"
+								title="鼠标事件: 自动 = 转发给应用（应用捕获鼠标时点击/滚轮直达应用）；本地 = 仅文本选择与本地滚动。Shift+点击/滚轮始终保留本地操作。"
+								x-html="esc(term.mouse === 'local' ? '鼠标·本地' : '鼠标·自动')"
+							></button>
+							<div class="term-toolbar-right">
+								<button class="icon-btn" @click="termReconnect()" title="重新连接终端" aria-label="重新连接终端">
+									<i data-lucide="refresh-cw"></i>
+								</button>
+								<button class="icon-btn" @click="toggleTermFull()" :title="term.fullscreen ? esc('退出全屏') : esc('全屏展开')" aria-label="全屏切换">
+									<i data-lucide="maximize-2"></i>
+								</button>
+								<button class="icon-btn" @click="closeTerminal()" title="关闭终端" aria-label="关闭终端面板">
+									<i data-lucide="x"></i>
+								</button>
+							</div>
+						</div>
+
+						<div class="term-body">
+							<div class="term-host" x-ref="termHost"></div>
+							<div x-show="term.status !== 'open'" class="term-status">
+								<div class="term-status-card">
+									<div x-show="term.status === 'connecting'" class="flex items-center gap-2 text-[11px] muted">
+										<i data-lucide="loader-circle" class="h-4 w-4 animate-spin"></i>
+										<span>正在连接终端…</span>
+									</div>
+									<div x-show="term.status === 'closed'" class="flex flex-col items-center gap-2 text-center">
+										<span class="danger-text text-[11px]">连接已断开</span>
+										<span class="faint text-[10px]" x-html="esc(term.error)"></span>
+										<button class="btn" @click="termReconnect()">
+											<i data-lucide="refresh-cw"></i>
+											<span>重新连接</span>
+										</button>
+									</div>
+									<div x-show="term.status === 'error'" class="flex flex-col items-center gap-2 text-center">
+										<span class="danger-text text-[11px]">终端出错</span>
+										<span class="faint text-[10px]" x-html="esc(term.error)"></span>
+										<button class="btn" @click="termReconnect()">
+											<i data-lucide="refresh-cw"></i>
+											<span>重试</span>
+										</button>
+									</div>
+								</div>
+							</div>
+						</div>
+					</div>
+
+				</div>
+
+				<!-- ================= Composer（统一圆角输入栏：模式/输入/发送 同处一框） ================= -->
+				<footer class="composer hairline-t" x-show="selected">
+					<div class="composer-context">
+						<span class="composer-context-item">
+							<span class="composer-context-label">发送至</span>
+							<strong x-html="esc(selected ? (selected.title || basename(selected.cwd)) + ' · ' + sid8(selected.sessionId) : '—')"></strong>
+						</span>
+						<span class="composer-context-item">
+							<span class="composer-context-label">协作来源</span>
+							<span :title="messageSourceTitle(viewer)" x-html="esc(messageSourceLabel(viewer))"></span>
+						</span>
+						<span class="composer-context-status" :class="'availability-' + (selected ? selected.state : 'closed')" x-html="esc(composerAvailabilityLabel(selectedId))"></span>
+					</div>
+					<div class="composer-field">
+						<div class="seg" role="group" aria-label="发送模式">
+							<button class="seg-btn" :class="cstate(selectedId).mode === 'steer' ? 'seg-on' : ''" type="button" @click="setMode(selectedId, 'steer')" title="转向：在下一次模型调用前纠正当前方向">转向</button>
+							<button class="seg-btn" :class="cstate(selectedId).mode === 'followUp' ? 'seg-on' : ''" type="button" @click="setMode(selectedId, 'followUp')" title="追问：当前回合结束后追加消息">追问</button>
+						</div>
+						<textarea
+							class="composer-input"
+							rows="2"
+							placeholder="输入消息…"
+							title="Enter 发送 · Shift+Enter 换行"
+							x-ref="composerInput"
+							:value="cstate(selectedId).text"
+							@input="setText(selectedId, $event.target.value)"
+							@keydown.enter="onComposerKey($event)"
+							@compositionstart="onComposerCompositionStart()"
+							@compositionend="onComposerCompositionEnd()"
+						></textarea>
+						<button
+							class="composer-send"
+							:class="cstate(selectedId).sending ? 'is-sending' : ''"
+							type="button"
+							:disabled="!(cstate(selectedId).text || '').trim() || cstate(selectedId).sending || !canSendMessage(selectedId)"
+							@click="send(selectedId)"
+							:title="cstate(selectedId).sending ? '该会话正在发送' : (!canSendMessage(selectedId) ? composerAvailabilityLabel(selectedId) : '发送 (Enter)')"
+							aria-label="发送"
+						>
+							<i data-lucide="send"></i>
+						</button>
+					</div>
+					<div class="composer-receipt" x-show="cstate(selectedId).receipt" :class="'receipt-' + ((cstate(selectedId).receipt || {}).state || '')">
+						<span x-html="esc(composerReceiptLabel(selectedId))"></span>
+						<span class="composer-receipt-detail" x-show="cstate(selectedId).receipt && cstate(selectedId).receipt.state === 'unknown'">不要直接重复发送；先检查目标会话是否已收到。</span>
+					</div>
+				</footer>
+			</section>
+		</div>
+
+		<!-- ================= 移动端发现 / 设置面板 ================= -->
+		<section class="mobile-pane" x-show="mobileTab === 'discover'" aria-label="发现">
+			<header class="mobile-pane-head hairline-b">
+				<h2 class="t-title">发现</h2>
+			</header>
+			<div class="mobile-pane-body">
+				<div x-show="activityFeed.length === 0" class="empty-hint">暂无文件活动</div>
+				<template x-for="(f, i) in activityFeed" :key="i">
+					<div class="file-row">
+						<span class="tag" x-html="esc(f.op)"></span>
+						<span class="mono t-caption" x-html="esc(sid8(f.sid))"></span>
+						<span class="min-w-0 truncate mono t-caption" :title="esc(f.path)" x-html="esc(f.path)"></span>
+						<span class="ml-auto faint t-caption nowrap" x-html="esc(relT(f.ts))"></span>
+					</div>
+				</template>
+				<div x-show="followEdges.length === 0" class="empty-hint">暂无关注关系</div>
+				<template x-for="e in followEdges" :key="e.key">
+					<div class="kv">
+						<span class="k mono" x-html="esc(e.from)"></span>
+						<span class="v" x-html="esc('关注 ' + e.to)"></span>
+					</div>
+				</template>
+			</div>
+		</section>
+
+		<section class="mobile-pane" x-show="mobileTab === 'settings'" aria-label="设置">
+			<header class="mobile-pane-head hairline-b">
+				<h2 class="t-title">设置</h2>
+			</header>
+			<div class="mobile-pane-body">
+				<div class="kv">
+					<span class="k"><i data-lucide="eye"></i></span>
+					<button
+						class="viewer-btn"
+						type="button"
+						aria-label="当前视角"
+						:disabled="viewerOptions.length === 0"
+						@click="toggleViewerMenu($event)"
+						@keydown="onViewerKey($event)"
+					>
+						<span class="viewer-title" x-html="esc(viewer ? (viewer.title || basename(viewer.cwd)) : '选择会话')"></span>
+						<span class="viewer-sid mono" x-html="esc(viewer ? sid8(viewer.sessionId) : '')"></span>
+						<i data-lucide="chevron-down" class="viewer-caret"></i>
+					</button>
+				</div>
+				<div class="ov-actions">
+					<button class="icon-btn" @click="toggleTheme()" aria-label="切换深色/浅色主题" title="切换深色/浅色主题">
+						<i data-lucide="sun" class="icon-sun"></i>
+						<i data-lucide="moon" class="icon-moon"></i>
+					</button>
+					<button class="icon-btn" @click="refreshPeers(false)" title="刷新" aria-label="刷新"><i data-lucide="refresh-cw"></i></button>
+					<button class="icon-btn" @click="setPaused(!paused)" :title="paused ? esc('继续') : esc('暂停')" :aria-label="paused ? '继续' : '暂停'">
+						<span x-show="!paused"><i data-lucide="pause"></i></span>
+						<span x-show="paused"><i data-lucide="play"></i></span>
+					</button>
+				</div>
+				<div class="kv">
+					<span class="conn" :class="paused ? 'conn-paused' : connState === 'connected' ? 'conn-ok' : connState === 'retrying' ? 'conn-err' : 'conn-busy'">
+						<span class="conn-dot"></span>
+						<span class="conn-text" x-html="paused ? esc('已暂停') : connState === 'connected' ? esc('已连接') : connState === 'retrying' ? esc('重连中') : esc('连接中')"></span>
+					</span>
+				</div>
+			</div>
+		</section>
+
+		<!-- ================= 移动端底部 tab 栏 ================= -->
+		<nav class="mobile-bar hairline-t" role="tablist" aria-label="主导航">
+			<button class="mobile-tab" :class="mobileTab === 'sessions' ? 'mobile-tab-on' : ''" role="tab" type="button" @click="mobileTab = 'sessions'; mobileView = 'list'">
+				<i data-lucide="messages-square"></i><span>会话</span>
+			</button>
+			<button class="mobile-tab" :class="mobileTab === 'discover' ? 'mobile-tab-on' : ''" role="tab" type="button" @click="mobileTab = 'discover'; mobileView = 'list'">
+				<i data-lucide="compass"></i><span>发现</span>
+			</button>
+			<button class="mobile-tab" :class="mobileTab === 'settings' ? 'mobile-tab-on' : ''" role="tab" type="button" @click="mobileTab = 'settings'; mobileView = 'list'">
+				<i data-lucide="settings"></i><span>设置</span>
+			</button>
+		</nav>
+
+		<!-- ================= CommandBar（⌘K 模态：分组命令 + 最近会话） ================= -->
+		<div class="cmdk-scrim" x-show="cmd.open" @click="closeCommand()"></div>
+		<div class="cmdk e2" x-show="cmd.open" role="dialog" aria-label="命令面板">
+			<div class="cmdk-input-row hairline-b">
+				<i data-lucide="search"></i>
+				<input
+					class="cmdk-input"
+					type="text"
+					placeholder="搜索命令或会话…"
+					x-ref="cmdInput"
+					x-model="cmd.query"
+					@keydown="onCmdKey($event)"
+					aria-label="搜索命令或会话"
+				/>
+				<span class="kbd">Esc</span>
+			</div>
+			<div class="cmdk-list">
+				<template x-for="(c, i) in cmdItems" :key="c.id">
+					<div>
+						<div class="menu-label" x-show="i === 0 || c.group !== cmdItems[i - 1].group" x-html="esc(c.group)"></div>
+						<button
+							class="cmdk-item"
+							:class="i === cmd.index ? 'cmdk-on' : ''"
+							@click="runCommand(c)"
+							@mouseenter="cmd.index = i"
+						>
+							<i :data-lucide="c.icon"></i>
+							<span class="t-row" x-html="esc(c.label)"></span>
+							<span class="cmdk-hint t-caption faint" x-html="esc(c.hint || '')"></span>
+						</button>
+					</div>
+				</template>
+				<div x-show="cmdItems.length === 0" class="cmdk-empty t-caption muted">没有匹配的命令</div>
+			</div>
+		</div>
+
+		<!-- ================= ConfirmPopover（锚定确认：取消 / 恢复 + fork） ================= -->
+		<div class="confirm-scrim" x-show="confirmAction" @click="closeConfirm()"></div>
+		<div
+			class="confirm-popover e1"
+			x-show="confirmAction"
+			:style="'left:' + confirmX + 'px;top:' + confirmY + 'px'"
+			role="dialog"
+			aria-label="确认操作"
+		>
+			<template x-if="confirmAction === 'cancel'">
+				<div class="confirm-inner">
+					<div class="t-caption">确认取消任务？</div>
+					<div class="confirm-actions">
+						<button class="btn btn-danger press" @click="doCancel(confirmFor)">确认取消</button>
+						<button class="btn press" @click="closeConfirm()">再想想</button>
+					</div>
+				</div>
+			</template>
+			<template x-if="confirmAction === 'resume'">
+				<div class="confirm-inner">
+					<div
+						class="t-caption accent-text"
+						x-html="esc('在独立 herdr 工作区恢复 ' + (resumeFor && peerById(resumeFor) ? (peerById(resumeFor).title || basename(peerById(resumeFor).cwd)) : sid8(resumeFor)) + '?')"
+					></div>
+					<label class="confirm-fork" title="--fork">
+						<input class="check-input" type="checkbox" :checked="resumeFork" @change="resumeFork = $event.target.checked" />
+						<span class="check-box" :class="resumeFork ? 'check-on' : ''" aria-hidden="true">
+							<span class="check-mark" x-show="resumeFork"><i data-lucide="check"></i></span>
+						</span>
+						<span>--fork · 分叉新对话，不续写原会话</span>
+					</label>
+					<div class="confirm-actions">
+						<button class="btn btn-primary press" @click="doResume()">
+							<i data-lucide="rotate-ccw"></i><span>恢复</span>
+						</button>
+						<button class="btn press" @click="closeConfirm()">取消</button>
+					</div>
+				</div>
+			</template>
+		</div>
+
+		<!-- ================= ViewerMenu（自定义下拉：当前视角，↑↓/Enter/Esc） ================= -->
+		<div class="menu viewer-menu menu-at e1" x-show="viewerOpen" @click.outside="viewerOpen = false" @keydown="onViewerKey($event)" role="listbox" aria-label="当前视角">
+			<template x-for="(v, vi) in viewerOptions" :key="v.sessionId">
+				<button
+					class="menu-item viewer-item"
+					:class="vi === viewerIndex ? 'menu-focus' : ''"
+					type="button"
+					role="option"
+					:aria-selected="v.sessionId === viewerId ? 'true' : 'false'"
+					@mouseenter="viewerIndex = vi"
+					@click="setViewer(v.sessionId); viewerOpen = false"
+				>
+					<span class="viewer-item-title" x-html="esc(v.label)"></span>
+					<span class="viewer-check" x-show="v.sessionId === viewerId"><i data-lucide="check"></i></span>
+				</button>
+			</template>
+		</div>
+
+		<!-- ================= ContextMenu（右键：新建对话到 herdr，锚定鼠标处） ================= -->
+		<div class="confirm-scrim" x-show="ctx.open" @click="ctx.open = false"></div>
+		<div
+			class="menu ctx-menu menu-at e1"
+			x-show="ctx.open"
+			role="menu"
+			aria-label="上下文菜单"
+		>
+			<div class="menu-label" x-html="esc(ctx.cwd ? midTrunc(ctx.cwd, 42) : '默认目录')"></div>
+			<button class="menu-item" role="menuitem" @click="newHerdrSession()" title="在独立 herdr 工作区中启动一个新的 pi 会话">
+				<i data-lucide="square-pen"></i><span>新建对话到 herdr</span>
+			</button>
+		</div>
+
+		<!-- ================= Toasts ================= -->
+		<div class="toasts-layer">
+			<template x-for="t in toasts" :key="t.id">
+				<div
+					class="toast pointer-events-auto"
+					:class="t.kind === 'error' ? 'toast-error' : t.kind === 'success' ? 'toast-success' : 'toast-info'"
+					x-transition.opacity
+					x-html="esc(t.msg)"
+				></div>
+			</template>
+		</div>
+	</body>
+</html>
