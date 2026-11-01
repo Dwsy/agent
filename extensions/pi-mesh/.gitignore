@@ -1,0 +1,3 @@
+# Real-browser screenshots are local evidence only: they never enter git.
+# The record that lives in the repository is docs/ux-*/VERDICT.md (+ metrics.json).
+docs/**/*.png

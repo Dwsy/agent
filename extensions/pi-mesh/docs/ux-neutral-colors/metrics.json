@@ -1,0 +1,38 @@
+[
+  {
+    "minContrast": 4.674238598716822,
+    "samples": {
+      ".chip-assistant": "rgb(89, 89, 89)",
+      ".chip-tool": "rgb(89, 89, 89)",
+      ".chip-user": "rgb(89, 89, 89)",
+      ".chip-viewer": "rgb(89, 89, 89)",
+      ".list-head": "rgb(240, 240, 240)",
+      ".list-search": "rgb(250, 250, 250)",
+      ".peer-row.row-sel": "rgb(222, 222, 222)",
+      ".session-list": "rgb(240, 240, 240)",
+      ".topbar": "rgb(246, 246, 246)",
+      "edge": "rgb(119, 119, 119)"
+    },
+    "scroll": 1440,
+    "theme": "light",
+    "width": 1440
+  },
+  {
+    "minContrast": 4.60154559988513,
+    "samples": {
+      ".chip-assistant": "rgb(179, 179, 179)",
+      ".chip-tool": "rgb(179, 179, 179)",
+      ".chip-user": "rgb(179, 179, 179)",
+      ".chip-viewer": "rgb(179, 179, 179)",
+      ".list-head": "rgb(37, 37, 37)",
+      ".list-search": "rgb(48, 48, 48)",
+      ".peer-row.row-sel": "rgb(59, 59, 59)",
+      ".session-list": "rgb(37, 37, 37)",
+      ".topbar": "rgb(37, 37, 37)",
+      "edge": "rgb(170, 170, 170)"
+    },
+    "scroll": 1440,
+    "theme": "dark",
+    "width": 1440
+  }
+]

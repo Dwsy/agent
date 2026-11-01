@@ -17,12 +17,14 @@
 | --- | --- |
 | [ux-rework-spec.md](ux-rework-spec.md) | Session Workbench 的原始规格（布局/交互/组件/迁移序），历史基线 |
 | [ux-verify/VERDICT.md](ux-verify/VERDICT.md) | 4 轮真实浏览器验收（loop 0→4）的判定与截图索引 |
-| [ux-verify/](ux-verify/) | 验收截图 `v1-*` … `v5-*`（1440 / 900 / 390，双主题） |
 | [ux-review-a/](ux-review-a/) | 流程评审①：旅程记分卡 + 真实浏览器截图 |
 | [ux-review-b/](ux-review-b/) | 质感评审②：native 评分 + 逐项参数建议 |
 | [ux-merge/VERDICT.md](ux-merge/VERDICT.md) | 左栏并入列表（两栏）的真实浏览器验收：loop 0 三个发现 → loop 1 PASS |
 
 存档是历史证据，不追改。新一轮验收**追加**章节，不覆盖旧判定。
+
+截图（`docs/**/*.png`）只留在本机并被 gitignore：仓库里的记录是 VERDICT 的判定
+文字与 `metrics.json`，不是图片。
 
 ## 阅读路径
 
