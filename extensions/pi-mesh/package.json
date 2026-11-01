@@ -1,0 +1,21 @@
+{
+  "name": "pi-mesh",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "description": "Multi-pi awareness & communication mesh: state, file activity, git grouping, inter-pi messaging, WebUI",
+  "dependencies": {
+    "@pierre/diffs": "^1.6.2",
+    "@wterm/dom": "^0.5.7",
+    "@wterm/ghostty": "^0.5.7",
+    "@xingwangzhe/satteri-mermaid": "^0.8.2",
+    "diff": "^9.0.0",
+    "dompurify": "^3.4.17",
+    "satteri": "^0.10.5",
+    "satteri-expressive-code": "^0.1.31",
+    "ws": "^8.22.0"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.18.2"
+  }
+}
