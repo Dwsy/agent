@@ -193,7 +193,11 @@ async function handlePush(push: HubPush): Promise<PushResponse> {
 	try {
 		if (push.type === "deliver_message") {
 			if (!api) return { type: "push_response", id, ok: false, error: "pi-mesh: extension API unavailable" };
-			api.sendUserMessage(push.text, { deliverAs: push.mode });
+			// Prefix the message with a one-line sender attribution so the
+			// receiving pi can tell who sent it. Only add when we know the sender.
+			const attr = push.fromLabel ? `[pi-mesh] 来自 ${push.fromLabel} (${push.fromSessionId?.slice(-8) ?? ""})` : (push.fromSessionId ? `[pi-mesh] 来自会话 ${push.fromSessionId.slice(-8)}` : "");
+			const text = attr ? `${attr}\n${push.text}` : push.text;
+			api.sendUserMessage(text, { deliverAs: push.mode });
 			return { type: "push_response", id, ok: true, disposition: "started" };
 		}
 		if (push.type === "cancel") {

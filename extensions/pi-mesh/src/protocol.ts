@@ -135,8 +135,8 @@ export type HubRequest =
 	| { id: string; type: "follow"; sessionId: string; targetSessionId: string }
 	| { id: string; type: "unfollow"; sessionId: string; targetSessionId: string }
 	/**
-	 * CAS lease before launching a resume (idempotency / double-resume mutex).
-	 * Errors: "unknown session" | "already live" | "lease held".
+	 * CAS lease before launching a resume. Every attempt obtains a new fencing
+	 * token; the same UI owner is NOT a retry identity.
 	 */
 	| {
 			id: string;
@@ -146,15 +146,18 @@ export type HubRequest =
 			owner: string;
 			ttlMs?: number;
 	  }
-	/** Append a ResumeRecord + release the lease once the herdr launch landed. */
+	/** Record lineage only; do NOT release until the resumed Pi registers. */
 	| {
 			id: string;
 			type: "record_resume";
 			sessionId: string;
 			owner: string;
+			token: string;
 			herdrWorkspaceId?: string;
 			herdrPaneId?: string;
 	  }
+	/** Release only an exact failed, not-yet-started attempt. */
+	| { id: string; type: "release_resume"; sessionId: string; owner: string; token: string }
 	| { id: string; type: "query_peers" }
 	| {
 			id: string;
@@ -176,7 +179,7 @@ export type HubRequest =
 
 /** Hub -> extension push (routed control plane). */
 export type HubPush =
-	| { type: "deliver_message"; id: string; text: string; mode: DeliveryMode }
+	| { type: "deliver_message"; id: string; text: string; mode: DeliveryMode; /** Sender session id (when known). */ fromSessionId?: string; /** Human-readable sender label (title or cwd basename). */ fromLabel?: string }
 	| { type: "cancel"; id: string }
 	| { type: "peer_state_changed"; id: string; peer: PeerStateNotice };
 
@@ -227,11 +230,13 @@ export type HubMessage = HubRequest | HubPush | PushResponse | HubResponse;
  * POST /api/herdr/new-session   {cwd?, label?}      -> { ok, message, workspaceId?, paneId? }
  * GET  /api/herdr                                  -> { agents: [{paneId, workspaceId, sessionPath, status}] }
  *
- * WS   /api/terminal?target=<pane|agent>&mode=control|observe&cols&rows
+ * WS   /api/terminal?target=<pane|agent>&mode=control|observe&cols&rows[&owner&attachId]
  *      JSONL envelope verbatim to/from `herdr terminal session`:
  *        -> {"type":"terminal.input","bytes":"<base64>"} | terminal.resize | ...
  *        <- {"bytes":"<base64>"} ... {"type":"terminal.closed","reason":...}
- *      observe mode drops all client input (read-only mirror).
+ *      observe mode drops all client input (read-only mirror). Conflicting
+ *      live attach -> terminal.error {reason:"already attached",owner,attachId},
+ *      WS close 4409. Existing owner is never automatically displaced.
  * GET  /api/events                             -> SSE stream of HubEvent
  * GET  /                                       -> static WebUI
  */

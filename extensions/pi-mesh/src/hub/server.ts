@@ -149,10 +149,14 @@ export async function createHubServer(
 						data: registry.recordResume({
 							sessionId: req.sessionId,
 							owner: req.owner,
+							token: req.token,
 							herdrWorkspaceId: req.herdrWorkspaceId,
 							herdrPaneId: req.herdrPaneId,
 						}),
 					};
+				case "release_resume":
+					registry.releaseResume(req);
+					return { ok: true };
 				case "query_peers":
 					return { ok: true, data: { peers: registry.list() } };
 				case "query_transcript": {
@@ -169,14 +173,22 @@ export async function createHubServer(
 					}
 				}
 				case "send_message": {
+					// Resolve sender identity for the recipient-side attribution line.
+					const sender = opts?.senderSessionId ?? req.fromSessionId;
+					let fromLabel: string | undefined;
+					if (sender) {
+						const rec = registry.get(sender);
+						fromLabel = rec?.title || (rec?.cwd ? String(rec.cwd).split("/").pop() : undefined);
+					}
 					const result = await routePush(connections, pending, registry, req.targetSessionId, {
 						type: "deliver_message",
 						id: nextPushId(),
 						text: req.text,
 						mode: req.mode,
+						fromSessionId: sender,
+						fromLabel,
 					});
 					// Messaging a peer auto-follows it (explicit unfollow detaches).
-					const sender = opts?.senderSessionId ?? req.fromSessionId;
 					if (result.ok && sender) {
 						try {
 							registry.follow(sender, req.targetSessionId);
