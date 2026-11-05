@@ -16,7 +16,7 @@
     ]
   },
   "scripts": {
-    "test": "node --test test/mcp-client.test.mjs && node test/smoke-index.mjs"
+    "test": "node --test --test-force-exit --test-timeout=5000 test/mcp-client.test.mjs && node --test-force-exit test/smoke-index.mjs"
   },
   "engines": {
     "node": ">=22.14.0"

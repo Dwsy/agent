@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -16,7 +17,7 @@ const treeClientPath = path.join(fixturesDir, "tree-computer-use.mjs");
 
 // 每个测试独享一个 socket 目录：守护进程按 socket 隔离，互不串扰。
 async function freshEnv(clientPath, extra = {}) {
-	const dir = path.join(tmpdir(), `computer-use-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+	const dir = path.join(tmpdir(), `cu-${Date.now().toString(36)}-${randomUUID().slice(0, 8)}`);
 	await mkdir(dir, { recursive: true });
 	return {
 		dir,
@@ -87,7 +88,7 @@ test("times out when the bridge never answers initialize", async () => {
 
 test("recycles the transport and retries read-only actions after a transient upstream error", async () => {
 	await chmod(transientClientPath, 0o755);
-	const dir = path.join(tmpdir(), `computer-use-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+	const dir = path.join(tmpdir(), `cu-${Date.now().toString(36)}-${randomUUID().slice(0, 8)}`);
 	await mkdir(dir, { recursive: true });
 	const marker = path.join(dir, "marker");
 	const attempts = path.join(dir, "attempts");
@@ -112,9 +113,38 @@ test("recycles the transport and retries read-only actions after a transient ups
 	}
 });
 
+test("recycles the transport after a stale AppleScript session error (-600)", async () => {
+	await chmod(transientClientPath, 0o755);
+	const dir = path.join(tmpdir(), `cu-${Date.now().toString(36)}-${randomUUID().slice(0, 8)}`);
+	await mkdir(dir, { recursive: true });
+	const marker = path.join(dir, "marker");
+	const attempts = path.join(dir, "attempts");
+	await writeFile(marker, "1");
+	// 🎯 长驻客户端绑定到已重启的 Computer Use 服务时，上游不是 -100xx 而是
+	// procNotFound(-600)；同样必须换新整链，否则会话永久卡死。
+	const { env } = await freshEnv(transientClientPath, {
+		TRANSIENT_MARKER: marker,
+		TRANSIENT_ATTEMPTS: attempts,
+		TRANSIENT_MESSAGE:
+			'Error Domain=NSOSStatusErrorDomain Code=-600 "procNotFound: no eligible process with specified descriptor"',
+	});
+
+	const client = new ComputerUseMcpClient({ env });
+
+	try {
+		const result = await client.callTool("get_app_state", { app: "Fake App" });
+		assert.equal(result.isError, undefined);
+		assert.equal(result.content[0].text, "ok:get_app_state");
+		assert.deepEqual((await readFile(attempts, "utf8")).trim().split("\n"), ["get_app_state", "get_app_state"]);
+	} finally {
+		client.close();
+		await rm(dir, { recursive: true, force: true });
+	}
+});
+
 test("never replays mutating actions after a transient upstream error", async () => {
 	await chmod(transientClientPath, 0o755);
-	const dir = path.join(tmpdir(), `computer-use-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+	const dir = path.join(tmpdir(), `cu-${Date.now().toString(36)}-${randomUUID().slice(0, 8)}`);
 	await mkdir(dir, { recursive: true });
 	const marker = path.join(dir, "marker");
 	const attempts = path.join(dir, "attempts");
@@ -145,7 +175,7 @@ test("never replays mutating actions after a transient upstream error", async ()
 
 test("idle shutdown kills the whole bridge process tree", async () => {
 	await chmod(treeClientPath, 0o755);
-	const dir = path.join(tmpdir(), `computer-use-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+	const dir = path.join(tmpdir(), `cu-${Date.now().toString(36)}-${randomUUID().slice(0, 8)}`);
 	await mkdir(dir, { recursive: true });
 	const pidFile = path.join(dir, "pids");
 	const { env } = await freshEnv(treeClientPath, { TREE_PIDFILE: pidFile });
@@ -170,7 +200,7 @@ test("idle shutdown kills the whole bridge process tree", async () => {
 
 test("multiple clients share one daemon and one bridge chain", async () => {
 	await chmod(treeClientPath, 0o755);
-	const dir = path.join(tmpdir(), `computer-use-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+	const dir = path.join(tmpdir(), `cu-${Date.now().toString(36)}-${randomUUID().slice(0, 8)}`);
 	await mkdir(dir, { recursive: true });
 	const pidFile = path.join(dir, "pids");
 	const { env } = await freshEnv(treeClientPath, { TREE_PIDFILE: pidFile });
