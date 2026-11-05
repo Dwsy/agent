@@ -52,7 +52,8 @@ show(next);
 
 - GUI 动作必须**顺序 await**（顺序决定结果），不要并行发 UI 动作。
 - `action-list` / `action-schema` 由本地目录应答，零上游开销，脚本里可放心用于分支。
-- 上游返回 `Computer Use server error -100xx`（运行时重启/认证失效）时，
+- 上游返回 `Computer Use server error -100xx`（运行时重启/认证失效）或
+  `-600 procNotFound`（Computer Use 服务重启，长驻会话失效）时，
   只读动作（`list_apps`、`get_app_state`）会自动换新传输并重试一次；
   有副作用的动作**不自动重放**（可能已执行），请重新 `get_app_state` 核对实际结果再决定。
 - 跨脚本游标（如 element_index、进度）用 `store()` / `load()` 传递。

@@ -17,8 +17,9 @@ const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
 
 // 只读动作可安全重放；有副作用的动作（click/type/...）重放会翻倍执行。
 const READ_ONLY_ACTIONS = new Set(["list_apps", "get_app_state"]);
-// 上游运行时重启或认证失效时返回的临时服务错误（-100xx）。
-const TRANSIENT_SERVER_ERROR_RE = /Computer Use server error -1\d{4}/;
+// 上游临时失效：运行/认证重启返回 -100xx；-600 procNotFound 是长驻 AppleScript
+// 会话随 Computer Use 服务重启而失效。
+const TRANSIENT_SERVER_ERROR_RE = /Computer Use server error -1\d{4}|procNotFound|Code=-600\b/;
 
 function isTransientServerError(result) {
 	if (!result?.isError) return false;
@@ -52,7 +53,7 @@ export class ComputerUseMcpClient {
 	#startPromise;
 	#requestTimeoutMs;
 	#closing = false;
-	#daemonSpawned = false;
+	#lastSpawnAt = 0;
 
 	constructor(options = {}) {
 		this.#daemonPath = options.daemonPath ?? DEFAULT_DAEMON_PATH;
@@ -60,6 +61,13 @@ export class ComputerUseMcpClient {
 		this.#sockPath =
 			options.daemonSock ?? this.#env.COMPUTER_USE_DAEMON_SOCK?.trim() ?? DEFAULT_SOCK;
 		this.#requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
+		// 🎯 macOS unix socket 路径上限约 104 字节，超限只会得到含糊的 EINVAL
+		// （listen 失败、connect 永远失败），必须在配置入口直接拒绝。
+		if (Buffer.byteLength(this.#sockPath) > 100) {
+			throw new Error(
+				`Computer Use daemon socket path is too long (${Buffer.byteLength(this.#sockPath)} bytes > 100): ${this.#sockPath}`,
+			);
+		}
 	}
 
 	async start() {
@@ -83,7 +91,10 @@ export class ComputerUseMcpClient {
 		this.#socket.on("error", (error) => this.#failAll(error));
 		this.#socket.on("close", () => {
 			this.#socket = undefined;
-			if (!this.#closing) this.#failAll(new Error("Computer Use daemon connection closed"));
+			if (!this.#closing) {
+				this.#startPromise = undefined;
+				this.#failAll(new Error("Computer Use daemon connection closed"));
+			}
 		});
 
 		const initialized = await this.#request("initialize", {
@@ -127,10 +138,11 @@ export class ComputerUseMcpClient {
 	}
 
 	#ensureDaemon() {
-		if (this.#daemonSpawned) return;
-		this.#daemonSpawned = true;
-		// 🎯 守护进程必须监听本客户端要连的 socket，否则它默认到 tmpdir；
-		// 同时存在就把 socket 环境变量显式传下去。
+		// 守护进程可能已退出（空闲超时等）：每次连接失败都尝试重新拉起。
+		// 时间守卫：2 秒内不重复 spawn，避免多轮重试拉起多个进程。
+		const now = Date.now();
+		if (now - this.#lastSpawnAt < 2000) return;
+		this.#lastSpawnAt = now;
 		const child = spawn(process.execPath, [this.#daemonPath], {
 			env: { ...this.#env, COMPUTER_USE_DAEMON_SOCK: this.#sockPath },
 			stdio: "ignore",

@@ -8,6 +8,9 @@ import { appendFileSync, existsSync, unlinkSync } from "node:fs";
 
 const markerPath = process.env.TRANSIENT_MARKER ?? "";
 const attemptsPath = process.env.TRANSIENT_ATTEMPTS ?? "";
+const errorText =
+  process.env.TRANSIENT_MESSAGE ??
+  "Computer Use server error -10000: Sender process is not authenticated";
 
 let buffer = "";
 
@@ -63,9 +66,7 @@ function handle(message) {
         id: message.id,
         result: {
           isError: true,
-          content: [
-            { type: "text", text: "Computer Use server error -10000: Sender process is not authenticated" },
-          ],
+          content: [{ type: "text", text: errorText }],
         },
       });
       return;

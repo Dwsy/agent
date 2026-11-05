@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-// Shared Computer Use daemon: holds ONE bridge chain (bridge → codex sandbox →
+// Shared Computer Use daemon: holds ONE bridge chain (bridge → OpenAI-signed node →
 // Sky client) and multiplexes MCP JSON-RPC for every Pi session over a unix
 // socket, so N sessions cost one process tree instead of N.
 //
@@ -26,8 +26,9 @@ const BRIDGE_PATH = path.join(
 	path.dirname(fileURLToPath(import.meta.url)),
 	"computer-use-mcp-bridge.mjs",
 );
-// 上游运行时重启或认证失效时返回的临时服务错误（-100xx）：换新整链即可恢复。
-const TRANSIENT_RE = /Computer Use server error -1\d{4}/;
+// 上游临时失效：运行/认证重启返回 -100xx；-600 procNotFound 是长驻 AppleScript
+// 会话随 Computer Use 服务重启而失效，两种情况都只有换新整链才能恢复。
+const TRANSIENT_RE = /Computer Use server error -1\d{4}|procNotFound|Code=-600\b/;
 
 function debug(message) {
 	if (DEBUG) process.stderr.write(`[cu-daemon] ${message}\n`);
@@ -74,7 +75,7 @@ function startBridge() {
 	bridge = spawn(process.execPath, [BRIDGE_PATH], {
 		env: process.env,
 		stdio: ["pipe", "pipe", "pipe"],
-		// 独立进程组：退出时可整组击杀 bridge 拉起的 sandbox/Sky 孙进程。
+		// 独立进程组：退出时可整组击杀 bridge 拉起的官方 node/Sky 孙进程。
 		detached: true,
 	});
 	bridge.stderr.setEncoding("utf8");
