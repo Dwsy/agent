@@ -1,6 +1,6 @@
 # Pi Computer Use
 
-A Pi extension adapted from [`songkeys/kimi-computer-use`](https://github.com/songkeys/kimi-computer-use). It starts the locally installed OpenAI Computer Use MCP client through the signed Codex launcher, dynamically registers its tools in Pi, and preserves screenshot image blocks.
+A Pi extension adapted from [`songkeys/kimi-computer-use`](https://github.com/songkeys/kimi-computer-use). It starts the locally installed OpenAI Computer Use MCP client under the app-bundled OpenAI-signed node (the Sky service authenticates its parent process by signing team), dynamically registers its tools in Pi, and preserves screenshot image blocks.
 
 ## Requirements
 
@@ -11,7 +11,7 @@ A Pi extension adapted from [`songkeys/kimi-computer-use`](https://github.com/so
 Default paths:
 
 - Client: `$CODEX_HOME/computer-use/Codex Computer Use.app/Contents/SharedSupport/SkyComputerUseClient.app/Contents/MacOS/SkyComputerUseClient`
-- Signed launcher: `/Applications/ChatGPT.app/Contents/Resources/codex`, then `/Applications/Codex.app/Contents/Resources/codex`
+- Official node (spawns the client; no Codex CLI or desktop app process needed): `/Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node`, then `/Applications/Codex.app` equivalent
 
 `CODEX_HOME` defaults to `~/.codex`.
 
@@ -35,8 +35,8 @@ for (const c of state.content ?? []) c.type === "image" ? image(c) : text(c.text
 ```
 
 Read-only actions (`list_apps`, `get_app_state`) are retried once on a fresh transport after
-transient upstream server errors (`-100xx`, e.g. the Codex runtime restarting); mutating actions
-are never replayed automatically.
+transient upstream failures (`-100xx` server errors, or `-600 procNotFound` when the Computer Use
+service restarted under a long-lived client); mutating actions are never replayed automatically.
 
 Use `/computer-use-mode skill` to switch to the **skill** mode, `/computer-use-mode progressive`
 to return to the single gateway, or `/computer-use-mode` to toggle. Run `/computer-use-status` to
@@ -62,7 +62,7 @@ client, so N sessions cost one chain instead of N.
 
 ```text
 Pi session A ─┐
-Pi session B ─┼─ unix socket ─> computer-use-daemon ─> bridge ─> codex sandbox ─> Sky client
+Pi session B ─┼─ unix socket ─> computer-use-daemon ─> bridge ─> OpenAI node ─> Sky client
 Pi session C ─┘                     (one chain)
 ```
 
@@ -74,7 +74,8 @@ requests are serialized across clients because the GUI is a single shared resour
 
 - `CODEX_HOME`: override the Codex data directory
 - `COMPUTER_USE_CLIENT_PATH`: override the full Computer Use client path
-- `COMPUTER_USE_CODEX_LAUNCHER_PATH`: override the signed Codex launcher
+- `COMPUTER_USE_NODE_PATH`: override the OpenAI-signed node binary used to spawn the client
+- `COMPUTER_USE_CODEX_APP`: override the Codex/ChatGPT app bundle used to locate that node
 - `COMPUTER_USE_BRIDGE_DEBUG=1`: print bridge diagnostics to stderr
 - `COMPUTER_USE_DAEMON_SOCK`: override the daemon socket path (default `$TMPDIR/pi-computer-use-daemon.sock`)
 - `COMPUTER_USE_DAEMON_IDLE_MS`: idle time before the daemon exits (default `600000`)
