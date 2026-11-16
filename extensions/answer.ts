@@ -20,6 +20,8 @@ import {
 	Key,
 	matchesKey,
 	truncateToWidth,
+	type TuiMouseEvent,
+	type TuiMouseEventResult,
 	visibleWidth,
 	wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
@@ -223,6 +225,12 @@ class QnAComponent implements Component {
 	invalidate(): void {
 		this.cachedWidth = undefined;
 		this.cachedLines = undefined;
+	}
+
+	handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
+		const result = this.editor.handleMouse?.(event);
+		if (result) this.invalidate();
+		return result;
 	}
 
 	handleInput(data: string): void {

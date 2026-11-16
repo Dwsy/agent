@@ -17,15 +17,17 @@ import {
   type ThinkingLevel as AiThinkingLevel,
 } from "@earendil-works/pi-ai";
 import {
-  Container,
   Input,
   Markdown,
   truncateToWidth,
   visibleWidth,
+  type Component,
   type Focusable,
   type KeybindingsManager,
   type OverlayHandle,
   type TUI,
+  type TuiMouseEvent,
+  type TuiMouseEventResult,
 } from "@earendil-works/pi-tui";
 
 const BTW_ENTRY_TYPE = "btw-thread-entry";
@@ -219,7 +221,7 @@ function notify(
   }
 }
 
-class BtwOverlay extends Container implements Focusable {
+class BtwOverlay implements Component, Focusable {
   private readonly input: Input;
   private readonly tui: TUI;
   private readonly theme: ExtensionContext["ui"]["theme"];
@@ -254,7 +256,6 @@ class BtwOverlay extends Container implements Focusable {
     onSubmit: (value: string) => void,
     onDismiss: () => void,
   ) {
-    super();
     this.tui = tui;
     this.theme = theme;
     this.keybindings = keybindings;
@@ -270,6 +271,12 @@ class BtwOverlay extends Container implements Focusable {
     this.input.onEscape = () => {
       this.onDismissCallback();
     };
+  }
+
+  invalidate(): void {}
+
+  handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
+    return this.input.handleMouse?.(event);
   }
 
   handleInput(data: string): void {
@@ -307,7 +314,7 @@ class BtwOverlay extends Container implements Focusable {
     );
   }
 
-  override render(width: number): string[] {
+  render(width: number): string[] {
     const dialogWidth = Math.max(56, Math.min(width, Math.floor(width * 0.9)));
     const innerWidth = Math.max(40, dialogWidth - 2);
     const terminalRows = process.stdout.rows ?? 30;

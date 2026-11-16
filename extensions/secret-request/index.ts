@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Input, Key, matchesKey, Text } from "@earendil-works/pi-tui";
+import type { TuiMouseEvent, TuiMouseEventResult } from "@earendil-works/pi-tui";
 import { Type } from "@sinclair/typebox";
 
 const execFileAsync = promisify(execFile);
@@ -204,6 +205,11 @@ async function promptSecret(ctx: any, title: string): Promise<string | undefined
         return cached;
       },
       invalidate() { cached = undefined; },
+      handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
+        const result = input.handleMouse?.(event);
+        if (result) refresh();
+        return result;
+      },
       handleInput(data: string) {
         if (matchesKey(data, Key.escape)) {
           done(undefined);

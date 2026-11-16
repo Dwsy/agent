@@ -1,5 +1,5 @@
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
-import type { SettingItem } from "@earendil-works/pi-tui";
+import type { SettingItem, TuiMouseEvent } from "@earendil-works/pi-tui";
 import { toOnOff } from "./boolean-format.js";
 import { ZellijModal, ZellijSettingsModal } from "./zellij-modal.js";
 import { getRtkArgumentCompletions } from "./command-completions.js";
@@ -523,6 +523,9 @@ async function openSettingsModal(ctx: ExtensionCommandContext, controller: RtkIn
 				},
 				invalidate() {
 					modal.invalidate();
+				},
+				handleMouse(event: TuiMouseEvent) {
+					return modal.handleMouse(event);
 				},
 				handleInput(data: string) {
 					modal.handleInput(data);

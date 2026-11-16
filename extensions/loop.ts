@@ -18,7 +18,7 @@
 import { Type } from "@sinclair/typebox";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { compact } from "@earendil-works/pi-coding-agent";
-import { type AutocompleteItem, Container, type SelectItem, SelectList, Text } from "@earendil-works/pi-tui";
+import { type AutocompleteItem, Container, type SelectItem, SelectList, Text, type TuiMouseEvent } from "@earendil-works/pi-tui";
 import { DynamicBorder } from "@earendil-works/pi-coding-agent";
 
 type LoopMode = "tests" | "custom" | "self" | "debug" | "tdd" | "review" | "verify";
@@ -319,6 +319,9 @@ export default function loopExtension(pi: ExtensionAPI): void {
 				},
 				invalidate() {
 					container.invalidate();
+				},
+				handleMouse(event: TuiMouseEvent) {
+					return container.handleMouse(event);
 				},
 				handleInput(data: string) {
 					selectList.handleInput(data);

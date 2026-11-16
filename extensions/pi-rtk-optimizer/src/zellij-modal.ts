@@ -10,6 +10,8 @@ import {
 	truncateToWidth,
 	visibleWidth,
 	type SettingItem,
+	type TuiMouseEvent,
+	type TuiMouseEventResult,
 } from "@earendil-works/pi-tui";
 
 const ANSI_RESET = "\x1b[0m";
@@ -254,6 +256,8 @@ export interface ZellijModalContentRenderer {
 	invalidate(): void;
 	/** Optional input handler. */
 	handleInput?(data: string): void;
+	/** Optional normalized mouse handler. */
+	handleMouse?(event: TuiMouseEvent): TuiMouseEventResult | undefined;
 }
 
 /**
@@ -658,6 +662,7 @@ export class ZellijModal implements ZellijModalComponent {
 
 	private frame: ZellijModalFrame;
 	private palette: ZellijColorPalette;
+	private lastFrame?: ZellijModalRenderOutput;
 
 	constructor(content: ZellijModalContentRenderer, config: ZellijModalConfigPartial = {}, theme?: Theme) {
 		if (!content || typeof content.render !== "function") {
@@ -710,7 +715,9 @@ export class ZellijModal implements ZellijModalComponent {
 	renderModal(width: number): ZellijModalRenderOutput {
 		const frameWidth = this.resolveModalWidth(width);
 		const contentLines = this.render(frameWidth);
-		return this.frame.renderFrame(contentLines, frameWidth, this.palette);
+		const output = this.frame.renderFrame(contentLines, frameWidth, this.palette);
+		this.lastFrame = output;
+		return output;
 	}
 
 	/**
@@ -725,6 +732,19 @@ export class ZellijModal implements ZellijModalComponent {
 	 */
 	handleInput(data: string): void {
 		this.content.handleInput?.(data);
+	}
+
+	handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
+		// The frame adds a title bar and one border column; render() adds padding
+		// rows/columns before the content renderer's own output.
+		const originY = (this.lastFrame?.contentStartLine ?? 0) + this.config.padding;
+		const originX = 1 + this.config.padding;
+		return this.content.handleMouse?.({
+			...event,
+			x: event.x - originX,
+			y: event.y - originY,
+			width: this.lastFrame?.contentWidth ?? event.width,
+		});
 	}
 
 	/**
@@ -808,6 +828,8 @@ export class ZellijSettingsModal implements ZellijModalContentRenderer {
 	private settingsList: SettingsList;
 	private options: SettingsModalOptions;
 	private theme: Theme;
+	private lastRenderWidth = 0;
+	private lastRenderHeight = 0;
 
 	constructor(options: SettingsModalOptions, theme: Theme) {
 		if (!options.title || !options.title.trim()) {
@@ -854,10 +876,14 @@ export class ZellijSettingsModal implements ZellijModalContentRenderer {
 	 */
 	render(width: number): string[] {
 		const safeWidth = Math.max(1, width);
+		this.lastRenderWidth = safeWidth;
 		try {
-			return this.container.render(safeWidth);
+			const lines = this.container.render(safeWidth);
+			this.lastRenderHeight = lines.length;
+			return lines;
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
+			this.lastRenderHeight = 1;
 			return [this.theme.fg("error", truncateToWidth(`Settings render error: ${message}`, safeWidth, "…"))];
 		}
 	}
@@ -877,6 +903,15 @@ export class ZellijSettingsModal implements ZellijModalContentRenderer {
 			return;
 		}
 		this.settingsList.handleInput(data);
+	}
+
+	handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
+		// Container -> Box -> SettingsList resolve the child geometry themselves.
+		return this.container.handleMouse({
+			...event,
+			width: this.lastRenderWidth,
+			height: this.lastRenderHeight,
+		});
 	}
 
 	/**

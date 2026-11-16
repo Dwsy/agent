@@ -9,8 +9,8 @@
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { ToolInfo } from "@earendil-works/pi-coding-agent";
-import { Container, Input, matchesKey, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
-import type { Focusable, KeybindingsManager, TUI } from "@earendil-works/pi-tui";
+import { Input, matchesKey, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import type { Component, Focusable, KeybindingsManager, TUI, TuiMouseEvent, TuiMouseEventResult } from "@earendil-works/pi-tui";
 
 interface ToolGroup {
   source: string;
@@ -273,12 +273,15 @@ function selectedText(text: string, selected: boolean, theme: ExtensionContext["
   return selected ? theme.fg("accent", text) : text;
 }
 
-class ToolListComponent extends Container implements Focusable {
+class ToolListComponent implements Component, Focusable {
   private searchQuery = "";
   private cursor = 0;
   private scrollOffset = 0;
   private detailScroll = 0;
   private viewportHeight = 16;
+  private splitX = 0;
+  private rowMap: number[] = [];
+  private pressedIndex: number | undefined;
   private rows: BrowserRow[] = [];
   private _focused = false;
   private readonly input = new Input();
@@ -297,11 +300,41 @@ class ToolListComponent extends Container implements Focusable {
     tools: ToolInfo[],
     private done: () => void,
   ) {
-    super();
     this.groups = groupTools(tools);
     this.input.onSubmit = () => this.toggleOrClose();
     this.input.onEscape = () => this.done();
     this.syncRows();
+  }
+
+  invalidate(): void {}
+
+  handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
+    if (event.type === "wheel" && event.wheelDelta) {
+      if (event.x >= this.splitX) {
+        this.detailScroll = Math.max(0, this.detailScroll + event.wheelDelta);
+        this.tui.requestRender();
+      } else {
+        this.moveCursor(event.wheelDelta);
+      }
+      return { handled: true };
+    }
+
+    if (event.button !== "left" || (event.type !== "press" && event.type !== "click")) return undefined;
+    if (event.x >= this.splitX) return undefined;
+    const index = this.rowMap[event.y];
+    if (index === undefined || index < 0) return undefined;
+
+    if (event.type === "press") {
+      this.pressedIndex = index;
+      this.selectRow(index);
+      return { handled: true, focus: true };
+    }
+
+    const target = this.pressedIndex ?? index;
+    this.pressedIndex = undefined;
+    this.selectRow(target);
+    this.toggleOrClose();
+    return { handled: true };
   }
 
   handleInput(data: string): void {
@@ -366,7 +399,7 @@ class ToolListComponent extends Container implements Focusable {
     this.tui.requestRender();
   }
 
-  override render(width: number): string[] {
+  render(width: number): string[] {
     const terminalColumns = (this.tui as { terminal?: { columns?: number } }).terminal?.columns ?? width;
     const availableWidth = Math.max(width, terminalColumns);
     const maxWidth = Math.max(50, availableWidth - 2);
@@ -375,19 +408,24 @@ class ToolListComponent extends Container implements Focusable {
     const innerWidth = dialogWidth - 2;
     const leftWidth = Math.max(28, Math.min(44, Math.floor(innerWidth * 0.3)));
     const rightWidth = Math.max(16, innerWidth - leftWidth - 1);
+    this.splitX = leftWidth + 2;
     const terminalRows = (this.tui as { terminal?: { rows?: number } }).terminal?.rows ?? 32;
     this.viewportHeight = Math.max(12, Math.min(28, terminalRows - 8));
     this.syncRows();
 
     const lines: string[] = [];
+    const rowMap: number[] = [];
     const totalTools = this.groups.reduce((sum, group) => sum + group.tools.length, 0);
     const title = this.searchQuery.trim()
       ? `Tool Inspect · ${this.rows.filter((r) => r.kind === "tool").length} matches`
       : `Tool Inspect · ${this.groups.length} sources · ${totalTools} tools`;
 
     lines.push(renderHeader(title, dialogWidth, this.theme));
+    rowMap.push(-1);
     lines.push(row(`${this.theme.fg("dim", "Search:")} ${this.searchQuery}${this._focused ? "█" : ""}`, dialogWidth, this.theme));
+    rowMap.push(-1);
     lines.push(divider(leftWidth, rightWidth, this.theme));
+    rowMap.push(-1);
     lines.push(this.renderSplitRow(
       this.theme.fg("dim", "SOURCE / TOOL"),
       this.theme.fg("dim", "DETAILS"),
@@ -395,7 +433,9 @@ class ToolListComponent extends Container implements Focusable {
       rightWidth,
       dialogWidth,
     ));
+    rowMap.push(-1);
     lines.push(divider(leftWidth, rightWidth, this.theme));
+    rowMap.push(-1);
 
     const visibleRows = this.rows.slice(this.scrollOffset, this.scrollOffset + this.viewportHeight);
     const detailLines = this.detailLines(rightWidth);
@@ -408,6 +448,7 @@ class ToolListComponent extends Container implements Focusable {
       const left = rowItem ? this.renderLeftRow(rowItem, this.scrollOffset + i === this.cursor, leftWidth) : "";
       const right = visibleDetails[i] ?? "";
       lines.push(this.renderSplitRow(left, right, leftWidth, rightWidth, dialogWidth));
+      rowMap.push(rowItem ? this.scrollOffset + i : -1);
     }
 
     const scrollInfo = this.rows.length > this.viewportHeight
@@ -418,8 +459,11 @@ class ToolListComponent extends Container implements Focusable {
       : "";
     const footerText = `${scrollInfo}${detailInfo} · ↑↓ select · Enter/→ expand · ← collapse · type search · Esc`;
     lines.push(row(this.theme.fg("dim", footerText), dialogWidth, this.theme));
+    rowMap.push(-1);
     lines.push(splitFooter(leftWidth, rightWidth, this.theme));
+    rowMap.push(-1);
 
+    this.rowMap = rowMap;
     return lines;
   }
 
@@ -454,6 +498,14 @@ class ToolListComponent extends Container implements Focusable {
     }
 
     return rows;
+  }
+
+  private selectRow(index: number): void {
+    if (index < 0 || index >= this.rows.length) return;
+    this.cursor = index;
+    this.detailScroll = 0;
+    this.ensureScrollVisible();
+    this.tui.requestRender();
   }
 
   private moveCursor(delta: number): void {
