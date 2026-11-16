@@ -3,7 +3,13 @@
 // Lifecycle: open / close / enable / disable / archive. Tab: all|project|global.
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { Key, matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
+import {
+  Key,
+  matchesKey,
+  truncateToWidth,
+  type TuiMouseEvent,
+  type TuiMouseEventResult,
+} from "@earendil-works/pi-tui";
 import { resolve as resolvePath, basename } from "node:path";
 import {
   listGapps,
@@ -188,6 +194,8 @@ async function pickAction(ctx: any, app: GappMeta): Promise<AppAction | null> {
   return ctx.ui.custom<AppAction | null>((tui, theme, _kb, done) => {
     let selectedIndex = 0;
     let cached: string[] | undefined;
+    let rowMap: number[] = [];
+    let pressedIndex: number | undefined;
     const refresh = () => {
       cached = undefined;
       tui.requestRender();
@@ -196,8 +204,12 @@ async function pickAction(ctx: any, app: GappMeta): Promise<AppAction | null> {
     return {
       render(width: number) {
         if (cached) return cached;
+        rowMap = [];
         const lines: string[] = [];
-        const add = (text: string) => lines.push(truncateToWidth(text, width));
+        const add = (text: string, index = -1) => {
+          lines.push(truncateToWidth(text, width));
+          rowMap.push(index);
+        };
 
         add(theme.fg("accent", theme.bold("  " + app.name)));
         const st = app.archived ? "arch" : app.enabled ? "on" : "off";
@@ -213,7 +225,7 @@ async function pickAction(ctx: any, app: GappMeta): Promise<AppAction | null> {
           const label = sel
             ? theme.fg("accent", theme.bold(actions[i].label))
             : theme.fg("text", actions[i].label);
-          add(prefix + label);
+          add(prefix + label, i);
         }
         for (let p = actions.length; p < ACTION_ROWS; p++) add("");
 
@@ -223,6 +235,31 @@ async function pickAction(ctx: any, app: GappMeta): Promise<AppAction | null> {
       },
       invalidate() {
         cached = undefined;
+      },
+      handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
+        if (event.type !== "wheel" || !event.wheelDelta) {
+          // Not a wheel event: fall through to the press/click handling below.
+        } else {
+          selectedIndex = Math.max(0, Math.min(actions.length - 1, selectedIndex + event.wheelDelta));
+          refresh();
+          return { handled: true, render: false };
+        }
+
+        if (event.button !== "left" || (event.type !== "press" && event.type !== "click")) return undefined;
+        const index = rowMap[event.y];
+        if (index === undefined || index < 0) return undefined;
+        if (event.type === "press") {
+          pressedIndex = index;
+          selectedIndex = index;
+          refresh();
+          return { handled: true, focus: true, render: false };
+        }
+        const target = pressedIndex ?? index;
+        pressedIndex = undefined;
+        selectedIndex = target;
+        done(actions[selectedIndex]?.value ?? null);
+        refresh();
+        return { handled: true, render: false };
       },
       handleInput(data: string) {
         if (matchesKey(data, Key.up)) {
@@ -302,6 +339,8 @@ async function pickAndAct(
       // Default ALL — never hide project apps behind empty global tab
       let scope: ScopeFilter = "all";
       let cached: string[] | undefined;
+      let rowMap: number[] = [];
+      let pressedIndex: number | undefined;
       const refresh = () => {
         cached = undefined;
         tui.requestRender();
@@ -327,8 +366,12 @@ async function pickAndAct(
         render(width: number) {
           if (cached) return cached;
           clamp();
+          rowMap = [];
           const lines: string[] = [];
-          const add = (text: string) => lines.push(truncateToWidth(text, width));
+          const add = (text: string, index = -1) => {
+            lines.push(truncateToWidth(text, width));
+            rowMap.push(index);
+          };
 
           const mark = (s: ScopeFilter, label: string) =>
             scope === s
@@ -373,7 +416,7 @@ async function pickAndAct(
                 m.scope === "project" && m.cwd
                   ? theme.fg("dim", ` · ${basename(m.cwd)}`)
                   : theme.fg("dim", ` ${m.scope}`);
-              add(prefix + idx + name + id + badge + win + proj);
+              add(prefix + idx + name + id + badge + win + proj, i);
             }
             for (let p = end - start; p < LIST_ROWS; p++) add("");
             if (items.length > LIST_ROWS) {
@@ -393,6 +436,34 @@ async function pickAndAct(
         },
         invalidate() {
           cached = undefined;
+        },
+        handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
+          if (event.type !== "wheel" || !event.wheelDelta) {
+            // Not a wheel event: fall through to the press/click handling below.
+          } else {
+            const len = filtered().length;
+            selectedIndex = Math.max(0, Math.min(len - 1, selectedIndex + event.wheelDelta));
+            refresh();
+            return { handled: true, render: false };
+          }
+
+          if (event.button !== "left" || (event.type !== "press" && event.type !== "click")) return undefined;
+          const index = rowMap[event.y];
+          if (index === undefined || index < 0) return undefined;
+          if (event.type === "press") {
+            pressedIndex = index;
+            selectedIndex = index;
+            refresh();
+            return { handled: true, focus: true, render: false };
+          }
+          const target = pressedIndex ?? index;
+          pressedIndex = undefined;
+          selectedIndex = target;
+          // Same effect as the Enter branch in handleInput: open the action menu.
+          const cur = filtered()[selectedIndex];
+          if (cur) done({ kind: "select", id: cur.id });
+          refresh();
+          return { handled: true, render: false };
         },
         handleInput(data: string) {
           const items = filtered();

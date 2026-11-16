@@ -9,6 +9,25 @@ const root = import.meta.dirname;
 const agentRoot = join(root, "../../..");
 const load = (name) => import(pathToFileURL(join(root, name)).href + `?t=${Date.now()}-${Math.random()}`);
 
+function kanbanRuntime(state, calls = []) {
+  const identity = (text) => text;
+  return {
+    app: { id: "demo-kanban", name: "Demo Kanban", description: "", scope: "project" },
+    palette: {
+      accent: identity, dim: identity, muted: identity, warning: identity,
+      success: identity, error: identity, text: identity, border: identity, bold: identity,
+    },
+    getState: () => state,
+    getStatus: () => "",
+    isBusy: () => false,
+    call: async (name, args) => { calls.push({ name, args }); },
+    prompt() {}, close() {}, refresh: async () => state,
+    key: () => false,
+    truncate: (text, width) => String(text).slice(0, width),
+    pad: (text, width) => String(text).slice(0, width).padEnd(width),
+  };
+}
+
 async function withTempStores(t) {
   const projectDir = await mkdtemp(join(tmpdir(), "gapp-tui-project-"));
   const globalDir = await mkdtemp(join(tmpdir(), "gapp-tui-global-"));
@@ -114,6 +133,85 @@ test("app session loads tui.mjs, prompts, persists stateOps, and exits", async (
   assert.equal(actions.at(-1).kind, "exit");
 });
 
+test("app session forwards mouse events and honors dispatcher render semantics", async (t) => {
+  await withTempStores(t);
+  const storage = await load("storage.ts");
+  const bundle = await storage.upsertGapp({
+    id: "mouse-app", name: "Mouse App", scope: "project", state: {}, html: "<main>mouse</main>",
+  });
+  await writeFile(
+    join(bundle.dir, "tui.mjs"),
+    `export default function(runtime) {
+      let last = 'none';
+      let invalidations = 0;
+      return {
+        invalidate() { invalidations++; },
+        render(width) {
+          return [runtime.pad('mouse ' + last, width), runtime.getStatus(), 'invalidations:' + invalidations];
+        },
+        handleMouse(event) {
+          last = event.x + ':' + event.y;
+          if (event.type === 'wheel') return { handled: true, render: true };
+          if (event.type === 'move') return { handled: true, render: false };
+          if (event.type === 'click') return { handled: true, focus: true };
+          if (event.type === 'drag') throw new Error('boom');
+          return undefined;
+        }
+      };
+    }`,
+  );
+
+  const tui = await load("tui.ts");
+  const session = await tui.createGappTuiAppSession({ ref: "mouse-app", cwd: process.cwd() });
+  let renders = 0;
+  session.setRequestRender(() => renders++);
+  const base = {
+    button: "none", x: 2, y: 1, screenX: 2, screenY: 1,
+    width: 40, height: 10, shift: false, alt: false, ctrl: false,
+  };
+
+  assert.deepEqual(
+    session.component.handleMouse({ ...base, type: "wheel", wheelDelta: -1 }),
+    { handled: true, render: true },
+  );
+  assert.equal(renders, 1);
+  // Coordinates reach the app unchanged: the host adds no header or border rows.
+  assert.match(session.component.render(40).join("\n"), /mouse 2:1/);
+  assert.match(session.component.render(40).join("\n"), /invalidations:1/);
+
+  assert.deepEqual(
+    session.component.handleMouse({ ...base, type: "move" }),
+    { handled: true, render: false },
+  );
+  assert.equal(renders, 1, "render:false must not repaint a hover-like move");
+  assert.match(session.component.render(40).join("\n"), /invalidations:1/);
+
+  assert.deepEqual(
+    session.component.handleMouse({ ...base, type: "click", button: "left" }),
+    { handled: true, focus: true },
+  );
+  assert.equal(renders, 2, "click defaults to render:true");
+  assert.equal(session.component.handleMouse({ ...base, type: "release", button: "left" }), undefined);
+  assert.equal(renders, 2, "unhandled results must not repaint");
+
+  assert.equal(session.component.handleMouse({ ...base, type: "drag", button: "left" }), undefined);
+  assert.equal(renders, 3);
+  assert.match(session.component.render(40).join("\n"), /mouse error: boom/);
+
+  const plainBundle = await storage.upsertGapp({
+    id: "mouse-less", name: "Mouse Less", scope: "project", state: {}, html: "<main>plain</main>",
+  });
+  await writeFile(
+    join(plainBundle.dir, "tui.mjs"),
+    "export default () => ({ invalidate(){}, render(){ return ['plain']; } });",
+  );
+  const plain = await tui.createGappTuiAppSession({ ref: "mouse-less", cwd: process.cwd() });
+  let plainRenders = 0;
+  plain.setRequestRender(() => plainRenders++);
+  assert.equal(plain.component.handleMouse({ ...base, type: "click", button: "left" }), undefined);
+  assert.equal(plainRenders, 0, "apps without handleMouse leave the event to the renderer");
+});
+
 test("tools.mjs executes declared tools, persists state, and is injected into WebView", async (t) => {
   await withTempStores(t);
   const storage = await load("storage.ts");
@@ -210,23 +308,7 @@ test("demo kanban module renders wide and narrow application layouts", async () 
       { id: "3", title: "Done card", status: "done", priority: "low", assignee: "Kai" },
     ],
   };
-  const identity = (text) => text;
-  const runtime = {
-    app: { id: "demo-kanban", name: "Demo Kanban", description: "", scope: "project" },
-    palette: {
-      accent: identity, dim: identity, muted: identity, warning: identity,
-      success: identity, error: identity, text: identity, border: identity, bold: identity,
-    },
-    getState: () => state,
-    getStatus: () => "",
-    isBusy: () => false,
-    call: async () => {},
-    prompt() {}, close() {}, refresh: async () => state,
-    key: () => false,
-    truncate: (text, width) => String(text).slice(0, width),
-    pad: (text, width) => String(text).slice(0, width).padEnd(width),
-  };
-  const component = factoryModule.default(runtime);
+  const component = factoryModule.default(kanbanRuntime(state));
   const wide = component.render(120).join("\n");
   assert.match(wide, /待办/);
   assert.match(wide, /进行中/);
@@ -262,6 +344,131 @@ test("demo kanban exposes one shared tool implementation and typed client", asyn
   assert.deepEqual(calls, [
     { name: "move_card", args: { cardId: "card-shared", status: "done" } },
   ]);
+});
+
+test("demo kanban mouse events use render-time row and column geometry", async () => {
+  const factoryModule = await import(
+    pathToFileURL(join(agentRoot, ".pi/gapp/demo-kanban/tui.mjs")).href + `?t=${Date.now()}`
+  );
+  const state = {
+    boardTitle: "TUI Board",
+    cards: [
+      { id: "1", title: "Backlog card", status: "backlog", priority: "high", assignee: "Ada" },
+      { id: "2", title: "Doing card", status: "in_progress", priority: "medium", assignee: "Lin" },
+      { id: "3", title: "Done card", status: "done", priority: "low", assignee: "Kai" },
+    ],
+  };
+  const calls = [];
+  const component = factoryModule.default(kanbanRuntime(state, calls));
+  const lines = component.render(120);
+  const event = (type, x, y, extra = {}) => ({
+    type, button: "left", x, y, screenX: x, screenY: y,
+    width: 120, height: lines.length, shift: false, alt: false, ctrl: false, ...extra,
+  });
+
+  // Wide layout: columnWidth 38 + gap 3 -> [0..37] [41..78] [82..119].
+  assert.deepEqual(
+    component.handleMouse(event("wheel", 50, 4, { button: "none", wheelDelta: 1 })),
+    { handled: true, render: true },
+  );
+  assert.match(component.render(120).join("\n"), /▸ 进行中/);
+  assert.deepEqual(
+    component.handleMouse(event("wheel", 50, 4, { button: "none", wheelDelta: 1 })),
+    { handled: true, render: false },
+    "a wheel at the last card does not repaint",
+  );
+  assert.equal(component.handleMouse(event("wheel", 39, 4, { button: "none", wheelDelta: 1 })), undefined);
+  assert.equal(component.handleMouse(event("press", 50, 4, { button: "right" })), undefined);
+  assert.equal(component.handleMouse(event("move", 50, 4, { button: "none" })), undefined);
+
+  // Header y=2 switches column; card y=4 press+click runs the Enter action.
+  assert.deepEqual(component.handleMouse(event("press", 5, 2)), { handled: true, focus: true, render: true });
+  assert.deepEqual(component.handleMouse(event("click", 5, 2)), { handled: true, render: true });
+  assert.deepEqual(calls, []);
+  assert.deepEqual(component.handleMouse(event("press", 5, 4)), { handled: true, focus: true, capture: true, render: true });
+  assert.deepEqual(component.handleMouse(event("click", 5, 4)), { handled: true, render: true });
+  assert.deepEqual(calls, [{ name: "move_card", args: { cardId: "1", status: "in_progress" } }]);
+  assert.equal(component.handleMouse(event("click", 39, 4)), undefined, "gap column is not clickable");
+  // A click after a motion event still acts on the pressed card, like SelectList.
+  const before = calls.length;
+  assert.deepEqual(component.handleMouse(event("press", 5, 4)), { handled: true, focus: true, capture: true, render: true });
+  assert.equal(component.handleMouse(event("move", 5, 2, { button: "none" })), undefined);
+  assert.deepEqual(component.handleMouse(event("click", 5, 2)), { handled: true, render: true });
+  assert.equal(calls.length, before + 1, "click uses the press target, not the row under the pointer");
+
+  // Narrow layout: title, separator and mode hint precede the single column.
+  const narrow = factoryModule.default(kanbanRuntime(state));
+  const narrowLines = narrow.render(70);
+  const narrowEvent = (type, y) => ({
+    type, button: "left", x: 5, y, screenX: 5, screenY: y,
+    width: 70, height: narrowLines.length, shift: false, alt: false, ctrl: false,
+  });
+  assert.equal(narrow.handleMouse(narrowEvent("press", 2)), undefined, "mode hint row is not clickable");
+  assert.deepEqual(narrow.handleMouse(narrowEvent("press", 3)), { handled: true, focus: true, render: true });
+});
+
+test("demo kanban drags cards between wide-layout columns", async () => {
+  const factoryModule = await import(
+    pathToFileURL(join(agentRoot, ".pi/gapp/demo-kanban/tui.mjs")).href + `?t=${Date.now()}`
+  );
+  const state = {
+    boardTitle: "Drag Board",
+    cards: [
+      { id: "1", title: "Backlog card", status: "backlog", priority: "high", assignee: "Ada" },
+      { id: "2", title: "Doing card", status: "in_progress", priority: "medium", assignee: "Lin" },
+      { id: "3", title: "Done card", status: "done", priority: "low", assignee: "Kai" },
+    ],
+  };
+  let current = state;
+  const calls = [];
+  const runtime = kanbanRuntime(current, calls);
+  runtime.getState = () => current;
+  runtime.call = async (name, args) => {
+    calls.push({ name, args });
+    if (name === "move_card") {
+      current = {
+        ...current,
+        cards: current.cards.map((card) =>
+          card.id === args.cardId ? { ...card, status: args.status } : card,
+        ),
+      };
+    }
+  };
+  const component = factoryModule.default(runtime);
+  const lines = component.render(120);
+  const event = (type, x, y, extra = {}) => ({
+    type, button: "left", x, y, screenX: x, screenY: y,
+    width: 120, height: lines.length, shift: false, alt: false, ctrl: false, ...extra,
+  });
+
+  assert.deepEqual(
+    component.handleMouse(event("press", 5, 4)),
+    { handled: true, focus: true, capture: true, render: true },
+  );
+  assert.equal(component.handleMouse(event("move", 50, 4, { button: "none" })), undefined);
+  assert.deepEqual(component.handleMouse(event("drag", 50, 4)), { handled: true, render: true });
+  assert.match(component.render(120).join("\n"), /⇢ 进行中/);
+  assert.deepEqual(component.handleMouse(event("drag", 55, 4)), { handled: true, render: false });
+  assert.deepEqual(component.handleMouse(event("drag", 90, 4)), { handled: true, render: true });
+  assert.match(component.render(120).join("\n"), /⇢ 已完成/);
+  assert.deepEqual(
+    component.handleMouse(event("release", 39, 4)),
+    { handled: true, render: true },
+    "a release in a column gap keeps the last valid drop target",
+  );
+  assert.deepEqual(calls, [{ name: "move_card", args: { cardId: "1", status: "done" } }]);
+  assert.doesNotMatch(component.render(120).join("\n"), /⇢/);
+
+  const sameCalls = [];
+  const same = factoryModule.default(kanbanRuntime(state, sameCalls));
+  same.render(120);
+  assert.deepEqual(
+    same.handleMouse(event("press", 50, 4)),
+    { handled: true, focus: true, capture: true, render: true },
+  );
+  assert.deepEqual(same.handleMouse(event("drag", 60, 4)), { handled: true, render: false });
+  assert.deepEqual(same.handleMouse(event("release", 60, 4)), { handled: true, render: true });
+  assert.deepEqual(sameCalls, [], "a drop in the source column is a no-op");
 });
 
 test("standalone CLI describes direct app rendering", async () => {

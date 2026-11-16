@@ -3,6 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { transpileCanvas, validateCanvasCode, canvasDocumentHTML, canvasShellHTML } from "./canvas.ts";
+import { compileTailwindCss } from "./tailwind.ts";
 import { loadTemplate } from "./templates/index.ts";
 
 const VALID_TSX = `
@@ -84,6 +85,42 @@ test("validateCanvasCode enforces contract", () => {
   assert.doesNotThrow(() => validateCanvasCode(VALID_TSX, true));
 });
 
+test("Tailwind utilities in canvas TSX compile to static CSS", async () => {
+  const css = await compileTailwindCss(`
+export default function Board() {
+  return <div className="flex items-center gap-4 rounded-xl p-4 text-sm hover:opacity-80 bg-[var(--color-background-secondary)]">
+    <span className="font-semibold">ok</span>
+  </div>;
+}
+`);
+  assert.match(css, /\.flex\s*\{/);
+  assert.match(css, /\.gap-4\s*\{/);
+  assert.match(css, /\.font-semibold\s*\{/);
+  assert.match(css, /--color-background-secondary/);
+  // Static CSS only: no runtime JIT script, no @import left unresolved.
+  assert.doesNotMatch(css, /@import/);
+  // Preflight stays off so the host shell owns the page baseline.
+  assert.doesNotMatch(css, /box-sizing:\s*border-box/);
+});
+
+test("canvas documents inline compiled Tailwind CSS and escape style terminators", () => {
+  const css = ".flex{display:flex}";
+  const doc = canvasDocumentHTML("/* bundle */", "canvas_css_id", "", css);
+  assert.match(doc, /<style>\.flex\{display:flex\}<\/style>/);
+  assert.match(doc, /id="canvas-root"/);
+  assert.match(canvasShellHTML(css), /<style>\.flex\{display:flex\}<\/style>/);
+
+  const escaped = canvasDocumentHTML("/* bundle */", undefined, "", "</style><script>alert(1)</script>");
+  assert.doesNotMatch(escaped, /<\/style><script>alert\(1\)/);
+});
+
+test("canvas documents set html lang only when a BCP 47 tag is provided", () => {
+  const doc = canvasDocumentHTML("/* bundle */", undefined, "", "", "zh-Hans");
+  assert.match(doc, /<html lang="zh-Hans">/);
+  assert.match(canvasShellHTML("", "en-US"), /<html lang="en-US">/);
+  assert.doesNotMatch(canvasDocumentHTML("/* bundle */"), /<html lang=/);
+});
+
 test("saved canvas document embeds vendored React runtime and compiled bundle", async () => {
   const js = await transpileCanvas(VALID_TSX);
   const doc = canvasDocumentHTML(js, "canvas_test_id");
@@ -139,8 +176,8 @@ test("Cursor-compatible SDK public runtime surface transpiles", async () => {
 import React from "react";
 import {
   BarChart, Button, Callout, Card, CardBody, CardHeader, Checkbox, CollapsibleSection,
-  Code, DiffStats, DiffView, Divider, Grid, H1, H2, H3, IconButton, LineChart, Link,
-  PieChart, Pill, Row, Select, Spacer, Stack, Stat, Swatch, Table, Text, TextArea,
+  Code, DiffStats, DiffView, Divider, Grid, H1, H2, H3, Heatmap, IconButton, LineChart, Link,
+  PieChart, Pill, Row, Scatter, Select, Spacer, Stack, Stat, Swatch, Table, Text, TextArea,
   TextInput, TodoList, TodoListCard, Toggle, UsageBar, categoryPaletteDark,
   categoryPaletteLight, colorPalette, usageColorSequence, canvasPaletteDark,
   canvasPaletteLight, canvasTokens, canvasTokensLight, computeDAGLayout, mergeStyle,
@@ -178,6 +215,8 @@ export default function Surface() {
       <BarChart categories={["Mon", "Tue"]} series={[{ name: "RPS", data: [1, 2] }]} />
       <LineChart categories={["Mon", "Tue"]} series={[{ name: "p95", data: [2, 3] }]} />
       <PieChart data={[{ label: "A", value: 2 }, { label: "B", value: 1 }]} donut />
+      <Heatmap rows={["api", "web"]} columns={["Mon", "Tue"]} values={[[1, 2], [3, 4]]} />
+      <Scatter points={[{ x: 1, y: 2, series: "S1" }, { x: 2, y: 4, series: "S2" }]} trend />
       <Card collapsible defaultOpen><CardHeader trailing={<DiffStats additions={1} deletions={1} />}>a.ts</CardHeader><CardBody style={{ padding: 0 }}><DiffView path="a.ts" lines={[{ type: "added", content: "+a", lineNumber: 1 }]} /></CardBody></Card>
       <CollapsibleSection title="Details" defaultOpen><H3>Nested</H3><Text>Detail</Text></CollapsibleSection>
       <TodoList todos={TODOS} />
@@ -187,9 +226,26 @@ export default function Surface() {
   );
 }
 `);
-  for (const symbol of ["BarChart", "LineChart", "PieChart", "computeDAGLayout", "DiffView", "TextInput", "TodoListCard", "UsageBar", "useCanvasState", "useCanvasAction"]) {
+  for (const symbol of ["BarChart", "LineChart", "PieChart", "Heatmap", "Scatter", "computeDAGLayout", "DiffView", "TextInput", "TodoListCard", "UsageBar", "useCanvasState", "useCanvasAction"]) {
     assert.match(js, new RegExp(symbol));
   }
+});
+
+test("new matrix and scatter primitives accept their documented shapes", async () => {
+  const js = await transpileCanvas(`
+import React from "react";
+import { Heatmap, Scatter } from "@gen-ui/canvas";
+
+export default function Matrix() {
+  return <div>
+    <Heatmap rows={["A", "B"]} columns={["Mon", "Tue"]} values={[[1, 2], [3, 4]]} max={4} />
+    <Scatter points={[{ x: 1, y: 2, series: "S1" }, { x: 2, y: 5, series: "S2" }]} x={{ unit: "ms" }} y={{ unit: "%" }} trend />
+  </div>;
+}
+`);
+  assert.match(js, /function Heatmap/);
+  assert.match(js, /function Scatter/);
+  assert.match(js, /Heatmap/);
 });
 
 test("Canvas progressive TSX templates all transpile", async () => {
@@ -206,7 +262,9 @@ test("Canvas host keeps state namespace stable and actions fire-and-forget", () 
   const canvasSource = readFileSync(new URL("./canvas.ts", import.meta.url), "utf8");
   assert.match(source, /const canvasStateId = process\.cwd\(\) \+ "::" \+ safeTitle/);
   assert.match(source, /canvasStateId,/);
-  assert.match(source, /canvasDocumentHTML\(compiled, canvasStateId, provenanceFooter\)/);
+  assert.match(source, /const tailwindCss = await compileTailwindCss\(code\)/);
+  assert.match(source, /const lang = canvasLang\(flags\)/);
+  assert.match(source, /canvasDocumentHTML\(compiled, canvasStateId, provenanceFooter, tailwindCss, lang\)/);
   assert.match(source, /validateGroundingDeclaration\(opts\.grounding\)/);
   assert.match(canvasSource, /genui-grounding/);
   assert.match(source, /const isCanvasAction =/);

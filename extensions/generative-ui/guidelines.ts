@@ -1,6 +1,11 @@
 // Design guidelines based on claude.ai visualize:read_me, with local flowchart aesthetic overrides.
 // Flowchart defaults intentionally diverge from Claude's multi-color SVG boxes (too flashcard-like).
-// Borrowed from visual-explainer: representation routing, Mermaid-first flows, anti-slop palette, fragment templates.
+//
+// Scope: these rules govern artifacts that render inside this host's widget/canvas window.
+// For a full HTML page (multi-figure explainer, diff review, plan, slide deck, narrated video)
+// use the visual-explainer skill instead — it ships its own renderer, kit, and browser check:
+//   /Users/dengwenyu/agent-skills/agent-skills/visual-explainer
+// Mermaid inside those pages is drawn by Pele at build time, offline, with a phone layout.
 
 import { getTemplatesSection } from "./templates/index.js";
 
@@ -65,6 +70,7 @@ Output streams token-by-token. Structure code so useful content appears early.
 - **No redundant prose inside pure visuals** — diagrams/charts should not repeat the surrounding chat explanation. Self-contained analytical artifacts are different: include the structured title/scope/evidence/findings/source needed to understand them without the chat.
 - **Icon sizing**: When using emoji or inline SVG icons, explicitly set \`font-size: 16px\` for emoji or \`width: 16px; height: 16px\` for SVG icons. Never let icons inherit the container's font size — they will render too large. For larger decorative icons, use 24px max.
 - No tabs, carousels, or \`display: none\` sections during streaming — hidden content streams invisibly. Show all content stacked vertically. (Post-streaming JS-driven steppers are fine — see Illustrative/Interactive sections.)
+- **Step-through UI: use the built-in step mechanism, do not hand-roll it.** A container with \`data-steps\` becomes a stepper; elements carry \`data-step="N"\` (visible only at that step) or \`data-step-in="1 3"\` (visible from its first listed step onward). Captions go in an \`<ol data-step-captions>\` with one \`<li>\` per step. Controls are \`<button data-step-prev>\`, \`<button data-step-next>\`, \`<button data-step-play>\`, and an \`<input type="range">\`; the runtime wires them, keeps the disabled state correct, and syncs the range. Write no JavaScript for this. The runtime themes itself from host tokens; restyle it by overriding \`[data-step-controls]\` etc. If the script never runs, every step stays visible — so never rely on hiding to convey meaning.
 - No nested scrolling — auto-fit height.
 - **Interaction budget**: add only requested controls. Keep filters, selections, and calculations local to JavaScript; never invent search, filters, reset buttons, tabs, or a dashboard around the main visual. A primary interaction must visibly update the visual.
 - **Accessibility**: use semantic HTML and native button/input/select/textarea controls with associated labels. Preserve native tab order and focus styles; do not add \`tabindex\`. Give charts, SVGs, canvases, and custom widgets a concise accessible name or description. Color cannot be the only encoding for meaning.
@@ -89,7 +95,7 @@ The host injects a full light + dark palette via \`prefers-color-scheme\`. **You
 1. **HTML**: every color is a \`var(--color-*)\`. Forbidden: \`#333\`, \`#fff\`, \`black\`, \`white\`, \`rgb(...)\` for text/surfaces/borders (art module excepted).
 2. **SVG text**: always class \`t\` / \`ts\` / \`th\` — never raw \`fill="#..."\` on labels.
 3. **SVG categorical nodes**: use \`c-{ramp}\` classes (they already switch light/dark). Do not hand-write ramp hex in flowchart defaults.
-4. **Canvas / Chart.js / Mermaid**: cannot read CSS vars directly. Read them at runtime:
+4. **Canvas / Chart.js**: cannot read CSS vars directly. Read them at runtime (Pele is the exception — it themes from \`--pele-*\` natively, no JS needed):
    - Prefer \`window._themeVars()\` when present (returns \`{dark,text,textSecondary,bg,bgSecondary,border,chartTick,chartGrid}\`).
    - Or \`getComputedStyle(document.documentElement).getPropertyValue('--color-text-primary').trim()\`.
 5. **Do not bake a single theme**: never set only dark hexes or only light hexes. If you must hardcode (canvas), resolve from CSS vars at init.
@@ -155,7 +161,7 @@ Lucide is available as global \`window.lucide\`. Use a placeholder and let the r
 const ART_AND_ILLUSTRATION = `## Art and illustration
 *"Draw me a sunset" / "Create a geometric pattern"*
 
-Use \`imagine_svg\`. Same technical rules (viewBox, safe area) but the aesthetic is different:
+Use a raw \`<svg>\` widget. Same technical rules (viewBox, safe area) but the aesthetic is different:
 - Fill the canvas — art should feel rich, not sparse
 - Bold colors: mix \`--color-text-*\` categories for variety (info blue, success green, warning amber)
 - Art is the one place custom \`<style>\` color blocks are fine — freestyle colors, \`prefers-color-scheme\` for dark mode variants if you want them
@@ -274,7 +280,7 @@ Work bottom-up for trees: size leaf tier first, parent width ≥ sum of children
 
 Hand-placed multi-color SVG flowcharts are a **last resort** — only when Mermaid cannot express a custom layout you truly need.
 
-Use \`imagine_html\` for Mermaid and HTML steps. Use raw \`imagine_svg\` for structural/illustrative drawings. The widget wraps output in a card.
+Use the widget medium for Mermaid and HTML steps. Use a raw \`<svg>\` widget for structural/illustrative drawings. The widget wraps output in a card.
 
 **Pick the right diagram type.** The decision is about *intent*, not subject matter. Ask: is the user trying to *document* this, or *understand* it?
 
@@ -296,7 +302,7 @@ Use \`imagine_html\` for Mermaid and HTML steps. Use raw \`imagine_svg\` for str
 | "what are the training steps" | **Mermaid / minimal steps** | Forward → loss → backward → update. Neutral nodes. |
 | "how does TCP work" | **Illustrative** | Two endpoints, numbered packets in flight, an ACK returning. |
 | "TCP handshake sequence" | **Mermaid / minimal steps** | SYN → SYN-ACK → ACK. Three neutral steps. |
-| "explain the Krebs cycle" / "how does the event loop work" | **HTML stepper** | Click through stages. Never a ring. |
+| "explain the Krebs cycle" / "how does the event loop work" | **Stepper** (\`data-steps\`) | Click through stages. Never a ring. |
 | "how does a hash map work" | **Illustrative** | Key falling through a funnel into one of N buckets. |
 | "draw the database schema" / "show me the ERD" | **mermaid.js** | \`erDiagram\` syntax. Not SVG. |
 
@@ -326,24 +332,38 @@ For sequential processes, cause-and-effect, decision trees, pipelines, and state
 2. **2–5 linear steps, no branches** → HTML minimal steps (vertical stack).
 3. **Custom geometry Mermaid cannot do** → hand SVG, still neutral (\`class="box"\` / gray stroke). Colored \`c-*\` ramps only if the user asked for categorical encoding.
 
-##### A. Mermaid flowchart (preferred)
+##### A. Mermaid flowchart — rendered by Pele (preferred)
 
-Use \`imagine_html\`. Auto layout beats hand-placed coordinates. Theme with \`theme: 'base'\` and page-neutral variables — never the stock violet look.
+Use the widget medium. Auto layout beats hand-placed coordinates: Pele lays the graph out from
+Mermaid source and hands back an SVG string. The 32-type selection guide and every per-type syntax
+page live in the \`pele-mermaid\` skill — read it instead of guessing:
 
-**Canonical skeleton:** template id \`flow-mermaid\` (load via \`visualize_read_me({ modules: ["diagram"], templates: ["flow-mermaid"] })\`).
-Do not invent a second Mermaid bootstrap — copy that fragment, then swap the flowchart body.
+\`\`\`
+~/.pi/agent/skills/pele-mermaid/SKILL.md
+\`\`\`
 
-**Mermaid rules:**
-- \`flowchart TD\` for almost everything; \`LR\` only for short linear rails.
-- Node labels in quotes when they contain punctuation; use \`<br/>\` for second lines — never escaped \`\\n\`.
-- Do **not** define page-level CSS \`.node\` (Mermaid owns it). Scope overrides under a wrapper class.
-- Do **not** set \`color:\` inside \`classDef\` (breaks dark mode). Style text via CSS overrides on \`.nodeLabel\` / \`.edgeLabel\`.
-- Forbidden theme accents: indigo/violet/fuchsia hexes. Prefer slate/gray borders + one semantic accent if needed.
-- Resolve theme from CSS vars / \`window._themeVars()\` at init (see template) — never bake a single light or dark hex set.
-- **Load Mermaid as UMD** (\`mermaid.min.js\` + \`onload="init...()"\` + \`window.mermaid\`). Do **not** use \`<script type="module">\` / ESM imports in live widgets — shell \`_runScripts\` must preserve attributes, and ESM is flakier under streaming injection.
-- Complex graphs (10+ nodes): consider \`layout: 'elk'\` with \`@mermaid-js/layout-elk\` registered; otherwise split into overview + detail.
-- Click-through: \`click NodeId "javascript:sendPrompt('...')"\` when drill-down helps; otherwise keep the chart static.
+**Canonical skeleton:** template id \`flow-mermaid\` (\`route '<goal>'\` returns
+\`templates: ["flow-mermaid"]\`; force it with \`--templates flow-mermaid\`). It already wires the
+\`pele.global.js\` UMD build, a \`pre.mermaid\` source block, \`pele.mount(el, el.textContent)\`, and a
+poll fallback for a dropped \`onload\`. Do not invent a second Pele bootstrap — copy that fragment
+and swap the diagram body.
 
+**Rules:**
+- \`flowchart TD\` for almost everything; \`LR\` only for short linear rails. Under ~640px wide Pele
+  flips \`LR\` to \`TB\` on its own (\`autoDirection\`) — do not fight it.
+- Quote node labels containing punctuation; \`<br/>\` for a second line — never escaped \`\\n\`.
+- Theme by mapping host tokens onto \`--pele-*\` on the wrapper: \`--pele-fg\`, \`--pele-bg\`,
+  \`--pele-surface\`, \`--pele-line\`, \`--pele-border\`, \`--pele-muted\`, \`--pele-font\`,
+  \`--pele-series-1..8\`. Never bake hex — \`classDef fill:#…\` breaks whichever scheme you did not
+  look at.
+- Pele does not throw on bad syntax: \`mount()\` writes the error inline in \`--pele-error\`. Validate
+  the source first with the skill's CLI (\`bun pele-mermaid.ts x.mmd\`) — it returns
+  \`code\`/\`line\`/\`column\`/\`snippet\` instead of a red blob to eyeball.
+- No JavaScript callbacks. \`click NodeId "javascript:…"\` is ignored by Pele; only URL links
+  (\`http\`/\`https\`/\`mailto\`/\`tel\`) survive. Keep the chart static, or return data through the widget
+  bridge. Links are disabled outright with \`links: false\`.
+- No alternative layout engine. Pele has no ELK or plugin slot; for 15+ nodes split into an
+  overview plus detail cards.
 ##### B. HTML minimal steps (preferred for short linear flows)
 
 Quiet vertical list. No rainbow. Current step may use secondary surface.
@@ -368,7 +388,7 @@ Use only when Mermaid/HTML steps cannot express the layout. Keep **all nodes neu
 - If categories truly differ (e.g. auth vs data vs error), use at most **one** accent ramp for the exception class and gray for the rest — never a unique color per step.
 - Spacing still applies: 60px between boxes, 24px inner padding, max 4–5 nodes per diagram, L-bend arrows that never cross boxes.
 - Text: always \`dominant-baseline="central"\`; box width from longest label: \`max(title×8, subtitle×7)+24\`.
-- Cycles: do **not** draw rings. Use an HTML stepper (dots/pills + Next wraps) or a linear rail with a \`↻ returns to start\` label.
+- Cycles: do **not** draw rings. Use a stepper (\`data-steps\` with prev/next controls) or a linear rail with a \`↻ returns to start\` label.
 
 **When the prompt is over budget (6+ components):** decompose — (1) stripped overview, (2) one diagram per sub-flow with 3–4 nodes. Completeness across several diagrams beats one cramped card.
 
@@ -431,7 +451,10 @@ For concepts where physical or logical containment matters — things inside oth
 
 **Color in structural diagrams**: Nested regions need distinct ramps — \`c-{ramp}\` classes resolve to fixed fill/stroke stops, so the same class on parent and child gives identical fills and flattens the hierarchy. Pick a *related* ramp for inner structures (e.g. Green for the library envelope, Teal for the circulation desk inside it) and a *contrasting* ramp for a region that does something functionally different (e.g. Amber for the reading room). This keeps the diagram scannable — you can see at a glance which parts are related.
 
-**Database schemas / ERDs — use mermaid.js, not SVG.** A schema table is a header plus N field rows plus typed columns plus crow's-foot connectors. That is a text-layout problem and hand-placing it in SVG fails the same way every time. mermaid.js \`erDiagram\` does layout, cardinality, and connector routing for free. ERDs only; everything else stays in SVG.
+**Database schemas / ERDs — \`erDiagram\`, not SVG.** A schema table is a header plus N field rows
+plus typed columns plus crow's-foot connectors: a text-layout problem, and hand-placing it in SVG
+fails the same way every time. Pele's \`erDiagram\` does layout, cardinality, and connector routing
+for free. ERDs only; everything else stays in SVG.
 
 \`\`\`
 erDiagram
@@ -449,70 +472,15 @@ erDiagram
   }
 \`\`\`
 
-Use \`imagine_html\` for ERDs. Prefer the UMD build (\`mermaid.min.js\` + \`onload\`) — not ESM \`type="module"\` — so shell \`_runScripts\` and streaming still work. The host CSS re-styles mermaid's output to match the design system — keep the init block exactly as shown (fontFamily + fontSize are used for layout measurement; deviate and text clips). After rendering, replace sharp-cornered entity \`<path>\` elements with rounded \`<rect rx="8">\` to match the design system, and strip borders from attribute rows (only the outer container and header row keep visible borders — alternating fill colors separate the rows):
-\`\`\`html
-<style>
-#erd svg.erDiagram .divider path { stroke-opacity: 0.5; }
-#erd svg.erDiagram .row-rect-odd path,
-#erd svg.erDiagram .row-rect-odd rect,
-#erd svg.erDiagram .row-rect-even path,
-#erd svg.erDiagram .row-rect-even rect { stroke: none !important; }
-</style>
-<div id="erd"></div>
-<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js" onload="initErd()"></script>
-<script>
-function initErd(){
-  if (!window.mermaid) return;
-  const dark = matchMedia('(prefers-color-scheme: dark)').matches;
-  window.mermaid.initialize({
-    startOnLoad: false,
-    theme: 'base',
-    fontFamily: '"Anthropic Sans", sans-serif',
-    themeVariables: {
-      darkMode: dark,
-      fontSize: '13px',
-      fontFamily: '"Anthropic Sans", sans-serif',
-      lineColor: dark ? '#9c9a92' : '#73726c',
-      textColor: dark ? '#c2c0b6' : '#3d3d3a',
-    },
-  });
-  Promise.resolve(window.mermaid.render('erd-svg', \`erDiagram
-  USERS ||--o{ POSTS : writes
-  POSTS ||--o{ COMMENTS : has\`)).then(({ svg }) => {
-    document.getElementById('erd').innerHTML = svg;
+Render it through the same \`flow-mermaid\` skeleton: put the \`erDiagram\` source in the \`pre.mermaid\`
+block and let \`pele.mount()\` do the rest. Do **not** post-process Pele's SVG DOM (rounding entity
+corners, stripping row borders) — the output is already token-themed, and mutating it breaks the
+re-layout \`mount()\` runs on resize. Theme with \`--pele-*\`, same as flowcharts.
 
-    // Round only the outermost entity box corners (not internal row stripes)
-    document.querySelectorAll('#erd svg.erDiagram .node').forEach(node => {
-      const firstPath = node.querySelector('path[d]');
-      if (!firstPath) return;
-      const d = firstPath.getAttribute('d');
-      const nums = d.match(/-?[\\d.]+/g)?.map(Number);
-      if (!nums || nums.length < 8) return;
-      const xs = [nums[0], nums[2], nums[4], nums[6]];
-      const ys = [nums[1], nums[3], nums[5], nums[7]];
-      const x = Math.min(...xs), y = Math.min(...ys);
-      const w = Math.max(...xs) - x, h = Math.max(...ys) - y;
-      const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-      rect.setAttribute('x', x); rect.setAttribute('y', y);
-      rect.setAttribute('width', w); rect.setAttribute('height', h);
-      rect.setAttribute('rx', '8');
-      for (const a of ['fill', 'stroke', 'stroke-width', 'class', 'style']) {
-        if (firstPath.hasAttribute(a)) rect.setAttribute(a, firstPath.getAttribute(a));
-      }
-      firstPath.replaceWith(rect);
-    });
+Full syntax, attribute keys and narrow-screen variants: \`references/types/er.md\` in the
+\`pele-mermaid\` skill.
 
-    // Strip borders from attribute rows (mermaid v11: .row-rect-odd / .row-rect-even)
-    document.querySelectorAll('#erd svg.erDiagram .row-rect-odd path, #erd svg.erDiagram .row-rect-even path').forEach(p => {
-      p.setAttribute('stroke', 'none');
-    });
-  });
-}
-if (window.mermaid) initErd();
-</script>
-\`\`\`
-
-Works identically for \`classDiagram\` — swap the diagram source; init stays the same.
+Works identically for \`classDiagram\` — swap the diagram source; the skeleton stays the same.
 
 #### Illustrative diagram
 
@@ -524,7 +492,7 @@ For building *intuition*. The subject might be physical (an engine, a lung) or c
 
 This is the most ambitious diagram type and the one Claude is best at. Lean into it. Use colour for intensity (a hot attention weight glows amber, a cold one stays gray). Use repetition for scale (many small circles = many parameters).
 
-**Prefer interactive over static.** A static cross-section is a good answer; a cross-section you can *operate* is a great one. The decision rule: if the real-world system has a control, give the diagram that control. A water heater has a thermostat — so give the user a slider that shifts the hot/cold boundary, a toggle that fires the burner and animates convection currents. An LLM has input tokens — let the user click one and watch the attention weights re-fan. A cache has a hit rate — let them drag it and watch latency change. Reach for \`imagine_html\` with inline SVG first; only fall back to static \`imagine_svg\` when there's genuinely nothing to twiddle.
+**Prefer interactive over static.** A static cross-section is a good answer; a cross-section you can *operate* is a great one. The decision rule: if the real-world system has a control, give the diagram that control. A water heater has a thermostat — so give the user a slider that shifts the hot/cold boundary, a toggle that fires the burner and animates convection currents. An LLM has input tokens — let the user click one and watch the attention weights re-fan. A cache has a hit rate — let them drag it and watch latency change. Reach for a widget with inline SVG first; only fall back to a static \`<svg>\` widget when there's genuinely nothing to twiddle.
 
 **When NOT to use**: The user is asking for a *reference*, not an *intuition*. "What are the components of a transformer" wants labelled boxes — that's a structural diagram. "Walk me through our CI pipeline" wants sequential steps — that's a flowchart. Also skip this when the metaphor would be arbitrary rather than revealing: drawing "the cloud" as a cloud shape or "microservices" as little houses doesn't teach anything about how they work. If the drawing doesn't make the *mechanism* clearer, don't draw it.
 
@@ -557,9 +525,9 @@ All core rules still apply (viewBox 680px, dark mode mandatory, 14/12px text, pr
 4. Add state indicators last: color fills showing temperature/pressure/concentration, small animated elements showing movement or energy.
 5. Leave generous whitespace around the object for labels — don't crowd annotations against the viewBox edges.
 
-**Static vs interactive**: Static cutaways and cross-sections work best as pure \`imagine_svg\`. If the diagram benefits from controls — a slider that changes a temperature zone, buttons toggling between operating states, live readouts — use \`imagine_html\` with inline SVG for the drawing and HTML controls around it.
+**Static vs interactive**: Static cutaways and cross-sections work best as a pure \`<svg>\` widget. If the diagram benefits from controls — a slider that changes a temperature zone, buttons toggling between operating states, live readouts — use a widget with inline SVG for the drawing and HTML controls around it.
 
-**Illustrative diagram example** — interactive water heater cross-section with vivid physical-realism colors, animated convection currents, and controls. Uses \`imagine_html\` with inline SVG: a thermostat slider shifts the hot/cold gradient boundary, a heating toggle animates flames on/off and transitions convection to paused. viewBox is 680x560; tank occupies x=180..440, leaving 140px+ of right margin for labels. Smooth convection paths use \`stroke-dasharray:5 5\` at ~1.6s for a gentle flow feel. A warm-glow overlay on the hot zone pulses subtly when heating is on. Flame shapes use warm gradient fills and clean opacity transitions. Labels sit along the right margin with leader lines.
+**Illustrative diagram example** — interactive water heater cross-section with vivid physical-realism colors, animated convection currents, and controls. Uses a widget with inline SVG: a thermostat slider shifts the hot/cold gradient boundary, a heating toggle animates flames on/off and transitions convection to paused. viewBox is 680x560; tank occupies x=180..440, leaving 140px+ of right margin for labels. Smooth convection paths use \`stroke-dasharray:5 5\` at ~1.6s for a gentle flow feel. A warm-glow overlay on the hot zone pulses subtly when heating is on. Flame shapes use warm gradient fills and clean opacity transitions. Labels sit along the right margin with leader lines.
 \`\`\`html
 <style>
   @keyframes conv { to { stroke-dashoffset: -20; } }
@@ -712,7 +680,7 @@ const SVG_SETUP = `## SVG setup
 
 **SVG setup**: \`<svg width="100%" viewBox="0 0 680 H">\` — 680px wide, flexible height. Set H to fit content tightly — the last element's bottom edge + 40px padding. Don't leave excess empty space below the content. Safe area: x=40 to x=640, y=40 to y=(H-40). Background transparent. **Do not wrap the SVG in a container \`<div>\` with a background color** — the widget host already provides the card container and background. Output the raw \`<svg>\` element directly.
 
-**The 680 in viewBox is load-bearing — do not change it.** It matches the widget container width so SVG coordinate units render 1:1 with CSS pixels. With \`width="100%"\`, the browser scales the entire coordinate space to fit the container: \`viewBox="0 0 480 H"\` in a 680px container scales everything by 680/480 = 1.42×, so your \`class="th"\` 14px text renders at ~20px. The font calibration table below and all "text fits in box" math assume 1:1. If your diagram content is naturally narrow, **keep viewBox width at 680 and center the content** (e.g. content spans x=180..500) — do not shrink the viewBox to hug the content. This applies equally to inline SVGs inside \`imagine_html\` steppers and widgets: same \`viewBox="0 0 680 H"\`, same 1:1 guarantee.
+**The 680 in viewBox is load-bearing — do not change it.** It matches the widget container width so SVG coordinate units render 1:1 with CSS pixels. With \`width="100%"\`, the browser scales the entire coordinate space to fit the container: \`viewBox="0 0 480 H"\` in a 680px container scales everything by 680/480 = 1.42×, so your \`class="th"\` 14px text renders at ~20px. The font calibration table below and all "text fits in box" math assume 1:1. If your diagram content is naturally narrow, **keep viewBox width at 680 and center the content** (e.g. content spans x=180..500) — do not shrink the viewBox to hug the content. This applies equally to inline SVGs inside widget steppers: same \`viewBox="0 0 680 H"\`, same 1:1 guarantee.
 
 **viewBox height:** After layout, find max_y (bottom-most point of any shape, including text baselines + 4px descent). Set viewBox height = max_y + 20. Don't guess.
 
@@ -807,7 +775,7 @@ Contained mockups — mobile screens, chat threads, single cards, modals, small 
 ### 1. Interactive explainer — learn how something works
 *"Explain how compound interest works" / "Teach me about sorting algorithms"*
 
-Use \`imagine_html\` for the interactive controls — sliders, buttons, live state displays, charts. Keep prose explanations in your normal response text (outside the tool call), not embedded in the HTML. No card wrapper. Whitespace is the container.
+Use a widget for the interactive controls — sliders, buttons, live state displays, charts. Keep prose explanations in your normal response text (outside the tool call), not embedded in the HTML. No card wrapper. Whitespace is the container.
 
 \`\`\`html
 <div style="display: flex; align-items: center; gap: 12px; margin: 0 0 1.5rem;">
@@ -831,7 +799,7 @@ Use \`sendPrompt()\` to let users ask follow-ups: \`sendPrompt('What if I increa
 ### 2. Compare options — decision making
 *"Compare pricing and features of these products" / "Help me choose between React and Vue"*
 
-Use \`imagine_html\`. Side-by-side card grid for options. Highlight differences with semantic colors. Interactive elements for filtering or weighting.
+Use a widget. Side-by-side card grid for options. Highlight differences with semantic colors. Interactive elements for filtering or weighting.
 
 - Use \`repeat(auto-fit, minmax(160px, 1fr))\` for responsive columns
 - Each option in a card. Use badges for key differentiators.
@@ -842,7 +810,7 @@ Use \`imagine_html\`. Side-by-side card grid for options. Highlight differences 
 ### 3. Data record — bounded UI object
 *"Show me a Salesforce contact card" / "Create a receipt for this order"*
 
-Use \`imagine_html\`. Wrap the entire thing in a single raised card. All content is sans-serif since it's pure UI. Use an avatar/initials circle for people (see example below).
+Use a widget. Wrap the entire thing in a single raised card. All content is sans-serif since it's pure UI. Use an avatar/initials circle for people (see example below).
 
 \`\`\`html
 <div style="background: var(--color-background-primary); border-radius: var(--border-radius-lg); border: 0.5px solid var(--color-border-tertiary); padding: 1rem 1.25rem;">
@@ -872,6 +840,8 @@ A canvas is one TSX file that default-exports the top-level component. It is com
 - Allowed imports: \`react\`, \`react-dom\`, \`react-dom/client\`, \`@gen-ui/canvas\`. No other npm packages, relative imports, or Node built-ins.
 - Keep data inline. No fetch / XMLHttpRequest / WebSocket.
 - Default-export the top-level component.
+- Tailwind CSS utilities are available: the host scans this TSX source at build time and inlines only the used utilities as static CSS. Put class names in \`className\` as literals — runtime-composed names produce no CSS. SDK primitives take \`style\`, not \`className\`; use Tailwind on plain DOM elements.
+- Tailwind is for layout, spacing, and typography. Colors, borders, and surfaces still come from host CSS variables (\`text-[var(--color-text-primary)]\`, \`bg-[var(--color-background-secondary)]\`) or \`@gen-ui/canvas\` tokens; preflight is off and hardcoded palettes break the host light/dark theme. \`dark:\` follows system \`prefers-color-scheme\`, not the gallery toggle.
 - Prefer built-in SDK primitives and \`useHostTheme()\` over hand-rolled chrome or a single hardcoded theme.
 - Runtime errors render in-window and emit \`{ type: "canvas_error" }\`; compile errors return esbuild diagnostics.
 
@@ -880,7 +850,8 @@ A canvas is one TSX file that default-exports the top-level component. It is com
 - Layout/typography: \`Stack\`, \`Row\`, \`Grid\`, \`Spacer\`, \`Divider\`, \`H1\`, \`H2\`, \`H3\`, \`Text\`, \`Code\`, \`Link\`, \`mergeStyle\`.
 - Surfaces/actions/feedback: \`Card\`, \`CardHeader\`, \`CardBody\`, \`Button\`, \`Pill\`, \`Stat\`, \`Callout\`, \`Table\` (plus legacy \`DataTable\`).
 - Forms: \`TextInput\`, \`TextArea\`, \`Checkbox\`, \`Toggle\`, \`Select\`, \`IconButton\`.
-- Analysis/data: \`BarChart\`, \`LineChart\`, \`PieChart\`, \`DiffView\`, \`DiffStats\`, \`TodoList\`, \`TodoListCard\`, \`UsageBar\`, \`Swatch\`, \`CollapsibleSection\`, \`computeDAGLayout\`.
+- Analysis/data: \`BarChart\`, \`LineChart\`, \`PieChart\`, \`Heatmap\`, \`Scatter\`, \`DiffView\`, \`DiffStats\`, \`TodoList\`, \`TodoListCard\`, \`UsageBar\`, \`Swatch\`, \`CollapsibleSection\`, \`computeDAGLayout\`.
+- Full prop signatures: read \`references/sdk.md\` before using an unfamiliar component. It is generated from the SDK source and is the closed export list — an import absent from it fails compilation.
 - Tokens: \`useHostTheme()\` returns Cursor-style top-level \`text/bg/fill/stroke/accent/diff/category\` groups plus \`kind\`, \`tokens\`, and \`palette\`.
 
 **Pi host adapters**
@@ -895,12 +866,12 @@ A canvas is one TSX file that default-exports the top-level component. It is com
 - For named numeric data, start with the plot or table and put important values/takeaways on the visual itself. Add summary stats only when changing metrics are central.
 - One dominant artifact; supporting stats remain compact. Avoid walls of cards, and keep charts/tables open rather than wrapping every section in Card.
 - Make side-by-side layouts wrap or stack and remain readable down to roughly 320px. Avoid fixed outer widths and internal scrolling except when a table genuinely cannot fit.
-- No gradients, box-shadows, decorative rainbow color, emoji decoration, giant headings, or empty placeholder sections.
+- No gradients, box-shadows, decorative rainbow color, decorative colored borders, emoji decoration, giant headings, or empty placeholder sections.
 - Charts/tables must be self-describing: specific title, units, multi-series legend, source/time-range caption when applicable.
 - Right-align numeric table columns and use tabular numerals; use semantic controls and preserve native keyboard/focus behavior.
 
 **Progressive disclosure**
-This module intentionally stops at the capability catalog. Use the Ready-made fragments catalog below, then re-call \`visualize_read_me\` with only the TSX skeleton you need: \`canvas-dashboard\`, \`canvas-charts\`, \`canvas-form-state\`, \`canvas-diff\`, or \`canvas-todo\`.`;
+This module intentionally stops at the capability catalog. Use the Ready-made fragments catalog below, then re-run \`route --templates <id>\` with only the TSX skeleton you need: \`canvas-dashboard\`, \`canvas-charts\`, \`canvas-form-state\`, \`canvas-diff\`, or \`canvas-todo\`.`;
 
 const MODULE_SECTIONS: Record<string, string[]> = {
   runtime: [WIDGET_RUNTIME],

@@ -5,6 +5,7 @@
 
 import { cssVariables } from "./svg-styles.js";
 import { WIDGET_CSP, WIDGET_UI_KIT_CSS, WIDGET_UI_KIT_RESOURCES } from "./widget-ui-kit.js";
+import { WIDGET_STEPS_CSS, WIDGET_STEPS_SCRIPT } from "./widget-steps.js";
 import { THEME_VARS_SCRIPT, WIDGET_EVENTS_SCRIPT } from "./html-helpers.js";
 import { REACT_UMD_JS, REACT_DOM_UMD_JS } from "./vendor-react.js";
 import { CANVAS_SDK_SOURCE } from "./canvas-sdk-source.js";
@@ -150,6 +151,9 @@ export function validateCanvasCode(code: string, interactive = false): void {
 // Vendored React 18 UMD builds inlined so canvases work offline. The UMD
 // sources contain no "</script>" today, but escape defensively anyway.
 const escapeScript = (js: string) => js.replace(/<\/script>/gi, "<\\/script>");
+// A Tailwind arbitrary value can contain "</style>"; CSS decodes \/ back to /.
+const escapeStyle = (css: string) => css.replace(/<\/style/gi, "<\\/style");
+const escapeAttr = (value: string) => value.replace(/"/g, "&quot;").replace(/</g, "&lt;");
 const CANVAS_REACT_SCRIPTS = `<script>${escapeScript(REACT_UMD_JS)}</script>
 <script>${escapeScript(REACT_DOM_UMD_JS)}</script>`;
 
@@ -243,17 +247,18 @@ const CANVAS_HOST_BRIDGE_SCRIPT = `(function() {
   if (inHost) post({ type: 'ready' });
 })();`;
 
-function shellDocument(bodyScript: string, canvasId?: string, groundingFooter = ""): string {
+function shellDocument(bodyScript: string, canvasId?: string, groundingFooter = "", tailwindCss = "", lang = ""): string {
   const vars = cssVariables();
-  return `<!DOCTYPE html><html><head><meta charset="utf-8">
+  return `<!DOCTYPE html><html${lang ? ` lang="${escapeAttr(lang)}"` : ""}><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <meta name="color-scheme" content="light dark">
 <meta http-equiv="Content-Security-Policy" content="${WIDGET_CSP}">
-<style>
+${tailwindCss ? `<style>${escapeStyle(tailwindCss)}</style>\n` : ""}<style>
 ${vars}
 *{box-sizing:border-box}
 body{margin:0;padding:1rem;font-family:var(--font-sans);background:var(--color-background-primary);color:var(--color-text-primary);}
 ${WIDGET_UI_KIT_CSS}
+${WIDGET_STEPS_CSS}
 </style>
 </head><body><div id="canvas-root"></div><div id="genui-grounding">${groundingFooter}</div>
 ${CANVAS_REACT_SCRIPTS}
@@ -264,16 +269,17 @@ ${canvasId ? `window.__canvasId = ${JSON.stringify(canvasId)};` : ""}
 ${CANVAS_HOST_BRIDGE_SCRIPT}
 </script>
 ${WIDGET_UI_KIT_RESOURCES}
+<script>${WIDGET_STEPS_SCRIPT}</script>
 ${bodyScript}
 </body></html>`;
 }
 
 /** Empty live shell; compiled bundles are pushed via win.send(). */
-export function canvasShellHTML(): string {
-  return shellDocument("");
+export function canvasShellHTML(tailwindCss = "", lang = ""): string {
+  return shellDocument("", undefined, "", tailwindCss, lang);
 }
 
 /** Self-contained saved document with the compiled bundle inline. */
-export function canvasDocumentHTML(compiledJs: string, canvasId?: string, groundingFooter = ""): string {
-  return shellDocument(`<script>${compiledJs.replace(/<\/script>/gi, "<\\/script>")}</script>`, canvasId, groundingFooter);
+export function canvasDocumentHTML(compiledJs: string, canvasId?: string, groundingFooter = "", tailwindCss = "", lang = ""): string {
+  return shellDocument(`<script>${compiledJs.replace(/<\/script>/gi, "<\\/script>")}</script>`, canvasId, groundingFooter, tailwindCss, lang);
 }

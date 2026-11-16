@@ -1,5 +1,8 @@
-// Fragment templates adapted from visual-explainer patterns.
-// These are HTML fragments for show_widget (no DOCTYPE/html/body).
+// Fragment templates for show_widget (no DOCTYPE/html/body).
+//
+// These are host-native fragments: they use the host's CSS variables and the widget
+// runtime, so they render inside this window and inherit its theme. The visual-explainer
+// skill (see SKILL.md §8) owns full HTML pages instead — it has its own kit and renderer.
 
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -177,7 +180,7 @@ Pick a catalog entry as the skeleton for its target rendering tool. Bodies are o
 Widget entries are HTML fragments (no DOCTYPE/\`<html>\`/\`<body>\`); Canvas entries are single-file TSX for \`show_canvas\`.
 
 **Theme contract (required):**
-- \`show_widget\`: use host CSS variables only for UI chrome; Chart.js/Mermaid resolve computed CSS vars at runtime.
+- \`show_widget\`: use host CSS variables only for UI chrome; Chart.js resolves computed CSS vars at runtime, Mermaid themes from \`--pele-*\` (see the \`pele-mermaid\` skill).
 - \`show_canvas\`: prefer \`@gen-ui/canvas\` primitives and \`useHostTheme()\`; do not hardcode a single light/dark palette.
 - Outer container stays transparent; the host provides the page/window background.
 

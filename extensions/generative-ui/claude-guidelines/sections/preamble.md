@@ -1,1 +1,0 @@
-# Imagine — Visual Creation Suite

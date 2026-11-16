@@ -630,4 +630,54 @@ export function PieChart({ data = [], size = 200, donut = false, style }) {
   const legend = h("div", { style: { display: "flex", flexDirection: "column", gap: 5, minWidth: 120 } }, data.map((point, index) => h("div", { key: point.label + index, style: { display: "flex", alignItems: "center", gap: 6, color: t.text.secondary, fontSize: "11px", lineHeight: "14px" } }, h("span", { style: { width: 8, height: 8, borderRadius: 2, background: pointColor(t, point, index), flexShrink: 0 } }), h("span", { style: { minWidth: 0 } }, point.label), h("span", { style: { marginLeft: "auto", color: t.text.tertiary, fontVariantNumeric: "tabular-nums" } }, total > 0 ? Math.round(Math.max(0, finite(point.value)) / total * 1000) / 10 + "%" : "0%"))));
   return h("div", { style: mergeStyle({ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }, style) }, h("svg", { role: "img", "aria-label": donut ? "Donut chart" : "Pie chart", viewBox: "0 0 " + size + " " + size, width: size, height: size, style: { flexShrink: 0 } }, slices, donut ? h("text", { x: size / 2, y: size / 2 + 5, fill: t.text.primary, fontSize: 16, fontWeight: 590, textAnchor: "middle" }, Math.round(total * 100) / 100) : null), legend);
 }
+
+export function Heatmap({ rows = [], columns = [], values = [], max, style }) {
+  const t = useHostTheme();
+  if (!rows.length || !columns.length) return null;
+  const flat = [];
+  values.forEach((row) => (row || []).forEach((value) => flat.push(Math.max(0, finite(value)))));
+  const peak = max != null && max > 0 ? max : Math.max(1, ...flat);
+  const cell = 28; const labelW = 92; const labelH = 28;
+  const W = labelW + columns.length * cell + 8; const H = labelH + rows.length * cell + 8;
+  const cells = [];
+  for (let r = 0; r < rows.length; r++) {
+    for (let c = 0; c < columns.length; c++) {
+      const value = Math.max(0, finite((values[r] || [])[c]));
+      cells.push(h("rect", { key: r + ":" + c, x: labelW + c * cell + 1, y: labelH + r * cell + 1, width: cell - 2, height: cell - 2, rx: 2, fill: t.accent.primary, fillOpacity: 0.12 + 0.88 * Math.min(1, value / peak) }, h("title", null, rows[r] + " / " + columns[c] + ": " + formatValue(value, "", ""))));
+    }
+  }
+  const rowLabels = rows.map((label, r) => h("text", { key: "r" + r, x: labelW - 6, y: labelH + r * cell + cell / 2 + 3, fill: t.text.secondary, fontSize: 10, textAnchor: "end" }, label));
+  const colLabels = columns.map((label, c) => h("text", { key: "c" + c, x: labelW + c * cell + cell / 2, y: labelH - 8, fill: t.text.secondary, fontSize: 10, textAnchor: "middle" }, label));
+  return h("div", { style: mergeStyle({ width: "100%", overflow: "auto" }, style) }, h("svg", { role: "img", "aria-label": "Heatmap", viewBox: "0 0 " + W + " " + H, style: { display: "block", width: "100%", minWidth: W, height: "auto" } }, rowLabels, colLabels, cells));
+}
+
+export function Scatter({ points = [], x = {}, y = {}, size = 260, trend = false, style }) {
+  const t = useHostTheme();
+  if (!points.length) return null;
+  const W = 640; const H = Math.max(160, size); const plot = { left: 52, right: W - 16, top: 16, bottom: H - 42 };
+  const plotW = plot.right - plot.left; const plotH = plot.bottom - plot.top;
+  const xs = points.map((p) => finite(p.x)); const ys = points.map((p) => finite(p.y));
+  const xMin = x.floor != null ? x.floor : Math.min(...xs); const xMax = x.ceiling != null ? x.ceiling : Math.max(...xs);
+  const yMin = y.floor != null ? y.floor : Math.min(...ys); const yMax = y.ceiling != null ? y.ceiling : Math.max(...ys);
+  const sx = (v) => plot.left + (xMax === xMin ? 0.5 : (v - xMin) / (xMax - xMin)) * plotW;
+  const sy = (v) => plot.bottom - (yMax === yMin ? 0.5 : (v - yMin) / (yMax - yMin)) * plotH;
+  const names = [];
+  points.forEach((p) => { const name = p.series || "Series"; if (names.indexOf(name) < 0) names.push(name); });
+  const colorAt = (index) => t.category[chartColorSequence[index % chartColorSequence.length]];
+  const dots = points.map((p, i) => h("circle", { key: i, cx: sx(finite(p.x)), cy: sy(finite(p.y)), r: p.size != null ? Math.max(3, Math.min(10, Math.sqrt(Math.max(0, finite(p.size))) + 2)) : 4, fill: colorAt(names.indexOf(p.series || "Series")), fillOpacity: 0.85, stroke: t.bg.editor, strokeWidth: 1 }, h("title", null, (p.label || "Point") + ": " + formatValue(finite(p.x), "", x.unit || "") + ", " + formatValue(finite(p.y), "", y.unit || ""))));
+  let trendLine = null;
+  if (trend && points.length > 1 && xMax > xMin) {
+    const n = points.length; const mx = xs.reduce((a, b) => a + b, 0) / n; const my = ys.reduce((a, b) => a + b, 0) / n;
+    let num = 0; let den = 0;
+    for (let i = 0; i < n; i++) { num += (xs[i] - mx) * (ys[i] - my); den += (xs[i] - mx) * (xs[i] - mx); }
+    if (den > 0) {
+      const slope = num / den; const intercept = my - slope * mx;
+      trendLine = h("line", { x1: sx(xMin), y1: sy(slope * xMin + intercept), x2: sx(xMax), y2: sy(slope * xMax + intercept), stroke: t.text.tertiary, strokeWidth: 1.5, strokeDasharray: "4 3" });
+    }
+  }
+  const tick = (value, unit) => formatValue(value, "", unit || "");
+  const axis = h("g", {}, h("line", { x1: plot.left, x2: plot.right, y1: plot.bottom, y2: plot.bottom, stroke: t.stroke.tertiary }), h("line", { x1: plot.left, x2: plot.left, y1: plot.top, y2: plot.bottom, stroke: t.stroke.tertiary }), h("text", { x: plot.left, y: plot.bottom + 16, fill: t.text.secondary, fontSize: 10 }, tick(xMin, x.unit)), h("text", { x: plot.right, y: plot.bottom + 16, fill: t.text.secondary, fontSize: 10, textAnchor: "end" }, tick(xMax, x.unit)), h("text", { x: plot.left - 6, y: plot.bottom, fill: t.text.secondary, fontSize: 10, textAnchor: "end" }, tick(yMin, y.unit)), h("text", { x: plot.left - 6, y: plot.top + 8, fill: t.text.secondary, fontSize: 10, textAnchor: "end" }, tick(yMax, y.unit)));
+  const colors = names.map((_, i) => colorAt(i));
+  return h("div", { style: mergeStyle({ width: "100%", minWidth: 0 }, style) }, h("svg", { role: "img", "aria-label": "Scatter plot", viewBox: "0 0 " + W + " " + H, style: { display: "block", width: "100%", height: H } }, axis, trendLine, dots), h(ChartLegend, { series: names.map((name) => ({ name })), colors }));
+}
 `;

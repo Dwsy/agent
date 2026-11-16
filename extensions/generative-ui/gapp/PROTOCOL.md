@@ -874,6 +874,7 @@ async function summarize() {
 | 0.1.1 | 2026-07-24 | Lock: main-session generate only; no destructive confirm; single-connection default + multi opt-in |
 | 0.1.2 | 2026-07-31 | Add app-owned `tui.mjs` renderer contract shared by standalone and Pi hosts |
 | 0.1.3 | 2026-08-11 | Host token auth on all non-health routes; generate defaults to parallel headless subagents (`mode:"subagent"`), main-session path kept as `mode:"agent"` |
+| 0.1.4 | 2026-11-05 | `tui.mjs` may implement `handleMouse(event)`; fullscreen hosts forward normalized pi-tui mouse events and honor the result's render contract |
 
 ---
 
@@ -897,6 +898,7 @@ export default function createGappTui(runtime) {
     invalidate() {},
     render(width) { return [runtime.app.name]; },
     handleInput(data) { if (data === "q") runtime.close(); },
+    handleMouse(event) { if (event.type === "wheel") return { handled: true }; },
   };
 }
 ```
@@ -906,6 +908,7 @@ export default function createGappTui(runtime) {
 - `render(width): string[]`（required）
 - `invalidate(): void`（缺省由 Host 补 no-op）
 - `handleInput(data): void`（optional）
+- `handleMouse(event): { handled?, capture?, focus?, render? } | undefined`（optional）：`event` 字段与 pi-tui `TuiMouseEvent` 一致，`x`/`y` 是组件局部 0-based 单元格坐标，与 `render()` 输出行 1:1 对齐
 
 GAPP module 不要求直接 import `@earendil-works/pi-tui`，因此 bundle 不需要自己的 `node_modules`。Host 包装输出并按终端可见宽度截断。
 
@@ -934,6 +937,7 @@ GAPP module 不要求直接 import `@earendil-works/pi-tui`，因此 bundle 不�
 5. App-local input (selection/navigation) also triggers render even when it does not mutate persisted state.
 6. Browser-only GAPPs remain valid but are not listed by the TUI picker.
 7. `index.html` and `tui.mjs` may coexist; they share state and domain tools but own their renderer-specific UI logic.
+8. Fullscreen hosts forward normalized mouse events to `handleMouse` and repaint only when the result implies it: a result without `handled`/`capture`/`focus` is discarded, `render` defaults to true for press/click/drag/wheel and false for move/release. Regular-mode hosts (standalone `gapp-tui` CLI) dispatch no mouse events; keyboard handling must remain complete.
 
 ### 16.4 Security boundary
 

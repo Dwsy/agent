@@ -28,6 +28,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { canvasDocumentHTML, transpileCanvas, validateCanvasCode } from "./canvas.js";
+import { compileTailwindCss } from "./tailwind.js";
 import { groundingFooterHTML, validateGroundingDeclaration } from "./grounding.js";
 import { openWindow, preloadGlimpseui, timestamp, wrapHTML } from "./html-helpers.js";
 import { planVisualGuidance } from "./visual-plan.js";
@@ -81,7 +82,7 @@ interface PersistedPlan extends VisualPlanState {
 const VALUE_FLAGS = new Set([
   "modules", "templates", "title", "html", "html-file", "tsx", "tsx-file",
   "grounding", "grounding-file", "width", "height", "limit",
-  "widget-file", "result-file",
+  "widget-file", "result-file", "lang",
 ]);
 
 function parseArgs(argv: string[]): ParsedArgs {
@@ -131,7 +132,7 @@ function usage(): string {
     "         [--width n] [--height n] [--floating] [--interactive] [--no-open]",
     "  canvas --title <t> (--tsx-file <f> | --tsx '<s>')",
     "         [--grounding '<json>' | --grounding-file <f>]",
-    "         [--width n] [--height n] [--floating] [--interactive] [--no-open]",
+    "         [--width n] [--height n] [--floating] [--interactive] [--no-open] [--lang zh-Hans]",
     "  browse list [--limit n]          saved widget history (newest first)",
     "  browse reopen <file> [--interactive]",
     "  browse html <file>               saved html (canvas returns its TSX source)",
@@ -366,6 +367,16 @@ function canvasCode(flags: Record<string, string | boolean>): string {
   throw new Error("provide --tsx-file <f> or --tsx '<s>'");
 }
 
+/** Optional BCP 47 tag for the saved canvas document (CJK glyph shaping). */
+function canvasLang(flags: Record<string, string | boolean>): string {
+  if (flags.lang === undefined) return "";
+  const value = String(flags.lang);
+  if (!/^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/.test(value)) {
+    throw new Error("--lang must be a BCP 47 language tag, e.g. zh-Hans or en-US.");
+  }
+  return value;
+}
+
 async function cmdWidget(flags: Record<string, string | boolean>): Promise<CliResult> {
   const opts = renderOptions(flags);
   const code = widgetCode(flags);
@@ -417,6 +428,8 @@ async function cmdCanvas(flags: Record<string, string | boolean>): Promise<CliRe
   const provenanceFooter = groundingFooterHTML(grounding);
   // Compile errors surface verbatim ("Canvas compile failed: …") like the old tool.
   const compiled = await transpileCanvas(code);
+  const tailwindCss = await compileTailwindCss(code);
+  const lang = canvasLang(flags);
   const title = opts.title.replace(/_/g, " ");
   const width = opts.width ?? 900;
   const height = opts.height ?? 640;
@@ -441,7 +454,7 @@ async function cmdCanvas(flags: Record<string, string | boolean>): Promise<CliRe
     cwd: process.cwd(),
     grounding,
   };
-  await saveWidget(record, canvasDocumentHTML(compiled, canvasStateId, provenanceFooter), code);
+  await saveWidget(record, canvasDocumentHTML(compiled, canvasStateId, provenanceFooter, tailwindCss, lang), code);
   if (plan?.target === "show_canvas") deleteLastPlan();
 
   return renderOutput(

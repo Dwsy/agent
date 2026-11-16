@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
@@ -152,22 +152,29 @@ test("windows are held by the detached CLI holder, not a streaming preview", () 
 });
 
 test("visual skill and CLI carry the focused, local, accessible interaction contract", () => {
-  const skill = readFileSync(join(root, "skills", "generative-ui", "SKILL.md"), "utf8");
+  const skillDir = join(root, "skills", "generative-ui");
+  const skill = readFileSync(join(skillDir, "SKILL.md"), "utf8");
+  // The contract may live in the skill body or in the reference file it points to.
+  const refs = readdirSync(join(skillDir, "references"))
+    .filter((name) => name.endsWith(".md"))
+    .map((name) => readFileSync(join(skillDir, "references", name), "utf8"))
+    .join("\n");
+  const contract = `${skill}\n${refs}`;
   const cli = readFileSync(join(root, "visual-cli.ts"), "utf8");
   const widgetValidation = readFileSync(join(root, "widget-validation.ts"), "utf8");
   const grounding = readFileSync(join(root, "grounding.ts"), "utf8");
   const guidelines = readFileSync(join(root, "guidelines.ts"), "utf8");
 
-  assert.match(skill, /materially improves understanding or a decision/);
-  assert.match(skill, /never invent filter, search, reset, dashboard, or KPI panels/);
-  assert.match(skill, /semantic HTML and native controls/);
-  assert.match(skill, /Do not choose Canvas merely because data is present/);
-  assert.match(skill, /request set to the user's actual goal/);
-  assert.match(skill, /Do not ask the user to choose Canvas vs Widget/);
-  assert.match(skill, /Respect the returned retrieval policy/);
-  assert.match(skill, /Never copy demo values from a skeleton/);
-  assert.match(skill, /The first render must be useful/);
-  assert.match(skill, /Keep presentation-only interactions local/);
+  assert.match(contract, /materially improves understanding or a decision/);
+  assert.match(contract, /never invent filter, search, reset, dashboard, or KPI panels/);
+  assert.match(contract, /semantic HTML and native controls/);
+  assert.match(contract, /Do not choose Canvas merely because data is present/);
+  assert.match(contract, /request set to the user's actual goal/);
+  assert.match(contract, /Do not ask the user to choose Canvas vs Widget/);
+  assert.match(contract, /Respect the returned retrieval policy/);
+  assert.match(contract, /Never copy demo values from a skeleton/);
+  assert.match(contract, /The first render must be useful/);
+  assert.match(contract, /Keep presentation-only interactions local/);
   assert.match(cli, /validateWidgetCode\(code, opts\.interactive\)/);
   assert.match(cli, /enforceGroundingForPlan\(grounding, plan, /);
   assert.match(cli, /validateGroundingDeclaration\(opts\.grounding\)/);
@@ -178,7 +185,7 @@ test("visual skill and CLI carry the focused, local, accessible interaction cont
   assert.match(widgetValidation, /fonts\.googleapis\.com/);
   assert.match(grounding, /grounded visual renders require at least one provenance source/);
   assert.match(grounding, /data-genui-provenance="grounded"/);
-  assert.match(skill, /data-tooltip support backed by Floating UI/);
+  assert.match(contract, /data-tooltip support backed by Floating UI/);
   assert.match(widgetValidation, /script\|link\|img\|audio\|video\|source/);
   assert.match(widgetValidation, /interactive widgets must send a choice/);
   assert.match(guidelines, /Use the smallest medium that fits: Mermaid/);
@@ -277,6 +284,7 @@ test("canvas guidelines stay catalog-first and expand one skeleton on demand", a
 
   const light = rt.guidelines.getGuidelines(["canvas"]);
   assert.match(light, /Cursor-compatible SDK catalog/);
+  assert.match(light, /Tailwind/);
   assert.match(light, /canvas-dashboard/);
   assert.doesNotMatch(light, /Service throughput/);
   assert.doesNotMatch(light, /Traffic and reliability/);

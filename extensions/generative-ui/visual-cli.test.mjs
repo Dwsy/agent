@@ -146,6 +146,46 @@ test("browse lists saved widgets and returns their html", async () => {
   });
 });
 
+test("canvas --no-open inlines Tailwind CSS compiled from TSX class names", async () => {
+  await withTempWidgets(async (dir) => {
+    const body = parseResult(await runVisualCli([
+      "canvas", "--title", "tw_board",
+      "--tsx", "export default function Board(){ return <div className=\"flex gap-4 p-4\"><span>ok</span></div>; }",
+      "--grounding", JSON.stringify(WEB_GROUNDING),
+      "--no-open",
+    ]));
+    assert.equal(body.ok, true);
+    const saved = await readFile(join(dir, body.savedFile), "utf8");
+    assert.match(saved, /\.flex\s*\{/);
+    assert.match(saved, /\.gap-4\s*\{/);
+    assert.doesNotMatch(saved, /cdn\.tailwindcss\.com/);
+    assert.doesNotMatch(saved, /@import "tailwindcss/);
+  });
+});
+
+test("canvas --lang sets the document language and rejects malformed tags", async () => {
+  await withTempWidgets(async (dir) => {
+    const body = parseResult(await runVisualCli([
+      "canvas", "--title", "zh_board",
+      "--tsx", "export default function Board(){ return <main>中文</main>; }",
+      "--grounding", JSON.stringify(WEB_GROUNDING),
+      "--lang", "zh-Hans", "--no-open",
+    ]));
+    assert.equal(body.ok, true);
+    const saved = await readFile(join(dir, body.savedFile), "utf8");
+    assert.match(saved, /<html lang="zh-Hans">/);
+
+    const bad = parseError(await runVisualCli([
+      "canvas", "--title", "bad_lang",
+      "--tsx", "export default function Board(){ return <main>x</main>; }",
+      "--grounding", JSON.stringify(WEB_GROUNDING),
+      "--lang", "../evil", "--no-open",
+    ]));
+    assert.equal(bad.ok, false);
+    assert.match(bad.error.message, /--lang must be a BCP 47 language tag/);
+  });
+});
+
 test("canvas --no-open compiles TSX, saves source, and surfaces compile errors verbatim", async () => {
   await withTempWidgets(async (dir) => {
     const body = parseResult(await runVisualCli([

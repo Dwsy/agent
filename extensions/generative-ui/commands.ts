@@ -1,7 +1,13 @@
 // ── /widgets Command ──────────────────────────────────────────────────────
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { Key, matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
+import {
+  Key,
+  matchesKey,
+  truncateToWidth,
+  type TuiMouseEvent,
+  type TuiMouseEventResult,
+} from "@earendil-works/pi-tui";
 import { join } from "node:path";
 import { type WidgetRecord, widgetsDir, loadActiveWidgetIndex, loadWidgetIndex, loadWidgetHtml } from "./storage.js";
 import { openWindow, openInBrowser } from "./html-helpers.js";
@@ -79,6 +85,8 @@ export function registerWidgetsCommand(pi: ExtensionAPI, activeWindows: any[]) {
       const selectedFile = await ctx.ui.custom<string | null>((tui, theme, _kb, done) => {
         let selectedIndex = 0;
         let cachedLines: string[] | undefined;
+        let rowMap: number[] = [];
+        let pressedIndex: number | undefined;
         const refresh = () => { cachedLines = undefined; tui.requestRender(); };
 
         function clamp() {
@@ -91,8 +99,12 @@ export function registerWidgetsCommand(pi: ExtensionAPI, activeWindows: any[]) {
           render(width: number) {
             if (cachedLines) return cachedLines;
             clamp();
+            rowMap = [];
             const lines: string[] = [];
-            const add = (text: string) => lines.push(truncateToWidth(text, width));
+            const add = (text: string, index = -1) => {
+              lines.push(truncateToWidth(text, width));
+              rowMap.push(index);
+            };
 
             // Header with scope indicator
             const scopeLabel = scope === "project"
@@ -114,7 +126,7 @@ export function registerWidgetsCommand(pi: ExtensionAPI, activeWindows: any[]) {
                 const prefix = sel ? theme.fg("accent", " \u276f ") : "   ";
                 const title = sel ? theme.fg("accent", w.title) : theme.fg("text", w.title);
                 const meta = theme.fg("dim", "  " + w.width + "\u00d7" + w.height + "  " + w.timestamp);
-                add(prefix + title + meta);
+                add(prefix + title + meta, i);
               }
             }
 
@@ -124,6 +136,33 @@ export function registerWidgetsCommand(pi: ExtensionAPI, activeWindows: any[]) {
             return lines;
           },
           invalidate() { cachedLines = undefined; },
+          handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
+            if (event.type !== "wheel" || !event.wheelDelta) {
+              // Not a wheel event: fall through to the press/click handling below.
+            } else {
+              const len = getFiltered().length;
+              selectedIndex = Math.max(0, Math.min(len - 1, selectedIndex + event.wheelDelta));
+              refresh();
+              return { handled: true, render: false };
+            }
+
+            if (event.button !== "left" || (event.type !== "press" && event.type !== "click")) return undefined;
+            const index = rowMap[event.y];
+            if (index === undefined || index < 0) return undefined;
+            if (event.type === "press") {
+              pressedIndex = index;
+              selectedIndex = index;
+              refresh();
+              return { handled: true, focus: true, render: false };
+            }
+            const target = pressedIndex ?? index;
+            pressedIndex = undefined;
+            selectedIndex = target;
+            const w = getFiltered()[selectedIndex];
+            if (w) done(w.file);
+            refresh();
+            return { handled: true, render: false };
+          },
           handleInput(data: string) {
             const filtered = getFiltered();
 
@@ -176,6 +215,8 @@ export function registerWidgetsCommand(pi: ExtensionAPI, activeWindows: any[]) {
       const action = await ctx.ui.custom<string | null>((tui, theme, _kb, done) => {
         let selectedIndex = 0;
         let cachedLines: string[] | undefined;
+        let rowMap: number[] = [];
+        let pressedIndex: number | undefined;
         const refresh = () => { cachedLines = undefined; tui.requestRender(); };
 
         const actions = [
@@ -187,8 +228,12 @@ export function registerWidgetsCommand(pi: ExtensionAPI, activeWindows: any[]) {
         return {
           render(width: number) {
             if (cachedLines) return cachedLines;
+            rowMap = [];
             const lines: string[] = [];
-            const add = (text: string) => lines.push(truncateToWidth(text, width));
+            const add = (text: string, index = -1) => {
+              lines.push(truncateToWidth(text, width));
+              rowMap.push(index);
+            };
 
             add(theme.fg("accent", theme.bold("  " + widget.title)));
             add(theme.fg("dim", "  " + widget.width + "\u00d7" + widget.height + "  " + widget.timestamp));
@@ -199,12 +244,37 @@ export function registerWidgetsCommand(pi: ExtensionAPI, activeWindows: any[]) {
               const sel = i === selectedIndex;
               const prefix = sel ? theme.fg("accent", " \u276f ") : "   ";
               const label = sel ? theme.fg("accent", actions[i].label) : theme.fg("text", actions[i].label);
-              add(prefix + label);
+              add(prefix + label, i);
             }
             cachedLines = lines;
             return lines;
           },
           invalidate() { cachedLines = undefined; },
+          handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
+            if (event.type !== "wheel" || !event.wheelDelta) {
+              // Not a wheel event: fall through to the press/click handling below.
+            } else {
+              selectedIndex = Math.max(0, Math.min(actions.length - 1, selectedIndex + event.wheelDelta));
+              refresh();
+              return { handled: true, render: false };
+            }
+
+            if (event.button !== "left" || (event.type !== "press" && event.type !== "click")) return undefined;
+            const index = rowMap[event.y];
+            if (index === undefined || index < 0) return undefined;
+            if (event.type === "press") {
+              pressedIndex = index;
+              selectedIndex = index;
+              refresh();
+              return { handled: true, focus: true, render: false };
+            }
+            const target = pressedIndex ?? index;
+            pressedIndex = undefined;
+            selectedIndex = target;
+            done(actions[selectedIndex].value);
+            refresh();
+            return { handled: true, render: false };
+          },
           handleInput(data: string) {
             if (matchesKey(data, Key.up)) {
               if (selectedIndex > 0) selectedIndex--;

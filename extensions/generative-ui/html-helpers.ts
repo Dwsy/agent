@@ -4,6 +4,7 @@ import { execSync, spawn } from "node:child_process";
 import { getGlimpseui, loadGlimpseui, preloadGlimpseui } from "./resolve-glimpseui.js";
 import { SVG_STYLES, cssVariables } from "./svg-styles.js";
 import { WIDGET_CSP, WIDGET_UI_KIT_CSS, WIDGET_UI_KIT_RESOURCES } from "./widget-ui-kit.js";
+import { WIDGET_STEPS_CSS, WIDGET_STEPS_SCRIPT } from "./widget-steps.js";
 import { MORPHDOM_UMD_JS } from "./vendor-morphdom.js";
 
 export { preloadGlimpseui, loadGlimpseui, getGlimpseui };
@@ -96,9 +97,11 @@ body{margin:0;padding:1rem;font-family:var(--font-sans);background:var(--color-b
 @keyframes _fadeIn{from{opacity:0;transform:translateY(4px);}to{opacity:1;transform:none;}}
 ${SVG_STYLES}
 ${WIDGET_UI_KIT_CSS}
+${WIDGET_STEPS_CSS}
 </style>
 </head><body><div id="root"></div>
 ${WIDGET_UI_KIT_RESOURCES}
+<script>${WIDGET_STEPS_SCRIPT}</script>
 <script>${MORPHDOM_UMD_JS}</script>
 <script>
   ${THEME_VARS_SCRIPT}
@@ -143,15 +146,15 @@ export function wrapHTML(code: string, isSVG = false): string {
   const themeMeta = `<meta name="color-scheme" content="light dark"><meta http-equiv="Content-Security-Policy" content="${WIDGET_CSP}">`;
   const themeScript = `<script>${THEME_VARS_SCRIPT}\n${WIDGET_EVENTS_SCRIPT}</script>`;
   if (isSVG) {
-    return `<!DOCTYPE html><html><head><meta charset="utf-8">${themeMeta}<style>${vars}${SVG_STYLES}${WIDGET_UI_KIT_CSS}</style></head>
+    return `<!DOCTYPE html><html><head><meta charset="utf-8">${themeMeta}<style>${vars}${SVG_STYLES}${WIDGET_UI_KIT_CSS}${WIDGET_STEPS_CSS}</style></head>
 <body style="margin:0;padding:1rem;display:flex;flex-direction:column;gap:12px;align-items:center;justify-content:center;min-height:100vh;background:var(--color-background-primary);color:var(--color-text-primary);">
-${themeScript}${WIDGET_UI_KIT_RESOURCES}${code}</body></html>`;
+${themeScript}${WIDGET_UI_KIT_RESOURCES}<script>${WIDGET_STEPS_SCRIPT}</script>${code}</body></html>`;
   }
   return `<!DOCTYPE html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 ${themeMeta}
-<style>${vars}*{box-sizing:border-box}body{margin:0;padding:1rem;font-family:var(--font-sans);background:var(--color-background-primary);color:var(--color-text-primary);}${SVG_STYLES}${WIDGET_UI_KIT_CSS}</style>
-</head><body>${themeScript}${WIDGET_UI_KIT_RESOURCES}${code}</body></html>`;
+<style>${vars}*{box-sizing:border-box}body{margin:0;padding:1rem;font-family:var(--font-sans);background:var(--color-background-primary);color:var(--color-text-primary);}${SVG_STYLES}${WIDGET_UI_KIT_CSS}${WIDGET_STEPS_CSS}</style>
+</head><body>${themeScript}${WIDGET_UI_KIT_RESOURCES}<script>${WIDGET_STEPS_SCRIPT}</script>${code}</body></html>`;
 }
 
 export function escapeJS(s: string): string {

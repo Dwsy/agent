@@ -202,6 +202,7 @@ canvas_code
 grounding
 width?       default 900
 height?      default 640
+lang?        optional BCP 47 tag, e.g. zh-Hans (default: no lang attribute)
 floating?
 interactive?
 ```
@@ -217,17 +218,30 @@ react-dom/client
 
 其余 import 会被拒绝。
 
+### Tailwind CSS（Canvas TSX）
+
+宿主在编译 TSX 时用 Tailwind v4 扫描源码中的类名，只把用到的 utility 静态编译进页面 `<style>`：无运行时 JIT、无 CDN、无需额外 CSP 放行。
+
+- 类名必须以字面量出现在 TSX 源码中；运行时拼接或插值出的类名不会生成 CSS。
+- SDK 组件只接受 `style`，不接受 `className`；Tailwind 类名请放在原生 DOM 元素上。
+- 关闭 preflight，页面基线、字体和明暗主题仍由宿主 shell 与 host CSS 变量负责。
+- 颜色、边框、表面继续用 host tokens 或 `@gen-ui/canvas`：例如 `className="flex gap-4 p-4 text-[var(--color-text-primary)] bg-[var(--color-background-secondary)]"`。
+- `dark:` 跟随系统 `prefers-color-scheme`，不跟随 Gallery 的手动明暗切换。
+
 `@gen-ui/canvas` 是内联 Canvas SDK，提供：
 
 - host theme / state / actions
 - layout / typography
 - forms
 - charts
+- heatmap / scatter
 - DAG / graph
 - diff
 - todo / task state
 - usage / metrics
 - `sendToAgent()` / `sendPrompt()` / `sendAnnotation()`
+
+完整导出与 prop 默认值见 `skills/generative-ui/references/sdk.md`（由 `sdk-reference.ts` 从 SDK 源码生成，测试锁同步）。这是关闭导出清单：不在其中的 import 会在 esbuild 编译阶段失败。
 
 运行时：
 
@@ -415,6 +429,8 @@ index.ts
 ├── grounding.ts             host provenance invariant
 ├── widget-validation.ts     Widget code boundary
 ├── canvas.ts                TSX compile + Canvas runtime shell
+├── tailwind.ts              build-time Tailwind CSS for Canvas TSX
+├── sdk-reference.ts         generates skills/generative-ui/references/sdk.md
 ├── canvas-sdk-source.ts     @gen-ui/canvas inline SDK
 ├── guidelines.ts            shared design guidance
 ├── templates/               progressive skeleton catalog

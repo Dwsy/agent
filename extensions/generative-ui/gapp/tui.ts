@@ -56,6 +56,54 @@ export type GappTuiKeyName =
   | "tab"
   | "backspace";
 
+/** Mouse contract mirrored from pi-tui's fullscreen dispatcher so bundles need no pi-tui import. */
+export type GappTuiMouseEventType =
+  | "press"
+  | "release"
+  | "move"
+  | "drag"
+  | "click"
+  | "wheel";
+
+export type GappTuiMouseButton = "left" | "middle" | "right" | "none";
+
+/** Zero-based cell coordinates local to the app component. */
+export interface GappTuiMouseEvent {
+  type: GappTuiMouseEventType;
+  button: GappTuiMouseButton;
+  x: number;
+  y: number;
+  screenX: number;
+  screenY: number;
+  width: number;
+  height: number;
+  shift: boolean;
+  alt: boolean;
+  ctrl: boolean;
+  /** Logical lines; negative values scroll up. */
+  wheelDelta?: number;
+  clickCount?: number;
+}
+
+export interface GappTuiMouseResult {
+  handled?: boolean;
+  capture?: boolean;
+  focus?: boolean;
+  /** Overrides the dispatcher default (true for press/click/drag/wheel). */
+  render?: boolean;
+}
+
+export interface GappTuiComponent {
+  render(width: number): string[];
+  invalidate?(): void;
+  handleInput?(data: string): void;
+  handleMouse?(event: GappTuiMouseEvent): GappTuiMouseResult | undefined;
+}
+
+export interface GappTuiHostComponent extends Component {
+  handleMouse?(event: GappTuiMouseEvent): GappTuiMouseResult | undefined;
+}
+
 export interface GappTuiPromptRequest {
   title: string;
   initial?: string;
@@ -93,7 +141,7 @@ export interface GappTuiRuntime {
 }
 
 export interface GappTuiAppSession {
-  readonly component: Component;
+  readonly component: GappTuiHostComponent;
   readonly bundle: GappBundle;
   setRequestRender(requestRender: () => void): void;
   setHostActionHandler(handler: (action: GappTuiHostAction) => void): void;
@@ -103,7 +151,7 @@ export interface GappTuiAppSession {
 
 type GappTuiFactory = (
   runtime: GappTuiRuntime,
-) => Component | Promise<Component>;
+) => GappTuiComponent | Promise<GappTuiComponent>;
 
 function keyValue(name: GappTuiKeyName): string {
   return Key[name] as string;
@@ -171,7 +219,7 @@ export async function createGappTuiAppSession(options: {
   let handleHostAction = (_action: GappTuiHostAction) => {};
   let status = "";
   let busy = false;
-  let appComponent: Component | undefined;
+  let appComponent: GappTuiHostComponent | undefined;
 
   const invalidateAndRender = () => {
     appComponent?.invalidate?.();
@@ -307,7 +355,7 @@ export async function createGappTuiAppSession(options: {
 
   appComponent = {
     invalidate() {
-      rawComponent.invalidate();
+      rawComponent.invalidate?.();
     },
     render(width: number) {
       try {
@@ -322,11 +370,31 @@ export async function createGappTuiAppSession(options: {
         ];
       }
     },
+    handleMouse(event: GappTuiMouseEvent) {
+      if (!rawComponent.handleMouse) return undefined;
+      try {
+        const result = rawComponent.handleMouse(event);
+        // pi-tui discards results without handled/capture/focus; do not repaint on a no-op.
+        if (!result || !(result.handled || result.capture || result.focus)) return undefined;
+        const shouldRender =
+          result.render ??
+          (event.type === "press" ||
+            event.type === "click" ||
+            event.type === "drag" ||
+            event.type === "wheel");
+        if (shouldRender) invalidateAndRender();
+        return result;
+      } catch (error) {
+        status = `mouse error: ${error instanceof Error ? error.message : String(error)}`;
+        invalidateAndRender();
+        return undefined;
+      }
+    },
     handleInput(data: string) {
       try {
         rawComponent.handleInput?.(data);
         // App-local selection/navigation state is not necessarily persisted.
-        rawComponent.invalidate();
+        rawComponent.invalidate?.();
         requestRender();
       } catch (error) {
         status = `input error: ${error instanceof Error ? error.message : String(error)}`;

@@ -103,20 +103,27 @@ GAPP 在 bundle 根目录提供 `tui.mjs`：
 
 ```js
 export default function createGappTui(runtime) {
+  let selected = 0;
   return {
     invalidate() {},
     render(width) {
       const state = runtime.getState();
-      return [`${runtime.app.name}: ${JSON.stringify(state)}`];
+      return [`${runtime.app.name}: ${JSON.stringify(state)}`, `row ${selected}`];
     },
     handleInput(data) {
       if (data === "q") runtime.close();
+    },
+    handleMouse(event) {
+      if (event.type === "wheel" && event.wheelDelta) {
+        selected = Math.max(0, selected + (event.wheelDelta < 0 ? -1 : 1));
+        return { handled: true };
+      }
     },
   };
 }
 ```
 
-也可以导出具名 `createGappTui(runtime)`。返回值采用 `pi-tui` 的结构化 `Component` 契约：`render(width): string[]`、可选 `handleInput(data)`、`invalidate()`。
+也可以导出具名 `createGappTui(runtime)`。返回值采用 `pi-tui` 的结构化 `Component` 契约：`render(width): string[]`、可选 `handleInput(data)` / `handleMouse(event)`、`invalidate()`。
 
 模块本身不必安装或 import `pi-tui`。宿主注入的 runtime 提供：
 
@@ -134,6 +141,12 @@ export default function createGappTui(runtime) {
 | `runtime.close()` | 退出当前 TUI 应用 |
 
 TUI 内调用工具固定 `openIfNeeded: false`，不会为了执行操作意外打开浏览器窗口。
+
+### 鼠标事件
+
+全屏（alt-screen）宿主把归一化事件转发给 `handleMouse(event)`，字段与 pi-tui `TuiMouseEvent` 一致：`type`（`press`/`release`/`move`/`drag`/`click`/`wheel`）、`button`、`x`/`y`（组件局部 0-based 单元格坐标）、`screenX`/`screenY`、`width`/`height`、`shift`/`alt`/`ctrl`、`wheelDelta`（负值为上滚）、`clickCount`。返回值与 `TuiMouseEventResult` 一致：`{ handled, capture, focus, render }`。没有 `handled`/`capture`/`focus` 的结果会被宿主丢弃并交回渲染器兜底；`render` 缺省时 `press`/`click`/`drag`/`wheel` 重绘，`move`/`release` 不重绘。宿主依据结果决定是否 `invalidate()` + `requestRender()`，应用不必自己请求重绘。
+
+坐标与 `render()` 输出行 1:1 对齐（宿主只按宽度截断每行，不插入表头），应用可在渲染期记录 `rowMap[y]` 做命中测试；`.pi/gapp/demo-kanban/tui.mjs` 是含滚轮、按下列头、卡片点击与宽屏跨列拖放的参考实现。拖放由 `press` 上的 `capture` 接管后续 `drag`/`release`，目标列在列头显示 `⇢`；窄屏仍只显示一列，跨列移动用键盘。pi-tui 只在全屏模式派发鼠标；独立 `gapp-tui` CLI 走 regular 模式，鼠标归终端，键盘路径必须保留。
 
 ## 命令
 
@@ -183,7 +196,7 @@ pnpm gapp:tui demo-kanban --cwd /path/to/agent
 
 ## Demo Kanban
 
-`.pi/gapp/demo-kanban/tui.mjs` 是完整的 TUI 应用渲染器：宽屏显示三列看板，窄屏显示当前列；方向键选择列/卡片，Enter 前进，`b` 后退，`p` 改优先级，`a` 新增，`u` 指派，`d` 删除，`t` 改标题，`r` 刷新，`q` 退出。WebView 与 TUI 都 import `tools.mjs` 导出的常量、状态规范化和 `createKanbanTools()` 客户端；`tools.json` 只负责 schema/catalog，所有写操作最终落到同一 `state.json`。
+`.pi/gapp/demo-kanban/tui.mjs` 是完整的 TUI 应用渲染器：宽屏显示三列看板，窄屏显示当前列；方向键选择列/卡片，Enter 前进，`b` 后退，鼠标拖拽卡片跨列移动，`p` 改优先级，`a` 新增，`u` 指派，`d` 删除，`t` 改标题，`r` 刷新，`q` 退出。WebView 与 TUI 都 import `tools.mjs` 导出的常量、状态规范化和 `createKanbanTools()` 客户端；`tools.json` 只负责 schema/catalog，所有写操作最终落到同一 `state.json`。
 
 ## Host control plane
 
