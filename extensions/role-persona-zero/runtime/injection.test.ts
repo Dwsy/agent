@@ -1,4 +1,5 @@
 import { mock, test } from "bun:test";
+import { installPiCodingAgentMock, installPiTuiMock } from "../test-support.ts";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -10,16 +11,9 @@ mock.module("@earendil-works/pi-ai/compat", () => ({
   StringEnum: (x: unknown) => x,
 }));
 
-mock.module("@earendil-works/pi-coding-agent", () => ({
-  convertToLlm: (messages: unknown[]) => messages,
-  serializeConversation: (messages: unknown[]) => JSON.stringify(messages),
-}));
+installPiCodingAgentMock();
 
-mock.module("@earendil-works/pi-tui", () => ({
-  Container: class {},
-  SelectList: class {},
-  Text: class {},
-}));
+installPiTuiMock();
 
 const { addRoleEvent, ensureRoleMemoryFiles } = await import("../memory-md.ts");
 const { reloadConfig } = await import("../config.ts");
@@ -81,6 +75,8 @@ test("master switch off injects no memory at all", () => {
 
 test("longTerm switch off drops consolidated memory while daily injection stays independent", () => {
   const rolePath = mkdtempSync(join(tmpdir(), "rp-injection-longterm-"));
+  // 总开关必须显式打开：它会受用户真实 ~/.pi/roles/pi-role-persona.jsonc 影响
+  process.env.ROLE_MEMORY_INJECTION = "1";
   process.env.ROLE_LONGTERM_INJECTION = "0";
   process.env.ROLE_DAILY_INJECTION = "1";
   try {
@@ -94,6 +90,7 @@ test("longTerm switch off drops consolidated memory while daily injection stays 
     assert.ok(!prompt.includes("[id:"));
     assert.ok(prompt.includes("Daily"));
   } finally {
+    delete process.env.ROLE_MEMORY_INJECTION;
     delete process.env.ROLE_LONGTERM_INJECTION;
     delete process.env.ROLE_DAILY_INJECTION;
     reloadConfig();
@@ -103,6 +100,8 @@ test("longTerm switch off drops consolidated memory while daily injection stays 
 
 test("turning injection off mid-session drops the frozen snapshot", () => {
   const rolePath = mkdtempSync(join(tmpdir(), "rp-injection-toggle-"));
+  // 同上：基线必须显式打开，否则测试依赖用户真实配置
+  process.env.ROLE_MEMORY_INJECTION = "1";
   try {
     ensureRoleMemoryFiles(rolePath, ROLE);
     addRoleEvent(rolePath, ROLE, "visible while enabled", { title: "Visible", appendDaily: false });

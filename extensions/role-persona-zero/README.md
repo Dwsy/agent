@@ -389,7 +389,7 @@ role_exec({ op: "llm_tidy" })   // consolidate / repair / vector_rebuild / vecto
 | 命令 | 用途 |
 |------|------|
 | `/role` | 直接打开自定义角色 TUI 控制中心（非系统 select）：状态、切换/映射、创建、默认角色、禁用、注入预览、记忆查看与全量配置 |
-| `/role create/map/unmap/info/list` | 兼容的命令行角色管理入口 |
+| `/role create/map/unmap/info/list` | 兼容的命令行角色管理入口；`/role unmap [path]` 带路径时禁用整棵目录树 |
 | `/memories` | 查看记忆（默认起本地 HTTP 服务并打开浏览器；`/memories tui` 用终端查看器） |
 | `/memory-export [path]` | 导出为单文件 HTML 快照（与 `/memories` 同一套界面，去掉需要服务端的功能） |
 | `/memory-log` | 查看近期持久化与当前会话记忆操作日志 |
@@ -417,6 +417,38 @@ env ROLE_* > pi-role-persona.jsonc > defaults
 `core/constraints.md` 默认不进入系统提示词（`corePrompt.injectConstraints = false`），文件仍会创建和维护，需要硬约束时在控制中心「核心提示」里开启，或用 `ROLE_INJECT_CONSTRAINTS=1` 覆盖。
 
 “查看当前实际注入内容”会展示角色 core prompt、高优先级记忆、长期记忆和启用的 daily memory。按需关键词召回、向量召回和外部只读记忆依赖下一条用户查询，因此界面只展示其真实开关与规则，不执行搜索或伪造结果。
+
+### 目录绑定与禁用
+
+角色绑定与禁用都在 `~/.pi/roles/config.json`，解析顺序：
+
+```text
+cwd → mappings 最长前缀命中   → 用该角色
+    → disabledPaths 前缀命中  → 不注入任何角色（含默认角色）
+    → defaultRole            → 兜底
+```
+
+- `mappings` 与 `disabledPaths` 都是**目录前缀**语义：命中一个目录即覆盖它的全部下级
+- `mappings` 优先级高于 `disabledPaths`，显式映射的目录仍会拿到角色；禁用整棵树时会一并清掉树内的显式映射
+- 命中 `disabledPaths` 的会话完全不注入角色：无 core prompt、无记忆块、不初始化向量，`role_search` / `role_exec` 直接返回「无角色」错误
+- 链接工作树（`git worktree add`）按主仓库目录判定绑定与禁用
+
+维护方式（三种等价）：
+
+```bash
+/role unmap                     # 只禁用当前目录（精确匹配）
+/role unmap ~/OpenBot/Agents    # 禁用整棵目录树，并清掉树内显式映射
+# 或直接编辑 ~/.pi/roles/config.json 的 disabledPaths 数组
+```
+
+例：把 OpenBot 各 agent 工作区和临时目录排除在角色注入之外——
+
+```jsonc
+// ~/.pi/roles/config.json
+{
+  "disabledPaths": ["/Users/me/OpenBot/Agents", "/Users/me/temp"]
+}
+```
 
 ### 关键配置块
 

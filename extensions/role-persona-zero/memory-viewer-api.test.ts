@@ -5,6 +5,7 @@
  * Run: bun test memory-viewer-api.test.ts
  */
 import { mock, test } from "bun:test";
+import { installPiCodingAgentMock, installPiTuiMock } from "./test-support.ts";
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -16,19 +17,9 @@ mock.module("@earendil-works/pi-ai/compat", () => ({
   StringEnum: (x: unknown) => x,
 }));
 
-mock.module("@earendil-works/pi-coding-agent", () => ({
-  convertToLlm: (messages: unknown[]) => messages,
-  serializeConversation: (messages: unknown[]) => JSON.stringify(messages),
-  getMarkdownTheme: () => ({}),
-}));
+installPiCodingAgentMock();
 
-mock.module("@earendil-works/pi-tui", () => ({
-  Key: { escape: "escape", up: "up", down: "down", pageUp: "pageUp", pageDown: "pageDown", home: "home", end: "end", ctrl: (c: string) => c },
-  Markdown: class { render() { return []; } invalidate() {} },
-  matchesKey: () => false,
-  truncateToWidth: (s: string) => s,
-  visibleWidth: (s: string) => s.length,
-}));
+installPiTuiMock();
 
 const { addPendingLearning, addRoleLearning, ensureRoleMemoryFiles, readRoleMemory } = await import("./memory-md.ts");
 const { startMemoryServer } = await import("./memory-viewer.ts");

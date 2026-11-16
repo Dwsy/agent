@@ -5,6 +5,7 @@
  */
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
+import type { TuiMouseEvent } from "@earendil-works/pi-tui";
 import { readMemoryLog } from "../logger.ts";
 import { log } from "../logger.ts";
 import { runLlmMemoryTidy } from "../memory-llm.ts";
@@ -200,6 +201,9 @@ export function registerMemoryCommands(rt: Runtime): void {
           },
           invalidate() {
             container.invalidate();
+          },
+          handleMouse(event: TuiMouseEvent) {
+            return container.handleMouse(event);
           },
           handleInput(data: string) {
             if (tagList) {

@@ -1,5 +1,13 @@
 import { getMarkdownTheme } from "@earendil-works/pi-coding-agent";
-import { Key, Markdown, matchesKey, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import {
+  Key,
+  Markdown,
+  matchesKey,
+  truncateToWidth,
+  type TuiMouseEvent,
+  type TuiMouseEventResult,
+  visibleWidth,
+} from "@earendil-works/pi-tui";
 import * as http from "node:http";
 import { exec } from "node:child_process";
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -130,6 +138,15 @@ export class RoleMemoryViewerComponent {
     this.scrollOffset = 0;
     this.rebuildMarkdown();
     this.tui.requestRender();
+  }
+
+  handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
+    if (this.disposed || event.type !== "wheel" || !event.wheelDelta) return undefined;
+
+    const maxScroll = Math.max(0, this.allLines.length - this.visibleLines());
+    this.scrollOffset = Math.max(0, Math.min(maxScroll, this.scrollOffset + event.wheelDelta));
+    this.tui.requestRender();
+    return { handled: true };
   }
 
   handleInput(data: string): void {

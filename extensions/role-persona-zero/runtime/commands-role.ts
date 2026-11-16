@@ -1,6 +1,7 @@
 /** `/role` command: TUI control center plus info/create/map/unmap/list subcommands. */
 import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { homedir } from "node:os";
+import { join, resolve } from "node:path";
 import { openRoleControlCenter } from "../role-control-center.ts";
 import {
   createRole,
@@ -20,11 +21,17 @@ import { normalizePath } from "./fs-utils.ts";
 import { activateRole } from "./role-activation.ts";
 import { isTuiAvailable, notify, selectCreateRoleNameUI, selectRoleUI } from "./ui.ts";
 
+/** `/role unmap <path>` 的参数解析：展开 `~`，相对路径按当前目录解析。 */
+function resolvePathArg(raw: string, cwd: string): string {
+  const expanded = raw === "~" || raw.startsWith("~/") ? join(homedir(), raw.slice(1)) : raw;
+  return resolve(cwd, expanded);
+}
+
 export function registerRoleCommand(rt: Runtime): void {
   const { pi } = rt;
 
   pi.registerCommand("role", {
-    description: "角色控制中心（无参数打开 TUI）: /role [tui|info|create|map|unmap|list]",
+    description: "角色控制中心（无参数打开 TUI）: /role [tui|info|create|map|unmap [path]|list]",
     handler: async (args, ctx) => {
       const config = loadRoleConfig();
       const cwd = ctx.cwd;
@@ -196,37 +203,44 @@ export function registerRoleCommand(rt: Runtime): void {
         }
 
         case "unmap": {
-          const cwdKey = normalizePath(resolveRoleScopeDir(cwd));
+          // 无参数 = 只禁用当前目录；带路径 = 禁用整棵目录树（前缀匹配，含全部下级）
+          const targetArg = argv[1];
+          const tree = Boolean(targetArg);
+          const target = normalizePath(
+            targetArg ? resolvePathArg(targetArg, cwd) : resolveRoleScopeDir(cwd)
+          );
 
-          // 仅移除当前目录的显式映射，不误伤父目录映射
-          let removedMapping = false;
-          for (const [path] of Object.entries(config.mappings)) {
-            if (normalizePath(path) === cwdKey) {
-              delete config.mappings[path];
-              removedMapping = true;
-            }
+          // 移除目标自身（当前目录模式）或目标子树内的映射；父目录映射不受影响
+          const removedMappings: string[] = [];
+          for (const path of Object.keys(config.mappings)) {
+            const key = normalizePath(path);
+            const hit = tree ? key === target || key.startsWith(target + "/") : key === target;
+            if (!hit) continue;
+            delete config.mappings[path];
+            removedMappings.push(key);
           }
 
-          // 标记当前目录禁用角色（包含默认角色）
+          // 标记禁用角色（包含默认角色）；前缀匹配让所有下级目录一并生效
           const disabled = new Set((config.disabledPaths || []).map((path) => normalizePath(path)));
-          disabled.add(cwdKey);
+          disabled.add(target);
           config.disabledPaths = Array.from(disabled);
 
           saveRoleConfig(config);
 
-          rt.state.currentRole = null;
-          rt.state.currentRolePath = null;
-          if (isTuiAvailable(ctx)) {
-            ctx.ui.setStatus("role", ctx.ui.theme.fg("dim", "off"));
-            ctx.ui.setStatus("memory-checkpoint", undefined);
+          const cwdNorm = normalizePath(cwd);
+          const cwdAffected = cwdNorm === target || cwdNorm.startsWith(target + "/");
+          if (cwdAffected) {
+            rt.state.currentRole = null;
+            rt.state.currentRolePath = null;
+            if (isTuiAvailable(ctx)) {
+              ctx.ui.setStatus("role", ctx.ui.theme.fg("dim", "off"));
+              ctx.ui.setStatus("memory-checkpoint", undefined);
+            }
           }
 
-          notify(rt, ctx,
-            removedMapping
-              ? "已取消当前目录映射，并标记为不使用角色（默认角色也禁用）"
-              : "当前目录已标记为不使用角色（默认角色禁用）",
-            "info"
-          );
+          const scopeLabel = tree ? `目录树 ${target}` : "当前目录";
+          const mappingNote = removedMappings.length > 0 ? `，清除 ${removedMappings.length} 条映射` : "";
+          notify(rt, ctx, `${scopeLabel} 已禁用角色（含默认角色${mappingNote}）`, "info");
           break;
         }
 
@@ -254,7 +268,7 @@ export function registerRoleCommand(rt: Runtime): void {
             }
           }
 
-          info += `\n### 禁用角色目录（unmap 结果）\n\n`;
+          info += `\n### 禁用角色目录（前缀匹配，含所有下级）\n\n`;
           const disabledPaths = (config.disabledPaths || []).map((path) => normalizePath(path));
           if (disabledPaths.length === 0) {
             info += "无\n";

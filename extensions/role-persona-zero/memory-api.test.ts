@@ -4,6 +4,7 @@
  * Run: bun test memory-api.test.ts
  */
 import { mock, test } from "bun:test";
+import { installPiCodingAgentMock } from "./test-support.ts";
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -16,10 +17,7 @@ mock.module("@earendil-works/pi-ai/compat", () => ({
   StringEnum: (x: unknown) => x,
 }));
 
-mock.module("@earendil-works/pi-coding-agent", () => ({
-  convertToLlm: (messages: unknown[]) => messages,
-  serializeConversation: (messages: unknown[]) => JSON.stringify(messages),
-}));
+installPiCodingAgentMock();
 
 const {
   addPendingLearning,

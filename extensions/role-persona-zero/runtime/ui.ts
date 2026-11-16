@@ -3,9 +3,10 @@
  * fallback, and the role selection / creation TUI flows.
  */
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { join } from "node:path";
 import { Container, SelectList, Text } from "@earendil-works/pi-tui";
-import { getRoleIdentity, getRoles, isFirstRun, ROLES_DIR } from "../role-store.ts";
+import type { TuiMouseEvent } from "@earendil-works/pi-tui";
+import { buildPanelDetail, buildPanelEntries, scopeLineFor } from "../role-control-center.ts";
+import { showRolePanel } from "../role-panel.ts";
 import type { Runtime } from "./context.ts";
 
 /** Check if running in RPC mode */
@@ -13,12 +14,17 @@ export function isRpcMode(): boolean {
   return process.argv.includes("--mode") && process.argv.includes("rpc");
 }
 
-/** Check if TUI/custom UI methods are actually available (not RPC mode) */
+/** Check if TUI/custom UI methods are actually available */
 export function isTuiAvailable(ctx: ExtensionContext): boolean {
-  // RPC mode: hasUI is true but custom() returns undefined
-  if (isRpcMode()) return false;
   try {
-    return ctx.hasUI && typeof ctx.ui.custom === "function";
+    if (!ctx.hasUI || typeof ctx.ui.custom !== "function") return false;
+    // Headless pi RPC exposes ui.custom but resolves it to undefined. However,
+    // grok-pi runs pi with `--mode rpc` too (argv sniffing misclassifies it) and
+    // installs the Rust TUI bridge, which tags its custom() replacement with
+    // __rustTuiBridge. Trust the capability marker over the argv heuristic.
+    const custom = ctx.ui.custom as ((...args: unknown[]) => unknown) & { __rustTuiBridge?: boolean };
+    if (isRpcMode() && !custom.__rustTuiBridge) return false;
+    return true;
   } catch {
     // ctx is stale after session replacement/reload
     return false;
@@ -40,61 +46,16 @@ export async function selectRoleUI(rt: Runtime, ctx: ExtensionContext): Promise<
     return null;
   }
 
-  const roles = getRoles();
-
-  const items = roles.map(name => {
-    const path = join(ROLES_DIR, name);
-    const identity = getRoleIdentity(path);
-    const firstRun = isFirstRun(path);
-
-    return {
-      value: name,
-      label: identity?.name ? `${name} (${identity.name})` : name,
-      description: firstRun ? "[FIRST RUN] 首次运行 - 需要初始化" : "已配置"
-    };
+  // Unified role panel in select mode: Enter picks, ^N creates, Esc cancels.
+  const action = await showRolePanel(ctx, {
+    entries: buildPanelEntries(ctx.cwd, null),
+    detail: buildPanelDetail,
+    scopeLine: scopeLineFor(ctx.cwd, null),
+    mode: "select",
   });
-
-  items.push({
-    value: "__create__",
-    label: "+ 创建新角色",
-    description: "创建自定义角色"
-  });
-
-  return await ctx.ui.custom<string | null>((tui, theme, _kb, done) => {
-    const container = new Container();
-
-    container.addChild(new Text(theme.fg("accent", theme.bold("选择角色"))));
-    container.addChild(new Text(theme.fg("muted", "每个角色有独立的记忆和个性")));
-    container.addChild(new Text(""));
-
-    const selectList = new SelectList(items, Math.min(items.length, 10), {
-      selectedPrefix: (text) => theme.fg("accent", text),
-      selectedText: (text) => theme.fg("accent", theme.bold(text)),
-      description: (text) => theme.fg("dim", text),
-      scrollInfo: (text) => theme.fg("dim", text),
-      noMatch: (text) => theme.fg("dim", text),
-    });
-
-    selectList.onSelect = (item) => done(item.value);
-    selectList.onCancel = () => done(null);
-
-    container.addChild(selectList);
-    container.addChild(new Text(""));
-    container.addChild(new Text(theme.fg("dim", "↑↓ 选择 • Enter 确认 • Esc 取消")));
-
-    return {
-      render(width: number) {
-        return container.render(width);
-      },
-      invalidate() {
-        container.invalidate();
-      },
-      handleInput(data: string) {
-        selectList.handleInput(data);
-        tui.requestRender();
-      },
-    };
-  });
+  if (action?.startsWith("map:")) return action.slice("map:".length);
+  if (action === "create") return "__create__";
+  return null;
 }
 
 export async function selectCreateRoleNameUI(rt: Runtime, ctx: ExtensionContext): Promise<string | null> {
@@ -136,6 +97,9 @@ export async function selectCreateRoleNameUI(rt: Runtime, ctx: ExtensionContext)
       },
       invalidate() {
         container.invalidate();
+      },
+      handleMouse(event: TuiMouseEvent) {
+        return container.handleMouse(event);
       },
       handleInput(data: string) {
         selectList.handleInput(data);

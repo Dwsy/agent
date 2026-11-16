@@ -1,4 +1,5 @@
 import { afterAll, mock, test } from "bun:test";
+import { installPiCodingAgentMock } from "./test-support.ts";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import {
@@ -26,10 +27,7 @@ mock.module("@earendil-works/pi-ai/compat", () => ({
   }),
 }));
 
-mock.module("@earendil-works/pi-coding-agent", () => ({
-  convertToLlm: (messages: unknown[]) => messages,
-  serializeConversation: (messages: unknown[]) => JSON.stringify(messages),
-}));
+installPiCodingAgentMock();
 
 // ROLES_DIR is resolved at module load time, so the redirect env var must be
 // in place before role-store.ts is imported. The directory is git-initialized

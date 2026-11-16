@@ -1,4 +1,5 @@
 import { afterAll, mock, test } from "bun:test";
+import { installPiCodingAgentMock } from "./test-support.ts";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -184,10 +185,7 @@ mock.module("@earendil-works/pi-ai/compat", () => ({
   complete: async () => ({ stopReason: "end", content: [] }),
   completeSimple: async () => ({ stopReason: "end", content: [{ type: "text", text: "{}" }] }),
 }));
-mock.module("@earendil-works/pi-coding-agent", () => ({
-  convertToLlm: (messages: unknown[]) => messages,
-  serializeConversation: (messages: unknown[]) => JSON.stringify(messages),
-}));
+installPiCodingAgentMock();
 
 const { reloadConfig } = await import("./config.ts");
 reloadConfig(); // bust any config cached by earlier test files with the real env

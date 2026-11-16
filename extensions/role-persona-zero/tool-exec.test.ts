@@ -4,6 +4,7 @@
  * Run: bun test tool-exec.test.ts
  */
 import { mock, test } from "bun:test";
+import { installPiCodingAgentMock, installPiTuiMock } from "./test-support.ts";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -15,13 +16,7 @@ mock.module("@earendil-works/pi-ai/compat", () => ({
   StringEnum: (x: unknown) => x,
 }));
 
-mock.module("@earendil-works/pi-coding-agent", () => ({
-  convertToLlm: (messages: unknown[]) => messages,
-  serializeConversation: (messages: unknown[]) => JSON.stringify(messages),
-  getLanguageFromPath: () => undefined,
-  getMarkdownTheme: () => ({}),
-  highlightCode: (code: string) => code.split("\n"),
-}));
+installPiCodingAgentMock();
 
 // Tool modules import typebox, which only the pi loader aliases at runtime.
 mock.module("@sinclair/typebox", () => ({
@@ -30,16 +25,7 @@ mock.module("@sinclair/typebox", () => ({
 
 // Superset of what tui-renderers.ts and memory-viewer.ts import, because bun
 // shares mock registrations across test files in one run.
-mock.module("@earendil-works/pi-tui", () => ({
-  Box: class { addChild() {} },
-  Markdown: class { render() { return []; } invalidate() {} },
-  Spacer: class {},
-  Text: class { setText() {} },
-  Key: { escape: "escape", up: "up", down: "down", pageUp: "pageUp", pageDown: "pageDown", home: "home", end: "end", ctrl: (c: string) => c },
-  matchesKey: () => false,
-  truncateToWidth: (s: string) => s,
-  visibleWidth: (s: string) => s.length,
-}));
+installPiTuiMock();
 
 const { ensureRoleMemoryFiles, addRoleLearning } = await import("./memory-md.ts");
 const { buildHelpText, dispatchRoleExec, OP_CATALOG } = await import("./runtime/tool-exec.ts");

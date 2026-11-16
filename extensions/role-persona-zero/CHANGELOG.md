@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Changed (`/role unmap` 支持整棵目录树)
+- **`/role unmap [path]`**：无参数仍为「只禁用当前目录」；带路径则禁用该目录**及其全部下级**（`disabledPaths` 本就是前缀匹配，此前只能手改 `config.json` 才能利用这一点），并顺带清掉树内的显式映射——否则 `mappings` 优先级更高，树里那些映射会让「禁用整棵树」看起来没生效。参数展开 `~`，相对路径以 cwd 为基准；`list` 的「禁用角色目录」标题显式标注前缀语义
+- 只有当 cwd 落在被禁用的树内时，才清空当前会话角色与状态栏，避免在 A 目录禁用 B 目录时把正在跑的角色踢掉
+- 新增 `runtime/commands-role.test.ts`（4 例）：树内/树外映射分流、任意深度下级生效、同前缀非子目录（`/tmp/treehouse`）不误伤、`~` 与相对路径解析、cwd 不在树内时不清空会话。用 `PI_ROLES_DIR` 隔离并在结束时还原配置文件，万一指向真实 `~/.pi/roles` 则整组 skip 而非污染用户配置
+- README 新增「目录绑定与禁用」：`mappings` → `disabledPaths` → `defaultRole` 的解析顺序、前缀语义、命中后到底不注入什么
+
+### Fixed (测试依赖用户真实配置)
+- `runtime/injection.test.ts` 有两个用例默认「记忆注入是开着的」，于是只要用户自己的 `~/.pi/roles/pi-role-persona.jsonc` 里写了 `memory.injection.enabled: false`（本机就是这样），测试就红。现在基线显式设 `ROLE_MEMORY_INJECTION=1`，跑测试不再取决于用户配置：134 → 138 tests 全绿
+
 ### Fixed (记忆注入开关关不掉)
 - **根因**：`buildMemoryPrompt` 无条件调用 `readLongTermMemoryBlock` / `buildPendingReviewBlock`，长期记忆（consolidated 的 learnings/preferences/events）与 pending 候选**没有任何开关**。控制中心「记忆注入与搜索」分区只有 `memory.dailyInjection.enabled` 与 `memory.onDemandSearch.enabled`，两项默认均为 `false`——关掉它们之后 `## Your Memory` 仍原封不动出现，因为它们本来就没控制长期记忆
 - **新增 `memory.injection.enabled`（总开关）与 `memory.injection.longTerm`（默认均 `true`，保持既有行为）**：总开关关闭时 `buildMemoryPrompt` 返回空串、首条消息按需召回也短路；`longTerm` 单独关闭时只移除长期记忆 + pending 块，daily 注入不受影响。环境变量 `ROLE_MEMORY_INJECTION` / `ROLE_LONGTERM_INJECTION` 可覆盖
