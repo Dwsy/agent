@@ -7,7 +7,11 @@ description: Control local Mac apps through Computer Use for tasks that require 
 
 Drive local macOS applications through the OpenAI Computer Use service. Work in a tight
 observe → act → re-observe loop: start with `get_app_state`, act on **fresh** element indices,
-then fetch the state again before deciding the next step.
+and fetch the state again before deciding the next step.
+
+Scope: this loop covers real UI interaction — clicking, typing, scrolling, dragging. An artifact
+produced by a CLI render (a generative-ui widget or canvas window) is not an observation target:
+the render's `ok: true` is the receipt. Do not open Computer Use to confirm it.
 
 ## 驱动方式（按优先级）
 
