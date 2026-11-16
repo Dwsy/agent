@@ -1867,11 +1867,10 @@ test("list polish: hierarchy rhythm + row de-duplication + hover actions", () =>
 	expect(css).toMatch(/\.row-title\s*{[^}]*font-size: 12px[^}]*font-weight: 500/);
 	expect(css).toMatch(/\.row-dot\s*{[^}]*width: 6px/);
 	expect(css).toMatch(/\.row-meta\s*{[^}]*margin-left: auto[^}]*font-size: 10px/);
-	// branch chip died in the row; the model chip is capped at 150px with ellipsis
+	// branch chip died in the row; the model moved to the quiet meta line (max 140px, ellipsis)
 	expect(html).not.toContain('x-show="p.git && p.git.branch"');
-	expect(html).toContain('<span class="chip-text" x-html="esc(p.model)"></span>');
-	expect(css).toMatch(/\.row-chips \.chip-strong\s*{[^}]*max-width: 150px/);
-	expect(css).toMatch(/\.row-chips \.chip-text\s*{[^}]*text-overflow: ellipsis/);
+	expect(html).toContain('<span x-show="p.model" class="row-model"');
+	expect(css).toMatch(/\.row-model\s*{[^}]*max-width: 140px[^}]*text-overflow: ellipsis/);
 	// actions hidden at rest, revealed by hover / selection / focus, always on touch
 	expect(css).toMatch(/\.row-actions\s*{[^}]*opacity: 0/);
 	expect(css).toMatch(/\.peer-row:hover \.row-actions[\s\S]{0,120}opacity: 1/);

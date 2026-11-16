@@ -249,4 +249,14 @@ describe("MeshClient", () => {
 		await expect(client.request({ id: nextId(), type: "query_peers" })).rejects.toThrow(/closed/);
 		await expect(client.connect()).rejects.toThrow(/closed/);
 	});
+
+	test("a response that never arrives times out instead of leaking the entry", async () => {
+		const hub = await startHub({ autoRespond: false }); // receives, never replies
+		hubs.push(hub);
+		const client = makeClient({ socketPath: hub.socketPath, requestTimeoutMs: 40 });
+		await expect(client.request({ id: nextId(), type: "query_peers" })).rejects.toThrow(/timed out/);
+		// The dead entry is gone; repeat requests keep failing cleanly, not hanging.
+		await expect(client.request({ id: nextId(), type: "query_peers" })).rejects.toThrow(/timed out/);
+		client.close();
+	});
 });

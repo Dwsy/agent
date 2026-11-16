@@ -161,32 +161,53 @@ test("bridge: mouse payload bytes reach herdr stdin byte-for-byte", async () => 
 	});
 });
 
-test("bridge: a new attach for the same mode+target reaps the stale child (orphan guard)", async () => {
+test("active terminal owner rejects a second window without killing the first", async () => {
 	const server = http.createServer();
 	await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
 	const fakes: ReturnType<typeof fakeChild>[] = [];
-	const opts: TerminalAttachOptions = {
-		spawnChild: () => {
-			const f = fakeChild();
-			fakes.push(f);
-			return f.child;
-		},
-	};
-	const off = attachTerminalWs(server, opts);
+	const off = attachTerminalWs(server, { spawnChild: () => {
+		const f = fakeChild();
+		fakes.push(f);
+		return f.child;
+	}});
 	const port = (server.address() as { port: number }).port;
-	const url = `ws://127.0.0.1:${port}/api/terminal?target=w1:p2&mode=control&cols=80&rows=24`;
+	const base = `ws://127.0.0.1:${port}/api/terminal?target=w1:p2&mode=control&cols=80&rows=24`;
+	try {
+		const ws1 = new WebSocket(base + "&owner=windowA&attachId=a1");
+		await new Promise<void>((r) => ws1.once("open", () => r()));
+		expect(fakes).toHaveLength(1);
 
-	const ws1 = new WebSocket(url);
-	await new Promise<void>((r) => ws1.once("open", () => r()));
-	expect(fakes.length).toBe(1);
+		const ws2 = new WebSocket(base + "&owner=windowB&attachId=b2");
+		const messages: string[] = [];
+		ws2.on("message", (data) => messages.push(data.toString()));
+		const closed = new Promise<number>((resolve) => ws2.once("close", (code) => resolve(code)));
+		await new Promise<void>((r) => ws2.once("open", () => r()));
+		expect(await closed).toBe(4409);
+		expect(JSON.parse(messages[0]!)).toEqual({ type: "terminal.error", reason: "already attached", owner: "windowA", attachId: "a1" });
+		expect(fakes).toHaveLength(1);
+		expect(fakes[0]!.killed()).toBe(false);
 
-	// Simulate the orphan: ws1 never closes cleanly (hard-killed browser).
-	const ws2 = new WebSocket(url);
-	await new Promise<void>((r) => ws2.once("open", () => r()));
-	expect(fakes.length).toBe(2);
-	expect(fakes[0]!.killed()).toBe(true); // stale child reaped
+		const ws3 = new WebSocket(base + "&owner=windowA&attachId=a3");
+		const rejected = new Promise<number>((resolve) => ws3.once("close", (code) => resolve(code)));
+		await new Promise<void>((r) => ws3.once("open", () => r()));
+		expect(await rejected).toBe(4409); // same owner is not a takeover capability
+		ws1.close();
+		await new Promise<void>((r) => ws1.once("close", () => r()));
 
-	ws2.close();
-	off();
-	server.close();
+		const ws4 = new WebSocket(base + "&owner=windowC&attachId=c4");
+		await new Promise<void>((r) => ws4.once("open", () => r()));
+		expect(fakes).toHaveLength(2); // old socket CLOSED; stale child may now be reaped
+		expect(fakes[0]!.killed()).toBe(true);
+		fakes[0]!.child.emit("exit", 0); // late old completion cannot erase c4
+		const ws5 = new WebSocket(base + "&owner=windowD&attachId=d5");
+		const rejectedAgain = new Promise<number>((resolve) => ws5.once("close", (code) => resolve(code)));
+		await new Promise<void>((r) => ws5.once("open", () => r()));
+		expect(await rejectedAgain).toBe(4409);
+		expect(fakes).toHaveLength(2);
+		expect(fakes[1]!.killed()).toBe(false);
+		ws4.close();
+	} finally {
+		off();
+		server.close();
+	}
 });

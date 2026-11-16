@@ -16,7 +16,8 @@
 import type http from "node:http";
 import type net from "node:net";
 import { spawn, type ChildProcess } from "node:child_process";
-import { WebSocketServer, type WebSocket } from "ws";
+import { randomUUID } from "node:crypto";
+import { WebSocket, WebSocketServer } from "ws";
 
 export type TerminalMode = "control" | "observe";
 
@@ -34,6 +35,8 @@ export interface TerminalQuery {
 	mode: TerminalMode;
 	cols: number;
 	rows: number;
+	owner?: string;
+	attachId?: string;
 }
 
 /** Strict query validation — fail fast at the boundary. */
@@ -46,7 +49,12 @@ export function parseTerminalQuery(url: URL): TerminalQuery | { error: string } 
 	const rows = Number(url.searchParams.get("rows") ?? 24);
 	if (!Number.isInteger(cols) || cols < 20 || cols > 400) return { error: "invalid cols" };
 	if (!Number.isInteger(rows) || rows < 5 || rows > 200) return { error: "invalid rows" };
-	return { target, mode, cols, rows };
+	const owner = url.searchParams.get("owner");
+	const attachId = url.searchParams.get("attachId");
+	const OWNER_RE = /^[A-Za-z0-9:_-]{1,128}$/;
+	if (owner !== null && !OWNER_RE.test(owner)) return { error: "invalid owner" };
+	if (attachId !== null && !OWNER_RE.test(attachId)) return { error: "invalid attachId" };
+	return { target, mode, cols, rows, ...(owner === null ? {} : { owner }), ...(attachId === null ? {} : { attachId }) };
 }
 
 /** Validate one client -> herdr JSONL command; returns the line or null. */
@@ -73,10 +81,9 @@ export function attachTerminalWs(server: http.Server, opts: TerminalAttachOption
 
 	const wss = new WebSocketServer({ noServer: true });
 	const children = new Set<ChildProcess>();
-	// Orphan guard: a hard-killed browser can leave its ws half-open so the child
-	// is never reaped and herdr keeps the pane attach ("already has an attached
-	// client"). A new attach for the same mode+target reaps the stale one.
-	const attachByTarget = new Map<string, ChildProcess>();
+	// One active owner per Herdr mode:target. A second window is a CONFLICT,
+	// not proof the first child is stale. Only a CLOSED socket may be reaped.
+	const attachByTarget = new Map<string, { child: ChildProcess; ws: WebSocket; owner: string; attachId: string }>();
 
 	const onUpgrade = (req: http.IncomingMessage, socket: net.Socket, head: Buffer) => {
 		const url = new URL(req.url ?? "/", "http://127.0.0.1");
@@ -95,12 +102,17 @@ export function attachTerminalWs(server: http.Server, opts: TerminalAttachOption
 
 	const startSession = (ws: WebSocket, query: TerminalQuery) => {
 		const attachKey = `${query.mode}:${query.target}`;
-		const stale = attachByTarget.get(attachKey);
-		if (stale) {
+		const previous = attachByTarget.get(attachKey);
+		if (previous && previous.ws.readyState !== WebSocket.CLOSED) {
+			ws.send(JSON.stringify({ type: "terminal.error", reason: "already attached", owner: previous.owner, attachId: previous.attachId }));
+			ws.close(4409, "already attached");
+			return;
+		}
+		if (previous) {
 			try {
-				stale.kill();
+				previous.child.kill();
 			} catch {}
-			children.delete(stale);
+			children.delete(previous.child);
 			attachByTarget.delete(attachKey);
 		}
 		const child = spawnChild([
@@ -114,7 +126,8 @@ export function attachTerminalWs(server: http.Server, opts: TerminalAttachOption
 			String(query.rows),
 		]);
 		children.add(child);
-		attachByTarget.set(attachKey, child);
+		const binding = { child, ws, owner: query.owner ?? "legacy", attachId: query.attachId ?? randomUUID() };
+		attachByTarget.set(attachKey, binding);
 
 		let buf = "";
 		child.stdout?.setEncoding("utf8");
@@ -134,9 +147,12 @@ export function attachTerminalWs(server: http.Server, opts: TerminalAttachOption
 			child.stdin?.write(`${line}\n`);
 		});
 
+		let finished = false;
 		const finish = (reason: string) => {
+			if (finished) return;
+			finished = true;
 			children.delete(child);
-			if (attachByTarget.get(attachKey) === child) attachByTarget.delete(attachKey);
+			if (attachByTarget.get(attachKey) === binding) attachByTarget.delete(attachKey);
 			try {
 				child.stdin?.end(); // clean herdr detach
 			} catch {}
@@ -150,13 +166,18 @@ export function attachTerminalWs(server: http.Server, opts: TerminalAttachOption
 		child.on("exit", (code) => finish(`herdr exited (${code ?? "signal"})`));
 		child.on("error", (err) => finish(`herdr error: ${err.message}`));
 		ws.on("close", () => {
-			children.delete(child);
-			if (attachByTarget.get(attachKey) === child) attachByTarget.delete(attachKey);
 			try {
 				child.stdin?.end();
 			} catch {}
-			// herdr detaches on stdin EOF; kill only if it lingers.
-			const t = setTimeout(() => child.kill(), 2_000);
+			// Keep identity until exit or force-reap. A late close from this
+			// owner must never clear a newer bridge attached to the same pane.
+			const t = setTimeout(() => {
+				if (!finished) {
+					try { child.kill(); } catch {}
+					children.delete(child);
+					if (attachByTarget.get(attachKey) === binding) attachByTarget.delete(attachKey);
+				}
+			}, 2_000);
 			t.unref?.();
 		});
 	};
@@ -166,6 +187,7 @@ export function attachTerminalWs(server: http.Server, opts: TerminalAttachOption
 		server.off("upgrade", onUpgrade);
 		for (const child of children) child.kill();
 		children.clear();
+		attachByTarget.clear();
 		wss.close();
 	};
 }

@@ -6,8 +6,9 @@
  * write bounds the loss window while keeping mutations cheap. `flush()` covers
  * shutdown.
  */
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
+import { randomUUID } from "node:crypto";
 import type { MeshConfig } from "../config.ts";
 import type { FileActivity, GitInfo, PeerInfo, PeerState, PeerStateNotice, PeerView, ResumeRecord, SessionPersistence } from "../protocol.ts";
 import { MESH_VERSION, isEphemeralPeer, meshPaths } from "../protocol.ts";
@@ -57,8 +58,11 @@ export function isExpired(
 
 export class Registry {
 	#peers = new Map<string, PeerRecord>();
-	/** Pending resume leases keyed by sessionFile (in-memory: TTLs are short). */
-	#leases = new Map<string, { owner: string; expiresAt: number }>();
+	/** Fenced, persisted attempts: TTL is informational, not permission to launch
+	 * again when the previous launch result is unknown. */
+	#leases = new Map<string, { sessionId: string; owner: string; token: string; expiresAt: number; phase: "claimed" | "started" }>();
+	/** Registration can beat the Herdr startAgent acknowledgement. */
+	#recentRegisters = new Map<string, { sessionId: string; owner: string; token: string; expiresAt: number; phase: "claimed" | "started" }>();
 	#config: MeshConfig;
 	#persistFile: string;
 	#persistTimer: ReturnType<typeof setTimeout> | null = null;
@@ -96,8 +100,13 @@ export class Registry {
 		delete record.closedAt;
 		delete record.closeReason;
 		this.#peers.set(peer.sessionId, record);
-		// The resumed pi is live now: its launch lease is consumed.
-		this.#leases.delete(peer.sessionFile);
+		// Preserve the consumed token for a late lineage record, without
+		// allowing it to mutate a different/new launch attempt.
+		const consumed = this.#leases.get(peer.sessionFile);
+		if (consumed && consumed.sessionId === peer.sessionId) {
+			this.#recentRegisters.set(peer.sessionFile, consumed);
+			this.#leases.delete(peer.sessionFile);
+		}
 		this.#notify({ type: "change" });
 		this.#schedulePersist();
 		return { ...record };
@@ -168,21 +177,30 @@ export class Registry {
 			if (isEphemeralPeer(rec)) {
 				const anchor = Date.parse(rec.closedAt ?? rec.lastHeartbeat);
 				if (rec.state !== "running" && rec.state !== "waiting" && now - anchor > EPHEMERAL_PURGE_MS) {
-					this.#peers.delete(sessionId);
+					this.#dropPeer(sessionId, rec);
 					purged++;
 				}
 				continue;
 			}
 			if (isExpired(rec.state, rec.lastHeartbeat, rec.closedAt, now, this.#config.retentionDays)) {
-				this.#peers.delete(sessionId);
+				this.#dropPeer(sessionId, rec);
 				purged++;
 			}
 		}
+		// Lease bookkeeping is fenced past its TTL (anti-double-spawn), but it must
+		// not outlive its peer: #dropPeer keeps the maps from growing without bound.
 		if (purged > 0) {
 			this.#notify({ type: "change" });
 			this.#schedulePersist();
 		}
 		return purged;
+	}
+
+	/** Removing a peer must take its resume bookkeeping with it, or it orphans. */
+	#dropPeer(sessionId: string, rec: PeerRecord): void {
+		this.#peers.delete(sessionId);
+		this.#leases.delete(rec.sessionFile);
+		this.#recentRegisters.delete(rec.sessionFile);
 	}
 
 	/**
@@ -233,13 +251,13 @@ export class Registry {
 	}
 
 	/**
-	 * CAS lease before launching a resume. Same owner renews (idempotent).
-	 * Throws "unknown session" | "already live" | "lease held".
+	 * Same owner is NOT an idempotency key: independent clicks must not both
+	 * spawn. A previous attempt requires explicit reconciliation or register.
 	 */
 	claimResume(
 		opts: { sessionId?: string; sessionFile?: string; owner: string; ttlMs?: number },
 		now = Date.now(),
-	): { leaseExpiresAt: string } {
+	): { leaseExpiresAt: string; token: string } {
 		const rec = opts.sessionId
 			? this.#peers.get(opts.sessionId)
 			: [...this.#peers.values()].find((p) => p.sessionFile === opts.sessionFile);
@@ -250,20 +268,29 @@ export class Registry {
 		}
 		const key = rec.sessionFile;
 		const lease = this.#leases.get(key);
-		if (lease && lease.expiresAt > now && lease.owner !== opts.owner) {
-			throw new Error("lease held");
-		}
+		// The fence outlives its TTL on purpose: a spawned resume may still be
+		// starting, and a second claim would double-spawn. Only register or
+		// releaseResume end it (or peer purge below).
+		if (lease) throw new Error(lease.phase === "started" ? "resume outcome unknown" : "lease held");
+		if (!opts.owner.trim()) throw new Error("owner is required");
 		const expiresAt = now + (opts.ttlMs ?? RESUME_LEASE_TTL_MS);
-		this.#leases.set(key, { owner: opts.owner, expiresAt });
-		return { leaseExpiresAt: new Date(expiresAt).toISOString() };
+		const token = randomUUID();
+		this.#recentRegisters.delete(key);
+		this.#leases.set(key, { sessionId: rec.sessionId, owner: opts.owner, token, expiresAt, phase: "claimed" });
+		try { this.#persistFence(); }
+		catch (error) { this.#leases.delete(key); throw error; }
+		return { leaseExpiresAt: new Date(expiresAt).toISOString(), token };
 	}
 
-	/** Append resume lineage and release the lease. */
+	/** Append lineage without releasing: a Pi register consumes the lease. */
 	recordResume(
-		opts: { sessionId: string; owner: string; herdrWorkspaceId?: string; herdrPaneId?: string },
+		opts: { sessionId: string; owner: string; token: string; herdrWorkspaceId?: string; herdrPaneId?: string },
 	): PeerView {
 		const rec = this.#peers.get(opts.sessionId);
 		if (!rec) throw new Error(`pi-mesh: unknown session ${opts.sessionId}`);
+		const lease = this.#leases.get(rec.sessionFile) ?? this.#recentRegisters.get(rec.sessionFile);
+		if (!lease || lease.sessionId !== opts.sessionId || lease.owner !== opts.owner || lease.token !== opts.token) throw new Error("stale resume token");
+		if (lease.phase !== "claimed") throw new Error("resume already recorded");
 		const entry: ResumeRecord = {
 			at: new Date().toISOString(),
 			via: "mesh-cli",
@@ -272,10 +299,23 @@ export class Registry {
 			herdrPaneId: opts.herdrPaneId,
 		};
 		rec.resumptions = [...(rec.resumptions ?? []), entry].slice(-MAX_RESUMPTIONS_PER_PEER);
-		this.#leases.delete(rec.sessionFile);
+		lease.phase = "started";
+		if (this.#recentRegisters.get(rec.sessionFile) === lease) this.#recentRegisters.delete(rec.sessionFile);
 		this.#notify({ type: "change" });
-		this.#schedulePersist();
+		this.#persistFence();
 		return { ...rec };
+	}
+
+	/** Only exact, not-yet-started attempts may be abandoned. */
+	releaseResume(opts: { sessionId: string; owner: string; token: string }): void {
+		const rec = this.#peers.get(opts.sessionId);
+		if (!rec) throw new Error("unknown session");
+		const lease = this.#leases.get(rec.sessionFile);
+		if (!lease || lease.sessionId !== opts.sessionId || lease.owner !== opts.owner || lease.token !== opts.token) throw new Error("stale resume token");
+		if (lease.phase !== "claimed") throw new Error("resume already launched");
+		this.#leases.delete(rec.sessionFile);
+		try { this.#persistFence(); }
+		catch (error) { this.#leases.set(rec.sessionFile, lease); throw error; }
 	}
 
 	get(sessionId: string): PeerView | undefined {
@@ -288,8 +328,12 @@ export class Registry {
 		return () => this.#listeners.delete(listener);
 	}
 
-	toJSON(): { version: number; peers: PeerRecord[] } {
-		return { version: MESH_VERSION, peers: [...this.#peers.values()] };
+	toJSON(): { version: number; peers: PeerRecord[]; leases: Array<{ sessionFile: string; sessionId: string; owner: string; token: string; expiresAt: number; phase: "claimed" | "started" }> } {
+		return {
+			version: MESH_VERSION,
+			peers: [...this.#peers.values()],
+			leases: [...this.#leases].map(([sessionFile, lease]) => ({ sessionFile, ...lease })),
+		};
 	}
 
 	/** Corrupt or missing file -> start empty; never crash the hub. */
@@ -301,7 +345,7 @@ export class Registry {
 			return;
 		}
 		try {
-			const parsed = JSON.parse(raw) as { peers?: unknown };
+			const parsed = JSON.parse(raw) as { peers?: unknown; leases?: unknown };
 			if (!Array.isArray(parsed?.peers)) return;
 			for (const rec of parsed.peers as PeerRecord[]) {
 				if (rec && typeof rec.sessionId === "string" && typeof rec.sessionFile === "string") {
@@ -309,6 +353,18 @@ export class Registry {
 					if (!Array.isArray(rec.files)) rec.files = [];
 					if (rec.resumptions !== undefined && !Array.isArray(rec.resumptions)) rec.resumptions = [];
 					this.#peers.set(rec.sessionId, rec);
+				}
+			}
+			if (Array.isArray(parsed.leases)) {
+				for (const lease of parsed.leases) {
+					if (!lease || typeof lease.sessionFile !== "string" || typeof lease.sessionId !== "string"
+						|| typeof lease.owner !== "string" || typeof lease.token !== "string"
+						|| typeof lease.expiresAt !== "number" || !["claimed", "started"].includes(lease.phase)) continue;
+					if (this.#peers.get(lease.sessionId)?.sessionFile !== lease.sessionFile) continue;
+					this.#leases.set(lease.sessionFile, {
+						sessionId: lease.sessionId, owner: lease.owner, token: lease.token,
+						expiresAt: lease.expiresAt, phase: lease.phase,
+					});
 				}
 			}
 		} catch {
@@ -323,10 +379,25 @@ export class Registry {
 			this.#persistTimer = null;
 		}
 		try {
-			mkdirSync(dirname(this.#persistFile), { recursive: true });
-			writeFileSync(this.#persistFile, JSON.stringify(this.toJSON()));
+			this.#persistFence();
 		} catch {
-			// persistence is best-effort; a disk hiccup must not kill the hub
+			// Heartbeat persistence remains best-effort. Lease claims fail
+			// closed in their own strict write path.
+		}
+	}
+
+	/** Fencing cannot be best-effort; a rejected disk write forbids launching. */
+	#persistFence(): void {
+		mkdirSync(dirname(this.#persistFile), { recursive: true });
+		// Atomic same-directory rename avoids a truncated registry snapshot
+		// after a crash halfway through a lease write.
+		const temp = `${this.#persistFile}.${process.pid}.${randomUUID()}.tmp`;
+		try {
+			writeFileSync(temp, JSON.stringify(this.toJSON()), { mode: 0o600, flag: "wx" });
+			renameSync(temp, this.#persistFile);
+		} catch (error) {
+			try { unlinkSync(temp); } catch {}
+			throw error;
 		}
 	}
 

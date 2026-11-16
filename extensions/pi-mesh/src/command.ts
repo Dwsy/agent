@@ -6,9 +6,12 @@
  * model context (zero-tool constraint stays intact).
  */
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import type { TuiMouseEvent } from "@earendil-works/pi-tui";
 import os from "node:os";
 import { meshPaths, type HubRequest, type PeerView, type TranscriptEntry } from "./protocol.ts";
 import { MeshClient, nextId } from "./client.ts";
+import { loadConfig } from "./config.ts";
+import { copyToClipboard, formatMeshStatus } from "./status.ts";
 import { MeshPanel } from "./mesh-panel.ts";
 import { resumePeer } from "./resume.ts";
 import { openWebUi } from "./webui.ts";
@@ -49,6 +52,66 @@ async function fetchTranscript(sessionId: string, limit: number): Promise<Transc
 	});
 }
 
+function currentSessionId(ctx: ExtensionCommandContext): string | null {
+	try {
+		return ctx.sessionManager?.getSessionId?.() ?? null;
+	} catch {
+		return null;
+	}
+}
+
+function errorText(err: unknown): string {
+	return err instanceof Error ? err.message : String(err);
+}
+
+/**
+ * `/mesh-status` and `/mesh status`: one report, printed as-is. `copy` hands
+ * the same text to the clipboard and keeps the toast to a single line — the
+ * report itself is what the user pastes, not what they read in the status bar.
+ */
+async function runMeshStatus(args: string, ctx: ExtensionCommandContext): Promise<void> {
+	const mode = args.trim();
+	if (mode && mode !== "copy") {
+		ctx.ui.notify(`未知参数 “${mode}”；用法：/mesh-status [copy]`, "warning");
+		return;
+	}
+	const home = os.homedir();
+	let httpPort: number;
+	try {
+		httpPort = loadConfig(home).httpPort;
+	} catch (err) {
+		ctx.ui.notify(errorText(err), "error");
+		return;
+	}
+	let peers: PeerView[] = [];
+	let hubError: string | null = null;
+	try {
+		peers = await fetchPeers();
+	} catch (err) {
+		hubError = errorText(err);
+	}
+	const report = formatMeshStatus({
+		peers,
+		selfSessionId: currentSessionId(ctx),
+		socketPath: meshPaths(home).socketPath,
+		httpPort,
+		hubError,
+		now: Date.now(),
+	});
+	if (mode === "copy") {
+		try {
+			copyToClipboard(report);
+			ctx.ui.notify(`pi-mesh 状态已复制到剪贴板（${report.split("\n").length} 行）`);
+		} catch (err) {
+			// The report is still the useful part: show it so the copy failure
+			// does not also cost the user the information.
+			ctx.ui.notify(`${errorText(err)}\n${report}`, "error");
+		}
+		return;
+	}
+	ctx.ui.notify(report, hubError ? "warning" : "info");
+}
+
 /** Follow edges run self -> target; the hub request carries the acting session. */
 function setFollow(selfSessionId: string) {
 	return async (targetSessionId: string, following: boolean): Promise<void> => {
@@ -72,7 +135,13 @@ export function registerMeshCommand(pi: ExtensionAPI): void {
 		getArgumentCompletions: (prefix) =>
 			["status", "web"].filter((s) => s.startsWith(prefix.trim())).map((s) => ({ value: s, label: s })),
 		handler: async (args: string, ctx: ExtensionCommandContext) => {
-			if (args.trim() === "web") {
+			const trimmed = args.trim();
+			if (trimmed === "status" || trimmed.startsWith("status ")) {
+				// Same report as `/mesh-status`; the completion below has always advertised it.
+				await runMeshStatus(trimmed.slice("status".length).trim(), ctx);
+				return;
+			}
+			if (trimmed === "web") {
 				// One open path shared with the CLI; the command must not grow its own.
 				const result = await openWebUi({ home: os.homedir() });
 				if (result.ok) ctx.ui.notify(result.message);
@@ -83,16 +152,20 @@ export function registerMeshCommand(pi: ExtensionAPI): void {
 				ctx.ui.notify("pi-mesh 面板需要交互式 TUI（请在会话中使用 /mesh）", "warning");
 				return;
 			}
-			const selfSessionId =
-				(() => {
-					try {
-						return ctx.sessionManager?.getSessionId?.() ?? null;
-					} catch {
-						return null;
-					}
-				})();
-			await ctx.ui.custom<void>((tui, _theme, _kb, done) => {
+			// Loaded lazily: standalone unit tests import this module without pi-tui
+			// on their resolution path, while a running Pi session resolves it.
+			const { Key, matchesKey } = await import("@earendil-works/pi-tui");
+			const selfSessionId = currentSessionId(ctx);
+			await ctx.ui.custom<void>((tui, theme, _kb, done) => {
 				const panel = new MeshPanel({
+					keys: {
+						up: (data) => matchesKey(data, Key.up),
+						down: (data) => matchesKey(data, Key.down),
+						pageUp: (data) => matchesKey(data, Key.pageUp),
+						pageDown: (data) => matchesKey(data, Key.pageDown),
+						right: (data) => matchesKey(data, Key.right),
+						left: (data) => matchesKey(data, Key.left),
+					},
 					fetchPeers,
 					fetchTranscript,
 					setFollow: selfSessionId ? setFollow(selfSessionId) : async () => {
@@ -105,6 +178,7 @@ export function registerMeshCommand(pi: ExtensionAPI): void {
 						}).then((out) => ({ ok: out.ok, message: out.message })),
 					selfSessionId,
 					now: () => Date.now(),
+					theme,
 					requestRender: () => tui.requestRender(),
 					onClose: () => done(undefined),
 					// The panel renders into the overlay, so its body height must follow the
@@ -114,6 +188,7 @@ export function registerMeshCommand(pi: ExtensionAPI): void {
 				return {
 					render: (width: number) => panel.render(width),
 					handleInput: (data: string) => panel.handleInput(data),
+					handleMouse: (event: TuiMouseEvent) => panel.handleMouse(event),
 					invalidate: () => panel.invalidate(),
 				};
 			}, {
@@ -126,5 +201,14 @@ export function registerMeshCommand(pi: ExtensionAPI): void {
 				},
 			});
 		},
+	});
+}
+
+export function registerMeshStatusCommand(pi: ExtensionAPI): void {
+	pi.registerCommand("mesh-status", {
+		description: "查看 pi-mesh 状态汇总（hub、peer 计数、在线会话）；/mesh-status copy 直接复制到剪贴板",
+		getArgumentCompletions: (prefix) =>
+			["copy"].filter((s) => s.startsWith(prefix.trim())).map((s) => ({ value: s, label: s })),
+		handler: runMeshStatus,
 	});
 }

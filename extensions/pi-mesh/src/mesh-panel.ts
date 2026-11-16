@@ -1,27 +1,64 @@
 /**
  * Interactive pi-mesh status panel for the pi TUI, opened by `/mesh`.
  *
- * Rendering follows the pi-tui-kit reference demo (examples/demo-simple.ts):
- * hand-built bordered lines + raw key sequences — the width-safe pattern the
- * kit itself uses for full-screen views. All lines are fitted to the viewport
- * width (CJK-aware), never wrapped by the terminal.
+ * All lines are fitted to the viewport width (CJK-aware), never wrapped by the
+ * terminal. Colors come from Pi's active theme (see paletteFromTheme).
  */
 
 import os from "node:os";
+import type { TuiMouseEvent, TuiMouseEventResult } from "@earendil-works/pi-tui";
 import type { PeerView, TranscriptEntry } from "./protocol.ts";
 
 // ── ANSI + width helpers ─────────────────────────────────────────────────
 
-const C = {
-	reset: "\x1b[0m",
-	bold: "\x1b[1m",
-	dim: "\x1b[2m",
-	green: "\x1b[32m",
-	yellow: "\x1b[33m",
-	red: "\x1b[31m",
-	cyan: "\x1b[36m",
-	gray: "\x1b[90m",
-};
+export type MeshThemeColor =
+	| "accent" | "dim" | "border" | "text" | "muted" | "success" | "warning" | "error";
+
+/** Minimal structural contract for Pi's active theme. */
+export interface MeshTheme {
+	fg(color: MeshThemeColor, text: string): string;
+	bold(text: string): string;
+}
+
+interface MeshPalette {
+	reset: string;
+	bold: string;
+	dim: string;
+	border: string;
+	text: string;
+	accent: string;
+	muted: string;
+	success: string;
+	warning: string;
+	error: string;
+}
+
+const PALETTE_MARKER = "\u0001";
+
+/**
+ * The panel builds lines by concatenating style prefixes, while Theme.fg wraps
+ * a whole string. Derive the prefixes once from the active theme so every call
+ * site keeps its geometry and gains theme-aware colors.
+ */
+function paletteFromTheme(theme: MeshTheme): MeshPalette {
+	const open = (wrapped: string): string => {
+		const at = wrapped.indexOf(PALETTE_MARKER);
+		return at < 0 ? "" : wrapped.slice(0, at);
+	};
+	return {
+		// SGR reset is theme-independent; only colors come from the theme.
+		reset: "\x1b[0m",
+		bold: open(theme.bold(PALETTE_MARKER)),
+		dim: open(theme.fg("dim", PALETTE_MARKER)),
+		border: open(theme.fg("border", PALETTE_MARKER)),
+		text: open(theme.fg("text", PALETTE_MARKER)),
+		accent: open(theme.fg("accent", PALETTE_MARKER)),
+		muted: open(theme.fg("muted", PALETTE_MARKER)),
+		success: open(theme.fg("success", PALETTE_MARKER)),
+		warning: open(theme.fg("warning", PALETTE_MARKER)),
+		error: open(theme.fg("error", PALETTE_MARKER)),
+	};
+}
 
 const ESCAPE = /\x1b\[[0-9;]*m/g;
 
@@ -36,21 +73,36 @@ export function displayWidth(text: string): number {
 	return w;
 }
 
-/** Fit a (possibly colored) line to width by padding or truncating the plain part. */
+/** Fit a (possibly colored) line to width, preserving ANSI styling on truncation. */
 export function fit(line: string, width: number): string {
 	if (width <= 0) return "";
-	if (displayWidth(line) <= width) return line + " ".repeat(Math.max(0, width - displayWidth(line)));
-	// Truncate by display width, then re-apply no colors (safe degradation).
-	const plain = line.replace(ESCAPE, "");
+	const visible = displayWidth(line);
+	if (visible <= width) return line + " ".repeat(width - visible);
+
 	let out = "";
-	let w = 0;
-	for (const ch of plain) {
+	let used = 0;
+	let index = 0;
+	let openStyles = 0;
+	while (index < line.length) {
+		if (line[index] === "\x1b" && line[index + 1] === "[") {
+			const sgr = /^\x1b\[[0-9;]*m/.exec(line.slice(index));
+			if (sgr) {
+				out += sgr[0];
+				index += sgr[0].length;
+				if (sgr[0] === "\x1b[0m") openStyles = 0;
+				else openStyles++;
+				continue;
+			}
+		}
+		const ch = line[index]!;
 		const cw = displayWidth(ch);
-		if (w + cw > width - 1) break;
+		if (used + cw > width - 1) break;
 		out += ch;
-		w += cw;
+		used += cw;
+		index++;
 	}
-	return out + "…" + " ".repeat(Math.max(0, width - w - 1));
+	// Close any style still open before the ellipsis so it stays neutral.
+	return out + (openStyles > 0 ? "\x1b[0m" : "") + "…" + " ".repeat(Math.max(0, width - used - 1));
 }
 
 const B = { tl: "╭", tr: "╮", bl: "╰", br: "╯", h: "─", v: "│" };
@@ -95,11 +147,11 @@ const FILTER_LABEL: Record<MeshFilter, string> = {
 	closed: "已关闭",
 };
 
-const STATE_STYLE: Record<string, { sym: string; color: string; label: string }> = {
-	running: { sym: "▶", color: C.green, label: "运行中" },
-	waiting: { sym: "·", color: C.yellow, label: "等待" },
-	offline: { sym: "!", color: C.red, label: "离线" },
-	closed: { sym: "✕", color: C.gray, label: "已关闭" },
+const STATE_STYLE: Record<string, { sym: string; color: MeshThemeColor; label: string }> = {
+	running: { sym: "▶", color: "success", label: "运行中" },
+	waiting: { sym: "•", color: "warning", label: "等待" },
+	offline: { sym: "○", color: "error", label: "离线" },
+	closed: { sym: "✕", color: "muted", label: "已关闭" },
 };
 
 const STATE_RANK: Record<string, number> = { running: 0, waiting: 1, offline: 2, closed: 3 };
@@ -275,6 +327,20 @@ function trimBody(lines: string[]): string[] {
 	return lines.slice(0, end);
 }
 
+/**
+ * One-cell scrollbar column: `█` thumb, `░` track, spaces when content fits.
+ * Pure geometry so hit-testing and rendering share one source of truth.
+ */
+export function scrollbarColumn(total: number, offset: number, height: number): string[] {
+	if (height <= 0) return [];
+	if (total <= height) return Array.from({ length: height }, () => " ");
+	const view = Math.max(1, height);
+	const max = total - view;
+	const thumbHeight = Math.max(1, Math.round((view * view) / total));
+	const start = Math.round(((view - thumbHeight) * Math.min(max, Math.max(0, offset))) / max);
+	return Array.from({ length: height }, (_, i) => (i >= start && i < start + thumbHeight ? "█" : "░"));
+}
+
 /** Keep the selected row inside the window without jumping when it is already visible. */
 export function scrollWindow(total: number, selectedIndex: number, height: number, offset = 0): number {
 	const rows = Math.max(0, Math.floor(total));
@@ -290,7 +356,18 @@ export function scrollWindow(total: number, selectedIndex: number, height: numbe
 
 // ── panel ────────────────────────────────────────────────────────────────
 
+/** Injected so the panel needs no pi-tui runtime import (keeps unit tests standalone). */
+export interface MeshKeys {
+	up(data: string): boolean;
+	down(data: string): boolean;
+	pageUp(data: string): boolean;
+	pageDown(data: string): boolean;
+	right(data: string): boolean;
+	left(data: string): boolean;
+}
+
 export interface MeshPanelDeps {
+	keys: MeshKeys;
 	fetchPeers(): Promise<PeerView[]>;
 	fetchTranscript(sessionId: string, limit: number): Promise<TranscriptEntry[]>;
 	setFollow(targetSessionId: string, following: boolean): Promise<void>;
@@ -299,12 +376,15 @@ export interface MeshPanelDeps {
 	now(): number;
 	requestRender(): void;
 	onClose(): void;
+	/** Pi's active theme; the panel must not hard-code colors. */
+	theme: MeshTheme;
 	/** Injected by the host so body height follows the real terminal. */
 	viewport?: () => { width: number; height: number };
 }
 
 export class MeshPanel {
 	#deps: MeshPanelDeps;
+	#C: MeshPalette;
 	#peers: PeerView[] = [];
 	#rows: MeshRow[] = [];
 	#filter: MeshFilter = "active";
@@ -326,11 +406,21 @@ export class MeshPanel {
 	#status = "加载中…";
 	#statusError = false;
 	#width = 100;
+	#splitX = 0;
+	#rowMap: number[] = [];
+	#pressedIndex: number | undefined;
+	#hoveredIndex: number | undefined;
+	/** Active pointer capture: row drag-select, or scrollbar thumb tracking. */
+	#drag: { kind: "row" | "listbar" | "detailbar"; y: number; value: number } | undefined;
+	/** Rendered scrollbar columns (null when that area is not on screen). */
+	#listBarX: number | null = null;
+	#detailBarX: number | null = null;
 	#loading = false;
 	#pendingResume: PeerView | null = null;
 
 	constructor(deps: MeshPanelDeps) {
 		this.#deps = deps;
+		this.#C = paletteFromTheme(deps.theme);
 		this.#width = deps.viewport?.().width ?? 100;
 		void this.refresh();
 	}
@@ -343,7 +433,8 @@ export class MeshPanel {
 		try {
 			this.#peers = await this.#deps.fetchPeers();
 			this.#rebuildRows();
-			if (!quiet) this.#setStatus(`${this.#peers.length} 个会话`);
+			// The title already shows the counts; a lingering echo line is noise.
+			if (!quiet) this.#setStatus("");
 		} catch (err) {
 			this.#setStatus(`加载失败: ${err instanceof Error ? err.message : String(err)}`, true);
 		} finally {
@@ -353,7 +444,103 @@ export class MeshPanel {
 	}
 
 	invalidate(): void {
+		this.#C = paletteFromTheme(this.#deps.theme);
 		this.#deps.requestRender();
+	}
+
+	handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
+		if (event.type === "wheel" && event.wheelDelta) {
+			const detail = this.#isWide() ? event.x >= this.#splitX : this.#detailOpen;
+			if (detail) this.#scrollDetail(event.wheelDelta);
+			else this.#move(event.wheelDelta);
+			return { handled: true };
+		}
+
+		// Plain pointer motion only; hover never changes the selection.
+		if (event.type === "move" && event.button === "none") {
+			const inDetail = this.#isWide() ? event.x >= this.#splitX : this.#detailOpen;
+			const row = inDetail ? undefined : this.#rowMap[event.y];
+			const next = row === undefined || row < 0 ? undefined : row;
+			if (next === this.#hoveredIndex) return { handled: true, render: false };
+			this.#hoveredIndex = next;
+			return { handled: true, render: true };
+		}
+
+		// Captured drag: row drag-select or scrollbar thumb tracking.
+		if (event.type === "drag") {
+			const drag = this.#drag;
+			if (!drag) return undefined;
+			if (drag.kind === "detailbar") {
+				this.#jumpDetailBar(event.y);
+				return { handled: true };
+			}
+			if (drag.kind === "listbar") {
+				this.#jumpListBar(event.y);
+				return { handled: true };
+			}
+			const row = this.#rowMap[event.y];
+			if (row === undefined || row < 0) {
+				// Off the visible rows: auto-scroll at the edge.
+				this.#move(event.y < 1 ? -1 : 1);
+			} else {
+				this.#move(row - this.#selectedRowIndex());
+			}
+			return { handled: true };
+		}
+
+		if (event.type === "release") {
+			this.#drag = undefined;
+			this.#pressedIndex = undefined;
+			return undefined;
+		}
+
+		// Right click: open the row's detail, or leave the detail panel.
+		if (event.type === "click" && event.button === "right") {
+			const detail = this.#isWide() ? event.x >= this.#splitX : this.#detailOpen;
+			if (detail) {
+				this.#backToList();
+				return { handled: true };
+			}
+			const index = this.#rowMap[event.y];
+			if (index === undefined || index < 0) return { handled: true };
+			this.#selectIndex(index);
+			this.#enter();
+			return { handled: true };
+		}
+
+		if (event.button !== "left" || (event.type !== "press" && event.type !== "click")) return undefined;
+		const detail = this.#isWide() ? event.x >= this.#splitX : this.#detailOpen;
+		// Scrollbar columns capture so drag keeps tracking the thumb.
+		if (event.type === "press" && this.#detailBarX !== null && event.x === this.#detailBarX && detail) {
+			this.#drag = { kind: "detailbar", y: event.y, value: 0 };
+			this.#jumpDetailBar(event.y);
+			return { handled: true, capture: true };
+		}
+		if (event.type === "press" && this.#listBarX !== null && event.x === this.#listBarX && !detail) {
+			this.#drag = { kind: "listbar", y: event.y, value: 0 };
+			this.#jumpListBar(event.y);
+			return { handled: true, capture: true, focus: true };
+		}
+		// Detail text keeps the terminal's native drag-to-select.
+		if (detail) return undefined;
+		const index = this.#rowMap[event.y];
+		if (index === undefined || index < 0) return undefined;
+
+		if (event.type === "press") {
+			this.#pressedIndex = index;
+			this.#drag = { kind: "row", y: event.y, value: index };
+			this.#selectIndex(index);
+			return { handled: true, capture: true, focus: true };
+		}
+
+		const target = this.#pressedIndex ?? index;
+		this.#pressedIndex = undefined;
+		const row = this.#rows[target];
+		if (row && isSelectableRow(row)) {
+			this.#selectIndex(target);
+			this.#enter();
+		}
+		return { handled: true };
 	}
 
 	handleInput(data: string): void {
@@ -381,22 +568,22 @@ export class MeshPanel {
 		const detailFocused = wide ? this.#focus === "detail" : this.#detailOpen;
 		const page = Math.max(1, this.#bodyHeight() - 2);
 
-		if (data === "\x1b[A" || data === "k") {
+		if (this.#deps.keys.up(data) || data === "k") {
 			if (detailFocused) this.#scrollDetail(-1);
 			else this.#move(-1);
 			return;
 		}
-		if (data === "\x1b[B" || data === "j") {
+		if (this.#deps.keys.down(data) || data === "j") {
 			if (detailFocused) this.#scrollDetail(1);
 			else this.#move(1);
 			return;
 		}
-		if (data === "\x1b[5~") {
+		if (this.#deps.keys.pageUp(data)) {
 			if (detailFocused) this.#scrollDetail(-page);
 			else this.#move(-page);
 			return;
 		}
-		if (data === "\x1b[6~") {
+		if (this.#deps.keys.pageDown(data)) {
 			if (detailFocused) this.#scrollDetail(page);
 			else this.#move(page);
 			return;
@@ -407,13 +594,13 @@ export class MeshPanel {
 			this.#deps.requestRender();
 			return;
 		}
-		if (data === "\x1b[C") {
+		if (this.#deps.keys.right(data)) {
 			const row = this.#selectedRow();
 			if (row?.kind === "collapsed") this.#setClosedExpanded(true);
 			else if (row?.kind === "peer") this.#enter();
 			return;
 		}
-		if (data === "\x1b[D") {
+		if (this.#deps.keys.left(data)) {
 			const row = this.#selectedRow();
 			if (row?.kind === "collapsed" && this.#expandedClosed) this.#setClosedExpanded(false);
 			else if (detailFocused) this.#backToList();
@@ -649,9 +836,35 @@ export class MeshPanel {
 		// Recompute before clamping so a keypress works even if the host has not
 		// rendered the freshly loaded transcript yet.
 		this.#detailLines(this.#detailContentWidth());
+		this.#setDetailScroll(this.#detailScroll + delta);
+	}
+
+	#setDetailScroll(value: number): void {
 		const max = Math.max(0, this.#detailLineCount - this.#bodyHeight());
-		this.#detailScroll = Math.min(max, Math.max(0, this.#detailScroll + delta));
+		this.#detailScroll = Math.min(max, Math.max(0, value));
 		this.#deps.requestRender();
+	}
+
+	/** Pointer y → 0..1 across the body scrollbar track (body rows start at y = 1). */
+	#barRatio(y: number): number {
+		const height = this.#bodyHeight();
+		if (height <= 1) return 0;
+		return Math.min(1, Math.max(0, (y - 1) / (height - 1)));
+	}
+
+	#jumpListBar(y: number): void {
+		// Clamp to selectable rows: #move refuses a step that would land off-list.
+		const first = this.#rows.findIndex(isSelectableRow);
+		const last = this.#rows.length - 1 - [...this.#rows].reverse().findIndex(isSelectableRow);
+		const target = Math.round(this.#barRatio(y) * Math.max(0, this.#rows.length - 1));
+		const clamped = Math.min(last, Math.max(first, target));
+		this.#move(clamped - this.#selectedRowIndex());
+	}
+
+	#jumpDetailBar(y: number): void {
+		this.#detailLines(this.#detailContentWidth());
+		const max = Math.max(0, this.#detailLineCount - this.#bodyHeight());
+		this.#setDetailScroll(Math.round(this.#barRatio(y) * max));
 	}
 
 	#setClosedExpanded(expanded: boolean): void {
@@ -778,12 +991,33 @@ export class MeshPanel {
 		this.#width = w;
 		const lines: string[] = [this.#renderTitle(w)];
 		const bodyHeight = this.#bodyHeight();
+		const wide = this.#isWide(w);
+		const listVisible = !this.#help && (wide || !this.#detailOpen);
 		let body: string[];
-		if (this.#help) body = this.#renderHelpBody(w, bodyHeight);
-		else if (this.#isWide(w)) body = this.#renderWideBody(w, bodyHeight);
+		if (this.#help) {
+			this.#listBarX = null;
+			this.#detailBarX = null;
+			body = this.#renderHelpBody(w, bodyHeight);
+		}
+		else if (wide) body = this.#renderWideBody(w, bodyHeight);
 		else body = this.#renderNarrowBody(w, bodyHeight);
-		lines.push(...trimBody(body));
+		const trimmedBody = trimBody(body);
+		lines.push(...trimmedBody);
 		lines.push(this.#renderFooter(w));
+		// rowMap mirrors the complete render output: title, each body line, footer.
+		// Only visible left-column rows map to their #rows index; everything else is -1.
+		const rowMap: number[] = [-1];
+		for (let i = 0; i < trimmedBody.length; i++) {
+			let index = -1;
+			if (listVisible) {
+				const rowIndex = this.#scrollOffset + i;
+				const row = this.#rows[rowIndex];
+				if (row && isSelectableRow(row)) index = rowIndex;
+			}
+			rowMap.push(index);
+		}
+		rowMap.push(-1);
+		this.#rowMap = rowMap;
 		return lines.map((line) => fit(line, w));
 	}
 
@@ -803,92 +1037,88 @@ export class MeshPanel {
 		const filter = this.#filter === "active" ? "" : ` · ${FILTER_LABEL[this.#filter]}`;
 		const query = this.#query ? ` · /${cleanText(this.#query)}` : "";
 		const status = this.#status
-			? ` · ${this.#statusError ? C.red : C.dim}${cleanText(this.#status)}${C.reset}`
+			? ` · ${this.#statusError ? this.#C.error : this.#C.dim}${cleanText(this.#status)}${this.#C.reset}`
 			: "";
-		const left = ` ${C.bold}pi-mesh${C.reset} · 活跃 ${active} · 关闭 ${closed}${status}${filter}${query}`;
+		const left = ` ${this.#C.bold}pi-mesh${this.#C.reset} · 活跃 ${active} · 关闭 ${closed}${status}${filter}${query}`;
 		const available = Math.max(0, width - 2 - displayWidth(hint) - 2);
 		return (
-			`${C.cyan}${B.tl}${B.h}${C.reset}` +
+			`${this.#C.border}${B.tl}${B.h}${this.#C.reset}` +
 			fit(left, available) +
-			`${C.cyan}${B.h}${hint}${B.tr}${C.reset}`
+			`${this.#C.border}${B.h}${hint}${B.tr}${this.#C.reset}`
 		);
 	}
 
-	#footerText(width: number): string {
+	/** Only the three highest-frequency actions stay visible; `?` owns the rest. */
+	#footerText(): string {
 		if (this.#pendingResume) return "y 确认恢复 · 其他键取消";
 		if (this.#help) return "任意键关闭帮助";
-		if (this.#searchMode) {
-			return this.#pickFooter(width, [
-				`搜索: ${cleanText(this.#query)}▏  Enter 确认 · Esc 清除`,
-				`搜索: ${cleanText(this.#query)}▏  Enter · Esc`,
-			]);
-		}
-		const wide = this.#isWide();
-		const detail = wide ? this.#focus === "detail" : this.#detailOpen;
-		if (detail) {
-			return wide
-				? this.#pickFooter(width, [
-						"↑↓/jk 滚动 · PgUp/PgDn 翻页 · Tab 列表 · Esc 返回 · ? 帮助",
-						"↑↓ 滚动 · PgUp/PgDn 翻页 · Esc 返回 · ? 帮助",
-					])
-				: this.#pickFooter(width, [
-						"↑↓/jk 滚动 · PgUp/PgDn 翻页 · Esc 返回 · ? 帮助",
-						"↑↓ 滚动 · PgUp/PgDn 翻页 · Esc 返回 · ? 帮助",
-						"↑↓ 滚动 · Esc 返回",
-					]);
-		}
-		if (wide) {
-			return this.#pickFooter(width, [
-				"↑↓/jk 移动 · Enter 详情/展开 · Tab 详情 · / 搜索 · a 过滤 · f 关注 · R 恢复 · ? 帮助 · q 关闭",
-				"↑↓/jk 移动 · Enter 详情/展开 · / 搜索 · a 过滤 · f 关注 · ? 帮助 · q 关闭",
-				"↑↓ 移动 · Enter 详情/展开 · / 搜索 · a 过滤 · q 关闭",
-				"↑↓ 移动 · Enter 详情 · q 关闭",
-			]);
-		}
-		return this.#pickFooter(width, [
-			"↑↓/jk 移动 · Enter 详情/展开 · / 搜索 · a 过滤 · f 关注 · R 恢复 · ? 帮助 · q 关闭",
-			"↑↓ 移动 · Enter 详情/展开 · / 搜索 · a 过滤 · ? 帮助 · q 关闭",
-			"↑↓ 移动 · Enter 详情/展开 · / 搜索 · a 过滤 · q 关闭",
-			"↑↓ 移动 · Enter 详情 · q 关闭",
-		]);
-	}
-
-	#pickFooter(width: number, candidates: string[]): string {
-		const available = Math.max(0, width - 4);
-		return candidates.find((text) => displayWidth(` ${text} `) <= available) ?? candidates[candidates.length - 1]!;
+		if (this.#searchMode) return `搜索: ${cleanText(this.#query)}▏  Enter 确认 · Esc 清除`;
+		const detail = this.#isWide() ? this.#focus === "detail" : this.#detailOpen;
+		if (detail) return "↑↓ 滚动 · Esc 返回 · ? 快捷键";
+		return "↑↓ 选择 · Enter 详情 · ? 快捷键";
 	}
 
 	#renderFooter(width: number): string {
-		const text = ` ${this.#footerText(width)} `;
+		const text = ` ${this.#footerText()} `;
 		return (
-			`${C.cyan}${B.bl}${B.h}${C.reset}` +
-			fit(`${C.dim}${text}${C.reset}`, Math.max(0, width - 4)) +
-			`${C.cyan}${B.h}${B.br}${C.reset}`
+			`${this.#C.border}${B.bl}${B.h}${this.#C.reset}` +
+			fit(`${this.#C.dim}${text}${this.#C.reset}`, Math.max(0, width - 4)) +
+			`${this.#C.border}${B.h}${B.br}${this.#C.reset}`
 		);
+	}
+
+	/** One cell per body row: thumb `█`, track `░`, blank when content fits. */
+	#barCells(detail: boolean, height: number): string[] {
+		return scrollbarColumn(
+			detail ? this.#detailLineCount : this.#rows.length,
+			detail ? this.#detailScroll : this.#scrollOffset,
+			height,
+		);
+	}
+
+	#barCell(cell: string): string {
+		if (cell === "█") return `${this.#C.accent}█${this.#C.reset}`;
+		if (cell === "░") return `${this.#C.muted}░${this.#C.reset}`;
+		return " ";
 	}
 
 	#renderNarrowBody(width: number, height: number): string[] {
 		const contentWidth = Math.max(0, width - 5);
-		const content = this.#detailOpen
-			? this.#sliceDetail(this.#detailLines(contentWidth), height)
-			: this.#listLines(contentWidth, height);
-		return content.map((line) => ` ${B.v} ` + fit(line, contentWidth) + ` ${B.v}`);
+		const inner = Math.max(0, contentWidth - 2);
+		const detail = this.#detailOpen;
+		// Content first: #listLines / #sliceDetail refresh the scroll state the bar reads.
+		const content = detail
+			? this.#sliceDetail(this.#detailLines(inner), height)
+			: this.#listLines(inner, height);
+		const cells = this.#barCells(detail, height);
+		this.#listBarX = detail ? null : width - 3;
+		this.#detailBarX = detail ? width - 3 : null;
+		return content.map(
+			(line, i) => ` ${B.v} ` + fit(line, inner) + ` ${this.#barCell(cells[i] ?? " ")}${B.v}`,
+		);
 	}
 
 	#renderWideBody(width: number, height: number): string[] {
 		const inner = Math.max(0, width - 8);
 		const leftWidth = Math.max(1, Math.min(52, Math.floor(inner * 0.42)));
 		const rightWidth = Math.max(0, inner - leftWidth);
-		const left = this.#listLines(leftWidth, height);
-		const right = this.#sliceDetail(this.#detailLines(rightWidth), height);
+		this.#splitX = leftWidth + 6;
+		const leftInner = Math.max(0, leftWidth - 2);
+		const rightInner = Math.max(0, rightWidth - 2);
+		const left = this.#listLines(leftInner, height);
+		const right = this.#sliceDetail(this.#detailLines(rightInner), height);
+		const listCells = this.#barCells(false, height);
+		const detailCells = this.#barCells(true, height);
+		this.#listBarX = leftWidth + 2;
+		this.#detailBarX = this.#splitX + rightInner + 1;
 		const out: string[] = [];
 		for (let i = 0; i < height; i++) {
 			out.push(
 				` ${B.v} ` +
-					fit(left[i] ?? "", leftWidth) +
-					` ${C.gray}${B.v}${C.reset} ` +
-					fit(right[i] ?? "", rightWidth) +
-					` ${B.v}`,
+					fit(left[i] ?? "", leftInner) +
+					` ${this.#barCell(listCells[i] ?? " ")} ${this.#C.muted}${B.v}${this.#C.reset} ` +
+					fit(right[i] ?? "", rightInner) +
+					` ${this.#barCell(detailCells[i] ?? " ")}${B.v}`,
 			);
 		}
 		return out;
@@ -896,36 +1126,32 @@ export class MeshPanel {
 
 	#renderHelpBody(width: number, height: number): string[] {
 		const contentWidth = Math.max(0, width - 5);
+		const group = (text: string) => `${this.#C.accent}${text}${this.#C.reset}`;
+		const item = (text: string) => `${this.#C.dim}  ${text}${this.#C.reset}`;
 		const lines = [
-			`${C.bold}按键速查${C.reset}`,
-			"",
-			"↑↓ / j k     移动列表 / 滚动详情",
-			"PgUp / PgDn  翻页",
-			"Enter        打开详情 / 展开已关闭",
-			"→ / ←        展开 / 收起已关闭",
-			"Tab          切换列表 / 详情（宽屏）",
-			"/            搜索",
-			"a            过滤：活跃 → 全部 → 已关闭",
-			"f            关注 / 取消关注",
-			"R            恢复会话（y 确认）",
-			"r            刷新",
-			"Esc          返回 / 关闭",
-			"b            详情中返回列表",
-			"Backspace    搜索中删除",
-			"y / n        确认 / 取消恢复",
-			"q            关闭面板",
-			"?            打开帮助",
-		].map((line, index) => (index === 0 ? line : `${C.dim}${line}${C.reset}`));
+			`${this.#C.bold}按键速查${this.#C.reset}`,
+			group("导航"),
+			item("↑↓ / j k   移动列表 / 滚动详情"),
+			item("PgUp / PgDn  翻页 · Enter 打开详情"),
+			item("→ / ←     展开 / 收起 · Tab 切换栏（宽屏）"),
+			group("过滤与搜索"),
+			item("/ 搜索 · a 切换过滤 · Backspace 删除"),
+			group("会话操作"),
+			item("f 关注 / 取消 · R 恢复（y 确认） · r 刷新"),
+			group("其它"),
+			item("鼠标   滚轮滚动 · 点击选择 · 右键详情/返回"),
+			item("Esc / b 返回 · q 关闭 · ? 本帮助"),
+		];
 		const out = lines.slice(0, height);
 		while (out.length < height) out.push("");
 		return out.map((line) => ` ${B.v} ` + fit(line, contentWidth) + ` ${B.v}`);
 	}
 
 	#emptyMessage(): string {
-		if (this.#query) return `${C.dim}(没有匹配的会话 · / 清除搜索)${C.reset}`;
-		if (this.#filter === "closed") return `${C.dim}(没有已关闭的会话 · a 切换过滤)${C.reset}`;
-		if (this.#filter === "all") return `${C.dim}(没有已注册的 pi 会话)${C.reset}`;
-		return `${C.dim}(没有活跃会话 · a 切换过滤)${C.reset}`;
+		if (this.#query) return `${this.#C.dim}(没有匹配的会话 · / 清除搜索)${this.#C.reset}`;
+		if (this.#filter === "closed") return `${this.#C.dim}(没有已关闭的会话 · a 切换过滤)${this.#C.reset}`;
+		if (this.#filter === "all") return `${this.#C.dim}(没有已注册的 pi 会话)${this.#C.reset}`;
+		return `${this.#C.dim}(没有活跃会话 · a 切换过滤)${this.#C.reset}`;
 	}
 
 	#listLines(width: number, height: number): string[] {
@@ -942,26 +1168,26 @@ export class MeshPanel {
 		const out: string[] = [];
 		const end = Math.min(total, this.#scrollOffset + height);
 		for (let i = this.#scrollOffset; i < end; i++) {
-			out.push(this.#renderRow(this.#rows[i]!, width, i === selectedIndex, now));
+			out.push(this.#renderRow(this.#rows[i]!, width, i === selectedIndex, i === this.#hoveredIndex, now));
 		}
 		while (out.length < height) out.push("");
 		return out;
 	}
 
-	#renderRow(row: MeshRow, width: number, selected: boolean, now: number): string {
-		if (row.kind === "group") return `${C.dim}${row.label}${C.reset}`;
+	#renderRow(row: MeshRow, width: number, selected: boolean, hovered: boolean, now: number): string {
+		if (row.kind === "group") return `${this.#C.dim}${row.label}${this.#C.reset}`;
 		if (row.kind === "collapsed") {
-			const cursor = selected ? `${C.cyan}❯${C.reset}` : " ";
+			const cursor = selected ? `${this.#C.accent}❯${this.#C.reset}` : " ";
 			const glyph = row.expanded ? "▾" : "▸";
-			return `${cursor} ${C.gray}${glyph} ${row.label} · ${row.count}${C.reset}`;
+			return `${cursor}${this.#C.muted}${glyph} ${row.label} · ${row.count}${this.#C.reset}`;
 		}
 
 		const peer = row.peer;
 		const state = STATE_STYLE[peer.state] ?? STATE_STYLE.closed!;
-		const cursor = selected ? `${C.cyan}❯${C.reset}` : " ";
-		const sym = `${state.color}${state.sym}${C.reset}`;
-		const id = `${C.dim}${peer.sessionId.slice(-8)}${C.reset}`;
-		const age = `${C.dim}${formatAge(peer, now).padStart(4, " ")}${C.reset}`;
+		const cursor = selected ? `${this.#C.accent}❯${this.#C.reset}` : " ";
+		const sym = `${this.#C[state.color]}${state.sym}${this.#C.reset}`;
+		const id = `${this.#C.dim}${peer.sessionId.slice(-8)}${this.#C.reset}`;
+		const age = `${this.#C.dim}${formatAge(peer, now).padStart(4, " ")}${this.#C.reset}`;
 		const title = cleanText(peer.title ?? peer.cwd.split("/").pop() ?? "-") || "-";
 		const self = this.#deps.selfSessionId;
 		const isSelf = !!self && peer.sessionId === self;
@@ -974,33 +1200,37 @@ export class MeshPanel {
 			const selfPeer = this.#peers.find((item) => item.sessionId === self);
 			if (selfPeer?.following?.includes(peer.sessionId)) badgeParts.push("◆");
 		}
-		const badges = badgeParts.length > 0 ? `${C.dim}${badgeParts.join(" ")}${C.reset}` : "";
+		const badges = badgeParts.length > 0 ? `${this.#C.dim}${badgeParts.join(" ")}${this.#C.reset}` : "";
 		const badgeWidth = displayWidth(badges);
-		const titleWidth = Math.max(1, width - 17 - (badgeWidth > 0 ? badgeWidth + 1 : 0));
+		// Row grid: 2 indent + cursor/state 2 + id 8 + age 4 (right) + 2 gaps.
+		const titleWidth = Math.max(1, width - 20 - (badgeWidth > 0 ? badgeWidth + 2 : 0));
 		const titleText = selected
-			? `${C.bold}${title}${C.reset}`
-			: peer.state === "closed"
-				? `${C.dim}${title}${C.reset}`
-				: title;
+			? `${this.#C.bold}${title}${this.#C.reset}`
+			: hovered
+				? `${this.#C.accent}${title}${this.#C.reset}`
+				: peer.state === "closed"
+					? `${this.#C.dim}${title}${this.#C.reset}`
+					: title;
 		const titleFit = fit(titleText, titleWidth);
-		return `${cursor}${sym} ${id} ${age} ${titleFit}${badges ? ` ${badges}` : ""}`;
+		return `  ${cursor}${sym} ${id} ${age}  ${titleFit}${badges ? `  ${badges}` : ""}`;
 	}
 
 	#detailLines(width: number): string[] {
 		const peer = this.#detailPeer;
 		if (!peer) {
 			this.#detailLineCount = 1;
-			return [`${C.dim}(选择一个会话查看详情)${C.reset}`];
+			return [`${this.#C.dim}(选择一个会话查看详情)${this.#C.reset}`];
 		}
 		const lines: string[] = [];
 		const title = cleanText(peer.title ?? peer.cwd.split("/").pop() ?? "-") || "-";
-		lines.push(`${C.bold}${title}${C.reset}`);
-		if (this.#deps.selfSessionId && peer.sessionId === this.#deps.selfSessionId) {
-			lines.push(`${C.dim}本会话${C.reset}`);
-		}
+		lines.push(`${this.#C.bold}${title}${this.#C.reset}`);
 		const model = peer.model ? cleanText(peer.model) : "(未知模型)";
-		lines.push(`${C.dim}${peer.sessionId.slice(-8)} · ${cleanText(branchLabel(peer))} · ${model}${C.reset}`);
-		lines.push(`${C.dim}${tildePath(cleanText(peer.cwd))}${C.reset}`);
+		const selfTag =
+			this.#deps.selfSessionId && peer.sessionId === this.#deps.selfSessionId ? ` · ${this.#C.accent}本会话${this.#C.reset}` : "";
+		lines.push(
+			`${this.#C.dim}${peer.sessionId.slice(-8)} · ${cleanText(branchLabel(peer))} · ${model}${this.#C.reset}${selfTag}`,
+		);
+		lines.push(`${this.#C.dim}${tildePath(cleanText(peer.cwd))}${this.#C.reset}`);
 		const counts: string[] = [];
 		if ((peer.files?.length ?? 0) > 0) counts.push(`${peer.files.length} 文件`);
 		if ((peer.following?.length ?? 0) > 0) counts.push(`${peer.following.length} 关注`);
@@ -1010,16 +1240,17 @@ export class MeshPanel {
 		if (followers > 0) counts.push(`${followers} 被关注`);
 		const resumptionCount = peer.resumptions?.length ?? 0;
 		if (resumptionCount > 0) counts.push(`${resumptionCount} 恢复`);
-		if (counts.length > 0) lines.push(`${C.dim}${counts.join(" · ")}${C.reset}`);
+		if (counts.length > 0) lines.push(`${this.#C.dim}${counts.join(" · ")}${this.#C.reset}`);
 		if (peer.state === "closed") {
 			const reason = peer.closeReason ? ` · ${cleanText(peer.closeReason)}` : "";
-			lines.push(`${C.gray}已关闭${reason}${C.reset}`);
+			lines.push(`${this.#C.muted}已关闭${reason}${this.#C.reset}`);
 		}
-		lines.push(`${C.dim}${"─".repeat(Math.max(1, width))}${C.reset}`);
+		// A short rule separates identity from history; a full-width rule is heavy.
+		lines.push(`${this.#C.dim}${"─".repeat(Math.min(24, Math.max(1, width)))}${this.#C.reset}`);
 		if (this.#detailLoading) {
-			lines.push(`${C.dim}(加载中…)${C.reset}`);
+			lines.push(`${this.#C.dim}(加载中…)${this.#C.reset}`);
 		} else if (this.#detailEntries.length === 0) {
-			lines.push(`${C.dim}(暂无历史记录)${C.reset}`);
+			lines.push(`${this.#C.dim}(暂无历史记录)${this.#C.reset}`);
 		} else {
 			lines.push(...this.#historyLines(this.#detailEntries));
 		}
@@ -1031,7 +1262,7 @@ export class MeshPanel {
 		const out: string[] = [];
 		for (let i = 0; i < entries.length; i++) {
 			const entry = entries[i]!;
-			const time = `${C.dim}${entry.timestamp.slice(11, 16)}${C.reset}`;
+			const time = `${this.#C.dim}${entry.timestamp.slice(11, 16)}${this.#C.reset}`;
 			if (entry.role === "toolResult") {
 				const group: TranscriptEntry[] = [];
 				while (i < entries.length && entries[i]!.role === "toolResult") {
@@ -1041,24 +1272,25 @@ export class MeshPanel {
 				i--; // outer loop advances
 				if (group.length === 1) {
 					const tool = group[0]!;
-					const error = tool.isError ? ` ${C.red}✗${C.reset}` : "";
+					const error = tool.isError ? ` ${this.#C.error}✗${this.#C.reset}` : "";
 					out.push(
-						`${time} ${C.yellow}${tool.toolName ?? "tool"}${C.reset}${error} ${cleanText(tool.text)}`,
+						`${time} ${this.#C.warning}${tool.toolName ?? "tool"}${this.#C.reset}${error} ${cleanText(tool.text)}`,
 					);
 					continue;
 				}
 				const names = [...new Set(group.map((tool) => tool.toolName ?? "tool"))];
 				const shown = names.slice(0, 3).join(", ") + (names.length > 3 ? ` +${names.length - 3}` : "");
 				const errors = group.filter((tool) => tool.isError).length;
-				const errorTag = errors > 0 ? ` ${C.red}${errors}✗${C.reset}` : "";
+				const errorTag = errors > 0 ? ` ${this.#C.error}${errors}✗${this.#C.reset}` : "";
 				out.push(
-					`${time} ${C.dim}⋯ 工具调用 ×${group.length}${errorTag} · ${shown}${C.reset}`,
+					`${time} ${this.#C.dim}⋯ 工具调用 ×${group.length}${errorTag} · ${shown}${this.#C.reset}`,
 				);
 				continue;
 			}
 			const roleColor =
-				entry.role === "user" ? C.cyan : entry.role === "assistant" ? C.green : entry.isError ? C.red : C.yellow;
-			out.push(`${time} ${roleColor}${entry.role}${C.reset} ${cleanText(entry.text)}`);
+				entry.role === "user" ? this.#C.accent : entry.role === "assistant" ? this.#C.success : entry.isError ? this.#C.error : this.#C.warning;
+			// Role tags pad to one column so history text starts at a stable x.
+			out.push(`${time} ${roleColor}${entry.role.padEnd(9)}${this.#C.reset} ${cleanText(entry.text)}`);
 		}
 		return out;
 	}

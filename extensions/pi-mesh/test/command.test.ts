@@ -12,7 +12,7 @@ const root = join(import.meta.dir, "..");
 const src = readFileSync(join(root, "src/command.ts"), "utf8");
 
 // Slice the web branch so a lookalike elsewhere in the file cannot satisfy it.
-const branchStart = src.indexOf('if (args.trim() === "web") {');
+const branchStart = src.indexOf('if (trimmed === "web") {');
 const branchEnd = src.indexOf("if (!ctx.hasUI)");
 const webBranch = branchStart === -1 || branchEnd === -1 ? "" : src.slice(branchStart, branchEnd);
 

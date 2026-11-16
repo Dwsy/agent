@@ -75,9 +75,13 @@ function fakeGate(over: Partial<ResumeGate> = {}): ResumeGate & { calls: string[
 		calls,
 		async claim(_peer, owner) {
 			calls.push(`claim:${owner}`);
+			return { token: "token-a" };
 		},
-		async record(_peer, owner, ws, pane) {
-			calls.push(`record:${owner}:${ws}:${pane}`);
+		async record(_peer, owner, token, ws, pane) {
+			calls.push(`record:${owner}:${token}:${ws}:${pane}`);
+		},
+		async release(_peer, owner, token) {
+			calls.push(`release:${owner}:${token}`);
 		},
 		...over,
 	};
@@ -101,7 +105,7 @@ test("resumePeer runs claim -> workspace -> agent -> record in order", async () 
 	const out = await resumePeer(peer, { owner: "self-1", noFocus: true }, herdr, gate);
 	expect(out.ok).toBe(true);
 	expect(out.workspaceId).toBe("wNEW");
-	expect(gate.calls).toEqual(["claim:self-1", "record:self-1:wNEW:wNEW:p1"]);
+	expect(gate.calls).toEqual(["claim:self-1", "record:self-1:token-a:wNEW:wNEW:p1"]);
 	expect(herdr.calls[0]).toBe("listWorkspaces");
 	expect(herdr.calls.some((c) => c.startsWith("createWorkspace:pi-"))).toBe(true);
 	expect(herdr.calls.some((c) => c.startsWith("startAgent:pi-") && c.endsWith(`--session ${peer.sessionFile}`))).toBe(true);
@@ -125,7 +129,7 @@ test("claim rejections map to actionable messages and never touch herdr", async 
 	const { peer } = fixture();
 	for (const [err, expectText] of [
 		["already live", "仍在运行"],
-		["lease held", "另一个 resume"],
+		["lease held", "恢复在途"],
 		["unknown session", "hub 拒绝"],
 	] as const) {
 		const herdr = fakeHerdr();

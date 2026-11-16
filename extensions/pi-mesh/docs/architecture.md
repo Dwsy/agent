@@ -96,7 +96,8 @@ register（复活）──► waiting（清 closedAt / closeReason）
 | `close` | 标记 closed | `unknown session` |
 | `follow` / `unfollow` | 有向关注边 | `unknown session`、`a session cannot follow itself` |
 | `claim_resume` | resume 前的 CAS 租约 | `unknown session`、`already live`、`lease held`、`ephemeral session` |
-| `record_resume` | 追加血缘 + 释放租约 | `unknown session` |
+| `record_resume` | 使用匹配的 operation token 追加血缘，标记 started；**不释放**，直到目标 Pi register | `stale resume token`、`resume already recorded` |
+| `release_resume` | 仅未发起 startAgent 且 token/owner 完全匹配时释放 | `stale resume token`、`resume already launched` |
 | `query_peers` | 全量 `PeerView[]` | — |
 | `query_transcript` | 历史分页 | `unknown session` |
 | `send_message` | 投递 `steer/followUp` | `peer offline`、`peer did not respond` |
@@ -227,16 +228,17 @@ DOMPurify 实例，避免与 `app.js` 的 hook 列表互相污染。
 ```text
 mesh resume / WebUI 恢复
   → 预检：sessionFile 存在、cwd 存在；--print 到此为止（零副作用）
-  → hub claim_resume（CAS，60s TTL）   already live / lease held 直接拒绝
+  → hub claim_resume（CAS，随机唯一 token；TTL 仅诊断，过期不自动二次启动）
   → herdr workspace：label pi-<tail8> 存在即复用，否则 create
   → herdr agent start … -- pi --session <file>（或 --fork）
-  → record_resume（血缘，best-effort）
-  → 被拉起的 pi 自己 register → 同一条 peer 复活
+  → record_resume（携带 token，记录血缘和 started，失败不自动重试）
+  → 被拉起的 pi 自己 register → 消耗匹配 lease / 同一条 peer 复活
 ```
 
 - 人类触发默认聚焦；`PI_SESSION_ID` 存在（agent 触发）默认 `--no-focus`。
 - `--fork` 是逃生舱：新会话，不续写原 JSONL。
-- 失败点全部返回可读中文消息 + 已执行的命令计划。
+- 失败点全部返回可读中文消息 + 已执行的命令计划。租约快照使用原 registry 文件原子替换，Hub 重启不会清空未确定的恢复操作。
+- 只在**明确未调用** startAgent 时执行 token-fenced `release_resume`；启动结果不确定时保持隔离，需核验实际 Herdr/Pi 状态才能由未来的受控恢复策略处理，绝不盲目重新启动。当前 PSM Mesh UI 仍不开放恢复。
 
 ### 5.9 终端桥
 
@@ -251,6 +253,7 @@ mesh resume / WebUI 恢复
 ```
 
 - `observe` 模式服务端丢弃所有输入（只读镜像）。
+- WS 可选 `owner`/`attachId`（旧客户端默认 `legacy`）。同 `mode:target` 有活跃 attach 时回复 `terminal.error` / close 4409，**不接管或杀死旧 child**；关闭后才清理旧 child，旧 close/exit 对新 attach 不生效。PSM Mesh 的独占 pane UI 尚未验收/开放。
 - target 正则、cols 20–400、rows 5–200 在边界校验。
 - 同一 `mode:target` 的新 attach 会回收上一个子进程（浏览器被硬杀时的孤儿守卫）；
   WS 关闭先 EOF 让 herdr 干净 detach，2s 后仍在则 kill。

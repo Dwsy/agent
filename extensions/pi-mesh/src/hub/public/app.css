@@ -10,7 +10,8 @@
 :root,
 [data-theme="light"] {
 	color-scheme: light;
-	/* surfaces */
+	/* surfaces — neutral chrome stays pure greyscale (pinned rule, see
+	   webui.test.ts "must not drift back to purple/blue") */
 	--bg: #f6f6f6;
 	--panel: #ffffff;
 	--panel-2: #f5f5f5;
@@ -22,34 +23,41 @@
 	--control-hover: rgba(0, 0, 0, 0.045);
 	--backdrop: rgba(0, 0, 0, 0.42);
 	/* borders */
-	--border: #dedede;
-	--border-strong: #c7c7c7;
+	--border: #e3e6eb;
+	--border-strong: #cbd1da;
 	/* text (all meta tiers >= 4.5:1 on --bg/--panel-2/--panel) */
-	--text: #242424;
-	--muted: #595959;
+	--text: #16191f;
+	--muted: #5a6172;
 	--faint: #606060;
 	/* accent */
-	--accent: #0066cc;
-	--accent-strong: #0055b3;
-	--accent-soft: rgba(0, 102, 204, 0.08);
-	--accent-border: rgba(0, 102, 204, 0.24);
+	--accent: #2f6bec;
+	--accent-strong: #2458c8;
+	--accent-soft: rgba(47, 107, 236, 0.10);
+	--accent-border: rgba(47, 107, 236, 0.32);
 	/* danger */
-	--danger: #b63434;
-	--danger-soft: rgba(182, 52, 52, 0.07);
-	--danger-border: rgba(182, 52, 52, 0.18);
-	/* semantic states */
-	--running: #287c43;
-	--running-soft: rgba(40, 124, 67, 0.08);
-	--running-border: rgba(40, 124, 67, 0.24);
-	--waiting: #946000;
-	--waiting-soft: rgba(148, 96, 0, 0.08);
-	--waiting-border: rgba(148, 96, 0, 0.24);
-	--offline: #666666;
-	--offline-soft: rgba(102, 102, 102, 0.08);
-	--offline-border: rgba(102, 102, 102, 0.24);
-	--closed: #6b6b6b;
-	--closed-soft: rgba(107, 107, 107, 0.08);
-	--closed-border: rgba(107, 107, 107, 0.24);
+	--danger: #c2372f;
+	--danger-soft: rgba(194, 55, 47, 0.08);
+	--danger-border: rgba(194, 55, 47, 0.22);
+	/* semantic states — text tier keeps >= 4.5:1; colour presence lives in
+	   soft/border tints and the bright --*-dot tier (dots and pills only) */
+	--running: #17804e;
+	--running-soft: rgba(31, 169, 113, 0.13);
+	--running-border: rgba(31, 169, 113, 0.34);
+	--waiting: #8a5d00;
+	--waiting-soft: rgba(217, 138, 0, 0.14);
+	--waiting-border: rgba(217, 138, 0, 0.36);
+	--offline: #5f6875;
+	--offline-soft: rgba(122, 132, 148, 0.15);
+	--offline-border: rgba(122, 132, 148, 0.32);
+	--closed: #b13a32;
+	--closed-soft: rgba(226, 86, 77, 0.11);
+	--closed-border: rgba(226, 86, 77, 0.30);
+	--dot-running: #2fb377;
+	--dot-waiting: #e09a2a;
+	--dot-offline: #9aa3b2;
+	--dot-closed: #e2564d;
+	/* text on accent fills (theme-dependent pairing keeps >= 4.5:1) */
+	--on-accent: #ffffff;
 	/* elevation */
 	--shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
 	--shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 1px 3px rgba(0, 0, 0, 0.07);
@@ -70,7 +78,7 @@
 
 [data-theme="dark"] {
 	color-scheme: dark;
-	/* surfaces — neutral graphite */
+	/* surfaces — neutral graphite, pure greyscale (pinned rule) */
 	--bg: #1b1b1b;
 	--panel: #1e1e1e;
 	--panel-2: #282828;
@@ -85,31 +93,37 @@
 	--border: #353535;
 	--border-strong: #4a4a4a;
 	/* text */
-	--text: #ededed;
-	--muted: #b3b3b3;
-	--faint: #a6a6a6;
+	--text: #e8ebf2;
+	--muted: #aab2c0;
+	--faint: #a0a9b6;
 	/* accent */
-	--accent: #7fb4ff;
-	--accent-strong: #9bc5ff;
-	--accent-soft: rgba(127, 180, 255, 0.10);
-	--accent-border: rgba(127, 180, 255, 0.25);
+	--accent: #6e9bff;
+	--accent-strong: #8fb2ff;
+	--accent-soft: rgba(110, 155, 255, 0.13);
+	--accent-border: rgba(110, 155, 255, 0.38);
 	/* danger */
-	--danger: #ed9191;
-	--danger-soft: rgba(237, 145, 145, 0.08);
-	--danger-border: rgba(237, 145, 145, 0.20);
+	--danger: #f0716b;
+	--danger-soft: rgba(240, 113, 107, 0.12);
+	--danger-border: rgba(240, 113, 107, 0.30);
 	/* semantic states */
-	--running: #72b98a;
-	--running-soft: rgba(114, 185, 138, 0.08);
-	--running-border: rgba(114, 185, 138, 0.24);
-	--waiting: #d4af70;
-	--waiting-soft: rgba(212, 175, 112, 0.08);
-	--waiting-border: rgba(212, 175, 112, 0.24);
-	--offline: #a6a6a6;
-	--offline-soft: rgba(166, 166, 166, 0.08);
-	--offline-border: rgba(166, 166, 166, 0.24);
-	--closed: #a6a6a6;
-	--closed-soft: rgba(166, 166, 166, 0.08);
-	--closed-border: rgba(166, 166, 166, 0.24);
+	--running: #4dc98e;
+	--running-soft: rgba(77, 201, 142, 0.13);
+	--running-border: rgba(77, 201, 142, 0.34);
+	--waiting: #e0a548;
+	--waiting-soft: rgba(224, 165, 72, 0.13);
+	--waiting-border: rgba(224, 165, 72, 0.34);
+	--offline: #8b96ab;
+	--offline-soft: rgba(139, 150, 171, 0.14);
+	--offline-border: rgba(139, 150, 171, 0.32);
+	--closed: #ee7a72;
+	--closed-soft: rgba(238, 122, 114, 0.12);
+	--closed-border: rgba(238, 122, 114, 0.32);
+	--dot-running: #3ecf8e;
+	--dot-waiting: #e8a33d;
+	--dot-offline: #78849a;
+	--dot-closed: #f0615c;
+	/* text on accent fills (theme-dependent pairing keeps >= 4.5:1) */
+	--on-accent: #0c0e12;
 	/* elevation */
 	--shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
 	--shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 2px 8px rgba(0, 0, 0, 0.28);
@@ -671,7 +685,7 @@ details[open] > .pm-shell-summary::before {
 	align-items: center;
 	gap: 0.25rem;
 	border: 1px solid var(--border);
-	border-radius: 4px;
+	border-radius: 999px;
 	padding: 0 0.375rem;
 	font-size: 10px;
 	font-weight: 500;
@@ -744,7 +758,7 @@ details[open] > .pm-shell-summary::before {
 	align-items: center;
 	gap: 0.25rem;
 	border: 1px solid var(--border);
-	border-radius: 4px;
+	border-radius: 999px;
 	padding: 0.0625rem 0.375rem;
 	font-size: 10px;
 	line-height: 1.125rem;
@@ -778,16 +792,16 @@ details[open] > .pm-shell-summary::before {
 	border-radius: 999px;
 }
 .dot-running {
-	background: var(--running);
+	background: var(--dot-running);
 }
 .dot-waiting {
-	background: var(--waiting);
+	background: var(--dot-waiting);
 }
 .dot-offline {
-	background: var(--offline);
+	background: var(--dot-offline);
 }
 .dot-closed {
-	background: var(--closed);
+	background: var(--dot-closed);
 }
 .dot-all {
 	background: var(--muted);
@@ -1008,11 +1022,38 @@ input[type="checkbox"] {
 }
 .entry {
 	border: 1px solid var(--border);
-	border-radius: 8px;
+	border-radius: 12px;
 	background: var(--panel);
-	padding: 0.625rem;
+	padding: 0.625rem 0.875rem;
 	box-shadow: var(--shadow-sm);
 	line-height: 1.65;
+}
+/* thread bubbles: user turns right-aligned on accent, assistant turns stay
+   cards — alignment carries the sender so the role chip is secondary */
+.entry-wrap {
+	display: flex;
+	flex-direction: column;
+}
+.entry-user {
+	align-self: flex-end;
+	max-width: 86%;
+	background: var(--accent);
+	border-color: transparent;
+	color: var(--on-accent);
+	box-shadow: none;
+}
+.entry-user .chip {
+	background: rgba(255, 255, 255, 0.18);
+	border-color: transparent;
+	color: inherit;
+}
+.entry-user .faint,
+.entry-user .warn-text {
+	color: inherit;
+	opacity: 0.8;
+}
+.entry-user .entry-text {
+	color: inherit;
 }
 .entry-error {
 	/* status colour lives on the badge/✗N text, never as a panel fill */
@@ -2072,14 +2113,14 @@ input[type="checkbox"] {
 	outline: none;
 }
 
-/* PeerRow: 40px desktop / 48px touch, hairline-separated, selected = --sel-soft + 2px 左条 */
+/* PeerRow: two-line (title + quiet meta), hairline-separated, selected = --sel-soft + 2px 左条 */
 .peer-row {
 	position: relative;
 	display: flex;
 	align-items: center;
 	gap: 10px;
-	height: 40px;
-	padding: 0 12px;
+	min-height: 44px;
+	padding: 6px 12px;
 	border-radius: 6px;
 	cursor: pointer;
 	transition: background-color 0.12s ease-out;
@@ -2130,9 +2171,16 @@ input[type="checkbox"] {
 	height: 6px;
 	border-radius: 999px;
 }
-.row-title {
-	min-width: 0;
+.row-main {
 	flex: 1 1 auto;
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+.row-title {
+	width: 100%;
+	min-width: 0;
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
@@ -2140,10 +2188,18 @@ input[type="checkbox"] {
 	font-weight: 500;
 	color: var(--text);
 }
-/* 裸目录名行的安静消歧（父目录） */
+/* 裸目录名消歧（父目录）+ 模型 + 年龄：安静的第二行 */
 .row-sub {
-	flex: 0 0 auto;
-	max-width: 8rem;
+	display: flex;
+	align-items: center;
+	gap: 5px;
+	min-width: 0;
+	overflow: hidden;
+	white-space: nowrap;
+}
+.row-model {
+	min-width: 0;
+	max-width: 140px;
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
@@ -2155,15 +2211,6 @@ input[type="checkbox"] {
 	flex: 0 0 auto;
 	max-width: 40%;
 	overflow: hidden;
-}
-.row-chips .chip-strong {
-	max-width: 150px;
-}
-.row-chips .chip-text {
-	min-width: 0;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
 }
 .row-meta {
 	display: flex;
@@ -2224,7 +2271,7 @@ input[type="checkbox"] {
 }
 @media (hover: none) {
 	.peer-row {
-		height: 48px;
+		min-height: 48px;
 	}
 	.icon-btn,
 	.row-act {
@@ -2252,8 +2299,31 @@ input[type="checkbox"] {
 .detail-id {
 	display: flex;
 	align-items: center;
+	flex-wrap: wrap;
+	row-gap: 2px;
 	gap: 8px;
 	min-width: 0;
+}
+/* second line: state · branch · model (identity detail without chip noise) */
+.detail-sub {
+	flex: 1 0 100%;
+	display: flex;
+	align-items: center;
+	gap: 3px;
+	min-width: 0;
+	overflow: hidden;
+	white-space: nowrap;
+	font-size: 11px;
+	color: var(--faint);
+}
+.detail-sub .section-dot {
+	opacity: 0.5;
+	margin: 0 3px;
+}
+.detail-branch {
+	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+	font-size: 10px;
+	color: var(--muted);
 }
 .detail-title {
 	min-width: 0;

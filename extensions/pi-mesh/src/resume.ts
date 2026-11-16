@@ -141,8 +141,9 @@ export function formatPlan(peer: PeerView, plan: { label: string; agentName: str
 
 /** The hub gate, injected for tests: claim -> (launch) -> record. */
 export interface ResumeGate {
-	claim(peer: PeerView, owner: string): Promise<void>;
-	record(peer: PeerView, owner: string, workspaceId?: string, paneId?: string): Promise<void>;
+	claim(peer: PeerView, owner: string): Promise<{ token: string }>;
+	record(peer: PeerView, owner: string, token: string, workspaceId?: string, paneId?: string): Promise<void>;
+	release(peer: PeerView, owner: string, token: string): Promise<void>;
 }
 
 export function realGate(): ResumeGate {
@@ -157,22 +158,33 @@ export function realGate(): ResumeGate {
 	};
 	return {
 		async claim(peer, owner) {
-			await withHub(async (client) => {
+			return withHub(async (client) => {
 				const req: HubRequest = { id: nextId(), type: "claim_resume", sessionId: peer.sessionId, owner };
 				const res = await client.request(req);
 				if (!res.ok) throw new Error(res.error ?? "hub error");
+				const token = (res.data as { token?: string } | undefined)?.token;
+				if (!token) throw new Error("hub did not return a resume token");
+				return { token };
 			});
 		},
-		async record(peer, owner, workspaceId, paneId) {
+		async record(peer, owner, token, workspaceId, paneId) {
 			await withHub(async (client) => {
 				const req: HubRequest = {
 					id: nextId(),
 					type: "record_resume",
 					sessionId: peer.sessionId,
 					owner,
+					token,
 					herdrWorkspaceId: workspaceId,
 					herdrPaneId: paneId,
 				};
+				const res = await client.request(req);
+				if (!res.ok) throw new Error(res.error ?? "hub error");
+			});
+		},
+		async release(peer, owner, token) {
+			await withHub(async (client) => {
+				const req: HubRequest = { id: nextId(), type: "release_resume", sessionId: peer.sessionId, owner, token };
 				const res = await client.request(req);
 				if (!res.ok) throw new Error(res.error ?? "hub error");
 			});
@@ -323,19 +335,24 @@ export async function resumePeer(
 	}
 
 	const owner = opts.owner ?? `cli-${process.pid}`;
+	let token: string;
 	try {
-		await gate.claim(peer, owner);
+		({ token } = await gate.claim(peer, owner));
 	} catch (err) {
 		const msg = err instanceof Error ? err.message : String(err);
 		if (msg.includes("already live")) {
 			return { ok: false, message: `${peer.sessionId.slice(0, 8)} 仍在运行，未恢复（如需接管请先关闭原会话）`, plan: printed };
 		}
 		if (msg.includes("lease held")) {
-			return { ok: false, message: `${peer.sessionId.slice(0, 8)} 正在被另一个 resume 持有（60s 内自动过期）`, plan: printed };
+			return { ok: false, message: `${peer.sessionId.slice(0, 8)} 已有恢复在途；须确认前次启动结果，禁止自动重试`, plan: printed };
+		}
+		if (msg.includes("resume outcome unknown")) {
+			return { ok: false, message: "先前恢复的启动结果尚未确认；检查 Herdr/Pi 注册状态后再处理", plan: printed };
 		}
 		return { ok: false, message: `hub 拒绝恢复: ${msg}`, plan: printed };
 	}
 
+	let launchAttempted = false;
 	try {
 		const noFocus = opts.noFocus ?? Boolean(process.env.PI_SESSION_ID);
 		const existing = (await herdr.listWorkspaces()).find((w) => w.label === plan.label);
@@ -346,17 +363,16 @@ export async function resumePeer(
 			const panes = await herdr.panesOf(existing.workspaceId);
 			paneId = panes[0];
 			if (!paneId) {
-				return { ok: false, message: `工作区 ${plan.label} (${workspaceId}) 没有可用 pane`, workspaceId, plan: printed };
+				throw new Error(`工作区 ${plan.label} (${workspaceId}) 没有可用 pane`);
 			}
 		} else {
 			const created = await herdr.createWorkspace({ cwd: peer.cwd, label: plan.label, noFocus });
 			workspaceId = created.workspaceId;
 			paneId = created.rootPaneId;
 		}
+		launchAttempted = true;
 		await herdr.startAgent({ name: plan.agentName, paneId, args: plan.piArgs });
-		await gate.record(peer, owner, workspaceId, paneId).catch(() => {
-			// Lineage is best-effort; the resumed pi's register() revives the record anyway.
-		});
+		await gate.record(peer, owner, token, workspaceId, paneId);
 		const mode = opts.fork ? "fork" : "resume";
 		return {
 			ok: true,
@@ -366,9 +382,14 @@ export async function resumePeer(
 			plan: printed,
 		};
 	} catch (err) {
+		if (!launchAttempted) {
+			// Definitively no startAgent call: only this exact token can unlock.
+			try { await gate.release(peer, owner, token); }
+			catch { return { ok: false, message: "恢复预检失败且 Hub 租约未能安全释放；禁止再次启动", plan: printed }; }
+		}
 		return {
 			ok: false,
-			message: `herdr 启动失败: ${err instanceof Error ? err.message : String(err)}`,
+			message: `${launchAttempted ? "恢复启动结果不确定，租约保留，请检查真实 Pi/Herdr 状态" : "herdr 启动前失败"}: ${err instanceof Error ? err.message : String(err)}`,
 			plan: printed,
 		};
 	}

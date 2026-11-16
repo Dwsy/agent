@@ -78,6 +78,15 @@ $MESH web [--no-open]              # open the WebUI
 
 Session ids accept any unique prefix (prefer a slice into the unique tail).
 
+## Slash commands
+
+| Command | Purpose |
+| --- | --- |
+| `/mesh` | interactive panel: peers, follow, message, history |
+| `/mesh-status [copy]` | one status report (hub, peer counts, online sessions); `copy` puts it on the clipboard |
+| `/mesh status [copy]` | same report as `/mesh-status` |
+| `/mesh web` | open the WebUI (starts the hub if needed) |
+
 ## WebUI
 
 Session Workbench: two-pane layout — left `SessionList` (360–720px draggable)

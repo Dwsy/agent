@@ -34,8 +34,8 @@
 | 导航选中与菜单 | `--sel-soft` `--selection-edge` `--menu-bg` `--menu-selection` | 中性选中底 / 选中边条 / 菜单表面 / 菜单悬停与键盘焦点 |
 | 边界 | `--border` `--border-strong` `--hairline` | 常规边框 / 强分隔 / 1px 发丝线 |
 | 文字 | `--text` `--muted` `--faint` | 正文 / 次级 / 三级（均需 ≥4.5:1） |
-| 强调 | `--accent` `--accent-strong` `--accent-soft` `--accent-border` | 操作 / 焦点 / 主按钮 |
-| 语义 | `--running` `--waiting` `--offline` `--closed`（各带 `-soft` `-border`） | 只用于状态点/图标，**不做面板填充** |
+| 强调 | `--accent` `--accent-strong` `--accent-soft` `--accent-border` + `--on-accent` | 操作 / 焦点 / 主按钮；`--on-accent` 是 accent 填充上的文字（按主题配对保 ≥4.5） |
+| 语义 | `--running` `--waiting` `--offline` `--closed`（各带 `-soft` `-border`）+ 亮阶 `--dot-*` | 文字层 ≥4.5:1；点/pill 用亮阶与 soft/border，**不做面板填充** |
 | 危险 | `--danger` `--danger-soft` `--danger-border` | 破坏性操作 |
 | 层级 | `--shadow-sm` `--shadow` `--shadow-lg` `--elev-1` `--elev-2` | 浮层高度，不用于普通行 |
 | 其他 | `--focus` `--scroll-thumb` `--scroll-track` `--sel-soft` `--backdrop` | 焦点环 / 滚动条 / 选中底 / 遮罩 |
@@ -65,7 +65,7 @@
 ```text
 4px 网格：间距 4 / 8 / 12 / 16 / 24
 TopBar      44px，中性实底，仅发丝底线
-列表行      40px（触屏 48px），行内动作 28px
+列表行      44px 两行（触屏 48px），行内动作 28px
 详情 tab    36px，宽度跨 tab 恒定
 SessionList 默认 480px，clamp 360–720
 DetailPane  吃剩余空间，≥600px
@@ -91,7 +91,8 @@ Review      树 180–260px + diff ≥360px；diff 横向滚动，不逐字换�
 | 顶栏 | 品牌 13/600 + 16px Lucide；左区右侧为「搜索与命令」+ ⌘K 的 28px 轻量按钮；来源选择是「协作来源 + 标题 + chevron」菜单钮，sid 只保留在菜单中；连接文字中性，状态点着色；≤599px 命令入口变为 44px 图标按钮 |
 | 列表搜索 | 图标、输入、`/` 快捷键和清空钮在同一个 30px 搜索框内；焦点环落在整个搜索框，输入不再单独画边；清空后焦点留在输入中；移动端 44px |
 | 概览 | Inspector：标题即 hero，kv 流式元数据，发丝时间线，轻量文件树，紧凑操作条 |
-| Composer | 上方一行显示目标可用状态与协作来源（语义色只落在状态点）；下方保持单一输入框：分段「转向/追问」+ textarea + 发送图标钮都在框内；不再叠加第二条提示行 |
+| Composer | 上方一行显示目标状态（语义色只落在状态点）；协作来源仅在来源 ≠ 目标时显示；下方保持单一输入框：分段「插队/追问」+ textarea + 发送图标钮都在框内；不再叠加第二条提示行 |
+| 历史线程 | 用户消息右对齐 `--accent` 填充（文字 `--on-accent`），助手消息卡片左侧；角色 chip 降为次级，对齐即身份 |
 | 菜单 | 8px 圆角、`--elev-1`、发丝边；同一时刻只允许一个实例；行尾/详情「⋯」菜单右缘对齐按钮右缘，来源下拉左缘对齐按钮左缘，间隔 4px；下方不足时翻到按钮上方；右键菜单贴光标。实测尺寸后始终从原始按钮矩形/指针坐标重算，边缘保留 8px |
 | Toast | 顶部居中，不覆盖发送按钮；只报结果，不报过程 |
 | 空态 | 单盒 + 发丝边 + 一句可执行提示；不用整块语义色填充 |

@@ -354,16 +354,24 @@ export function createHttpServer(opts: {
 							async claim(p: typeof peer, owner: string) {
 								const r = await hub.handle({ id: nextHttpId(), type: "claim_resume", sessionId: p.sessionId, owner });
 								if (!r.ok) throw new Error(r.error ?? "hub error");
+								const token = (r.data as { token?: string } | undefined)?.token;
+								if (!token) throw new Error("missing resume token");
+								return { token };
 							},
-							async record(p: typeof peer, owner: string, ws?: string, pane?: string) {
+							async record(p: typeof peer, owner: string, token: string, ws?: string, pane?: string) {
 								const r = await hub.handle({
 									id: nextHttpId(),
 									type: "record_resume",
 									sessionId: p.sessionId,
 									owner,
+									token,
 									herdrWorkspaceId: ws,
 									herdrPaneId: pane,
 								});
+								if (!r.ok) throw new Error(r.error ?? "hub error");
+							},
+							async release(p: typeof peer, owner: string, token: string) {
+								const r = await hub.handle({ id: nextHttpId(), type: "release_resume", sessionId: p.sessionId, owner, token });
 								if (!r.ok) throw new Error(r.error ?? "hub error");
 							},
 						};

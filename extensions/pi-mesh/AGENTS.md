@@ -53,7 +53,7 @@ retained `retentionDays`, default 7). Reviving a session reuses the record.
 
 | Path | Responsibility |
 | --- | --- |
-| `index.ts` | Extension entry: `/mesh` command + `resources_discover` skill + hooks. Registers **zero tools** (hard requirement). |
+| `index.ts` | Extension entry: `/mesh` + `/mesh-status` commands, `resources_discover` skill, hooks. Registers **zero tools** (hard requirement). |
 | `src/protocol.ts` | **SSOT** wire/domain contract (HubRequest/HubPush/PeerView/…, HTTP+WS API comment). Change here first, everything derives. |
 | `src/config.ts` | `~/.pi/pi-mesh/config.json` load + fail-fast validation. |
 | `src/client.ts` | MeshClient: JSONL request/response + push handling + reconnect. |
@@ -61,6 +61,7 @@ retained `retentionDays`, default 7). Reviving a session reuses the record.
 | `src/ensure-hub.ts` | Hub autostart: socket probe → detached `bun daemon.ts --home` → poll; never throws. |
 | `src/git-info.ts` | repo / worktree / branch resolution; non-git cwd yields all-null info. |
 | `src/command.ts`, `src/mesh-panel.ts` | `/mesh` interactive TUI overlay (`ctx.ui.custom`). |
+| `src/status.ts` | `/mesh-status` report (pure formatter) + clipboard copy (`pbcopy`/`clip`/`wl-copy`/`xclip`). |
 | `src/cli.ts` | `mesh` CLI. JSON output by default, `--table` for humans. |
 | `src/webui.ts` | `mesh web` opener: config port → ensure hub → HTTP probe → platform opener (`--no-open` skips the browser). |
 | `src/resume.ts` | herdr orchestration: resume/fork into a workspace, CAS-guarded; `findHerdrHost` resolution (resume-link → agent match). |

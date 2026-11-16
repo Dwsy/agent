@@ -281,10 +281,21 @@
 									<span class="row-dot-wrap">
 										<span class="row-dot" :class="stateMeta(p.state).dot"></span>
 									</span>
-									<span class="row-title t-row" :title="esc(p.title || p.cwd)" x-html="esc(p.title || basename(p.cwd))"></span>
-									<span class="row-sub t-caption faint" x-show="!p.title" x-html="esc(parentDirLabel(p))"></span>
+									<span class="row-main">
+										<span class="row-title t-row" :title="esc(p.title || p.cwd)" x-html="esc(p.title || basename(p.cwd))"></span>
+										<span class="row-sub t-caption faint">
+											<span x-show="!p.title" x-html="esc(parentDirLabel(p))"></span>
+											<span x-show="p.model" class="row-model" :title="esc(p.model)" x-html="esc(p.model)"></span>
+											<span x-html="esc(relT(p.startedAt))"></span>
+										</span>
+									</span>
 									<span class="row-chips">
-										<span x-show="p.model" class="chip chip-strong" :title="esc(p.model)"><span class="chip-text" x-html="esc(p.model)"></span></span>
+										<span
+											x-show="p.state !== 'running'"
+											class="badge"
+											:class="stateMeta(p.state).badge"
+											x-html="esc(stateMeta(p.state).label)"
+										></span>
 										<span
 											x-show="resumeCount(p) > 0"
 											class="chip chip-resume"
@@ -403,6 +414,13 @@
 						<template x-if="selected && ephemeral(selected)">
 							<span class="chip chip-ephemeral" title="临时会话（--no-session）· 不保存记录"><i data-lucide="zap"></i><span>临时</span></span>
 						</template>
+						<div class="detail-sub t-caption faint">
+							<span x-html="esc(selected ? stateMeta(selected.state).label : '')"></span>
+							<span class="section-dot" x-show="selected && selected.git && selected.git.branch">·</span>
+							<span class="detail-branch" x-show="selected && selected.git && selected.git.branch" x-html="esc(selected && selected.git && selected.git.branch ? selected.git.branch : '')"></span>
+							<span class="section-dot" x-show="selected && selected.model">·</span>
+							<span x-show="selected && selected.model" x-html="esc(selected && selected.model ? selected.model : '')"></span>
+						</div>
 					</div>
 					<div class="detail-actions">
 						<button
@@ -626,10 +644,10 @@
 						</div>
 
 						<template x-for="(item, itemIdx) in drawer.items" :key="item.key">
-							<div>
-								<!-- 对话块：用户 / 助手 / 其他（保留换行的可读宽度文本） -->
+							<div class="entry-wrap">
+								<!-- 对话块：用户气泡右对齐，助手卡片左侧（保留换行的可读宽度文本） -->
 								<template x-if="item.kind === 'entry'">
-									<div class="entry" :class="item.e.isError ? 'entry-error' : ''">
+									<div class="entry" :class="[item.e.isError ? 'entry-error' : '', item.e.role === 'user' ? 'entry-user' : '']">
 										<div class="flex flex-wrap items-center gap-2 text-[10px]">
 											<span class="chip" :class="roleMeta(item.e.role).chip" x-html="esc(roleMeta(item.e.role).label)"></span>
 											<span x-show="item.e.toolName" class="warn-text" x-html="esc(item.e.toolName)"></span>
@@ -641,8 +659,7 @@
 								</template>
 								<!-- 工具链：连续 toolResult 折叠为一行 ⋯ 工具调用 ×N（chevron 展开） -->
 								<template x-if="item.kind === 'tools'">
-									<div class="entry entry-toolrun" :class="item.errorCount ? 'entry-error' : ''">
-										<button
+									<div class="entry entry-toolrun" :class="item.errorCount ? 'entry-error' : ''">										<button
 											class="toolrun-head"
 											@click="toggleRun(item)"
 											:aria-expanded="item.open ? 'true' : 'false'"
@@ -776,9 +793,9 @@
 					<div class="composer-context">
 						<span class="composer-context-item">
 							<span class="composer-context-label">发送至</span>
-							<strong x-html="esc(selected ? (selected.title || basename(selected.cwd)) + ' · ' + sid8(selected.sessionId) : '—')"></strong>
+							<strong x-html="esc(selected ? (selected.title || basename(selected.cwd)) : '—')"></strong>
 						</span>
-						<span class="composer-context-item">
+						<span class="composer-context-item" x-show="!viewer || viewer.sessionId !== (selected && selected.sessionId)">
 							<span class="composer-context-label">协作来源</span>
 							<span :title="messageSourceTitle(viewer)" x-html="esc(messageSourceLabel(viewer))"></span>
 						</span>
@@ -786,8 +803,8 @@
 					</div>
 					<div class="composer-field">
 						<div class="seg" role="group" aria-label="发送模式">
-							<button class="seg-btn" :class="cstate(selectedId).mode === 'steer' ? 'seg-on' : ''" type="button" @click="setMode(selectedId, 'steer')" title="转向：在下一次模型调用前纠正当前方向">转向</button>
-							<button class="seg-btn" :class="cstate(selectedId).mode === 'followUp' ? 'seg-on' : ''" type="button" @click="setMode(selectedId, 'followUp')" title="追问：当前回合结束后追加消息">追问</button>
+							<button class="seg-btn" :class="cstate(selectedId).mode === 'steer' ? 'seg-on' : ''" type="button" @click="setMode(selectedId, 'steer')" title="插队（steer）：在对方下一次模型调用前插入，用于紧急纠偏">插队</button>
+							<button class="seg-btn" :class="cstate(selectedId).mode === 'followUp' ? 'seg-on' : ''" type="button" @click="setMode(selectedId, 'followUp')" title="追问（followUp）：对方当前回合结束后排队，用于非紧急请求">追问</button>
 						</div>
 						<textarea
 							class="composer-input"

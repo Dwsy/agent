@@ -307,6 +307,9 @@ async function mdHtml(entry, theme) {
 /** History page size for openHistory + 加载更早 backward pagination. */
 const HISTORY_PAGE = 50;
 const FILE_ACTIVITY_LIMIT = 50;
+/** Grace window before a run of empty SSE peers snapshots is believed (transient
+ *  empties on hub restart/reconnect must not flap the resolved UI state). */
+const EMPTY_PEERS_GRACE_MS = 8000;
 /** Older page merge for 加载更早: older entries go in front (oldest-first order)
  *  and duplicate ids drop out so every buildHistory :key stays unique. */
 function mergeOlderEntries(current, older) {
@@ -402,8 +405,9 @@ function messageSourceLabel(peer) {
 	if (!peer) return "网页直发 · 不建立会话关注";
 	const cwd = String(peer.cwd || "").replace(/[\\/]+$/, "");
 	const title = String(peer.title || cwd.split(/[\\/]/).pop() || "未命名会话");
-	const states = { running: "运行中", waiting: "在线·空闲", offline: "离线", closed: "已结束" };
-	return "会话协作 · " + title + " · " + String(peer.sessionId || "").slice(-8) + " · " + (states[peer.state] || "状态未知");
+	// Keep the source line to identity only; availability lives in the status dot
+	// to the right and detail identity is one click away.
+	return "会话协作 · " + title;
 }
 function messageSourceTitle(peer) {
 	if (!peer) return "网页直发不会建立会话关注关系";
@@ -1069,14 +1073,44 @@ document.addEventListener("alpine:init", () => {
 		applyEvent(evt) {
 			if (!evt || typeof evt !== "object") return;
 			if (evt.type === "peers") {
-				this.peers = Array.isArray(evt.peers) ? evt.peers : [];
-				this.syncViewer();
-				this.syncSelected();
+				this.applyPeersSnapshot(evt.peers);
 			} else if (evt.type === "file_activity") {
 				const p = this.peers.find((x) => x.sessionId === evt.sessionId);
 				if (!p) return;
 				p.files = mergeFileActivities(p.files, evt.files, FILE_ACTIVITY_LIMIT);
 			}
+		},
+		/* SSE peers snapshots. A transient empty snapshot (hub restart, reconnect)
+		   must not tear down resolved UI state: selected target / viewer survive it
+		   (design.md 4.2), but `selected` still flaps null and the x-transition on
+		   the panels can wedge half-hidden. Keep the last non-empty view; only clear
+		   after empties persist for one grace window. */
+		applyPeersSnapshot(list) {
+			const next = Array.isArray(list) ? list : [];
+			if (next.length) {
+				this._emptyPeersSince = 0;
+				this.peers = next;
+				this.syncViewer();
+				this.syncSelected();
+				return;
+			}
+			if (!this.peers.length) return;
+			if (!this._emptyPeersSince) {
+				this._emptyPeersSince = Date.now();
+				setTimeout(() => {
+					if (this._emptyPeersSince && Date.now() - this._emptyPeersSince >= EMPTY_PEERS_GRACE_MS) {
+						this._emptyPeersSince = 0;
+						this.peers = [];
+						this.syncViewer();
+						this.syncSelected();
+					}
+				}, EMPTY_PEERS_GRACE_MS + 50);
+				return;
+			}
+			if (Date.now() - this._emptyPeersSince < EMPTY_PEERS_GRACE_MS) return;
+			this.peers = [];
+			this.syncViewer();
+			this.syncSelected();
 		},
 		/* REST */
 		async refreshPeers(silent) {

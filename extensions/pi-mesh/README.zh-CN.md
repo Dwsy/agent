@@ -72,6 +72,15 @@ $MESH web [--no-open]              # 打开 WebUI
 
 会话 id 接受任意唯一前缀（建议切到唯一尾部）。
 
+## 斜杠命令
+
+| 命令 | 作用 |
+| --- | --- |
+| `/mesh` | 交互面板：peer、关注、互发、历史 |
+| `/mesh-status [copy]` | 一份状态汇总（hub、peer 计数、在线会话）；`copy` 直接复制到剪贴板 |
+| `/mesh status [copy]` | 与 `/mesh-status` 同一份汇总 |
+| `/mesh web` | 打开 WebUI（必要时先拉起 hub） |
+
 ## WebUI
 
 Session Workbench：两栏布局——左 `SessionList`（360–720px 可拖拽）+ 右 `DetailPane`

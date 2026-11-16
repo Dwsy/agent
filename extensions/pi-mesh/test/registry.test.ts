@@ -374,29 +374,70 @@ describe("resume lease (CAS)", () => {
 		expect(registry.claimResume({ sessionId: "s1", owner: "o1" }).leaseExpiresAt).toBeTruthy();
 	});
 
-	test("second owner is lease-held; same owner renews", () => {
+	test("two requests from the SAME owner cannot launch twice", () => {
 		const { registry } = makeRegistry();
 		registry.register(makePeer("s1"), GIT);
 		registry.close("s1");
-		registry.claimResume({ sessionId: "s1", owner: "o1" });
-		expect(() => registry.claimResume({ sessionId: "s1", owner: "o2" })).toThrow("lease held");
-		expect(registry.claimResume({ sessionId: "s1", owner: "o1" }).leaseExpiresAt).toBeTruthy();
+		const first = registry.claimResume({ sessionId: "s1", owner: "webui" });
+		expect(first.token).toBeTruthy();
+		expect(() => registry.claimResume({ sessionId: "s1", owner: "webui" })).toThrow("lease held");
+		expect(() => registry.claimResume({ sessionId: "s1", owner: "cli" })).toThrow("lease held");
 	});
 
-	test("lease expires after ttl and record/register consume it", () => {
+	test("expired TTL and recorded launch remain fenced until Pi registers", () => {
 		const { registry } = makeRegistry();
 		registry.register(makePeer("s1"), GIT);
 		registry.close("s1");
 		const now = Date.now();
-		registry.claimResume({ sessionId: "s1", owner: "o1", ttlMs: 1000 }, now);
-		expect(() => registry.claimResume({ sessionId: "s1", owner: "o2" }, now + 500)).toThrow("lease held");
-		// past TTL another owner may claim
-		expect(registry.claimResume({ sessionId: "s1", owner: "o2" }, now + 1500).leaseExpiresAt).toBeTruthy();
-		// record_resume releases + appends lineage
-		const view = registry.recordResume({ sessionId: "s1", owner: "o2", herdrWorkspaceId: "w1", herdrPaneId: "w1:p1" });
-		expect(view.resumptions?.length).toBe(1);
+		const first = registry.claimResume({ sessionId: "s1", owner: "webui", ttlMs: 1000 }, now);
+		expect(() => registry.claimResume({ sessionId: "s1", owner: "webui" }, now + 1500)).toThrow("lease held");
+		const view = registry.recordResume({ sessionId: "s1", owner: "webui", token: first.token, herdrWorkspaceId: "w1", herdrPaneId: "w1:p1" });
 		expect(view.resumptions?.[0]?.herdrWorkspaceId).toBe("w1");
-		expect(registry.claimResume({ sessionId: "s1", owner: "o3" }).leaseExpiresAt).toBeTruthy();
+		expect(() => registry.claimResume({ sessionId: "s1", owner: "webui" }, now + 100_000)).toThrow("resume outcome unknown");
+		expect(() => registry.releaseResume({ sessionId: "s1", owner: "webui", token: first.token })).toThrow("resume already launched");
+		registry.register(makePeer("s1"), GIT);
+		expect(() => registry.claimResume({ sessionId: "s1", owner: "webui" })).toThrow("already live");
+	});
+
+	test("stale completion or release can never erase a newer owner's lease", () => {
+		const { registry } = makeRegistry();
+		registry.register(makePeer("s1"), GIT);
+		registry.close("s1");
+		const old = registry.claimResume({ sessionId: "s1", owner: "webui" });
+		registry.releaseResume({ sessionId: "s1", owner: "webui", token: old.token });
+		const current = registry.claimResume({ sessionId: "s1", owner: "webui" });
+		expect(current.token).not.toBe(old.token);
+		expect(() => registry.recordResume({ sessionId: "s1", owner: "webui", token: old.token, herdrWorkspaceId: "old" })).toThrow("stale resume token");
+		expect(() => registry.releaseResume({ sessionId: "s1", owner: "webui", token: old.token })).toThrow("stale resume token");
+		expect(() => registry.claimResume({ sessionId: "s1", owner: "webui" })).toThrow("lease held");
+		registry.recordResume({ sessionId: "s1", owner: "webui", token: current.token, herdrWorkspaceId: "new" });
+		expect(registry.get("s1")?.resumptions?.at(-1)?.herdrWorkspaceId).toBe("new");
+	});
+
+	test("a pending launch fence survives a hub restart, including past TTL", () => {
+		const home = mkdtempSync(join(tmpdir(), "pi-mesh-claim-crash-"));
+		const registry = new Registry(DEFAULT_CONFIG, home);
+		registry.register(makePeer("s1"), GIT);
+		registry.close("s1");
+		const first = registry.claimResume({ sessionId: "s1", owner: "webui", ttlMs: 1 });
+		const second = new Registry(DEFAULT_CONFIG, home);
+		second.loadJSON();
+		expect(() => second.claimResume({ sessionId: "s1", owner: "webui" }, Date.now() + 100_000)).toThrow("lease held");
+		second.recordResume({ sessionId: "s1", owner: "webui", token: first.token, herdrWorkspaceId: "w" });
+		const third = new Registry(DEFAULT_CONFIG, home);
+		third.loadJSON();
+		expect(() => third.claimResume({ sessionId: "s1", owner: "another" })).toThrow("resume outcome unknown");
+	});
+
+	test("registration before late record preserves lineage and never frees a new lease", () => {
+		const { registry } = makeRegistry();
+		registry.register(makePeer("s1"), GIT);
+		registry.close("s1");
+		const attempt = registry.claimResume({ sessionId: "s1", owner: "webui" });
+		registry.register(makePeer("s1"), GIT);
+		const result = registry.recordResume({ sessionId: "s1", owner: "webui", token: attempt.token, herdrWorkspaceId: "confirmed" });
+		expect(result.resumptions?.[0]?.herdrWorkspaceId).toBe("confirmed");
+		expect(() => registry.claimResume({ sessionId: "s1", owner: "webui" })).toThrow("already live");
 	});
 
 	test("re-register (revive) consumes the lease and resumptions persist", () => {
@@ -404,13 +445,38 @@ describe("resume lease (CAS)", () => {
 		const registry = new Registry(DEFAULT_CONFIG, home);
 		registry.register(makePeer("s1"), GIT);
 		registry.close("s1");
-		registry.claimResume({ sessionId: "s1", owner: "o1" });
-		registry.recordResume({ sessionId: "s1", owner: "o1", herdrWorkspaceId: "w9" });
+		const claim = registry.claimResume({ sessionId: "s1", owner: "o1" });
+		registry.recordResume({ sessionId: "s1", owner: "o1", token: claim.token, herdrWorkspaceId: "w9" });
 		registry.register(makePeer("s1"), GIT); // revived pi registers
 		expect(() => registry.claimResume({ sessionId: "s1", owner: "o2" })).toThrow("already live");
 		registry.flush();
 		const restored = new Registry(DEFAULT_CONFIG, home);
 		restored.loadJSON();
 		expect(restored.get("s1")?.resumptions?.length).toBe(1);
+	});
+});
+
+describe("resume lease GC", () => {
+	test("purging a peer takes its resume bookkeeping with it", () => {
+		const { registry } = makeRegistry({ retentionDays: 0 });
+		registry.register(makePeer("s1"), GIT);
+		registry.close("s1", "done");
+		const claim = registry.claimResume({ sessionId: "s1", owner: "o1" });
+		expect(registry.toJSON().leases).toHaveLength(1);
+		expect(registry.purgeExpired(Date.now() + 1000)).toBe(1);
+		expect(registry.toJSON().leases).toHaveLength(0);
+		expect(() =>
+			registry.recordResume({ sessionId: "s1", owner: "o1", token: claim.token, herdrWorkspaceId: "w" }),
+		).toThrow("unknown session");
+	});
+
+	test("the fence still holds while the peer lives, TTL or not", () => {
+		const { registry } = makeRegistry();
+		registry.register(makePeer("s1"), GIT);
+		registry.close("s1");
+		const now = Date.now();
+		registry.claimResume({ sessionId: "s1", owner: "o1", ttlMs: 1 }, now);
+		registry.purgeExpired(now + 100_000); // peer retention not reached: nothing purged
+		expect(() => registry.claimResume({ sessionId: "s1", owner: "o2" }, now + 100_000)).toThrow("lease held");
 	});
 });

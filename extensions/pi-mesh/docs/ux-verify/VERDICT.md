@@ -168,3 +168,62 @@ Method: isolated pi-mesh hub using scratch home /tmp/pi-mesh-webui-scratch-20261
 ## LOOP-5 VERDICT: ACCEPT for the WebUI first-batch scope.
 
 Limitations: mobile soft-keyboard/visualViewport behavior was not tested on a physical device. Terminal pane input and live herdr repaint were not re-run because this round changed no terminal code; prior LOOP-4 terminal acceptance remains the evidence for that separate surface. The test hub and browser profile are isolated and are not the user's normal hub/browser.
+
+# LOOP-6 WEBUI VISUAL REDESIGN — 2026-11-04
+
+Scope: apply the user-approved redesign direction to the WebUI — independent
+light/dark palettes, message thread as the visual hero, two-line list rows,
+chip diet, stronger status colour, Composer copy and context-line de-dup.
+Implemented across four self-reviewed rounds (baseline → r1 → r2 → r3 → r4
+under 20261101-pi-mesh-webui-redesign/).
+
+## What changed
+
+1. Theme tokens — light accent #2f6bec / dark #6e9bff, state text tiers kept
+   >= 4.5:1 with a bright `--dot-*` tier for dots and pills, `--on-accent`
+   pairing per theme (white on light accent, dark ink on dark accent). Neutral
+   chrome stays pure greyscale per the pinned "no purple/blue drift" rule
+   (webui.test.ts palette test) — the redesign carries colour through accent
+   and states, not tinted surfaces.
+2. Thread bubbles — user turns right-aligned on `--accent` fill, assistant
+   turns stay cards; the role chip becomes secondary (decision #20).
+3. List rows — two-line: full-width title + quiet meta (parent dir / model /
+   age); model chip demoted to muted text (max 140px ellipsis); non-running
+   peers carry a semantic state pill; row height 40px -> 44px (decision #21).
+4. Detail head — second line `state · branch · model` (detail-sub), wraps via
+   flex so the compact media query hides identity chips without new markup.
+5. Composer — 「转向/追问」became「插队/追问」(tooltips carry steer/followUp);
+   the source line hides when the collaboration source equals the target;
+   the target line no longer repeats sid8 (decision #22).
+6. Bug fix found during acceptance — a transient empty SSE peers snapshot
+   made `selected` flap null and wedged the x-transition panels half-hidden.
+   `applyPeersSnapshot` now keeps the last non-empty view and clears only
+   after empties persist 8s (EMPTY_PEERS_GRACE_MS, decision #23). Test pin:
+   webui.test.ts empty-snapshot contract.
+
+## Rounds and evidence
+
+- baseline/r1/r2/r3/r4 screenshots: 20261101-pi-mesh-webui-redesign/
+  (1440 session/changes light+dark, 900 light+dark, 390 light+dark).
+- Full automated suite after the redesign: 270 passed, 0 failed (17 files);
+  app.js node --check passed.
+- DOM hard rules (both themes, session + changes): native select 0, native
+  checkbox 0, emoji text 0, Lucide-only icons (269 hydrated). Text contrast
+  >= 4.5 on page/panel/sidebar/selected/menu surfaces is enforced by
+  webui.test.ts for both palettes.
+- Harness lesson recorded: browser acceptance must run a dedicated Chrome
+  with --disable-background-timer-throttling --disable-renderer-backgrounding
+  --disable-backgrounding-occluded-windows AND an activated tab; a background
+  tab freezes CSS transitions mid-fade and wedges Alpine x-transition panels.
+  Navigating to the bare base URL also drops the #p/#tab hash — reload() the
+  hashed URL instead (work/20261101-pi-mesh-webui-redesign/shot.py).
+
+## LOOP-6 VERDICT: ACCEPT for the redesign scope.
+
+Limitations: physical mobile soft-keyboard still unverified (R-01 unchanged).
+Terminal pane untouched this round (LOOP-4 evidence still stands; R-02
+re-open condition is about the uncommitted terminal.ts work, tracked
+separately). No real session received messages or mutating actions; scratch
+hub and dedicated Chrome profile only. The `--on-accent` dark pairing and
+bubble layout were verified at 1440/900/390 in both themes; long-title
+truncation was verified with demo titles only.

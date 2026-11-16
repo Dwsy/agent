@@ -6,7 +6,11 @@ import {
 	fit,
 	formatAge,
 	scrollWindow,
+	scrollbarColumn,
+	type MeshKeys,
 	type MeshPanelDeps,
+	type MeshTheme,
+	type MeshThemeColor,
 	type MeshRow,
 } from "../src/mesh-panel.ts";
 import type { PeerView, TranscriptEntry } from "../src/protocol.ts";
@@ -213,8 +217,37 @@ test("scrollWindow keeps the selection visible and clamps at both ends", () => {
 	expect(scrollWindow(0, 0, 10)).toBe(0);
 });
 
+/** Distinct, valid SGR codes so tests can prove colors come from the theme. */
+const TEST_CODES: Record<MeshThemeColor, number> = {
+	accent: 36, dim: 2, border: 36, text: 37, muted: 90,
+	success: 32, warning: 33, error: 31,
+};
+
+/** A second theme with codes the old hard-coded palette never used. */
+const altTheme: MeshTheme = {
+	fg: (_color, text) => `\x1b[95m${text}\x1b[0m`,
+	bold: (text) => `\x1b[95m${text}\x1b[0m`,
+};
+
+const testTheme: MeshTheme = {
+	fg: (color, text) => `\x1b[${TEST_CODES[color]}m${text}\x1b[0m`,
+	bold: (text) => `\x1b[1m${text}\x1b[0m`,
+};
+
+/** Mirrors the raw sequences the panel used to compare against. */
+const testKeys: MeshKeys = {
+	up: (data) => data === "\x1b[A",
+	down: (data) => data === "\x1b[B",
+	pageUp: (data) => data === "\x1b[5~",
+	pageDown: (data) => data === "\x1b[6~",
+	right: (data) => data === "\x1b[C",
+	left: (data) => data === "\x1b[D",
+};
+
 function stubDeps(over: Partial<MeshPanelDeps> = {}): MeshPanelDeps {
 	return {
+		theme: testTheme,
+		keys: testKeys,
 		fetchPeers: async () => [peer({ sessionId: "aaaaaaaa-1" })],
 		fetchTranscript: async (): Promise<TranscriptEntry[]> => [],
 		setFollow: async () => {},
@@ -389,7 +422,8 @@ test("narrow detail scrolls with j and Esc returns to the list", async () => {
 	const back = panel.render(60).join("\n");
 	expect(back).toContain("❯");
 	expect(back).not.toContain("────");
-	expect(back).toContain("移动");
+	// Detail footers say 滚动; list footers do not. Assert the state, not the copy.
+	expect(back).not.toContain("滚动");
 });
 
 test("search input filters live, no-results has a hint, Esc clears", async () => {
@@ -688,4 +722,245 @@ test("? opens a help layer and any key closes it", async () => {
 	expect(help).toContain("任意键关闭");
 	panel.handleInput("x");
 	expect(panel.render(100).join("\n")).not.toContain("按键速查");
+});
+
+// ── Phase 1: theme-derived colors ───────────────────────────────────────
+
+test("render takes all colors from the injected theme", async () => {
+	const panel = new MeshPanel(stubDeps({ theme: altTheme }));
+	await Bun.sleep(10);
+	const text = panel.render(100).join("\n");
+	expect(text).toContain("\x1b[95m");
+	// None of the palettes the panel used to hard-code may leak through.
+	for (const legacy of ["\x1b[36m", "\x1b[32m", "\x1b[33m", "\x1b[31m", "\x1b[90m", "\x1b[1m"]) {
+		expect(text).not.toContain(legacy);
+	}
+});
+
+test("invalidate() re-derives the palette when the theme changes", async () => {
+	let code = 36;
+	const dynamicTheme: MeshTheme = {
+		fg: (_color, text) => `\x1b[${code}m${text}\x1b[0m`,
+		bold: (text) => `\x1b[${code}m${text}\x1b[0m`,
+	};
+	const panel = new MeshPanel(stubDeps({ theme: dynamicTheme }));
+	await Bun.sleep(10);
+	expect(panel.render(100).join("\n")).toContain("\x1b[36m");
+	code = 95;
+	panel.invalidate();
+	expect(panel.render(100).join("\n")).toContain("\x1b[95m");
+});
+
+test("fit() keeps ANSI styling when truncating a long colored row", () => {
+	const colored = "\x1b[32m超长的中文标题超长\x1b[0m";
+	const out = fit(colored, 8);
+	expect(out).toContain("\x1b[32m");
+	expect(out).toContain("…");
+	expect(displayWidth(out)).toBeLessThanOrEqual(8);
+	const closed = "\x1b[32mabc\x1b[0m";
+	expect(fit(closed, 8)).toBe(closed + "     ");
+});
+
+test("source no longer contains hard-coded color SGR sequences", async () => {
+	const source = await Bun.file(new URL("../src/mesh-panel.ts", import.meta.url)).text();
+	// SGR reset (0m) is theme-independent and allowed; colors/bold/dim are not.
+	expect(source).not.toMatch(/\\x1b\[(?:1|2|3[0-9]|9[0-9])m/);
+});
+
+// ── Phase 2: copy diet ──────────────────────────────────────────────────
+
+test("footer stays single-line and untruncated at 40–140 columns", async () => {
+	const panel = new MeshPanel(stubDeps());
+	await Bun.sleep(10);
+	for (const width of [40, 60, 80, 100, 140]) {
+		const lines = panel.render(width);
+		const footer = lines[lines.length - 1]!;
+		expect(footer, `width ${width}`).toContain("Enter 详情");
+		expect(footer, `width ${width}`).not.toContain("…");
+		expect(displayWidth(footer), `width ${width}`).toBeLessThanOrEqual(width);
+	}
+});
+
+test("footer keeps 3 actions; ? owns the grouped shortcut reference", async () => {
+	const panel = new MeshPanel(stubDeps());
+	await Bun.sleep(10);
+	const footer = panel.render(100).at(-1)!;
+	expect(footer).toContain("? 快捷键");
+	for (const moved of ["R 恢复", "f 关注", "a 过滤", "Tab 详情"]) {
+		expect(footer).not.toContain(moved);
+	}
+
+	panel.handleInput("?");
+	const help = panel.render(100).join("\n");
+	for (const group of ["导航", "过滤与搜索", "会话操作", "其它"]) {
+		expect(help).toContain(group);
+	}
+	expect(help).toContain("PgUp / PgDn");
+	expect(help).toContain("R 恢复");
+});
+
+// ── Phase 3: injected keys + hover ──────────────────────────────────────
+
+test("key recognition is injected rather than hard-coded", async () => {
+	const panel = new MeshPanel(stubDeps({
+		fetchPeers: async () => [
+			peer({ sessionId: "aaaa1111", state: "running" }),
+			peer({ sessionId: "bbbb2222", state: "waiting" }),
+		],
+		keys: { ...testKeys, down: (data) => data === "n" },
+	}));
+	await Bun.sleep(10);
+	const before = panel.render(100).join("\n");
+	panel.handleInput("\x1b[B");
+	expect(panel.render(100).join("\n")).toBe(before); // old raw sequence no longer recognized
+	panel.handleInput("n");
+	expect(panel.render(100).join("\n")).not.toBe(before); // injected key works
+});
+
+const move = (y: number, x = 1, type = "move", button = "none") => ({
+	type, button, x, y, screenX: x, screenY: y,
+	width: 140, height: 30, shift: false, alt: false, ctrl: false,
+});
+
+test("hover never moves the selection and repaints only on change", async () => {
+	const panel = new MeshPanel(stubDeps({
+		fetchPeers: async () => [
+			peer({ sessionId: "aaaa1111", state: "running" }),
+			peer({ sessionId: "bbbb2222", state: "waiting" }),
+			peer({ sessionId: "cccc3333", state: "offline" }),
+		],
+		viewport: () => ({ width: 140, height: 40 }),
+	}));
+	await Bun.sleep(10);
+	panel.render(140);
+	const cursorLine = (text: string) => text.split("\n").findIndex((line) => line.includes("❯"));
+	const base = panel.render(140).join("\n");
+	const selectedLine = cursorLine(base);
+	expect(selectedLine).toBeGreaterThanOrEqual(0);
+
+	// Hover styling only applies to non-selected rows, so probe a different one.
+	let hoverY = -1;
+	for (let y = 0; y < panel.render(140).length; y++) {
+		if (y === selectedLine) continue;
+		if (panel.handleMouse(move(y))?.render) { hoverY = y; break; }
+	}
+	expect(hoverY).toBeGreaterThanOrEqual(0);
+	const hovered = panel.render(140).join("\n");
+	expect(cursorLine(hovered)).toBe(selectedLine); // selection unchanged
+	expect(hovered).not.toBe(base); // visible hover state
+	expect(panel.handleMouse(move(hoverY))).toEqual({ handled: true, render: false });
+	expect(panel.handleMouse(move(hoverY, 1, "drag", "left"))).toBeUndefined();
+	expect(panel.handleMouse(move(hoverY, 1, "press", "right"))).toBeUndefined();
+	// The right-hand detail column clears hover instead of highlighting a list row.
+	expect(panel.handleMouse(move(hoverY, 130))).toEqual({ handled: true, render: true });
+});
+
+// ── Phase 4: scrollbar + drag + right click ─────────────────────────────
+
+test("scrollbarColumn: blank when content fits, thumb tracks the offset", () => {
+	expect(scrollbarColumn(5, 0, 5)).toEqual([" ", " ", " ", " ", " "]);
+	const top = scrollbarColumn(10, 0, 5);
+	expect(top).toHaveLength(5);
+	expect(top).toContain("█");
+	expect(top).toContain("░");
+	expect(top.indexOf("█")).toBe(0);
+	const bottom = scrollbarColumn(10, 5, 5);
+	expect(bottom.lastIndexOf("█")).toBe(4);
+	expect(scrollbarColumn(10, -3, 5)).toEqual(top); // clamped
+});
+
+test("render geometry stays exact with the scrollbar column", async () => {
+	const many = Array.from({ length: 30 }, (_, i) =>
+		peer({ sessionId: `s${i}00000`, title: `T${i}`, state: "running", startedAt: `2026-10-30T10:${String(i).padStart(2, "0")}:00.000Z` }),
+	);
+	const panel = new MeshPanel(
+		stubDeps({ fetchPeers: async () => many, viewport: () => ({ width: 100, height: 12 }) }),
+	);
+	await Bun.sleep(10);
+	for (const width of [40, 60, 100, 140]) {
+		for (const line of panel.render(width)) {
+			expect(displayWidth(line), `width ${width}`).toBeLessThanOrEqual(width);
+		}
+	}
+});
+
+test("left press captures; drag selects the row under the pointer", async () => {
+	const three = [
+		peer({ sessionId: "aaaaaaaa-1", title: "Alpha", state: "running", startedAt: "2026-10-30T10:02:00.000Z" }),
+		peer({ sessionId: "bbbbbbbb-2", title: "Beta", state: "running", startedAt: "2026-10-30T10:01:00.000Z" }),
+		peer({ sessionId: "cccccccc-3", title: "Gamma", state: "running", startedAt: "2026-10-30T10:00:00.000Z" }),
+	];
+	const panel = new MeshPanel(
+		stubDeps({ fetchPeers: async () => three, viewport: () => ({ width: 100, height: 16 }) }),
+	);
+	await Bun.sleep(10);
+	panel.render(100);
+	const selected = () =>
+		panel.render(100).join("\n").split("\n").find((line) => line.includes("❯")) ?? "";
+	expect(selected()).toContain("Alpha");
+
+	// rows: y=1 group header, y=2..4 the three peers (byState = insertion order)
+	const press = panel.handleMouse(move(2, 3, "press", "left"));
+	expect(press).toEqual({ handled: true, capture: true, focus: true });
+	expect(selected()).toContain("Alpha");
+	panel.handleMouse(move(4, 3, "drag", "left"));
+	expect(selected()).toContain("Gamma");
+	// off the visible rows auto-scrolls toward the edge instead of breaking
+	expect(panel.handleMouse(move(0, 3, "drag", "left"))).toEqual({ handled: true });
+	expect(panel.handleMouse(move(4, 3, "release", "left"))).toBeUndefined();
+	expect(panel.handleMouse(move(4, 3, "drag", "left"))).toBeUndefined(); // capture ended
+});
+
+test("scrollbar thumb click and drag jump the selection", async () => {
+	const many = Array.from({ length: 30 }, (_, i) =>
+		peer({ sessionId: `s${i}00000`, title: `T${i}`, state: "running", startedAt: `2026-10-30T10:${String(29 - i).padStart(2, "0")}:00.000Z` }),
+	);
+	const panel = new MeshPanel(
+		stubDeps({ fetchPeers: async () => many, viewport: () => ({ width: 140, height: 12 }) }),
+	);
+	await Bun.sleep(10);
+	panel.render(140);
+	const bodyHeight = 8; // floor(12 * 0.85) - 2
+	const barX = 54; // wide layout: leftWidth (52) + 2
+	const selected = () =>
+		panel.render(140).join("\n").split("\n").find((line) => line.includes("❯")) ?? "";
+	expect(selected()).toContain("T0");
+
+	panel.handleMouse(move(bodyHeight, barX, "press", "left")); // track bottom
+	expect(selected()).toContain("T29");
+	panel.handleMouse(move(1, barX, "press", "left")); // track top
+	expect(selected()).toContain("T0");
+	panel.handleMouse(move(1, barX, "press", "left"));
+	panel.handleMouse(move(bodyHeight, barX, "drag", "left")); // thumb drag
+	expect(selected()).toContain("T29");
+});
+
+test("right click opens the row detail and leaves it again", async () => {
+	const entries: TranscriptEntry[] = [
+		{ id: "e1", timestamp: "2026-10-30T11:00:00.000Z", role: "user", text: "hello" },
+	];
+	const first = peer({
+		sessionId: "aaaaaaaa-1",
+		title: "Alpha",
+		state: "running",
+		startedAt: "2026-10-30T11:00:00.000Z",
+		git: { repoRoot: "/r", branch: "main", worktree: "main", commonRoot: "/r" },
+	});
+	const panel = new MeshPanel(
+		stubDeps({
+			fetchPeers: async () => [first],
+			fetchTranscript: async () => entries,
+			selfSessionId: null,
+			viewport: () => ({ width: 100, height: 16 }),
+		}),
+	);
+	await Bun.sleep(10);
+	panel.render(100);
+	const footer = () => panel.render(100).at(-1)!;
+	expect(footer()).toContain("Enter 详情");
+
+	panel.handleMouse(move(2, 3, "click", "right")); // right click a list row
+	expect(footer()).toContain("Esc 返回");
+	panel.handleMouse(move(2, 90, "click", "right")); // right click the detail side
+	expect(footer()).toContain("Enter 详情");
 });

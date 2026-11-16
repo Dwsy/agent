@@ -21,11 +21,14 @@ export interface MeshClientOptions {
 	/** Test seams so reconnect timing can be shrunk. */
 	backoffMinMs?: number;
 	backoffMaxMs?: number;
+	/** Per-request response deadline; 0 disables. Defaults to 30s. */
+	requestTimeoutMs?: number;
 }
 
 interface Pending {
 	resolve: (res: HubResponse) => void;
 	reject: (err: Error) => void;
+	timer: ReturnType<typeof setTimeout> | null;
 }
 
 /** Requests reject with this when the socket is (or just went) down. */
@@ -42,6 +45,7 @@ export class MeshClient {
 	#onReconnect: (() => void | Promise<void>) | undefined;
 	#backoffMinMs: number;
 	#backoffMaxMs: number;
+	#requestTimeoutMs: number;
 
 	#socket: net.Socket | null = null;
 	#connecting: Promise<void> | null = null;
@@ -59,6 +63,7 @@ export class MeshClient {
 		this.#onReconnect = options.onReconnect;
 		this.#backoffMinMs = options.backoffMinMs ?? 1000;
 		this.#backoffMaxMs = options.backoffMaxMs ?? 30_000;
+		this.#requestTimeoutMs = options.requestTimeoutMs ?? 30_000;
 	}
 
 	/** Handle hub pushes (deliver_message / cancel). Replies are sent for you. */
@@ -85,11 +90,21 @@ export class MeshClient {
 				return;
 			}
 			const send = () => {
-				const pending: Pending = { resolve, reject };
+				// A dropped response must not leak the entry or hang the caller forever.
+				const timer =
+					this.#requestTimeoutMs > 0
+						? setTimeout(() => {
+								this.#pending.delete(req.id);
+								reject(new Error(`pi-mesh: request timed out (${req.type})`));
+							}, this.#requestTimeoutMs)
+						: null;
+				timer?.unref?.();
+				const pending: Pending = { resolve, reject, timer };
 				this.#pending.set(req.id, pending);
 				try {
 					this.#write(req);
 				} catch (err) {
+					if (timer) clearTimeout(timer);
 					this.#pending.delete(req.id);
 					reject(err instanceof Error ? err : new Error(String(err)));
 				}
@@ -219,6 +234,7 @@ export class MeshClient {
 			const pending = this.#pending.get(m.id);
 			if (!pending) return;
 			this.#pending.delete(m.id);
+			if (pending.timer) clearTimeout(pending.timer);
 			pending.resolve(msg as HubResponse);
 			return;
 		}
@@ -256,6 +272,9 @@ export class MeshClient {
 	#rejectAll(err: Error): void {
 		const pending = [...this.#pending.values()];
 		this.#pending.clear();
-		for (const p of pending) p.reject(err);
+		for (const p of pending) {
+			if (p.timer) clearTimeout(p.timer);
+			p.reject(err);
+		}
 	}
 }

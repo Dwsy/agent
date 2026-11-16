@@ -339,6 +339,8 @@ export function registerMeshHooks(pi: ExtensionAPI): void {
 				clearTimeout(fileTimer);
 				fileTimer = null;
 			}
+			// A tool call interrupted by the switch never fires its end event.
+			argsByToolCall.clear();
 		} catch (err) {
 			logErr("session_before_switch", err);
 		}
