@@ -228,7 +228,33 @@
       "A/B evaluation / A/B 评测...",
       "BLEU / 双语评估替补...",
       "ROUGE / 摘要评测...",
-      "Cost per million tokens / 每百万 token 成本..."
+      "Cost per million tokens / 每百万 token 成本...",
+      "Position interpolation / 位置插值...",
+      "Attention sink / 注意力汇...",
+      "Prompt tuning / 提示微调...",
+      "Prefix tuning / 前缀微调...",
+      "Structured output / 结构化输出...",
+      "Constrained decoding / 约束解码...",
+      "Grammar sampling / 语法采样...",
+      "Query rewriting / 查询改写...",
+      "HyDE / 假设文档嵌入...",
+      "Multi-hop retrieval / 多跳检索...",
+      "Parent-child chunking / 父子分块...",
+      "Metadata filtering / 元数据过滤...",
+      "Planner / 规划器...",
+      "Tool selection / 工具选择...",
+      "Sequence packing / 序列打包...",
+      "3D parallelism / 三维并行...",
+      "Time to first token / 首 Token 延迟...",
+      "Tokens per second / 每秒 Token 数...",
+      "Memory wall / 显存墙...",
+      "Benchmark contamination / 评测数据污染...",
+      "Adversarial prompt / 对抗提示...",
+      "Model card / 模型卡...",
+      "Self-rewarding / 自我奖励...",
+      "Tree of thoughts / 思维树...",
+      "Environment feedback / 环境反馈...",
+      "End-to-end evaluation / 端到端评测..."
     ],
     "long": [
       "Attention / 注意力机制。/ Every token asks who in the room matters right now.",
@@ -337,7 +363,15 @@
       "Embedding dimension / 嵌入维度。/ Address length per concept: too short to fit, too long and it's empty rooms.",
       "Attention entropy / 注意力熵。/ High: still deciding where to look. Low: locked on.",
       "Logit distribution / 对数几率分布。/ Every hesitation the model has before it speaks.",
-      "Vocabulary size / 词表大小。/ Granularity against memory: finer cuts save tokens, cost parameters."
+      "Vocabulary size / 词表大小。/ Granularity against memory: finer cuts save tokens, cost parameters.",
+      "Structured output / 结构化输出。/ The sampler was narrowed to legal paths, not the model tamed.",
+      "Latency vs throughput / 延迟与吞吐。/ First token decides how fast it feels; throughput decides what it costs.",
+      "Sequence packing / 序列打包。/ Fill each batch so the shortest sentence doesn't set the memory bill.",
+      "Contamination / 数据污染。/ You can't tell whether it remembered or already knew.",
+      "Long-term memory / 长期记忆。/ Not every transcript kept — knowing which page gets reopened.",
+      "Multi-agent / 多智能体。/ Without clear roles, the meeting takes longer than the work.",
+      "Prompt tuning / 提示微调。/ No weights touched — just a clearer sign at the door.",
+      "Attention sink / 注意力汇。/ The empty seat it glances at when nothing else matters."
     ]
   }
 }

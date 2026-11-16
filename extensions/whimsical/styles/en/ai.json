@@ -228,7 +228,33 @@
       "A/B evaluation...",
       "BLEU...",
       "ROUGE...",
-      "Cost per million tokens..."
+      "Cost per million tokens...",
+      "Position interpolation...",
+      "Attention sink...",
+      "Prompt tuning...",
+      "Prefix tuning...",
+      "Structured output...",
+      "Constrained decoding...",
+      "Grammar-constrained sampling...",
+      "Query rewriting...",
+      "HyDE...",
+      "Multi-hop retrieval...",
+      "Parent-child chunking...",
+      "Metadata filtering...",
+      "Planner...",
+      "Tool selection...",
+      "Sequence packing...",
+      "3D parallelism...",
+      "Time to first token...",
+      "Tokens per second...",
+      "Memory wall...",
+      "Benchmark contamination...",
+      "Adversarial prompt...",
+      "Model card...",
+      "Self-rewarding...",
+      "Tree of thoughts...",
+      "Environment feedback...",
+      "End-to-end evaluation..."
     ],
     "long": [
       "A model doesn't memorize answers. It memorizes a probability map of what tends to come next.",
@@ -337,7 +363,15 @@
       "Embedding dimension is the address length per concept: too short to fit, too long and it's mostly empty rooms.",
       "High attention entropy means it's still deciding where to look. Low means it has locked on.",
       "The logit distribution is every hesitation the model has in the instant before it speaks.",
-      "Vocabulary size trades granularity against memory: finer cuts save tokens and cost parameters."
+      "Vocabulary size trades granularity against memory: finer cuts save tokens and cost parameters.",
+      "Structured output isn't the model behaving. It's the sampler narrowed to the only legal paths.",
+      "Time to first token decides whether it feels fast; throughput decides whether the bill stays small. They usually fight.",
+      "Sequence packing stuffs the trunk: fill each batch so memory isn't dragged down by the shortest sequence.",
+      "The nastiest thing about contamination: you can't tell whether it remembered or already knew.",
+      "Long-term memory isn't storing every transcript. It's knowing which page you'll reopen.",
+      "Multi-agent isn't more heads, more speed. Without clear roles, the meeting is slower than the work.",
+      "Prompt tuning changes no weights at all. It hangs a clearer sign at the door.",
+      "An attention sink is the empty seat a model always keeps, for when nothing else is worth looking at."
     ]
   }
 }
