@@ -11,7 +11,15 @@ import {
 import { dirname, join } from "node:path";
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
-import { Key, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import {
+  Key,
+  matchesKey,
+  truncateToWidth,
+  type TuiMouseEvent,
+  type TuiMouseEventResult,
+  visibleWidth,
+  wrapTextWithAnsi,
+} from "@earendil-works/pi-tui";
 import { CHUNKER_VERSION, chunkPrompt } from "./chunking.ts";
 
 const STORE_ROOT = join(dirname(getAgentDir()), "system-prompts");
@@ -292,7 +300,7 @@ class PromptViewer {
     const border = (left: string, fill: string, right: string) => this.theme.fg("border", `${left}${fill.repeat(inner)}${right}`);
     const row = (content: string) => `${this.theme.fg("border", "│")}${visiblePad(content, inner)}${this.theme.fg("border", "│")}`;
     const percentage = promptLines.length <= this.bodyHeight ? 100 : Math.round((this.offset / maxOffset) * 100);
-    const footer = ` ↑↓ scroll · PgUp/PgDn page · Home/End · Esc close · ${percentage}%`;
+    const footer = ` ↑↓/wheel scroll · PgUp/PgDn page · Home/End · Esc close · ${percentage}%`;
 
     const out = [
       border("╭", "─", "╮"),
@@ -310,14 +318,26 @@ class PromptViewer {
     return out;
   }
 
+  private maxOffset(): number {
+    return Math.max(0, this.renderPrompt(this.lastRenderWidth).length - this.bodyHeight);
+  }
+
+  handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
+    if (event.type !== "wheel" || !event.wheelDelta) return undefined;
+
+    // wheelDelta is negative when scrolling up. Mutate before repainting so a
+    // coalesced render already sees the new offset.
+    this.offset = Math.max(0, Math.min(this.maxOffset(), this.offset + event.wheelDelta));
+    return { handled: true, render: true };
+  }
+
   handleInput(data: string): void {
     if (matchesKey(data, Key.escape) || data === "q") {
       this.done();
       return;
     }
 
-    const lineCount = this.renderPrompt(this.lastRenderWidth).length;
-    const maxOffset = Math.max(0, lineCount - this.bodyHeight);
+    const maxOffset = this.maxOffset();
     let next = this.offset;
 
     if (matchesKey(data, Key.up)) next -= 1;

@@ -10,6 +10,7 @@
 import type { ExtensionAPI, ExtensionCommandContext, Theme } from "@earendil-works/pi-coding-agent";
 import { DynamicBorder } from "@earendil-works/pi-coding-agent";
 import { CancellableLoader, Container, Spacer, matchesKey, visibleWidth, truncateToWidth } from "@earendil-works/pi-tui";
+import type { TuiMouseEvent, TuiMouseEventResult } from "@earendil-works/pi-tui";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { homedir } from "node:os";
@@ -378,6 +379,8 @@ class UsageComponent {
 	private selectedIndex = 0;
 	private expanded = new Set<string>();
 	private providerOrder: string[] = [];
+	private rowMap: number[] = [];
+	private pressedIndex: number | undefined;
 	private theme: Theme;
 	private requestRender: () => void;
 	private done: () => void;
@@ -396,6 +399,40 @@ class UsageComponent {
 			.sort((a, b) => b[1].cost - a[1].cost)
 			.map(([name]) => name);
 		this.selectedIndex = Math.min(this.selectedIndex, Math.max(0, this.providerOrder.length - 1));
+	}
+
+	handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
+		if (event.type !== "wheel" || !event.wheelDelta) {
+			// Not a wheel event: fall through to the press/click handling below.
+		} else {
+			this.selectedIndex = Math.max(0, Math.min(this.providerOrder.length - 1, this.selectedIndex + event.wheelDelta));
+			this.requestRender();
+			return { handled: true, render: false };
+		}
+
+		if (event.button !== "left" || (event.type !== "press" && event.type !== "click")) return undefined;
+		const index = this.rowMap[event.y];
+		if (index === undefined || index < 0) return undefined;
+		if (event.type === "press") {
+			this.pressedIndex = index;
+			this.selectedIndex = index;
+			this.requestRender();
+			return { handled: true, focus: true, render: false };
+		}
+		const target = this.pressedIndex ?? index;
+		this.pressedIndex = undefined;
+		this.selectedIndex = target;
+		// Enter action: expand / collapse the provider under the cursor.
+		const provider = this.providerOrder[this.selectedIndex];
+		if (provider) {
+			if (this.expanded.has(provider)) {
+				this.expanded.delete(provider);
+			} else {
+				this.expanded.add(provider);
+			}
+		}
+		this.requestRender();
+		return { handled: true, render: false };
 	}
 
 	handleInput(data: string): void {
@@ -442,14 +479,26 @@ class UsageComponent {
 	// -------------------------------------------------------------------------
 
 	render(_width: number): string[] {
-		return [
-			...this.renderTitle(),
-			...this.renderTabs(),
-			...this.renderHeader(),
-			...this.renderRows(),
-			...this.renderTotals(),
-			...this.renderHelp(),
-		];
+		// rowMap is aligned 1:1 with the returned lines: -1 for non-selectable
+		// lines (title, tabs, column headers, totals, help, model rows) and the
+		// absolute provider index for provider rows.
+		this.rowMap = [];
+		const lines: string[] = [];
+		const addSection = (section: string[], indexAt: (i: number) => number = () => -1) => {
+			for (let i = 0; i < section.length; i += 1) {
+				lines.push(section[i]!);
+				this.rowMap.push(indexAt(i));
+			}
+		};
+
+		addSection(this.renderTitle());
+		addSection(this.renderTabs());
+		addSection(this.renderHeader());
+		const rows = this.renderRows();
+		addSection(rows.lines, (i) => rows.rowMap[i] ?? -1);
+		addSection(this.renderTotals());
+		addSection(this.renderHelp());
+		return lines;
 	}
 
 	private renderTitle(): string[] {
@@ -502,14 +551,16 @@ class UsageComponent {
 		return row;
 	}
 
-	private renderRows(): string[] {
+	private renderRows(): { lines: string[]; rowMap: number[] } {
 		const th = this.theme;
 		const stats = this.data[this.activeTab];
 		const lines: string[] = [];
+		const rowMap: number[] = [];
 
 		if (this.providerOrder.length === 0) {
 			lines.push(th.fg("dim", "  No usage data for this period"));
-			return lines;
+			rowMap.push(-1);
+			return { lines, rowMap };
 		}
 
 		for (let i = 0; i < this.providerOrder.length; i++) {
@@ -526,6 +577,7 @@ class UsageComponent {
 				selected: isSelected,
 			});
 			lines.push(prefix + dataRow.slice(2)); // Replace indent with arrow prefix
+			rowMap.push(i); // selectable: absolute provider index
 
 			// Model rows (if expanded)
 			if (isExpanded) {
@@ -533,11 +585,12 @@ class UsageComponent {
 
 				for (const [modelName, modelStats] of models) {
 					lines.push(this.renderDataRow(modelName, modelStats, { indent: 4, dimAll: true }));
+					rowMap.push(-1); // model rows are not selectable
 				}
 			}
 		}
 
-		return lines;
+		return { lines, rowMap };
 	}
 
 	private renderTotals(): string[] {
@@ -610,16 +663,21 @@ export default function (pi: ExtensionAPI) {
 				container.addChild(new Spacer(1));
 
 				const usage = new UsageComponent(theme, data, () => tui.requestRender(), () => done());
+				let headerRows = 0;
 
 				return {
 					render: (w: number) => {
 						const borderLines = container.render(w);
+						headerRows = borderLines.length;
 						const usageLines = usage.render(w);
 						const bottomBorder = theme.fg("border", "─".repeat(w));
 						return [...borderLines, ...usageLines, "", bottomBorder];
 					},
 					invalidate: () => container.invalidate(),
 					handleInput: (input: string) => usage.handleInput(input),
+					// rowMap is relative to UsageComponent's own output; the wrapper
+					// prepends border rows, so translate y before delegating.
+					handleMouse: (event: TuiMouseEvent) => usage.handleMouse({ ...event, y: event.y - headerRows }),
 					dispose: () => {},
 				};
 			});
