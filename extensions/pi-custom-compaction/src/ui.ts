@@ -11,6 +11,8 @@ import {
   truncateToWidth,
   type Component,
   type SettingItem,
+  type TuiMouseEvent,
+  type TuiMouseEventResult,
 } from "@earendil-works/pi-tui";
 import type { AvailableModel, CompactionAlgorithm, CustomCompactionConfig } from "./types.js";
 
@@ -49,6 +51,8 @@ function parseOnOff(value: string): boolean {
 function createModelSelector(models: AvailableModel[], done: (value?: string) => void): Component {
   const searchInput = new Input();
   let list: SelectList;
+  let inputRows = 1;
+  let listStart = 3;
 
   const rebuildList = () => {
     const query = searchInput.getValue().trim();
@@ -69,9 +73,12 @@ function createModelSelector(models: AvailableModel[], done: (value?: string) =>
 
   return {
     render(width) {
+      const inputLines = searchInput.render(width);
+      inputRows = inputLines.length;
+      listStart = inputRows + 2;
       return [
         "Search model:",
-        ...searchInput.render(width),
+        ...inputLines,
         "",
         ...list.render(width),
       ];
@@ -79,6 +86,15 @@ function createModelSelector(models: AvailableModel[], done: (value?: string) =>
     invalidate() {
       searchInput.invalidate();
       list.invalidate();
+    },
+    handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
+      // The selector prepends a label, the search input and a blank line;
+      // child components expect coordinates local to their own render output.
+      if (event.y >= 1 && event.y < 1 + inputRows) {
+        return searchInput.handleMouse?.({ ...event, y: event.y - 1 });
+      }
+      if (event.y < listStart) return undefined;
+      return list.handleMouse?.({ ...event, y: event.y - listStart });
     },
     handleInput(data) {
       const keybindings = getKeybindings();
@@ -222,6 +238,14 @@ export async function openSettingsPanel(ctx: ExtensionCommandContext, controller
         settings.handleInput(data);
         tui.requestRender();
       },
+      // framePanel adds one top border row and one left border column. Delegate
+      // to the Container so its recorded child geometry resolves the rest.
+      handleMouse: (event: TuiMouseEvent) => container.handleMouse({
+        ...event,
+        x: event.x - 1,
+        y: event.y - 1,
+        width: Math.max(1, event.width - 2),
+      }),
     };
   }, { overlay: true });
 }

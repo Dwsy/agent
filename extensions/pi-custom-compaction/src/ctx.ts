@@ -4,10 +4,10 @@
  *
  * Flow: action-list → action-schema → tree_outline/tree_show (pick a point)
  * → compact_stage (validate + stage summary + keep-point)
- * → compact_fire (real compaction now, consumes the staged summary).
+ * → compact_fire (stop at turn_end, compact after agent_end).
  *
- * The staged summary is injected through session_before_compact, so the
- * agent freely chooses the keep-point instead of the token-based cut.
+ * The staged summary is injected through session_before_compact. By default,
+ * a boundary after the firing turn keeps only the summary; keep-tail is explicit.
  *
  * Context budget design:
  * - tree_outline defaults to the current branch (getBranch: cheap, linear,
@@ -27,6 +27,7 @@ import type {
   SessionEntry,
   SessionTreeNode,
 } from "@earendil-works/pi-coding-agent";
+import { appendFileDetails, computeCtxFileDetails } from "./structured.js";
 
 export const CTX_TOOL_NAME = "ctx";
 const ACTION_LIST = "action-list";
@@ -45,52 +46,26 @@ const CHILDREN_CAP = 20;
 
 export interface CtxPending {
   summary: string;
-  firstKeptEntryId: string;
+  retention: "summary-only" | "keep-tail";
+  firstKeptEntryId?: string;
   stagedAt: string;
-  /** Optional user message sent after a committed compaction to keep the agent working. */
+  stageId: string;
   resume?: string;
+  /** Summary actually committed, i.e. the staged text plus appended file tags. */
+  committedSummary?: string;
 }
 
+export const CTX_BOUNDARY_TYPE = "ctx-compaction-boundary";
 let pending: CtxPending | null = null;
-
-// Deferred-fire flag: compact_fire (tool) must not trigger compact itself —
-// manual compact aborts the calling turn, so in-tool triggering either
-// deadlocks (if awaited) or aborts its own turn (if fire-and-forget).
-// Instead fire sets this flag and the agent_end listener (idle) triggers.
 let fireRequested = false;
+let active: CtxPending | null = null;
+let injected = false;
+let lastResult: string | null = null;
 
-export function peekCtxPending(): CtxPending | null {
-  return pending;
-}
-
-export function requestCtxFire(): void {
-  fireRequested = true;
-}
-
-export function takeCtxFireRequest(): boolean {
-  if (!fireRequested) return false;
-  fireRequested = false;
-  return true;
-}
-
-export function peekCtxFireRequest(): boolean {
-  return fireRequested;
-}
-
-// Tracks a compaction we triggered from agent_end, so the
-// session_compact / session_compact_failed listeners can report
-// the outcome (otherwise failures are silent: stage consumed, no entry).
-let expectCtxResult = false;
-
-export function markCtxFireTriggered(): void {
-  expectCtxResult = true;
-}
-
-export function takeCtxFireTriggered(): boolean {
-  if (!expectCtxResult) return false;
-  expectCtxResult = false;
-  return true;
-}
+export function peekCtxPending(): CtxPending | null { return pending; }
+export function peekCtxFireRequest(): boolean { return fireRequested; }
+export function peekCtxActive(): CtxPending | null { return active; }
+export function peekCtxLastResult(): string | null { return lastResult; }
 
 export function discardCtxPending(): boolean {
   const had = pending !== null;
@@ -99,38 +74,73 @@ export function discardCtxPending(): boolean {
   return had;
 }
 
-// Last deferred-fire outcome, kept for compact_status (works even where
-// notifications have no UI to reach).
-let lastResult: string | null = null;
-
-export function peekCtxLastResult(): string | null {
-  return lastResult;
+/** Lifecycle events must not carry staged text or callbacks into another session. */
+export function resetCtxState(): void {
+  discardCtxPending();
+  active = null;
+  injected = false;
+  lastResult = null;
+  clearOutlineCache();
 }
 
-export function setCtxLastResult(text: string): void {
-  lastResult = text;
+export function ctxFireInstructions(stage: CtxPending): string {
+  return `ctx-compaction:${stage.stageId}`;
 }
+
+/** Called after the firing turn has stopped and its tool results are persisted. */
+export function beginCtxFire(boundaryId: string): CtxPending | undefined {
+  if (!fireRequested || !pending || active) return undefined;
+  active = { ...pending, firstKeptEntryId: pending.retention === "summary-only" ? boundaryId : pending.firstKeptEntryId };
+  pending = null;
+  fireRequested = false;
+  injected = false;
+  return active;
+}
+
+/** Returns false for callbacks belonging to a reset/replaced operation. */
+export function settleCtxFire(stage: CtxPending, result: string): boolean {
+  if (active !== stage) return false;
+  active = null;
+  injected = false;
+  lastResult = result;
+  return true;
+}
+
+export function isCtxFireCurrent(stage: CtxPending): boolean { return active === stage; }
 
 /**
- * Consume the staged summary for a session_before_compact event.
- * Returns the compaction result, an invalid-point notice, or undefined
- * when nothing is staged. Always clears the stage on consume.
+ * Only our matching manual operation may consume the staged summary.
+ * Automatic compaction or /compact between stage and fire must leave it alone.
  */
 export function takeCtxCompaction(event: SessionBeforeCompactEvent):
   | { compaction: CompactionResult }
-  | { invalidPoint: string }
+  | { invalidPoint: string; cancel: true }
   | undefined {
-  if (!pending) return undefined;
-  const staged = pending;
-  pending = null;
-  const onBranch = event.branchEntries.some((entry) => entry.id === staged.firstKeptEntryId);
-  if (!onBranch) return { invalidPoint: staged.firstKeptEntryId };
+  if (!active || injected || event.reason !== "manual" || event.customInstructions !== ctxFireInstructions(active)) return undefined;
+  const point = active.firstKeptEntryId;
+  if (!point || !event.branchEntries.some((entry) => entry.id === point)) {
+    return { invalidPoint: point ?? "<missing boundary>", cancel: true };
+  }
+  injected = true;
+  // Pi's own compact() appends <read-files>/<modified-files> to the summary it
+  // generates. ctx supplies the summary itself, so it has to append the same
+  // tags, otherwise the next agent loses track of which files were touched.
+  const fileDetails = computeCtxFileDetails(event.branchEntries, point);
+  const summary = appendFileDetails(active.summary, fileDetails);
+  active.committedSummary = summary;
   return {
     compaction: {
-      summary: staged.summary,
-      firstKeptEntryId: staged.firstKeptEntryId,
+      summary,
+      firstKeptEntryId: point,
       tokensBefore: event.preparation.tokensBefore,
-      details: { ctx: true, stagedAt: staged.stagedAt },
+      details: {
+        ctx: true,
+        stageId: active.stageId,
+        stagedAt: active.stagedAt,
+        retention: active.retention,
+        readFiles: fileDetails.readFiles,
+        modifiedFiles: fileDetails.modifiedFiles,
+      },
     },
   };
 }
@@ -364,23 +374,31 @@ interface CtxActionDef {
   action: string;
   description: string;
   schema: Record<string, unknown>;
+  /** Copyable obj payload for the full call shown by action-schema. */
+  example: Record<string, unknown>;
+  notes?: string[];
 }
 
 const ACTIONS: CtxActionDef[] = [
   {
     action: "tree_outline",
     description:
-      "Paginated outline of session entries as attention-signal rows (tool names, err!, KB sizes, labels, keptFrom). Defaults to the current branch — the only legal keep-points. Use focus=key first to converge on decision points, then tree_show to drill down.",
+      "Paginated outline of session entries as attention-signal rows (tool names, err!, KB sizes, labels, keptFrom). Default scope=branch lists exactly the legal keep-points. Use focus=key first to converge on decision points.",
     schema: {
       type: "object",
       properties: {
         offset: { type: "number", description: "Start row, default 0." },
         limit: { type: "number", description: `Rows to show, default ${OUTLINE_DEFAULT_LIMIT}, max ${OUTLINE_MAX_LIMIT}.` },
-        scope: { type: "string", description: `"branch" (default, current path, cheap) or "tree" (all branches, DFS with depth).` },
-        focus: { type: "string", description: `"all" (default) or "key" (user intent, tool activity, errors, checkpoints, labels only).` },
+        scope: { type: "string", enum: ["branch", "tree"], description: `"branch" (default, current path, cheap) or "tree" (all branches, DFS with depth).` },
+        focus: { type: "string", enum: ["all", "key"], description: `"all" (default) or "key" (user intent, tool activity, errors, checkpoints, labels only).` },
       },
       additionalProperties: false,
     },
+    example: { focus: "key", limit: 20 },
+    notes: [
+      "Rows are attention signals only — never paste them into a compaction summary.",
+      "Use the id= field, not #index, when choosing a keep-point; ids stay stable as the session grows.",
+    ],
   },
   {
     action: "tree_show",
@@ -394,32 +412,79 @@ const ACTIONS: CtxActionDef[] = [
       required: ["entryId"],
       additionalProperties: false,
     },
+    example: { entryId: "<id from tree_outline>" },
+    notes: ["Write the compaction summary from tree_show reads, not from outline rows."],
   },
   {
     action: "compact_stage",
-    description: "Validate and stage an agent-written summary with a keep-point entry id from the current branch. Does not compact yet. Re-run tree_outline before staging: branch indices shift as the session grows.",
+    description: "Stage an agent-written summary. Default summary-only drops prior dialogue from model context. Explicit keep-tail preserves raw history from firstKeptEntryId. Does not compact yet.",
     schema: {
       type: "object",
       properties: {
-        summary: { type: "string", description: `Markdown summary replacing dropped history (max ${SUMMARY_MAX_CHARS} chars).` },
-        firstKeptEntryId: { type: "string", description: "Entry id where kept history starts; everything before it on the branch is dropped." },
+        summary: { type: "string", description: `Markdown summary replacing history (max ${SUMMARY_MAX_CHARS} chars).` },
+        retention: { type: "string", enum: ["summary-only", "keep-tail"], description: "Default summary-only removes all prior dialogue from model context. keep-tail explicitly retains raw history from firstKeptEntryId through the firing turn." },
+        firstKeptEntryId: { type: "string", description: "Required only for retention=keep-tail. This keeps ALL raw messages from this entry through compact_fire; it does not squash that range." },
         resume: { type: "string", description: `Optional user message sent after the compaction commits, triggering a new turn so the agent keeps working instead of stopping. Omit for the default stop-after-compact behavior (max ${RESUME_MAX_CHARS} chars).` },
       },
-      required: ["summary", "firstKeptEntryId"],
+      required: ["summary"],
       additionalProperties: false,
     },
+    example: { summary: "## Goal\n...", retention: "summary-only" },
+    notes: [
+      "Default summary-only retains only the summary, not the dialogue used to write it.",
+      "To retain raw history, explicitly set retention=keep-tail and firstKeptEntryId from branch tree_outline. Every message from that id through the firing turn stays in context.",
+      "A fresh stage clears any previously armed fire — always call compact_fire after staging.",
+    ],
   },
   {
     action: "compact_fire",
-    description: "Arm a real compaction using the staged summary (deferred: fires on agent_end when idle, never from inside the tool). End your turn after this call. Re-stage after any failure.",
+    description: "Arm a real compaction using the staged summary. It fires on agent_end when idle, never from inside this tool.",
     schema: { type: "object", properties: {}, additionalProperties: false },
+    example: {},
+    notes: [
+      "The extension stops the agent at turn_end, then compacts after agent_end. Do not call more tools.",
+      "Verify with compact_status next turn; if it failed, re-stage with compact_stage.",
+    ],
+  },
+  {
+    action: "compact_status",
+    description: "Report staged/armed state and the last deferred-fire outcome. Use it next turn to verify compact_fire worked.",
+    schema: { type: "object", properties: {}, additionalProperties: false },
+    example: {},
+    notes: ["lastResult is 'committed', 'committed; resume sent', 'failed: …', or null."],
   },
   {
     action: "compact_discard",
-    description: "Drop the staged summary without compacting.",
+    description: "Drop the staged summary without compacting. Also disarms a pending fire.",
     schema: { type: "object", properties: {}, additionalProperties: false },
+    example: {},
   },
 ];
+
+const ACTION_NAMES = ACTIONS.map((item) => item.action).join(", ");
+
+/** action-list is the only help surface an agent sees before its first call. */
+function formatActionList(): string {
+  const lines = [
+    "ctx calling contract: exactly two top-level fields — action=<name>, obj={...arguments for that action}.",
+    "All action arguments belong inside obj. Never put focus, entryId, summary, etc. at the top level.",
+    "Progressive order: action-list -> action-schema -> action + obj.",
+    "",
+    "Meta actions:",
+    `  ${ACTION_LIST}    obj={}                     list actions and this contract`,
+    `  ${ACTION_SCHEMA}  obj={"action":"<name>"}   exact obj schema plus a copyable call example`,
+    "",
+    "Actions:",
+  ];
+  for (const item of ACTIONS) {
+    const required = (item.schema.required as string[] | undefined) ?? [];
+    const req = required.length > 0 ? `required obj: ${required.join(", ")}` : "no required obj fields";
+    lines.push(`  ${item.action} — ${req}`);
+    lines.push(`      ${item.description}`);
+  }
+  lines.push("", `Call ${ACTION_SCHEMA} with obj.action=<name> before using any action for the first time.`);
+  return lines.join("\n");
+}
 
 function asObject(value: unknown): Record<string, unknown> {
   return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {};
@@ -439,23 +504,25 @@ export const ctxTool = {
   name: CTX_TOOL_NAME,
   label: "Ctx",
   description:
-    "Progressive session-context tool. Read session entries as cheap attention-signal rows (tree_outline, focus=key first), drill into one entry (tree_show), then stage an agent-written summary at a freely chosen keep-point (compact_stage) and commit it as a real compaction (compact_fire). Start with action-list, inspect an action with action-schema, then execute it with action + obj.",
-  promptSnippet: "Use ctx for session-tree reading and agent-driven compaction: action-list, action-schema, then action + obj.",
+    "Progressive session-context tool for reading the session tree and committing an agent-written checkpoint. Default summary-only excludes prior raw dialogue; explicit retention=keep-tail preserves raw history from firstKeptEntryId. Use it when you need earlier session entries or need to checkpoint context. Calling contract: {action: <name>, obj: {...arguments}} — every action argument goes inside obj. Start with action-list, then action-schema with obj.action=<name> for the exact obj schema and a copyable example, then call the action. Flow: tree_outline focus=key -> tree_show -> compact_stage -> compact_fire (the extension stops the turn).",
+  promptSnippet: "ctx reads session history and compacts to summary-only by default. Discover with action-list -> action-schema; all arguments go inside obj.",
   promptGuidelines: [
-    "Work progressively: tree_outline with focus=key to find a keep-point, tree_show to verify it, compact_stage to stage, compact_fire to commit.",
+    "Call action-list first, then action-schema with obj.action=<name>. Pass every argument inside obj, never at the top level.",
+    "Use ctx when you need earlier session entries or a context checkpoint: tree_outline with focus=key, tree_show, compact_stage, compact_fire.",
+    "compact_stage defaults to summary-only. To retain raw history, explicitly choose retention=keep-tail and firstKeptEntryId; everything from that id through the firing turn stays in context.",
     "Outline rows are signals only (tool names, err!, sizes) — never paste them as summary content; write the summary from tree_show reads.",
-    "compact_fire only arms the compaction (fires on agent_end from idle); end your turn right after it with no further tool calls.",
+    "compact_fire only arms the compaction (fires on agent_end from idle); end your turn right after it with no further tool calls, then verify with compact_status next turn.",
   ],
   parameters: {
     type: "object" as const,
     properties: {
       action: {
         type: "string",
-        description: `Use ${ACTION_LIST}, ${ACTION_SCHEMA}, or an action name returned by ${ACTION_LIST}.`,
+        description: `${ACTION_LIST} (list actions and the calling contract), ${ACTION_SCHEMA} (with obj.action=<name>), or an action name returned by ${ACTION_LIST}.`,
       },
       obj: {
         type: "object",
-        description: `Arguments for the selected action. For ${ACTION_SCHEMA}, pass {"action":"<name>"}.`,
+        description: `Arguments for the selected action, always as an object. For ${ACTION_SCHEMA}, pass {"action":"<name>"}. Never put action arguments at the top level.`,
         additionalProperties: true,
       },
     },
@@ -470,34 +537,53 @@ export const ctxTool = {
     ctx: ExtensionToolContext,
   ): Promise<AgentToolResult<Record<string, unknown>>> {
     void toolCallId;
-    void signal;
     void onUpdate;
+    if (signal?.aborted) return errorResult("ctx call aborted.");
     const action = String(params.action ?? "").trim();
+    if (params.obj !== undefined && (params.obj === null || typeof params.obj !== "object" || Array.isArray(params.obj))) {
+      return errorResult("obj must be an object. Pass {action: <name>, obj: {...arguments}}.");
+    }
     const obj = asObject(params.obj);
 
     if (action === ACTION_LIST) {
-      return textResult(
-        ACTIONS.map((item) => `${item.action}: ${item.description}`).join("\n"),
-        { mode: "ctx", metaAction: ACTION_LIST },
-      );
+      return textResult(formatActionList(), { mode: "ctx", metaAction: ACTION_LIST });
     }
 
     if (action === ACTION_SCHEMA) {
       const requested = String(obj.action ?? "").trim();
       const found = ACTIONS.find((item) => item.action === requested);
-      if (!found) return errorResult(`Unknown action: ${requested || "<empty>"}. Call ${ACTION_LIST} first.`);
-      return textResult(JSON.stringify({ action: found.action, description: found.description, obj: found.schema }, null, 2), {
-        mode: "ctx",
-        metaAction: ACTION_SCHEMA,
-        action: found.action,
-      });
+      if (!found) {
+        return errorResult(`Unknown action: ${requested || "<empty>"}. Valid actions: ${ACTION_NAMES}. Call ${ACTION_LIST} first, then ${ACTION_SCHEMA} with obj.action=<name>.`);
+      }
+      return textResult(
+        JSON.stringify(
+          {
+            action: found.action,
+            description: found.description,
+            call: { action: found.action, obj: found.example },
+            objSchema: found.schema,
+            notes: found.notes ?? [],
+          },
+          null,
+          2,
+        ),
+        { mode: "ctx", metaAction: ACTION_SCHEMA, action: found.action },
+      );
     }
 
     if (action === "tree_outline") {
+      const scopeRaw = obj.scope ?? "branch";
+      const focusRaw = obj.focus ?? "all";
+      if (scopeRaw !== "branch" && scopeRaw !== "tree") {
+        return errorResult(`scope must be "branch" or "tree", got ${JSON.stringify(String(scopeRaw))}. Call ${ACTION_SCHEMA} with obj.action=tree_outline.`);
+      }
+      if (focusRaw !== "all" && focusRaw !== "key") {
+        return errorResult(`focus must be "all" or "key", got ${JSON.stringify(String(focusRaw))}. Call ${ACTION_SCHEMA} with obj.action=tree_outline.`);
+      }
       const offset = Math.max(0, Math.floor(Number(obj.offset ?? 0)) || 0);
       const limit = Math.min(OUTLINE_MAX_LIMIT, Math.max(1, Math.floor(Number(obj.limit ?? OUTLINE_DEFAULT_LIMIT)) || OUTLINE_DEFAULT_LIMIT));
-      const scope = obj.scope === "tree" ? "tree" : "branch";
-      const focus = obj.focus === "key" ? "key" : "all";
+      const scope = scopeRaw;
+      const focus = focusRaw;
       const leafId = ctx.sessionManager.getLeafId();
       // Cache hit skips the full rebuild; labels/focus resolve per page (cheap map gets).
       const { rows } = getOutlineRows(scope, leafId ?? "", () =>
@@ -553,49 +639,48 @@ export const ctxTool = {
     }
 
     if (action === "compact_stage") {
-      const summary = String(obj.summary ?? "");
-      const firstKeptEntryId = String(obj.firstKeptEntryId ?? "").trim();
-      if (!summary.trim()) return errorResult("summary is required and must not be empty.");
-      if (summary.length > SUMMARY_MAX_CHARS) {
-        return errorResult(`summary is ${summary.length} chars, max is ${SUMMARY_MAX_CHARS}. Shorten it and stage again.`);
+      if (active) return errorResult("ctx compaction is in progress. Check compact_status after it finishes.");
+      if (typeof obj.summary !== "string" || !obj.summary.trim()) return errorResult("summary is required and must be a non-empty string.");
+      const summary = obj.summary;
+      if (summary.length > SUMMARY_MAX_CHARS) return errorResult(`summary is ${summary.length} chars, max is ${SUMMARY_MAX_CHARS}.`);
+      const retention = obj.retention ?? "summary-only";
+      if (retention !== "summary-only" && retention !== "keep-tail") return errorResult('retention must be "summary-only" or "keep-tail".');
+      if (retention === "summary-only" && obj.firstKeptEntryId !== undefined) {
+        return errorResult("summary-only does not accept firstKeptEntryId. Omit it to remove prior dialogue, or explicitly set retention=keep-tail to keep ALL raw messages from that id through compact_fire.");
       }
-      const resumeRaw = String(obj.resume ?? "").trim();
-      if (resumeRaw.length > RESUME_MAX_CHARS) {
-        return errorResult(`resume is ${resumeRaw.length} chars, max is ${RESUME_MAX_CHARS}. Shorten it and stage again.`);
+      if (obj.resume !== undefined && typeof obj.resume !== "string") return errorResult("resume must be a string.");
+      const resume = (obj.resume as string | undefined)?.trim() || undefined;
+      if (resume && resume.length > RESUME_MAX_CHARS) return errorResult(`resume is ${resume.length} chars, max is ${RESUME_MAX_CHARS}.`);
+      let firstKeptEntryId: string | undefined;
+      let retained = "only the summary; no prior raw dialogue will be retained";
+      if (retention === "keep-tail") {
+        if (typeof obj.firstKeptEntryId !== "string" || !obj.firstKeptEntryId.trim()) return errorResult("firstKeptEntryId is required for retention=keep-tail.");
+        firstKeptEntryId = obj.firstKeptEntryId.trim();
+        const branch = ctx.sessionManager.getBranch();
+        const keepIndex = branch.findIndex((entry) => entry.id === firstKeptEntryId);
+        if (keepIndex < 0) return errorResult(`Entry ${firstKeptEntryId} is not on the current branch. Re-run tree_outline.`);
+        retained = `${branch.length - keepIndex} current raw branch entries from id=${firstKeptEntryId}, plus ALL entries added through the firing turn`;
       }
-      const resume = resumeRaw ? resumeRaw : undefined;
-      if (!firstKeptEntryId) return errorResult("firstKeptEntryId is required. Pick one from tree_outline (branch scope).");
-      // Validate against the current branch: only these points are legal keep-points.
-      const branch = ctx.sessionManager.getBranch();
-      const keepIndex = branch.findIndex((entry) => entry.id === firstKeptEntryId);
-      if (keepIndex < 0) {
-        return errorResult(`Entry ${firstKeptEntryId} is not on the current branch. Re-run tree_outline (default branch scope) and pick a listed id.`);
-      }
-      pending = { summary, firstKeptEntryId, stagedAt: new Date().toISOString(), ...(resume ? { resume } : {}) };
-      fireRequested = false; // fresh stage needs a fresh fire; stale flags must not leak in
+      pending = { summary, retention, firstKeptEntryId, stagedAt: new Date().toISOString(), stageId: crypto.randomUUID(), ...(resume ? { resume } : {}) };
+      fireRequested = false;
+      lastResult = null;
       return textResult(
-        `staged: keep ${branch.length - keepIndex}/${branch.length} branch entries from id=${firstKeptEntryId}, drop ${keepIndex}. summary=${summary.length} chars${resume ? `, resume=${resume.length} chars (sent as user message after commit)` : ""}. Call compact_fire to commit or compact_discard to drop.`,
-        { mode: "ctx", action, firstKeptEntryId, kept: branch.length - keepIndex, dropped: keepIndex, resumeArmed: resume !== undefined },
+        `staged (${retention}): keep ${retained}. summary=${summary.length} chars${resume ? `, resume=${resume.length} chars (sent as user message after commit)` : ""}. Call compact_fire to commit or compact_discard to drop.`,
+        { mode: "ctx", action, retention, firstKeptEntryId: firstKeptEntryId ?? null, resumeArmed: resume !== undefined },
       );
     }
 
     if (action === "compact_fire") {
+      if (active) return errorResult("ctx compaction is already in progress.");
       if (!pending) return errorResult("Nothing staged. Call compact_stage first.");
-      const point = pending.firstKeptEntryId;
-      const chars = pending.summary.length;
-      // Deferred: never call ctx.compact() here. Manual compact aborts the
-      // calling turn, so triggering from inside the tool either deadlocks
-      // (awaited) or kills its own turn (fire-and-forget). Flag it; the
-      // agent_end listener triggers from idle, and session_before_compact
-      // consumes the stage via takeCtxCompaction.
-      requestCtxFire();
+      if (pending.retention === "keep-tail" && !ctx.sessionManager.getBranch().some((entry) => entry.id === pending!.firstKeptEntryId)) {
+        discardCtxPending();
+        return errorResult("Staged keep-point is no longer on the current branch. Re-stage with compact_stage.");
+      }
+      fireRequested = true;
       return textResult(
-        `compaction armed from id=${point} (${chars} chars staged). End your turn now with no further tool calls; it fires on agent_end. If it fails or the point goes stale, re-stage.`,
-        {
-          mode: "ctx",
-          action,
-          firstKeptEntryId: point,
-        },
+        `compaction armed (${pending.retention}, ${pending.summary.length} chars). The extension stops this run at turn_end and compacts after agent_end. Do not call more tools; check compact_status next turn.`,
+        { mode: "ctx", action, retention: pending.retention, firstKeptEntryId: pending.firstKeptEntryId ?? null },
       );
     }
 
@@ -603,9 +688,11 @@ export const ctxTool = {
       return textResult(
         JSON.stringify({
           staged: pending !== null,
-          firstKeptEntryId: pending?.firstKeptEntryId ?? null,
+          firstKeptEntryId: (active ?? pending)?.firstKeptEntryId ?? null,
+          retention: (active ?? pending)?.retention ?? null,
+          inProgress: active !== null,
           armed: fireRequested,
-          resumeArmed: (pending?.resume?.length ?? 0) > 0,
+          resumeArmed: ((active ?? pending)?.resume?.length ?? 0) > 0,
           lastResult,
           hasUI: ctx.hasUI,
         }),
@@ -614,12 +701,13 @@ export const ctxTool = {
     }
 
     if (action === "compact_discard") {
+      if (active) return errorResult("ctx compaction is already in progress; it cannot be discarded.");
       return textResult(discardCtxPending() ? "staged ctx compaction discarded." : "nothing was staged.", {
         mode: "ctx",
         action,
       });
     }
 
-    return errorResult(`Unknown action: ${action || "<empty>"}. Call ${ACTION_LIST} first.`);
+    return errorResult(`Unknown action: ${action || "<empty>"}. Valid actions: ${ACTION_NAMES}; meta: ${ACTION_LIST}, ${ACTION_SCHEMA}. Call ${ACTION_LIST} first.`);
   },
 };

@@ -9,16 +9,16 @@ import {
   formatRow,
   getOutlineRows,
   isKeyRow,
-  markCtxFireTriggered,
   peekCtxPending,
   peekCtxFireRequest,
-  setCtxLastResult,
   signalsOf,
   takeCtxCompaction,
-  takeCtxFireRequest,
-  takeCtxFireTriggered,
   ctxTool,
+  peekCtxActive,
+  peekCtxLastResult,
+  resetCtxState,
 } from "../src/ctx.js";
+import { registerCtxLifecycle } from "../src/ctx-lifecycle.js";
 
 const userEntry = {
   type: "message", id: "a", parentId: null, timestamp: "t0",
@@ -143,142 +143,217 @@ const full = JSON.parse(formatEntryDetail(toolResultEntry as never, { branchInde
 assert.ok(full.text.length > 10000, "full drill-down");
 assert.deepEqual(full.childrenIds, ["c"]);
 
-// ── stage validates against the branch, not the file ──
-
-const fakeEvent = (ids: string[]) =>
-  ({ branchEntries: ids.map((id) => ({ id })), preparation: { tokensBefore: 7 } }) as never;
-
-// Counts ctx.compact() calls: the deferred design forbids triggering from the tool.
+// ── Stage/fire lifecycle, matching pi-context's stop-then-transition flow ──
+const handlers = new Map<string, Function[]>();
+const sent: string[] = [];
+let entries: any[] = [...branch];
 let compactCalls = 0;
-const stubCtx = (branchIds: string[]) => {
-  const byId = new Map(branch.map((e) => [(e as { id: string }).id, e]));
-  return {
-    sessionManager: {
-      getTree: () => tree,
-      getBranch: () => branch.filter((e) => branchIds.includes((e as { id: string }).id)),
-      getEntries: () => branch,
-      getEntry: (id: string) => byId.get(id),
-      getLabel: () => undefined,
-      getLeafId: () => "c",
-    },
-    compact: () => { compactCalls++; },
-  } as never;
+let abortCalls = 0;
+let options: any;
+let throwCompact = false;
+const context = {
+  hasUI: false,
+  sessionManager: {
+    getBranch: () => entries,
+    getTree: () => tree,
+    getEntries: () => entries,
+    getEntry: (id: string) => entries.find((e) => e.id === id),
+    getLabel: () => undefined,
+    getLeafId: () => entries.at(-1)?.id ?? null,
+  },
+  abort: () => { abortCalls++; },
+  compact: (opts: unknown) => {
+    compactCalls++;
+    if (throwCompact) throw new Error("runtime unavailable");
+    options = opts;
+  },
 };
+const stubCtx = (_ids: string[]) => context as never;
+registerCtxLifecycle({
+  on: (event: string, handler: Function) => { handlers.set(event, [...(handlers.get(event) ?? []), handler]); },
+  appendEntry: (customType: string, data: unknown) => {
+    entries.push({ type: "custom", id: "boundary-" + entries.length, parentId: entries.at(-1)?.id, timestamp: "now", customType, data });
+  },
+  sendUserMessage: (text: string) => { sent.push(text); },
+} as never, () => {});
+const emit = async (event: string) => {
+  for (const fn of handlers.get(event) ?? []) await fn({ type: event }, context);
+};
+const call = (action: string, obj: Record<string, unknown> = {}) =>
+  ctxTool.execute("test", { action, obj }, undefined, undefined, context as never);
+const textOf = (result: Awaited<ReturnType<typeof ctxTool.execute>>) =>
+  result.content.map((block) => block.type === "text" ? block.text : "").join("\n");
+const status = async () => JSON.parse(textOf(await call("compact_status")));
+const eventFor = (reason = "manual", instructions = options?.customInstructions, branchEntries = entries) =>
+  ({ reason, customInstructions: instructions, branchEntries, preparation: { tokensBefore: 123 } }) as never;
 
-const offBranch = await ctxTool.execute("t1", { action: "compact_stage", obj: { summary: "s", firstKeptEntryId: "z" } }, undefined, undefined, stubCtx(["a", "b", "r", "c"]));
-assert.equal(offBranch.isError, true, "dead-branch point rejected at stage");
-assert.equal(peekCtxPending(), null);
+await emit("session_start");
+assert.equal((await call("compact_fire")).isError, true);
+assert.equal((await call("compact_stage", { summary: "checkpoint", firstKeptEntryId: "a" })).isError, true,
+  "ambiguous legacy keep-point cannot accidentally retain all tool dialogue");
+assert.equal((await call("compact_stage", { summary: "checkpoint", retention: "keep-tail" })).isError, true);
+assert.equal((await call("compact_stage", { summary: "checkpoint", retention: "keep-tail", firstKeptEntryId: "off-branch" })).isError, true);
+assert.equal((await call("compact_stage", { summary: 42 })).isError, true);
+assert.equal((await call("compact_stage", { summary: "ok", resume: true })).isError, true);
+assert.equal((await call("compact_stage", { summary: "x".repeat(20001) })).isError, true);
+assert.equal((await call("compact_stage", { summary: "ok", resume: "x".repeat(2001) })).isError, true);
 
-const staged = await ctxTool.execute("t2", { action: "compact_stage", obj: { summary: "## Goal\nx", firstKeptEntryId: "b" } }, undefined, undefined, stubCtx(["a", "b", "r", "c"]));
-assert.equal(staged.isError, undefined);
-const consumed = takeCtxCompaction(fakeEvent(["a", "b", "r", "c"]));
-assert.ok(consumed);
-assert.ok("compaction" in consumed);
-assert.equal(consumed.compaction.tokensBefore, 7);
-assert.equal(peekCtxPending(), null);
+assert.equal((await call("compact_stage", { summary: "checkpoint", resume: " continue " })).isError, undefined);
+assert.equal(peekCtxPending()?.retention, "summary-only");
+assert.equal(peekCtxPending()?.resume, "continue");
+assert.equal(takeCtxCompaction(eventFor("manual", "unrelated /compact")), undefined, "stage alone never affects /compact");
+assert.equal(takeCtxCompaction(eventFor("threshold")), undefined, "automatic compaction cannot steal the stage");
+assert.equal(peekCtxPending()?.summary, "checkpoint");
 
-// compact_fire is fire-and-forget: must not await compact inside the tool
-// (manual compact waits for idle -> deadlock). Stage stays for the handler.
-const staged2 = await ctxTool.execute("t5", { action: "compact_stage", obj: { summary: "## Goal\nx", firstKeptEntryId: "b" } }, undefined, undefined, stubCtx(["a", "b", "r", "c"]));
-assert.equal(staged2.isError, undefined);
-const fired = await ctxTool.execute("t6", { action: "compact_fire", obj: {} }, undefined, undefined, stubCtx(["a", "b", "r", "c"]));
-assert.equal(fired.isError, undefined);
-assert.match(String(fired.content[0].text), /armed/);
-assert.ok(peekCtxPending(), "fire leaves stage for session_before_compact");
-assert.equal(peekCtxFireRequest(), true, "fire arms deferred trigger");
-assert.equal(takeCtxFireRequest(), true, "agent_end consumes the flag");
-assert.equal(peekCtxFireRequest(), false);
-assert.equal(takeCtxFireRequest(), false, "flag single-consume");
-assert.equal(compactCalls, 0, "fire never triggers compact from the tool");
-const consumed2 = takeCtxCompaction(fakeEvent(["a", "b", "r", "c"]));
-assert.ok(consumed2 && "compaction" in consumed2);
-assert.equal(peekCtxPending(), null);
-const emptyFire = await ctxTool.execute("t7", { action: "compact_fire", obj: {} }, undefined, undefined, stubCtx(["a", "b", "r", "c"]));
-assert.equal(emptyFire.isError, true, "fire without stage rejected");
-
-// ── outcome flags: silent until the agent_end trigger marks them ──
-assert.equal(takeCtxFireTriggered(), false, "no outcome before trigger");
-markCtxFireTriggered();
-assert.equal(takeCtxFireTriggered(), true, "outcome consumed once");
-assert.equal(takeCtxFireTriggered(), false, "outcome single-consume");
-
-// ── stale keep-point: handler reports invalidPoint, stage cleared ──
-const staged3 = await ctxTool.execute("t8", { action: "compact_stage", obj: { summary: "## Goal\nx", firstKeptEntryId: "b" } }, undefined, undefined, stubCtx(["a", "b", "r", "c"]));
-assert.equal(staged3.isError, undefined);
-assert.equal(peekCtxFireRequest(), false, "fresh stage disarms stale flag");
-const fired3 = await ctxTool.execute("t9", { action: "compact_fire", obj: {} }, undefined, undefined, stubCtx(["a", "b", "r", "c"]));
-assert.equal(fired3.isError, undefined);
-assert.equal(compactCalls, 0, "re-fire still defers");
-assert.equal(takeCtxFireRequest(), true);
-const stale = takeCtxCompaction(fakeEvent(["a", "r", "c"]));
-assert.ok(stale && "invalidPoint" in stale, "stale point reported");
-assert.equal(stale.invalidPoint, "b");
-assert.equal(peekCtxPending(), null);
-
-// ── discard disarms: armed flag must not leak into a later stage ──
-const staged4 = await ctxTool.execute("t10", { action: "compact_stage", obj: { summary: "## Goal\nx", firstKeptEntryId: "b" } }, undefined, undefined, stubCtx(["a", "b", "r", "c"]));
-assert.equal(staged4.isError, undefined);
-await ctxTool.execute("t11", { action: "compact_fire", obj: {} }, undefined, undefined, stubCtx(["a", "b", "r", "c"]));
+await call("compact_fire");
 assert.equal(peekCtxFireRequest(), true);
-assert.equal(discardCtxPending(), true);
-assert.equal(peekCtxFireRequest(), false, "discard disarms");
+assert.equal(compactCalls, 0, "tool never invokes compact");
+await emit("turn_end");
+assert.equal(abortCalls, 1, "no further model turn is needed to stop the run");
+assert.equal(compactCalls, 0, "turn_end only stops; transition waits until agent_end");
+await emit("agent_end");
+assert.equal(compactCalls, 1);
 assert.equal(peekCtxPending(), null);
-assert.equal(compactCalls, 0);
+assert.equal((await status()).inProgress, true);
+assert.equal((await status()).retention, "summary-only");
+assert.equal(sent.length, 0, "resume waits for the verified commit");
+assert.equal(takeCtxCompaction(eventFor("threshold")), undefined, "even during fire, automatic compaction cannot consume ctx");
+assert.equal(takeCtxCompaction(eventFor("manual", "foreign")), undefined);
+const injected = takeCtxCompaction(eventFor());
+if (!injected || !("compaction" in injected)) assert.fail("expected staged compaction to be injected");
+assert.equal(injected.compaction.firstKeptEntryId, entries.at(-1)?.id, "summary-only starts AFTER all old dialogue");
+// The staged text is kept verbatim and the file tags are appended to it.
+assert.ok(injected.compaction.summary.startsWith("checkpoint"), "the staged summary is preserved");
+assert.ok(injected.compaction.summary.includes("<read-files>\nx.ts\n</read-files>"), "the dropped file operations are reported");
+assert.equal(injected.compaction.tokensBefore, 123);
+assert.equal(takeCtxCompaction(eventFor()), undefined, "injection is single-use");
+assert.equal((await call("compact_stage", { summary: "busy" })).isError, true);
+assert.equal((await call("compact_discard")).isError, true);
+options.onComplete(injected.compaction);
+assert.equal(peekCtxLastResult(), "committed; resume sent");
+assert.deepEqual(sent, ["continue"]);
+assert.equal((await status()).inProgress, false);
+await emit("agent_end");
+assert.equal(compactCalls, 1, "duplicate end cannot fire twice");
 
-// outline through the tool: key focus + cache path
+// Explicit keep-tail preserves its exact point and truthfully describes the retained range.
+const kept = await call("compact_stage", { summary: "tail checkpoint", retention: "keep-tail", firstKeptEntryId: "b" });
+assert.equal(kept.isError, undefined);
+assert.match(textOf(kept), /ALL entries added through the firing turn/);
+assert.equal(peekCtxLastResult(), null, "new stage clears stale success");
+await call("compact_fire");
+const beforeKeep = entries.length;
+await emit("agent_end");
+assert.equal(entries.length, beforeKeep, "keep-tail needs no extra boundary");
+const tail = takeCtxCompaction(eventFor());
+if (!tail || !("compaction" in tail)) assert.fail("expected staged compaction to be injected");
+assert.equal(tail.compaction.firstKeptEntryId, "b");
+options.onComplete(tail.compaction);
+assert.equal(peekCtxLastResult(), "committed");
+assert.equal(sent.length, 1, "no resume when omitted");
+
+// Unrelated handler output must not be reported as success or send resume.
+await call("compact_stage", { summary: "ours", resume: "must not send" });
+await call("compact_fire");
+await emit("agent_end");
+options.onComplete({ summary: "another extension", firstKeptEntryId: "a", tokensBefore: 1 });
+assert.match(peekCtxLastResult()!, /^failed:.*not committed/);
+assert.equal(sent.length, 1);
+
+// Failures before session_before_compact (e.g. session too small) clear all state.
+await call("compact_stage", { summary: "retry", resume: "must not send" });
+await call("compact_fire");
+await emit("agent_end");
+options.onError(new Error("Nothing to compact (session too small)"));
+assert.equal(peekCtxPending(), null);
+assert.equal(peekCtxActive(), null);
+assert.match(peekCtxLastResult()!, /session too small/);
+assert.equal(sent.length, 1);
+
+// Stale points cancel instead of falling back to a misleading normal compaction.
+await call("compact_stage", { summary: "tail", retention: "keep-tail", firstKeptEntryId: "b" });
+await call("compact_fire");
+await emit("agent_end");
+const stale = takeCtxCompaction(eventFor("manual", options.customInstructions, []));
+if (!stale || !("invalidPoint" in stale)) assert.fail("expected stale keep-point to be cancelled");
+assert.equal(stale.cancel, true);
+options.onError(new Error("Compaction cancelled"));
+
+// Re-stage/discard disarm pending fire.
+await call("compact_stage", { summary: "one" });
+await call("compact_fire");
+await call("compact_stage", { summary: "two" });
+assert.equal(peekCtxFireRequest(), false);
+await call("compact_fire");
+await call("compact_discard");
+assert.equal(peekCtxFireRequest(), false);
+assert.equal(peekCtxPending(), null);
+
+// A session switch/reload invalidates late callbacks, including their resume.
+await call("compact_stage", { summary: "old session", resume: "must not leak" });
+await call("compact_fire");
+await emit("agent_end");
+const oldOptions = options;
+const oldResult = takeCtxCompaction(eventFor());
+if (!oldResult || !("compaction" in oldResult)) assert.fail("expected staged compaction to be injected");
+await emit("session_shutdown");
+await emit("session_start");
+oldOptions.onComplete(oldResult.compaction);
+oldOptions.onError(new Error("old error"));
+assert.equal(peekCtxLastResult(), null);
+assert.equal(sent.length, 1);
+assert.equal(peekCtxActive(), null);
+
+await call("compact_stage", { summary: "throw" });
+await call("compact_fire");
+throwCompact = true;
+await emit("agent_end");
+throwCompact = false;
+assert.match(peekCtxLastResult()!, /runtime unavailable/);
+assert.equal(peekCtxActive(), null);
+
+await call("compact_stage", { summary: "branch" });
+await call("compact_fire");
+await emit("session_tree");
+assert.equal(peekCtxPending(), null);
+assert.equal(peekCtxFireRequest(), false);
+assert.equal((await call("nope")).isError, true);
 clearOutlineCache();
-const outline1 = await ctxTool.execute("t4", { action: "tree_outline", obj: { focus: "key", limit: 2 } }, undefined, undefined, stubCtx(["a", "b", "r", "c"]));
-assert.equal(outline1.isError, undefined);
-assert.match(String(outline1.content[0].text), /scope=branch/);
+assert.equal((await call("tree_outline", { focus: "key", limit: 2 })).isError, undefined);
 
-// unknown action still rejected
-const unknown = await ctxTool.execute("t3", { action: "nope", obj: {} }, undefined, undefined, stubCtx([]));
-assert.equal(unknown.isError, true);
+// ── progressive help: discoverable, unambiguous, executable ──
+const help = await ctxTool.execute("h1", { action: "action-list", obj: {} }, undefined, undefined, stubCtx(["a", "b", "r", "c"]));
+assert.equal(help.isError, undefined);
+const helpText = textOf(help);
+assert.match(helpText, /action=<name>.*obj=/, "calling contract is in action-list itself");
+assert.match(helpText, /belong inside obj/, "obj placement is spelled out");
+for (const name of ["tree_outline", "tree_show", "compact_stage", "compact_fire", "compact_status", "compact_discard"]) {
+  assert.ok(helpText.includes(name), `action-list advertises ${name}`);
+}
+assert.match(helpText, /required obj: summary/, "required fields summarized");
 
-// ── compact_status: state queryable in any host mode (no UI needed) ──
-const idleStatus = await ctxTool.execute("t12", { action: "compact_status", obj: {} }, undefined, undefined, stubCtx(["a", "b", "r", "c"]));
-assert.equal(idleStatus.isError, undefined);
-const idle = JSON.parse(String(idleStatus.content[0].text));
-assert.equal(idle.staged, false);
-assert.equal(idle.armed, false);
-assert.equal(idle.lastResult, null);
-const staged5 = await ctxTool.execute("t13", { action: "compact_stage", obj: { summary: "## Goal\nx", firstKeptEntryId: "b" } }, undefined, undefined, stubCtx(["a", "b", "r", "c"]));
-assert.equal(staged5.isError, undefined);
-const busyStatus = await ctxTool.execute("t14", { action: "compact_status", obj: {} }, undefined, undefined, stubCtx(["a", "b", "r", "c"]));
-assert.equal(busyStatus.isError, undefined);
-const busy = JSON.parse(String(busyStatus.content[0].text));
-assert.equal(busy.staged, true);
-assert.equal(busy.firstKeptEntryId, "b");
-assert.equal(busy.armed, false);
-setCtxLastResult("committed");
-const withResult = JSON.parse(String((await ctxTool.execute("t15", { action: "compact_status", obj: {} }, undefined, undefined, stubCtx(["a", "b", "r", "c"]))).content[0].text));
-assert.equal(withResult.lastResult, "committed");
-assert.equal(discardCtxPending(), true);
+const schema = await ctxTool.execute("h2", { action: "action-schema", obj: { action: "tree_outline" } }, undefined, undefined, stubCtx(["a", "b", "r", "c"]));
+assert.equal(schema.isError, undefined);
+const parsed = JSON.parse(textOf(schema));
+assert.equal(parsed.call.action, "tree_outline");
+assert.ok("obj" in parsed.call, "copyable call shows where arguments go");
+assert.deepEqual(parsed.objSchema.properties.scope.enum, ["branch", "tree"]);
+assert.deepEqual(parsed.objSchema.properties.focus.enum, ["all", "key"]);
+assert.ok(parsed.notes.length > 0, "usage notes included");
 
-assert.equal(discardCtxPending(), false);
+const statusSchema = await ctxTool.execute("h3", { action: "action-schema", obj: { action: "compact_status" } }, undefined, undefined, stubCtx(["a", "b", "r", "c"]));
+assert.equal(statusSchema.isError, undefined, "compact_status is discoverable via action-schema");
 
-// ── resume: optional user message after a committed compaction ──
-const withResume = await ctxTool.execute("t16", { action: "compact_stage", obj: { summary: "## Goal\nx", firstKeptEntryId: "b", resume: "  continue verifying  " } }, undefined, undefined, stubCtx(["a", "b", "r", "c"]));
-assert.equal(withResume.isError, undefined);
-assert.match(String(withResume.content[0].text), /resume=\d+ chars/);
-assert.equal(peekCtxPending()?.resume, "continue verifying", "resume trimmed");
-const resumeStatus = JSON.parse(String((await ctxTool.execute("t17", { action: "compact_status", obj: {} }, undefined, undefined, stubCtx(["a", "b", "r", "c"]))).content[0].text));
-assert.equal(resumeStatus.resumeArmed, true);
-assert.equal(resumeStatus.staged, true);
-// consume path: session_before_compact takes the whole stage (handler copies resume first)
-const consumedResume = takeCtxCompaction(fakeEvent(["a", "b", "r", "c"]));
-assert.ok(consumedResume && "compaction" in consumedResume);
-assert.equal(peekCtxPending(), null);
+const badSchemaName = await ctxTool.execute("h4", { action: "action-schema", obj: { action: "nope" } }, undefined, undefined, stubCtx([]));
+assert.equal(badSchemaName.isError, true);
+assert.match(textOf(badSchemaName), /compact_status/, "unknown-action error lists valid names");
 
-const tooLong = await ctxTool.execute("t18", { action: "compact_stage", obj: { summary: "## Goal\nx", firstKeptEntryId: "b", resume: "x".repeat(2001) } }, undefined, undefined, stubCtx(["a", "b", "r", "c"]));
-assert.equal(tooLong.isError, true, "oversize resume rejected");
-assert.equal(peekCtxPending(), null);
+const badScope = await ctxTool.execute("h5", { action: "tree_outline", obj: { scope: "everywhere" } }, undefined, undefined, stubCtx(["a", "b", "r", "c"]));
+assert.equal(badScope.isError, true, "invalid enum rejected instead of silently degrading");
+const badFocus = await ctxTool.execute("h6", { action: "tree_outline", obj: { focus: "important" } }, undefined, undefined, stubCtx(["a", "b", "r", "c"]));
+assert.equal(badFocus.isError, true);
 
-const emptyResume = await ctxTool.execute("t19", { action: "compact_stage", obj: { summary: "## Goal\nx", firstKeptEntryId: "b", resume: "   " } }, undefined, undefined, stubCtx(["a", "b", "r", "c"]));
-assert.equal(emptyResume.isError, undefined);
-assert.equal(peekCtxPending()?.resume, undefined, "blank resume means no resume");
-const noResumeStatus = JSON.parse(String((await ctxTool.execute("t20", { action: "compact_status", obj: {} }, undefined, undefined, stubCtx(["a", "b", "r", "c"]))).content[0].text));
-assert.equal(noResumeStatus.resumeArmed, false);
-assert.equal(discardCtxPending(), true);
+assert.match(String(ctxTool.description), /goes inside obj/, "tool description states the contract");
+assert.match(String(ctxTool.parameters.properties.obj.description), /top level/, "obj parameter states the contract");
 
 console.log("ctx.test.ts: ok");

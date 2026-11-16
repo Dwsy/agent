@@ -9,7 +9,8 @@ import type { AutocompleteItem } from "@earendil-works/pi-tui";
 import type { RetryCallbacks } from "@earendil-works/pi-ai/compat";
 import { CONFIG_PATH } from "./src/constants.js";
 import { compactWithConfiguredAlgorithm } from "./src/algorithms.js";
-import { ctxTool, markCtxFireTriggered, peekCtxPending, setCtxLastResult, takeCtxCompaction, takeCtxFireRequest, takeCtxFireTriggered } from "./src/ctx.js";
+import { ctxTool, takeCtxCompaction } from "./src/ctx.js";
+import { registerCtxLifecycle } from "./src/ctx-lifecycle.js";
 import { loadConfig, saveConfig } from "./src/config.js";
 import { clearStatusWidget, describeConfig, refreshStatusWidget } from "./src/status.js";
 import type { AvailableModel, CustomCompactionConfig } from "./src/types.js";
@@ -84,9 +85,6 @@ export default function customCompactionExtension(pi: ExtensionAPI): void {
   const loaded = loadConfig();
   let config = loaded.config;
   let pendingWarning = loaded.warning;
-  // Armed resume text for the deferred compaction. Lives outside ctx stage because
-  // session_before_compact consumes the whole stage before the commit happens.
-  let ctxFireResume: string | undefined;
 
   const ownerRegistration = {
     shouldOwn(candidate: unknown): boolean {
@@ -119,7 +117,8 @@ export default function customCompactionExtension(pi: ExtensionAPI): void {
     const staged = takeCtxCompaction(event);
     if (staged) {
       if ("invalidPoint" in staged) {
-        notify(ctx, `ctx: staged point ${staged.invalidPoint} is not on the current branch; using normal compaction.`, "warning");
+        notify(ctx, `ctx: staged point ${staged.invalidPoint} is not on the current branch; cancelling ctx compaction. Re-stage to retry.`, "warning");
+        return { cancel: true };
       } else {
         return staged;
       }
@@ -201,61 +200,7 @@ export default function customCompactionExtension(pi: ExtensionAPI): void {
   });
 
   pi.on("session_before_compact", handleCompaction);
-  // Deferred ctx fire: compact_fire (tool) only arms; the real trigger runs
-  // here at idle, where manual compact's abort()+waitForIdle is safe.
-  pi.on("agent_end", async (_event, ctx) => {
-    if (!takeCtxFireRequest()) return;
-    const staged = peekCtxPending();
-    if (!staged) return;
-    // Capture before compact(): session_before_compact consumes the stage.
-    ctxFireResume = staged.resume;
-    markCtxFireTriggered();
-    notify(ctx, "ctx: firing deferred compaction…", "info");
-    // onComplete/onError report directly: the session_compact* events below
-    // never fire when compact() throws before session_before_compact
-    // (e.g. "session too small"), which used to fail silently.
-    // takeCtxFireTriggered is single-consume, so only one path reports.
-    ctx.compact({
-      // Resume is intentionally NOT gated on takeCtxFireTriggered: session_compact
-      // is emitted inside compact() and always consumes the report flag first.
-      onComplete: () => {
-        // Consume the report flag unconditionally: leaving it set would let a later
-        // fire inherit a stale report, and session_compact may already have used it.
-        const reported = takeCtxFireTriggered();
-        const resume = ctxFireResume;
-        ctxFireResume = undefined;
-        if (resume !== undefined) {
-          pi.sendUserMessage(resume);
-          setCtxLastResult("committed; resume sent");
-          notify(ctx, "ctx compaction committed; resume sent.", "info");
-          return;
-        }
-        if (!reported) return;
-        setCtxLastResult("committed");
-        notify(ctx, "ctx compaction committed.", "info");
-      },
-      onError: (error) => {
-        ctxFireResume = undefined;
-        if (!takeCtxFireTriggered()) return;
-        const reason = error instanceof Error ? error.message : String(error);
-        setCtxLastResult(`failed: ${condenseError(reason)}`);
-        notify(ctx, `ctx compaction failed (${condenseError(reason)}); re-stage with compact_stage to retry.`, "warning");
-      },
-    });
-  });
-  // Surface silent outcomes: without this, a failed/aborted ctx compaction
-  // leaves no trace (stage already consumed, no entry appended).
-  pi.on("session_compact", async (_event, ctx) => {
-    if (!takeCtxFireTriggered()) return;
-    setCtxLastResult("committed");
-    notify(ctx, "ctx compaction committed.", "info");
-  });
-  pi.on("session_compact_failed", async (event, ctx) => {
-    if (!takeCtxFireTriggered()) return;
-    const reason = event.aborted ? "aborted" : (event.errorMessage ?? "unknown error");
-    setCtxLastResult(`failed: ${condenseError(reason)}`);
-    notify(ctx, `ctx compaction failed (${condenseError(reason)}); re-stage with compact_stage to retry.`, "warning");
-  });
+  registerCtxLifecycle(pi, notify);
   pi.registerTool(ctxTool);
 
   pi.registerCommand("compaction", {

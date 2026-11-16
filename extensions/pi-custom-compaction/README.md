@@ -45,39 +45,87 @@ Both algorithms also share Pi's `retry.*` settings through `retryAssistantCall`:
 
 ## ctx tool (agent-driven compaction)
 
-The extension also registers a progressive LLM tool named `ctx` (`src/ctx.ts`):
+The progressive `ctx` tool reads raw session history and commits an agent-written
+checkpoint through Pi's native compaction lifecycle. Arguments belong inside
+`obj`:
 
-```text
-ctx action-list                       list actions
-ctx action-schema {action}            show one action's obj schema
-ctx tree_outline {offset, limit, scope, focus}   attention-signal rows (default scope=branch, cheapest legal keep-points)
-ctx tree_show {entryId, full?}        one entry drilled down (bodies clipped unless full=true)
-ctx compact_stage {summary, firstKeptEntryId, resume?}   validate against the branch + stage agent-written summary
-ctx compact_fire {}                   run a real compaction now with the staged summary
-ctx compact_discard {}                drop the stage without compacting
+```js
+ctx({ action: "action-list", obj: {} })
+ctx({ action: "action-schema", obj: { action: "compact_stage" } })
+ctx({ action: "tree_outline", obj: { focus: "key", limit: 20 } })
+ctx({ action: "tree_show", obj: { entryId: "<id from tree_outline>" } })
+
+// Default: only the summary enters the next model context.
+ctx({ action: "compact_stage", obj: {
+  summary: "## Goal\n...\n## Progress\n...\n## Next step\n...",
+  retention: "summary-only",
+  resume: "Continue with the next step." // optional
+} })
+ctx({ action: "compact_fire", obj: {} })
+// The extension stops this run at turn_end and compacts after agent_end.
+// Query compact_status on the next turn.
 ```
 
-Typical flow: `tree_outline focus=key` → `tree_show` → `compact_stage` → `compact_fire`.
+`summary-only` (the default) retains no raw dialogue from before the compaction.
+The extension creates a metadata-only boundary after the firing turn, so the
+outline reads, tool results, staged summary arguments, and fire calls do not
+remain in model context. New user messages arrive after the checkpoint.
+Raw entries remain on disk and are still readable with `tree_outline` /
+`tree_show`; compaction does not delete history.
 
-`resume` is optional: when set, the committed compaction immediately sends that
-text back as a user message, so the agent continues the task instead of stopping
-after the compaction notice. Without it, behaviour is unchanged. Failures never
-send it, and `compact_status.lastResult` reports `committed; resume sent` versus
-plain `committed` so the outcome is checkable without watching notices.
+The committed summary carries the same `<read-files>` / `<modified-files>`
+tags that Pi's own compaction appends, listing the files read and modified in
+the range the checkpoint drops. Without them the next agent would lose track
+of which files were touched, since the raw tool calls are gone from context.
+The tags are cumulative: a file list from an earlier compaction is carried
+forward, because that history now exists only as a summary. The agent does not
+need to write them; the extension appends them to the staged text.
 
-Row legend (signals only, never bodies): `[user] "intent…"`,
-`[assistant] tools=read,bash "reply…"`, `[toolResult] tools=bash err! 24.4KB`,
-`[compaction] 2.9KB keptFrom=<id>`, `label="…"` on labeled entries.
-Thinking blocks and tool-result bodies never appear in outlines — same rule as
-Pi's own summary serialization. `scope=tree` (all branches, DFS with depth) is
-opt-in; the default `branch` scope lists exactly the legal keep-points.
-The staged summary is consumed by the same `session_before_compact` handler
-(check runs before the `enabled` gate), so the agent freely chooses the
-keep-point instead of the token-based cut. The stage is single-use: firing
-consumes it, failures clear it, and a point that is not on the current branch
-falls back to normal compaction with a warning. Agent-written summaries bypass
-the role-persona `<memory>` handoff (zero-LLM design: the agent already wrote
-the text, no extraction pass runs).
+To intentionally keep a raw tail, opt in explicitly:
+
+```js
+ctx({ action: "compact_stage", obj: {
+  summary: "Summary of the earlier work...",
+  retention: "keep-tail",
+  firstKeptEntryId: "<id from branch tree_outline>"
+} })
+```
+
+`keep-tail` retains **every raw entry from that id through the firing turn**,
+including new tool calls made after staging. Selecting the user message at the
+start of a task therefore keeps that entire task's dialogue. A keep-point without
+explicit `retention: "keep-tail"` is rejected to prevent accidental retention.
+
+Available actions:
+
+| Action | Arguments inside obj |
+| --- | --- |
+| `action-list` | `{}`: contract and all actions |
+| `action-schema` | `{action: "<name>"}`: schema, example, notes |
+| `tree_outline` | `{offset?, limit?, scope?, focus?}`: raw branch/tree attention signals |
+| `tree_show` | `{entryId, full?}`: one entry; bodies clipped unless `full=true` |
+| `compact_stage` | `{summary, retention?, firstKeptEntryId?, resume?}` |
+| `compact_fire` | `{}`: stop the current run, then compact |
+| `compact_status` | `{}`: staged, armed, inProgress, retention, lastResult |
+| `compact_discard` | `{}`: discard the stage and disarm before firing |
+
+Following the same event order as `pi-context`, `turn_end` stops further model
+turns and `agent_end` starts the transition. Compaction is never invoked from
+inside the tool. Only the matching manual operation may consume the stage;
+automatic compaction and unrelated `/compact` calls leave it untouched.
+A stale keep-point cancels the operation instead of silently falling back.
+Failures clear the active operation and do not send `resume`. Success is verified
+against the staged summary, boundary, and operation ID before reporting
+`committed` or sending `resume`. Session switches, reloads, and tree navigation
+clear pending state and invalidate late callbacks.
+
+Pi still checks native compaction eligibility first. If the session is too small,
+`compact_status.lastResult` reports the failure; it never claims a commit.
+
+Outline rows show tool names, errors, sizes, labels, and prior keep-points.
+Thinking and tool-result bodies stay out of outlines; drill down with
+`tree_show` when writing the summary. Agent-written summaries bypass the
+role-persona `<memory>` extraction pass.
 
 ## Role-persona compatibility
 

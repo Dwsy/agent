@@ -1,7 +1,61 @@
+import type { SessionEntry } from "@earendil-works/pi-coding-agent";
+
 export interface FileOperationsLike {
   read: Set<string>;
   written: Set<string>;
   edited: Set<string>;
+}
+
+/** Tool names whose path argument is tracked, mirroring Pi's own compaction tracking. */
+const FILE_OP_TOOLS: Record<string, "read" | "written" | "edited"> = {
+  read: "read",
+  write: "written",
+  edit: "edited",
+};
+
+interface MessageLike {
+  role?: string;
+  content?: unknown;
+  nestedCalls?: { calls?: Array<{ name?: string; arguments?: unknown }> };
+}
+
+function addFileOp(name: string | undefined, args: unknown, fileOps: FileOperationsLike): void {
+  if (!name) return;
+  const bucket = FILE_OP_TOOLS[name];
+  if (!bucket) return;
+  const path = (args as { path?: unknown } | undefined)?.path;
+  if (typeof path !== "string" || !path) return;
+  fileOps[bucket].add(path);
+}
+
+/**
+ * Extract file operations from raw session entries.
+ *
+ * Mirrors Pi's own extraction: assistant tool calls are inspected, and codemode
+ * scripts report their inner calls on the tool result. Only read/write/edit
+ * count, and only their path argument.
+ */
+export function extractFileOpsFromEntries(entries: SessionEntry[]): FileOperationsLike {
+  const fileOps: FileOperationsLike = { read: new Set(), written: new Set(), edited: new Set() };
+  for (const entry of entries) {
+    if (entry.type !== "message") continue;
+    const message = (entry as { message?: MessageLike }).message;
+    if (!message) continue;
+    if (message.role === "toolResult") {
+      for (const call of message.nestedCalls?.calls ?? []) addFileOp(call.name, call.arguments, fileOps);
+      continue;
+    }
+    if (message.role !== "assistant") continue;
+    const content = message.content;
+    if (!Array.isArray(content)) continue;
+    for (const block of content) {
+      if (typeof block !== "object" || block === null) continue;
+      const candidate = block as { type?: string; name?: string; arguments?: unknown };
+      if (candidate.type !== "toolCall") continue;
+      addFileOp(candidate.name, candidate.arguments, fileOps);
+    }
+  }
+  return fileOps;
 }
 
 export interface FileDetails {
@@ -51,6 +105,52 @@ export function appendFileDetails(summary: string, details: FileDetails): string
     .replace(/\n*<modified-files>[\s\S]*?<\/modified-files>/g, "")
     .trimEnd();
   return `${withoutExisting}${formatFileDetails(details)}`;
+}
+
+/**
+ * File operations for the entries a ctx compaction actually drops.
+ *
+ * ctx chooses its own keep point, which differs from Pi's token-based cut
+ * point, so `preparation.fileOps` (which covers only Pi's cut range) is not
+ * the right source. The discarded branch range is scanned directly:
+ *
+ * - summary-only keeps only the boundary, so every earlier entry is dropped.
+ * - keep-tail keeps everything from the chosen keep point on, so only the
+ *   entries before it are dropped.
+ *
+ * The raw branch still holds entries an earlier compaction already folded
+ * into a summary. Those are skipped, and that summary's tags are merged in
+ * instead, so the file list stays cumulative across compactions.
+ */
+export function computeCtxFileDetails(
+  branchEntries: SessionEntry[],
+  firstKeptEntryId: string | undefined,
+): FileDetails {
+  const keepIndex = firstKeptEntryId
+    ? branchEntries.findIndex((entry) => entry.id === firstKeptEntryId)
+    : -1;
+  // Without a resolvable keep point every entry is discarded.
+  const endIndex = keepIndex >= 0 ? keepIndex : branchEntries.length;
+
+  // The newest compaction inside the discarded range owns the history before
+  // it; its summary tags are the cumulative record of that part.
+  let startIndex = 0;
+  let previousSummary: string | undefined;
+  for (let i = endIndex - 1; i >= 0; i--) {
+    const entry = branchEntries[i];
+    if (entry.type !== "compaction") continue;
+    // Entries before this compaction's own keep point were already folded
+    // into its summary; the retained tail sits before the compaction entry
+    // in raw order and is still part of what ctx drops.
+    const keptIndex = branchEntries.findIndex((candidate) => candidate.id === entry.firstKeptEntryId);
+    startIndex = keptIndex >= 0 ? keptIndex : i + 1;
+    previousSummary = entry.summary;
+    break;
+  }
+
+  const discarded = branchEntries.slice(startIndex, endIndex);
+  const current = getFileDetails(extractFileOpsFromEntries(discarded));
+  return mergeFileDetails(current, previousSummary);
 }
 
 export function selectSummaryText(content: Array<{ type: string; text?: string }>): string {

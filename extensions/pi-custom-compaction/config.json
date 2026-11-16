@@ -1,8 +1,8 @@
 {
   "enabled": true,
   "model": {
-    "provider": "3838-low-priority",
-    "id": "free"
+    "provider": "magpie",
+    "id": "auto/free"
   },
   "algorithm": "structured",
   "maxSummaryTokens": 16384,

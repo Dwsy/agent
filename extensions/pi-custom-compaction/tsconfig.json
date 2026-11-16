@@ -11,10 +11,10 @@
     "baseUrl": ".",
     "paths": {
       "@earendil-works/pi-coding-agent": [
-        "/Users/dengwenyu/.nvm/versions/node/v24.15.0/lib/node_modules/@earendil-works/pi-coding-agent/dist/index.d.ts"
+        "/Users/dengwenyu/.pi/agent/install/releases/1.5.0/node_modules/@earendil-works/pi-coding-agent/dist/index.d.ts"
       ],
       "@earendil-works/pi-tui": [
-        "/Users/dengwenyu/.nvm/versions/node/v24.15.0/lib/node_modules/@earendil-works/pi-tui/dist/index.d.ts"
+        "/Users/dengwenyu/.pi/agent/install/releases/1.5.0/node_modules/@earendil-works/pi-tui/dist/index.d.ts"
       ]
     }
   },
